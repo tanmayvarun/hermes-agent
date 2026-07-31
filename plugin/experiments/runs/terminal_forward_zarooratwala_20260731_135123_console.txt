@@ -1,0 +1,1202 @@
+=== launch start 20260731_135123 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_135123.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_135123_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_135123_status.txt
+[001][OK][+0.00s] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0][+0.18s] step | message='checking Terminal Accessibility'
+[003][OK][step 0][+0.33s] check | message='pass' expected=True
+[004][OK][step 0][+0.36s] check | message='pass' expected=True
+[005][FAIL][step 0][+0.36s] check | message='fail' expected=True
+[006][OK][step 0][+0.36s] check | message='pass' expected=True
+[007][OK][step 0][+1.69s] step | message='launched via open -a WhatsApp'
+[008][OK][step 0][+1.69s] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0][+3.70s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0][+3.71s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[011][OK][step 0][+15.64s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[012][OK][step 0][+15.64s] observation_raw_source
+[observe_done_fused step=0] nodes=168 elapsed=13.73s
+[013][OK][step 0][+17.44s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=13.73s attempt=1/3"
+[014][OK][step 0][+17.44s] observation | nodes=168
+[observation_raw step=0]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[015][OK][step 0][+17.44s] observation_raw | nodes=168
+[observe_complete step=0] nodes=168 elapsed=13.74s
+[016][OK][step 0][+21.10s] world_patch | screen='Screen #1' retention=1.0
+[017][OK][step 0][+21.12s] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[018][OK][step 0][+21.12s] loop_budget
+[019][OK][step 1][+21.12s] progress_clock
+[observe_begin step=0] app=WhatsApp screenshot=True
+[020][OK][step 0][+21.12s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[021][OK][step 0][+21.12s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[022][OK][step 0][+33.52s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[023][OK][step 0][+33.52s] observation_raw_source
+[observe_done_fused step=0] nodes=168 elapsed=19.54s
+[024][OK][step 0][+40.65s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=19.54s attempt=1/3"
+[025][OK][step 0][+40.65s] observation | nodes=168
+[observation_raw step=0]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[026][OK][step 0][+40.65s] observation_raw | nodes=168
+[observe_complete step=0] nodes=168 elapsed=19.54s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[027][OK][step 1][+40.65s] observation_raw | nodes=168
+[028][OK][step 1][+50.59s] observation_fused | screen='LIST' retention=1.0
+[029][OK][step 1][+50.59s] observation | nodes=168
+[030][OK][step 1][+50.59s] forward_task
+[031][OK][step 1][+50.59s] world_patch | screen='Screen #1' retention=1.0
+[032][OK][step 1][+50.59s] fusion_conflicts
+[033][OK][step 1][+50.61s] goal_status
+[034][OK][step 1][+92.25s] decision_budget
+[035][OK][step 1][+92.25s] decision_engine
+[036][OK][step 1][+92.25s] planner_decision
+[037][FAIL][step 1][+129.83s] execution | message="typed 'Kulvinder' into search field label='Search' AXValue='' open='Cmd+F search shortcut' evidence='' attempts=['open=Cmd+F search shortcut', 'paste=True', 'open=Cmd+F search shortcut', 'paste=True'] submit=False" backend='ax'
+[038][FAIL][step 1][+129.83s] transition_attribution
+[039][WARN][step 2][+129.83s] progress_clock
+[observe_begin step=1] app=WhatsApp screenshot=True
+[040][OK][step 1][+129.83s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[041][OK][step 1][+129.83s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[042][OK][step 1][+143.51s] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[043][OK][step 1][+143.51s] observation_raw_source
+[observe_done_fused step=1] nodes=168 elapsed=16.32s
+[044][OK][step 1][+146.15s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=16.32s attempt=1/3"
+[045][OK][step 1][+146.15s] observation | nodes=168
+[observation_raw step=1]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=True screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[046][OK][step 1][+146.15s] observation_raw | nodes=168
+[observe_complete step=1] nodes=168 elapsed=16.32s
+[047][OK][step 2][+146.15s] observation_raw | nodes=168
+[048][OK][step 2][+151.06s] observation_fused | screen='LIST' retention=1.0
+[049][OK][step 2][+151.06s] observation | nodes=168
+[050][OK][step 2][+151.06s] forward_task
+[051][OK][step 2][+151.06s] world_patch | screen='Screen #1' retention=1.0
+[052][OK][step 2][+151.06s] fusion_conflicts
+[053][OK][step 2][+151.06s] worldview_low
+[054][OK][step 1][+151.06s] step | message='low worldview / fusion conflict — re-observe' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[055][OK][step 1][+152.26s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[056][OK][step 1][+152.27s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[057][OK][step 1][+166.37s] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[058][OK][step 1][+166.37s] observation_raw_source
+[observe_done_fused step=1] nodes=168 elapsed=17.50s
+[059][OK][step 1][+169.76s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=17.50s attempt=1/3"
+[060][OK][step 1][+169.77s] observation | nodes=168
+[observation_raw step=1]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[061][OK][step 1][+169.77s] observation_raw | nodes=168
+[observe_complete step=1] nodes=168 elapsed=17.50s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[062][OK][step 2][+169.77s] observation_raw | nodes=168
+[063][OK][step 2][+174.05s] observation_fused | screen='LIST' retention=1.0
+[064][OK][step 2][+174.06s] goal_status
+[065][OK][step 2][+205.82s] decision_budget
+[066][OK][step 2][+205.82s] decision_engine
+[067][OK][step 2][+205.82s] planner_decision
+[068][OK][step 2][+212.45s] execution | message='open Search via Cmd+F search shortcut' backend='ax'
+[069][OK][step 2][+212.45s] step | message='transition settle' detail='0.6s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[070][OK][step 2][+213.06s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[071][OK][step 2][+213.06s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[072][OK][step 2][+226.95s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[073][OK][step 2][+226.95s] observation_raw_source
+[observe_done_fused step=2] nodes=168 elapsed=17.04s
+[074][OK][step 2][+230.10s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=17.04s attempt=1/3"
+[075][OK][step 2][+230.10s] observation | nodes=168
+[observation_raw step=2]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[076][OK][step 2][+230.10s] observation_raw | nodes=168
+[observe_complete step=2] nodes=168 elapsed=17.04s
+[077][OK][step 2][+230.10s] observation_raw | nodes=168
+[078][OK][step 2][+230.22s] observation_fused | screen='LIST' retention=1.0
+[079][OK][step 2][+230.27s] step | message='transition poll' detail='0.3s'
+[080][OK][step 2][+230.66s] perception_settled
+[081][OK][step 2][+230.66s] post_transition_settled_view | screen='LIST'
+[082][OK][step 2][+230.66s] post_observation
+[083][OK][step 2][+230.66s] post_world_patch
+[084][FAIL][step 2][+230.67s] transition_eval
+[085][OK][step 2][+230.67s] transition_attribution
+[086][FAIL][step 2][+230.67s] verification
+[observe_begin step=2] app=WhatsApp screenshot=True
+[087][OK][step 2][+230.67s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[088][OK][step 2][+230.67s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[089][OK][step 2][+243.43s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[090][OK][step 2][+243.43s] observation_raw_source
+[observe_done_fused step=2] nodes=168 elapsed=19.45s
+[091][OK][step 2][+250.12s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=19.45s attempt=1/3"
+[092][OK][step 2][+250.12s] observation | nodes=168
+[observation_raw step=2]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[093][OK][step 2][+250.12s] observation_raw | nodes=168
+[observe_complete step=2] nodes=168 elapsed=19.45s
+[094][OK][step 2][+250.27s] post_transition_richer_reobserve
+[095][FAIL][step 2][+250.27s] forward_predicate_rollback | expected='SearchInputFocused'
+[096][WARN][step 3][+250.28s] progress_clock
+[observe_begin step=2] app=WhatsApp screenshot=True
+[097][OK][step 2][+250.28s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[098][OK][step 2][+250.28s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[099][OK][step 2][+264.13s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[100][OK][step 2][+264.13s] observation_raw_source
+[observe_done_fused step=2] nodes=168 elapsed=16.19s
+[101][OK][step 2][+266.47s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=16.19s attempt=1/3"
+[102][OK][step 2][+266.47s] observation | nodes=168
+[observation_raw step=2]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=True screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[103][OK][step 2][+266.47s] observation_raw | nodes=168
+[observe_complete step=2] nodes=168 elapsed=16.19s
+[104][OK][step 3][+266.47s] observation_raw | nodes=168
+[105][OK][step 3][+271.49s] observation_fused | screen='LIST' retention=1.0
+[106][OK][step 3][+271.49s] observation | nodes=168
+[107][OK][step 3][+271.50s] forward_task
+[108][OK][step 3][+271.50s] world_patch | screen='Screen #1' retention=1.0
+[109][OK][step 3][+271.50s] fusion_conflicts
+[110][OK][step 3][+271.50s] worldview_low
+[111][OK][step 2][+271.50s] step | message='low worldview / fusion conflict — re-observe' detail='1.2s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[112][OK][step 2][+272.70s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[113][OK][step 2][+272.70s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[114][OK][step 2][+286.80s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[115][OK][step 2][+286.81s] observation_raw_source
+[observe_done_fused step=2] nodes=168 elapsed=16.84s
+[116][OK][step 2][+289.54s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=16.84s attempt=1/3"
+[117][OK][step 2][+289.54s] observation | nodes=168
+[observation_raw step=2]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[118][OK][step 2][+289.54s] observation_raw | nodes=168
+[observe_complete step=2] nodes=168 elapsed=16.84s
+[119][OK][step 3][+289.54s] observation_raw | nodes=168
+[120][OK][step 3][+293.59s] observation_fused | screen='LIST' retention=1.0
+[121][OK][step 3][+293.61s] goal_status
+[122][OK][step 3][+293.79s] decision_budget
+[123][OK][step 3][+293.79s] decision_engine
+[124][OK][step 3][+293.79s] planner_decision
+[125][OK][step 3][+293.79s] step | message='re-perceive current world (actuation/world uncertainty)' detail='1.2s'
+[126][WARN][step 4][+294.99s] progress_clock
+[observe_begin step=3] app=WhatsApp screenshot=True
+[127][OK][step 3][+295.00s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[128][OK][step 3][+295.00s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=3 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[129][OK][step 3][+308.78s] observation_raw_source
+[observation_raw_source step=3 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[130][OK][step 3][+308.79s] observation_raw_source
+[observe_done_fused step=3] nodes=168 elapsed=17.97s
+[131][OK][step 3][+312.96s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=17.97s attempt=1/3"
+[132][OK][step 3][+312.96s] observation | nodes=168
+[observation_raw step=3]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=True screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[133][OK][step 3][+312.96s] observation_raw | nodes=168
+[observe_complete step=3] nodes=168 elapsed=17.97s
+[134][OK][step 4][+312.96s] observation_raw | nodes=168
+[135][OK][step 4][+317.80s] observation_fused | screen='LIST' retention=1.0
+[136][OK][step 4][+317.81s] observation | nodes=168
+[137][OK][step 4][+317.81s] forward_task
+[138][OK][step 4][+317.81s] world_patch | screen='Screen #1' retention=1.0
+[139][OK][step 4][+317.81s] fusion_conflicts
+[140][OK][step 4][+317.81s] worldview_low
+[141][OK][step 3][+317.81s] step | message='low worldview / fusion conflict — re-observe' detail='1.2s'
+[observe_begin step=3] app=WhatsApp screenshot=True
+[142][OK][step 3][+319.01s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[143][OK][step 3][+319.01s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=3 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[144][OK][step 3][+332.89s] observation_raw_source
+[observation_raw_source step=3 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[145][OK][step 3][+332.89s] observation_raw_source
+[observe_done_fused step=3] nodes=168 elapsed=14.48s
+[146][OK][step 3][+333.50s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=14.48s attempt=1/3"
+[147][OK][step 3][+333.50s] observation | nodes=168
+[observation_raw step=3]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[148][OK][step 3][+333.50s] observation_raw | nodes=168
+[observe_complete step=3] nodes=168 elapsed=14.49s
+[149][OK][step 4][+333.50s] observation_raw | nodes=168
+[150][OK][step 4][+338.15s] observation_fused | screen='LIST' retention=1.0
+[151][OK][step 4][+338.17s] goal_status
+[152][OK][step 4][+338.32s] decision_budget
+[153][OK][step 4][+338.32s] decision_engine
+[154][OK][step 4][+338.32s] planner_decision
+[155][OK][step 4][+338.32s] step | message='re-perceive current world (actuation/world uncertainty)' detail='1.2s'
+[156][WARN][step 5][+339.52s] progress_clock
+[observe_begin step=4] app=WhatsApp screenshot=True
+[157][OK][step 4][+339.52s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+[158][OK][step 4][+339.52s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=4 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[159][OK][step 4][+353.52s] observation_raw_source
+[observation_raw_source step=4 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[160][OK][step 4][+353.52s] observation_raw_source
+[observe_done_fused step=4] nodes=168 elapsed=16.52s
+[161][OK][step 4][+356.05s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=16.52s attempt=1/3"
+[162][OK][step 4][+356.05s] observation | nodes=168
+[observation_raw step=4]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[163][OK][step 4][+356.05s] observation_raw | nodes=168
+[observe_complete step=4] nodes=168 elapsed=16.52s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[164][OK][step 5][+356.05s] observation_raw | nodes=168
+[165][OK][step 5][+356.16s] observation_fused | screen='LIST' retention=1.0
+[166][OK][step 5][+356.16s] observation | nodes=168
+[167][OK][step 5][+356.17s] forward_task
+[168][OK][step 5][+356.17s] world_patch | screen='Screen #1' retention=1.0
+[169][OK][step 5][+356.17s] fusion_conflicts
+[170][OK][step 5][+356.18s] goal_status
+[171][OK][step 5][+385.27s] decision_budget
+[172][OK][step 5][+385.27s] decision_engine
+[173][OK][step 5][+385.27s] planner_decision
+[174][FAIL][step 5][+422.40s] execution | message="typed 'Kulvinder' into search field label='Search' AXValue='' open='Cmd+F search shortcut' evidence='' attempts=['open=Cmd+F search shortcut', 'paste=True', 'open=Cmd+F search shortcut', 'paste=True'] submit=False" backend='ax'
+[175][FAIL][step 5][+422.40s] transition_attribution
+[176][WARN][step 6][+422.40s] progress_clock
+[observe_begin step=5] app=WhatsApp screenshot=True
+[177][OK][step 5][+422.40s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=5] prefer_source=pyobjc_ax secondary=True
+[178][OK][step 5][+422.40s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=5 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[179][OK][step 5][+436.05s] observation_raw_source
+[observation_raw_source step=5 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[180][OK][step 5][+436.05s] observation_raw_source
+[observe_done_fused step=5] nodes=168 elapsed=15.73s
+[181][OK][step 5][+438.13s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=15.73s attempt=1/3"
+[182][OK][step 5][+438.13s] observation | nodes=168
+[observation_raw step=5]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=True screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[183][OK][step 5][+438.13s] observation_raw | nodes=168
+[observe_complete step=5] nodes=168 elapsed=15.73s
+[184][OK][step 6][+438.13s] observation_raw | nodes=168
+[185][OK][step 6][+442.85s] observation_fused | screen='LIST' retention=1.0
+[186][OK][step 6][+442.85s] observation | nodes=168
+[187][OK][step 6][+442.85s] forward_task
+[188][OK][step 6][+442.85s] world_patch | screen='Screen #1' retention=1.0
+[189][OK][step 6][+442.86s] fusion_conflicts
+[190][OK][step 6][+442.86s] worldview_low
+[191][OK][step 5][+442.86s] step | message='low worldview / fusion conflict — re-observe' detail='1.2s'
+[observe_begin step=5] app=WhatsApp screenshot=True
+[192][OK][step 5][+444.06s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=5] prefer_source=pyobjc_ax secondary=True
+[193][OK][step 5][+444.06s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=5 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[194][OK][step 5][+457.93s] observation_raw_source
+[observation_raw_source step=5 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[195][OK][step 5][+457.93s] observation_raw_source
+[observe_done_fused step=5] nodes=168 elapsed=16.05s
+[196][OK][step 5][+460.11s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=16.05s attempt=1/3"
+[197][OK][step 5][+460.11s] observation | nodes=168
+[observation_raw step=5]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=True screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[198][OK][step 5][+460.11s] observation_raw | nodes=168
+[observe_complete step=5] nodes=168 elapsed=16.05s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[199][OK][step 6][+460.11s] observation_raw | nodes=168
+[200][OK][step 6][+460.23s] observation_fused | screen='LIST' retention=1.0
+[201][OK][step 6][+460.24s] goal_status
+[202][OK][step 6][+487.81s] decision_budget
+[203][OK][step 6][+487.81s] decision_engine
+[204][OK][step 6][+487.81s] planner_decision
+[205][OK][step 6][+494.42s] execution | message='open Search via Cmd+F search shortcut' backend='ax'
+[206][OK][step 6][+494.42s] step | message='transition settle' detail='0.6s'
+[observe_begin step=6] app=WhatsApp screenshot=True
+[207][OK][step 6][+495.02s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+[208][OK][step 6][+495.02s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=6 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[209][OK][step 6][+508.96s] observation_raw_source
+[observation_raw_source step=6 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[210][OK][step 6][+508.96s] observation_raw_source
+[observe_done_fused step=6] nodes=168 elapsed=16.70s
+[211][OK][step 6][+511.72s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=16.70s attempt=1/3"
+[212][OK][step 6][+511.72s] observation | nodes=168
+[observation_raw step=6]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[213][OK][step 6][+511.72s] observation_raw | nodes=168
+[observe_complete step=6] nodes=168 elapsed=16.70s
+[214][OK][step 6][+511.72s] observation_raw | nodes=168
+[215][OK][step 6][+514.65s] observation_fused | screen='LIST' retention=1.0
+[216][OK][step 6][+514.71s] step | message='transition poll' detail='0.3s'
+[217][OK][step 6][+515.10s] perception_settled
+[218][OK][step 6][+515.10s] post_transition_settled_view | screen='LIST'
+[219][OK][step 6][+515.10s] post_observation
+[220][OK][step 6][+515.10s] post_world_patch
+[221][FAIL][step 6][+515.11s] transition_eval
+[222][OK][step 6][+515.11s] transition_attribution
+[223][FAIL][step 6][+515.11s] verification
+[observe_begin step=6] app=WhatsApp screenshot=True
+[224][OK][step 6][+515.11s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+[225][OK][step 6][+515.11s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=6 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[226][OK][step 6][+528.99s] observation_raw_source
+[observation_raw_source step=6 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[227][OK][step 6][+528.99s] observation_raw_source
+[observe_done_fused step=6] nodes=168 elapsed=18.14s
+[228][OK][step 6][+533.25s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=18.14s attempt=1/3"
+[229][OK][step 6][+533.25s] observation | nodes=168
+[observation_raw step=6]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[230][OK][step 6][+533.25s] observation_raw | nodes=168
+[observe_complete step=6] nodes=168 elapsed=18.14s
+[231][OK][step 6][+533.41s] post_transition_richer_reobserve
+[232][FAIL][step 6][+533.41s] forward_predicate_rollback | expected='SearchInputFocused'
+[233][WARN][step 7][+533.42s] progress_clock
+[observe_begin step=6] app=WhatsApp screenshot=True
+[234][OK][step 6][+533.42s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+[235][OK][step 6][+533.42s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=6 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[236][OK][step 6][+547.30s] observation_raw_source
+[observation_raw_source step=6 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[237][OK][step 6][+547.30s] observation_raw_source
+[observe_done_fused step=6] nodes=168 elapsed=16.21s
+[238][OK][step 6][+549.63s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=16.21s attempt=1/3"
+[239][OK][step 6][+549.63s] observation | nodes=168
+[observation_raw step=6]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=168 coverage=0.9092518739474722 degraded=True screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[240][OK][step 6][+549.63s] observation_raw | nodes=168
+[observe_complete step=6] nodes=168 elapsed=16.21s
+[241][OK][step 7][+549.63s] observation_raw | nodes=168
+[242][OK][step 7][+554.88s] observation_fused | screen='LIST' retention=1.0
+[243][OK][step 7][+554.88s] observation | nodes=168
+[244][OK][step 7][+554.88s] forward_task
+[245][OK][step 7][+554.88s] world_patch | screen='Screen #1' retention=1.0
+[246][OK][step 7][+554.88s] fusion_conflicts
+[247][OK][step 7][+554.88s] worldview_low
+[248][OK][step 6][+554.89s] step | message='low worldview / fusion conflict — re-observe' detail='1.2s'
+[observe_begin step=6] app=WhatsApp screenshot=True
+[249][OK][step 6][+556.09s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+[250][OK][step 6][+556.09s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=6 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=8350 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+  - ‎Search
+  - ‎New Call Link
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  03. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  04. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  05. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  06. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  07. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  08. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  09. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  10. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  ... 8340 more nodes
+[251][OK][step 6][+568.51s] observation_raw_source
+[observation_raw_source step=6 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[252][OK][step 6][+568.51s] observation_raw_source
+[observe_done_fused step=6] nodes=168 elapsed=14.95s
+[253][OK][step 6][+571.04s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 8350, 'macapptree': 0} elapsed=14.95s attempt=1/3"
+[254][OK][step 6][+571.04s] observation | nodes=168
+[observation_raw step=6]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax'
+nodes=168 coverage=0.9092518739474722 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuBarItem label='Apple' enabled=True bbox=(0.0, 24.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Bottom' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Bottom & Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 153 more nodes
+[255][OK][step 6][+571.04s] observation_raw | nodes=168
+[observe_complete step=6] nodes=168 elapsed=14.95s
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 574, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 509, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 1018, in run_goal_closed_loop
+    decision = eng.decide(
+               ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/decision.py", line 1599, in decide
+    raise LLMProviderExhaustedError(f"strict selector mode: {reason}")
+agent.auxiliary_client.LLMProviderExhaustedError: strict selector mode: not_ambiguous_enough
+[256][OK][step 7][+571.04s] observation_raw | nodes=168
+[257][OK][step 7][+575.80s] observation_fused | screen='LIST' retention=1.0
+[258][OK][step 7][+575.82s] goal_status

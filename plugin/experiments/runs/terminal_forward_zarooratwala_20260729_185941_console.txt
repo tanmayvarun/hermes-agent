@@ -1,0 +1,274 @@
+=== launch start 20260729_185941 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_185941.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_185941_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_185941_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observe_done_fused step=0] nodes=203 elapsed=1.87s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 284, 'macapptree': 0} elapsed=1.87s attempt=1/3"
+[012][OK][step 0] observation | nodes=203
+[observe_complete step=0] nodes=203 elapsed=1.89s
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:11.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:16.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:21.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:26.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:31.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:36.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:42.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:47.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:52.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:10:57.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:02.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:07.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:12.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:17.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:22.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:27.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:32.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:37.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:42.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:48.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:53.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:11:58.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:03.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:08.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:13.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:18.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:23.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:28.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:34.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:39.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:44.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:49.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:54.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:12:59.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:04.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:09.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:14.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:19.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:24.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:29.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:35.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:40.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:45.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:50.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:13:55.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:00.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:06.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:11.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:16.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:21.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:26.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:31.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:36.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:41.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:46.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:51.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:14:57.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:02.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:07.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:12.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:17.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:22.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:27.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:32.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:37.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:42.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:47.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:53.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:15:58.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:03.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:08.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:13.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:18.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:23.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:28.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:33.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:38.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:43.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:49.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:54.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:16:59.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:04.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:09.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:14.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:19.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:24.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:29.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:34.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:39.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:44.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:49.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:17:55.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:00.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:05.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:10.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:15.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:20.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:25.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:30.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:35.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:40.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:45.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:50.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:18:55.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:01.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:06.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:11.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:16.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:21.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:26.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:31.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:36.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:41.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:46.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:51.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:19:56.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:01.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:07.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:12.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:17.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:22.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:27.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:32.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:37.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:42.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:47.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:20:52.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback

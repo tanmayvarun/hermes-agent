@@ -16,11 +16,13 @@ The active provider is chosen by configuration with this precedence:
 2. ``web.backend`` (shared fallback).
 3. If exactly one capability-eligible provider is registered AND available,
    use it.
-4. Legacy preference order — ``firecrawl`` → ``parallel`` → ``tavily`` →
-   ``exa`` → ``searxng`` → ``brave-free`` → ``ddgs`` — filtered by
-   availability. Matches the historic ``tools.web_tools._get_backend()``
-   candidate order so installs that never set a config key keep landing
-   on the same provider they did before the plugin migration.
+4. Legacy preference order — ``google-search`` → ``firecrawl`` →
+   ``parallel`` → ``tavily`` → ``exa`` → ``searxng`` → ``brave-free`` →
+   ``ddgs`` — filtered by availability. Matches the historic
+   ``tools.web_tools._get_backend()`` candidate order so installs that
+   never set a config key keep landing on the same provider they did
+   before the plugin migration, with Google Search first when browser /
+   computer-use search is available.
 5. Otherwise ``None`` — the tool surfaces a helpful error pointing at
    ``hermes tools``.
 
@@ -120,6 +122,7 @@ def _read_config_key(*path: str) -> Optional[str]:
 # a free tier on upgrade). Filtered by ``is_available()`` at walk time so
 # we don't surface a provider the user has no credentials for.
 _LEGACY_PREFERENCE = (
+    "google-search",
     "firecrawl",
     "parallel",
     "tavily",

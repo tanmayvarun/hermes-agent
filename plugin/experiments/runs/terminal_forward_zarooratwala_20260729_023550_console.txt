@@ -1,0 +1,147 @@
+=== launch start 20260729_023550 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_023550.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_023550_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_023550_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=1.01s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 285, 'macapptree': 0} elapsed=1.01s"
+[012][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=1.03s
+Auxiliary: marking ollama-remote unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 02:47:59.
+Auxiliary perception: fallback candidate ollama-remote failed (Request timed out.) — trying next fallback
+Auxiliary perception: connection error on ollama-remote and no fallback available (tried: )
+Auxiliary perception: connection error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[013][OK][step 0] world_patch | screen='conversation' retention=1.0
+[014][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[015][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=181 elapsed=1.08s
+[018][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 234, 'macapptree': 0} elapsed=1.08s"
+[019][OK][step 0] observation | nodes=181
+[observe_complete step=0] nodes=181 elapsed=1.08s
+Auxiliary perception: connection error on auto and no fallback available (tried: ollama-remote (unhealthy))
+Auxiliary perception: connection error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 126, in read
+    with map_exceptions(exc_map):
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1005, in request
+    response = self._client.send(
+               ^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7353, in call_llm
+    raise _last_transient
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7347, in call_llm
+    client.chat.completions.create(**kwargs), task)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_utils/_utils.py", line 286, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1204, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1023, in request
+    raise APITimeoutError(request=request) from err
+openai.APITimeoutError: Request timed out.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 560, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 495, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 570, in run_goal_closed_loop
+    snap_pre = refresh_perception(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 329, in refresh_perception
+    return apply_observation(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 301, in apply_observation
+    view, feats, wv = build_view_features(runtime, goal)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 254, in build_view_features
+    perception = synthesize_perception(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_synthesis.py", line 425, in synthesize_perception
+    response = call_llm(
+               ^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7724, in call_llm
+    raise LLMProviderExhaustedError(
+agent.auxiliary_client.LLMProviderExhaustedError: Auxiliary perception: connection error on auto and all fallbacks exhausted

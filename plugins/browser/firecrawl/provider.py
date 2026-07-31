@@ -160,6 +160,8 @@ class FirecrawlBrowserProvider(BrowserProvider):
             "name": "Firecrawl",
             "badge": "paid",
             "tag": "Cloud browser with remote execution",
+            "background_safe": True,
+            "requires_human_cta": False,
             "env_vars": [
                 {
                     "key": "FIRECRAWL_API_KEY",

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 from hermes_constants import get_hermes_home
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 # rich and prompt_toolkit are imported lazily (inside the functions that use
 # them) rather than at module level.  Importing this module is on the TUI
@@ -935,3 +935,398 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
         console.print(_logo)
         console.print()
     console.print(outer_panel)
+
+
+# =========================================================================
+# Startup greeting + Health Check (Plugin / connected welcome_mode)
+# =========================================================================
+
+# Friendly capability labels → tool names that prove the capability is live.
+_CONNECTED_TOOL_PROBES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Files", ("read_file", "write_file", "search_files", "locate_file")),
+    ("Memory", ("memory",)),
+    ("Browser", ("browser_navigate",)),
+    ("Web Search", ("web_search",)),
+)
+
+# Health-check tools section (Search label; no Calendar).
+_HEALTH_TOOL_PROBES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Files", ("read_file", "write_file", "search_files", "locate_file")),
+    ("Browser", ("browser_navigate",)),
+    ("Search", ("web_search",)),
+    ("Memory", ("memory",)),
+)
+
+_HEALTH_BACKEND_TIMEOUT_S = 2.0
+
+
+def _tool_names_from_defs(tools: Optional[List[dict]]) -> set[str]:
+    names: set[str] = set()
+    for tool in tools or []:
+        if not isinstance(tool, dict):
+            continue
+        fn = tool.get("function")
+        if isinstance(fn, dict) and fn.get("name"):
+            names.add(str(fn["name"]))
+        elif tool.get("name"):
+            names.add(str(tool["name"]))
+    return names
+
+
+def _calendar_connected() -> bool:
+    """True when the google-workspace skill is present and calendar creds exist."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        home = get_hermes_home()
+    except Exception:
+        home = Path.home() / ".hermes"
+
+    token_path = home / "google_token.json"
+    if not token_path.is_file():
+        return False
+
+    # Skill must be discoverable (installed / not disabled).
+    try:
+        from tools.skills_tool import _find_all_skills
+
+        skills = _find_all_skills()
+        if not any(
+            isinstance(s, dict) and str(s.get("name") or "") == "google-workspace"
+            for s in skills
+        ):
+            return False
+    except Exception:
+        # Fall back to token presence alone if skill scan fails.
+        pass
+
+    # Prefer a token that includes calendar scope when the file is readable.
+    try:
+        data = json.loads(token_path.read_text(encoding="utf-8"))
+        scopes = data.get("scopes") or data.get("scope") or []
+        if isinstance(scopes, str):
+            scopes = scopes.split()
+        if scopes:
+            return any("calendar" in str(s).lower() for s in scopes)
+    except Exception:
+        pass
+    return True
+
+
+def probe_connected_capabilities(
+    tools: Optional[List[dict]] = None,
+) -> list[tuple[str, bool]]:
+    """Return ``(label, connected)`` pairs for the legacy Connected list."""
+    names = _tool_names_from_defs(tools)
+    results: list[tuple[str, bool]] = []
+    for label, probes in _CONNECTED_TOOL_PROBES:
+        results.append((label, any(p in names for p in probes)))
+    results.append(("Calendar", _calendar_connected()))
+    return results
+
+
+def _normalize_runtime(runtime: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(runtime, dict):
+        return {}
+    return {
+        "provider": str(runtime.get("provider") or "").strip(),
+        "model": str(runtime.get("model") or "").strip(),
+        "base_url": str(runtime.get("base_url") or "").strip().rstrip("/"),
+        "api_key": str(runtime.get("api_key") or "").strip(),
+    }
+
+
+def _probe_main_model(runtime: Dict[str, Any]) -> bool:
+    """True when primary provider/model resolve with usable auth."""
+    provider = runtime.get("provider") or ""
+    model = runtime.get("model") or ""
+    api_key = runtime.get("api_key") or ""
+    base_url = runtime.get("base_url") or ""
+
+    if not provider or not model:
+        try:
+            from hermes_cli.runtime_provider import resolve_runtime_provider
+
+            resolved = resolve_runtime_provider(
+                requested=provider or None,
+                target_model=model or None,
+            )
+            provider = str(resolved.get("provider") or provider).strip()
+            model = str(
+                resolved.get("model") or model or ""
+            ).strip() or model
+            # resolve_runtime_provider may not return model — keep caller's.
+            if not model:
+                from hermes_cli.config import load_config
+
+                cfg = load_config()
+                mcfg = cfg.get("model") if isinstance(cfg, dict) else {}
+                if isinstance(mcfg, dict):
+                    model = str(mcfg.get("default") or mcfg.get("model") or "").strip()
+                elif isinstance(mcfg, str):
+                    model = mcfg.strip()
+            api_key = str(resolved.get("api_key") or api_key).strip()
+            base_url = str(resolved.get("base_url") or base_url).strip().rstrip("/")
+            runtime.update(
+                {
+                    "provider": provider,
+                    "model": model,
+                    "api_key": api_key,
+                    "base_url": base_url,
+                }
+            )
+        except Exception:
+            return False
+
+    if not provider or not model:
+        return False
+
+    # Anonymous / omit-auth providers are OK without a real key.
+    try:
+        from providers import get_provider_profile
+
+        profile = get_provider_profile(provider)
+        if profile is not None and getattr(profile, "allows_no_api_key", False):
+            return True
+    except Exception:
+        pass
+
+    from providers.base import OMIT_AUTH_API_KEY
+
+    if api_key and api_key != OMIT_AUTH_API_KEY:
+        return True
+    # Some resolvers leave a placeholder; base_url alone is not enough unless
+    # the provider allows anonymous access (handled above).
+    return False
+
+
+def _probe_vision_model(runtime: Dict[str, Any]) -> bool:
+    try:
+        from agent.auxiliary_client import resolve_vision_provider_client
+
+        _prov, client, _model = resolve_vision_provider_client(
+            provider="auto",
+            main_runtime={
+                "provider": runtime.get("provider") or None,
+                "model": runtime.get("model") or None,
+                "base_url": runtime.get("base_url") or None,
+                "api_key": runtime.get("api_key") or None,
+            },
+        )
+        return client is not None
+    except Exception:
+        return False
+
+
+def _probe_embeddings() -> bool:
+    """Best-effort: configured auxiliary.embedding, else ✗."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config()
+        aux = cfg.get("auxiliary") if isinstance(cfg, dict) else None
+        emb = aux.get("embedding") if isinstance(aux, dict) else None
+        if not isinstance(emb, dict):
+            return False
+        provider = str(emb.get("provider") or "").strip()
+        model = str(emb.get("model") or "").strip()
+        if provider and provider.lower() not in {"", "auto", "none", "off"}:
+            return True
+        if model:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _probe_backend_connected(runtime: Dict[str, Any]) -> bool:
+    """GET ``{base_url}/models`` within a short timeout."""
+    base_url = (runtime.get("base_url") or "").strip().rstrip("/")
+    if not base_url:
+        return False
+    api_key = (runtime.get("api_key") or "").strip()
+    url = f"{base_url}/models"
+    headers: Dict[str, str] = {}
+    try:
+        from providers.base import OMIT_AUTH_API_KEY
+
+        if api_key and api_key != OMIT_AUTH_API_KEY:
+            headers["Authorization"] = f"Bearer {api_key}"
+    except Exception:
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=_HEALTH_BACKEND_TIMEOUT_S) as resp:
+            return 200 <= int(getattr(resp, "status", 200)) < 500
+    except Exception:
+        # Some gateways reject /models but still serve chat — soft-pass when
+        # main model already resolved with usable credentials / anonymous OK.
+        if not (runtime.get("provider") and runtime.get("model")):
+            return False
+        if runtime.get("api_key"):
+            return True
+        try:
+            from providers import get_provider_profile
+
+            profile = get_provider_profile(str(runtime.get("provider") or ""))
+            return bool(profile and getattr(profile, "allows_no_api_key", False))
+        except Exception:
+            return False
+
+
+def probe_startup_health(
+    tools: Optional[List[dict]] = None,
+    *,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Run fast Plugin startup health probes.
+
+    Returns::
+
+        {
+          "models": [("Main model", bool), ("Vision model", bool), ("Embeddings", bool)],
+          "tools": [("Files", bool), ...],
+          "backend": [("Connected", bool)],
+          "adaptation_notes": ["Vision: unsupported", "Removing vision tools..."],
+        }
+    """
+    rt = _normalize_runtime(runtime)
+    # Fill gaps from resolve so backend probe has base_url even when CLI
+    # only passed provider/model.
+    main_ok = _probe_main_model(rt)
+
+    # Main-model vision capability (not auxiliary backend availability).
+    vision_strip = False
+    try:
+        from agent.vision_capability import should_strip_vision_tools
+
+        vision_strip = should_strip_vision_tools(
+            rt.get("provider"), rt.get("model")
+        )
+    except Exception:
+        vision_strip = False
+    vision_ok = not vision_strip
+    embeddings_ok = _probe_embeddings()
+
+    # When vision tools are stripped, they should not appear as "connected".
+    effective_tools = list(tools or [])
+    if vision_strip:
+        try:
+            from agent.vision_capability import strip_vision_tools
+
+            effective_tools, _ = strip_vision_tools(effective_tools)
+        except Exception:
+            pass
+
+    names = _tool_names_from_defs(effective_tools)
+    tool_items = [
+        (label, any(p in names for p in probes))
+        for label, probes in _HEALTH_TOOL_PROBES
+    ]
+
+    backend_ok = _probe_backend_connected(rt) if main_ok else False
+
+    notes: list[str] = []
+    if vision_strip:
+        notes.append("Vision: unsupported")
+        notes.append("Removing vision tools...")
+
+    return {
+        "models": [
+            ("Main model", main_ok),
+            ("Vision model", vision_ok),
+            ("Embeddings", embeddings_ok),
+        ],
+        "tools": tool_items,
+        "backend": [("Connected", backend_ok)],
+        "runtime": rt,
+        "adaptation_notes": notes,
+    }
+
+
+def format_health_check_report(health: Dict[str, Any]) -> list[str]:
+    """Render the Checking models/tools/backend blocks as plain lines."""
+    lines: list[str] = []
+
+    def _section(title: str, items: list) -> None:
+        lines.append(title)
+        for label, ok in items or []:
+            mark = "✓" if ok else "✗"
+            lines.append(f"{mark} {label}")
+
+    _section("Checking models...", health.get("models") or [])
+    notes = health.get("adaptation_notes") or []
+    if notes:
+        lines.append("")
+        lines.extend(str(n) for n in notes)
+    lines.append("")
+    _section("Checking tools...", health.get("tools") or [])
+    lines.append("")
+    _section("Checking backend...", health.get("backend") or [])
+    return lines
+
+
+def format_startup_greeting(
+    tools: Optional[List[dict]] = None,
+    *,
+    skin=None,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Build the post-banner welcome string for the active skin.
+
+    When ``branding.welcome_mode`` is ``connected``, renders:
+
+        Welcome to {agent_name}
+
+        {tagline}
+
+        Checking models...
+        ✓/✗ ...
+        Checking tools...
+        ...
+        Checking backend...
+        ...
+
+        {cta}
+
+    Otherwise returns the classic single-line ``branding.welcome``.
+    """
+    try:
+        if skin is None:
+            from hermes_cli.skin_engine import get_active_skin
+
+            skin = get_active_skin()
+        welcome_mode = str(skin.get_branding("welcome_mode", "") or "").strip().lower()
+        agent_name = skin.get_branding("agent_name", "Hermes Agent") or "Hermes Agent"
+        classic = skin.get_branding(
+            "welcome",
+            "Welcome to Hermes Agent! Type your message or /help for commands.",
+        )
+    except Exception:
+        return "Welcome to Hermes Agent! Type your message or /help for commands."
+
+    if welcome_mode != "connected":
+        return classic
+
+    tagline = skin.get_branding("tagline", "I'm your personal AI agent.") or (
+        "I'm your personal AI agent."
+    )
+    cta = skin.get_branding("cta", "Type anything to begin.") or (
+        "Type anything to begin."
+    )
+
+    health = probe_startup_health(tools, runtime=runtime)
+    lines = [
+        f"Welcome to {agent_name}",
+        "",
+        tagline,
+        "",
+        *format_health_check_report(health),
+        "",
+        cta,
+    ]
+    return "\n".join(lines)

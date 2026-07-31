@@ -518,76 +518,23 @@ export function fromSkin(
   toolPrefix = '',
   helpHeader = ''
 ): Theme {
+  // Contrast comes only from LIGHT_THEME / DARK_THEME (via DEFAULT_THEME).
+  // Skin YAML colors are ignored — skins are branding-only.
   const d = DEFAULT_THEME
-  const c = (k: string) => colors[k]
-  const hasSkinColors = Object.keys(colors).length > 0
+  void colors
 
-  const accent = c('ui_accent') ?? c('banner_accent') ?? d.color.accent
-  const bannerAccent = c('banner_accent') ?? c('banner_title') ?? d.color.accent
-  const muted = c('banner_dim') ?? d.color.muted
-  const completionBg = c('completion_menu_bg') ?? d.color.completionBg
-
-  const completionCurrentBg =
-    c('completion_menu_current_bg') ??
-    (hasSkinColors ? mix(completionBg, bannerAccent, 0.25) : d.color.completionCurrentBg)
-
-  const completionMetaBg = c('completion_menu_meta_bg') ?? completionBg
-  const completionMetaCurrentBg = c('completion_menu_meta_current_bg') ?? completionCurrentBg
-
-  return normalizeThemeForAnsiLightTerminal(
-    {
-      color: {
-        primary: c('ui_primary') ?? c('banner_title') ?? d.color.primary,
-        accent,
-        border: c('ui_border') ?? c('banner_border') ?? d.color.border,
-        text: c('ui_text') ?? c('banner_text') ?? d.color.text,
-        muted,
-        completionBg,
-        completionCurrentBg,
-        completionMetaBg,
-        completionMetaCurrentBg,
-
-        label: c('ui_label') ?? d.color.label,
-        ok: c('ui_ok') ?? d.color.ok,
-        error: c('ui_error') ?? d.color.error,
-        warn: c('ui_warn') ?? d.color.warn,
-
-        prompt: c('prompt') ?? c('banner_text') ?? d.color.prompt,
-        sessionLabel: c('session_label') ?? muted,
-        sessionBorder: c('session_border') ?? muted,
-
-        statusBg: d.color.statusBg,
-        statusFg: d.color.statusFg,
-        statusGood: c('ui_ok') ?? d.color.statusGood,
-        statusWarn: c('ui_warn') ?? d.color.statusWarn,
-        statusBad: d.color.statusBad,
-        statusCritical: d.color.statusCritical,
-        selectionBg:
-          c('selection_bg') ??
-          c('completion_menu_current_bg') ??
-          (hasSkinColors ? completionCurrentBg : d.color.selectionBg),
-
-        diffAdded: d.color.diffAdded,
-        diffRemoved: d.color.diffRemoved,
-        diffAddedWord: d.color.diffAddedWord,
-        diffRemovedWord: d.color.diffRemovedWord,
-        shellDollar: c('shell_dollar') ?? d.color.shellDollar
-      },
-
-      brand: {
-        name: branding.agent_name ?? d.brand.name,
-        icon: d.brand.icon,
-        prompt: cleanPromptSymbol(branding.prompt_symbol, d.brand.prompt),
-        welcome: branding.welcome ?? d.brand.welcome,
-        goodbye: branding.goodbye ?? d.brand.goodbye,
-        tool: toolPrefix || d.brand.tool,
-        helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
-      },
-
-      bannerLogo,
-      bannerHero
+  return {
+    color: { ...d.color },
+    brand: {
+      name: branding.agent_name ?? d.brand.name,
+      icon: d.brand.icon,
+      prompt: cleanPromptSymbol(branding.prompt_symbol, d.brand.prompt),
+      welcome: branding.welcome ?? d.brand.welcome,
+      goodbye: branding.goodbye ?? d.brand.goodbye,
+      tool: toolPrefix || d.brand.tool,
+      helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
     },
-    process.env,
-    DEFAULT_LIGHT_MODE
-  )
+    bannerLogo,
+    bannerHero
+  }
 }

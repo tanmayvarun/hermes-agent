@@ -1,6 +1,6 @@
 # Tool Search live test harness
 
-Runs five scenarios against a real model (Claude Haiku 4.5 via OpenRouter) to
+Runs six scenarios against a real model (Claude Haiku 4.5 via OpenRouter) to
 verify that the bridge tools work end-to-end. Records transcripts in
 `scripts/out/`.
 
@@ -8,7 +8,7 @@ verify that the bridge tools work end-to-end. Records transcripts in
 
 ```bash
 cd <repo root>
-python3 scripts/tool_search_livetest.py        # runs all 5 scenarios x 2 modes
+python3 scripts/tool_search_livetest.py        # runs all 6 scenarios x 2 modes
 python3 scripts/analyze_livetest.py            # side-by-side report
 ```
 
@@ -23,6 +23,7 @@ Requires `OPENROUTER_API_KEY` set or present in `~/.hermes/.env`.
 | C multi_tool_chain | Multi-step task chaining two deferred tools (GitHub + Slack) |
 | D core_plus_deferred | Mixed: core tool (read_file) called directly, deferred tool (Slack) via bridge |
 | E no_tool_needed | Pure-knowledge prompt; verify no spurious tool_search invocations |
+| F write_documents_summary | Core file-write task: create a text file in the documents folder with a short summary |
 
 Each scenario runs with `tool_search.enabled = on` and again with `off` for an
 A/B baseline. The harness records:

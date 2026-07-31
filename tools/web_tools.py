@@ -239,6 +239,7 @@ def _get_backend() -> str:
     # with "no subscription" and the tool returns an error to the agent
     # without falling back). Free-tier backends trail the paid ones.
     backend_candidates = (
+        ("google-search", _is_backend_available("google-search")),
         ("tavily", _has_env("TAVILY_API_KEY")),
         ("exa", _has_env("EXA_API_KEY")),
         ("parallel", _has_env("PARALLEL_API_KEY")),
@@ -672,8 +673,9 @@ def web_search_tool(query: str, limit: int = 5) -> str:
         if is_interrupted():
             return tool_error("Interrupted", success=False)
 
-        # Dispatch through the web search registry. All 7 providers
-        # (brave-free, ddgs, searxng, exa, parallel, tavily, firecrawl)
+        # Dispatch through the web search registry. All bundled providers
+        # (google-search, brave-free, ddgs, searxng, exa, parallel,
+        # tavily, firecrawl, xai)
         # now live as plugins; the dispatcher is just a registry lookup +
         # delegation. Sync only — every provider's search() is sync.
         _ensure_web_plugins_loaded()
@@ -721,6 +723,12 @@ def web_search_tool(query: str, limit: int = 5) -> str:
                 provider.name, query, limit,
             )
             response_data = provider.search(query, limit)
+            if isinstance(response_data, dict):
+                provider_label = getattr(provider, "display_name", None)
+                if not isinstance(provider_label, str) or not provider_label.strip():
+                    provider_label = provider.name
+                response_data.setdefault("provider", provider.name)
+                response_data.setdefault("provider_label", provider_label)
 
         debug_call_data["results_count"] = len(response_data.get("data", {}).get("web", []))
         result_json = json.dumps(response_data, indent=2, ensure_ascii=False)

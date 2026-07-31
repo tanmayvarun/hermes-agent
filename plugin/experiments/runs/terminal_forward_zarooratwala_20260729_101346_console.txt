@@ -1,0 +1,76 @@
+=== launch start 20260729_101346 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_101346.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_101346_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_101346_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observe_done_fused step=0] nodes=207 elapsed=1.41s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 285, 'macapptree': 0} elapsed=1.41s attempt=1/3"
+[012][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=1.43s
+[013][OK][step 0] world_patch | screen='conversation' retention=1.0
+[014][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[015][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observe_done_fused step=0] nodes=207 elapsed=0.51s
+[018][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 287, 'macapptree': 0} elapsed=0.51s attempt=1/3"
+[019][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=0.51s
+[020][OK][step 1] observation | nodes=207
+[021][OK][step 1] forward_task
+[022][OK][step 1] world_patch | screen='dialog' retention=1.0
+[023][OK][step 1] fusion_conflicts
+[024][OK][step 1] goal_status
+[025][OK][step 1] decision_engine
+[026][OK][step 1] planner_decision
+[027][OK][step 1] execution | message='typed \'Kulvinder\' into search field label=\'Search\' AXValue=\'Kulvinder\' open=\'Cmd+F search shortcut\' evidence="AXStaticText title=\'Kulvinder\' desc=\'Search\'" attempts=[\'open=Cmd+F search shortcut\', \'paste=True\'] submit=False' backend='ax'
+[028][OK][step 1] step | message='transition settle' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[029][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[030][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observe_done_fused step=1] nodes=221 elapsed=0.79s
+[031][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 318, 'macapptree': 0} elapsed=0.79s attempt=1/3"
+[032][OK][step 1] observation | nodes=221
+[observe_complete step=1] nodes=221 elapsed=0.79s
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 560, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 495, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 1039, in run_goal_closed_loop
+    transition, _after_wm, post_view = monitor.wait_for_change_or_stability(
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/transition/monitor.py", line 156, in wait_for_change_or_stability
+    world = ingest(obs)
+            ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 1027, in _ingest_obs
+    apply_observation(
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 307, in apply_observation
+    view, feats, wv = build_view_features(runtime, goal)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 260, in build_view_features
+    perception = synthesize_perception(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_synthesis.py", line 577, in synthesize_perception
+    response = _call_llm_hard_timeout(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_synthesis.py", line 325, in _call_llm_hard_timeout
+    raise TimeoutError(f"perception llm timed out after {timeout_s:.1f}s")
+TimeoutError: perception llm timed out after 60.0s

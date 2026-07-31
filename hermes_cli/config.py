@@ -1011,6 +1011,27 @@ DEFAULT_CONFIG = {
     "max_live_sessions": 16,
     "agent": {
         "max_turns": 90,
+        # Closed-loop action/observe step budget. This caps the number of
+        # actuator decisions a goal run may take before surfacing a budget
+        # failure. Leaf runners may lower this for surfaces that usually
+        # complete in a small number of visible steps (for example WhatsApp).
+        # 0/null = fall back to the caller's max_iterations ceiling.
+        "max_stepcount": 10,
+        # Soft wall-clock budget for the next action selector when the goal
+        # loop needs the LLM to choose the next actuator. This is intentionally
+        # small for realtime chat / computer-use flows, but still configurable
+        # so slower local or cloud models can be given more breathing room.
+        "decision_selector_timeout_seconds": 5,
+        "decision_high_risk_selector_timeout_seconds": 60,
+        # Soft wall-clock ceiling for the whole goal run. This is not an
+        # inactivity watchdog; it measures real elapsed time for the
+        # closed-loop task and fails fast if the run keeps making non-
+        # convergent progress past the configured budget.
+        "goal_run_timeout_seconds": 900,
+        # Soft wall-clock budget for "no meaningful progress" within a goal
+        # run. This does not end the run by itself; it drives warnings and
+        # backtrack pressure when the loop is alive but not advancing.
+        "goal_no_progress_timeout_seconds": 45,
         # Inactivity timeout for gateway agent execution (seconds).
         # The agent can run indefinitely as long as it's actively calling
         # tools or receiving API responses.  Only fires when the agent has
@@ -1057,6 +1078,15 @@ DEFAULT_CONFIG = {
         # api_modes — fixes the Gemini/Claude "stops after stating intent" case),
         # false (never), or a list of model-name substrings to match.
         "intent_ack_continuation": "auto",
+        # Irreversible actuator gate: actions that create an external footprint
+        # (for example initiating a call or sending a message) must clear this
+        # confidence threshold before execution. Reversible actions may still
+        # run below it. Configure in config.yaml; default is 0.7.
+        "irreversible_action_confidence_threshold": 0.7,
+        # High-risk selector reasoning depth for irreversible actuator choices.
+        # This feeds the dedicated cloud reasoning path used when the agent is
+        # about to leave an external footprint. Keep this strong by default.
+        "high_risk_selector_reasoning_effort": "high",
         # Universal "finish the job" guidance — short prompt block applied to
         # all models that targets two cross-family failure modes: (1) stopping
         # after a stub instead of finishing the artifact, (2) fabricating
@@ -1636,6 +1666,17 @@ DEFAULT_CONFIG = {
             "reasoning_effort": "",  # per-task thinking level: none|minimal|low|medium|high|xhigh|max|ultra (empty = provider default)
             "download_timeout": 30,  # seconds — image HTTP download timeout; increase for slow connections
         },
+        "perception": {
+            "provider": "ollama-remote",
+            "model": "qwen2.5:32b",
+            "base_url": "",
+            "api_key": "",
+            "timeout": 45,         # seconds — screen-perception summaries should stay responsive
+            "extra_body": {
+                "format": "json",
+            },
+            "reasoning_effort": "low",  # keep structured perception compact and JSON-friendly
+        },
         "web_extract": {
             "provider": "auto",
             "model": "",
@@ -1695,6 +1736,15 @@ DEFAULT_CONFIG = {
             "extra_body": {},
             "reasoning_effort": "",  # per-task thinking level: none|minimal|low|medium|high|xhigh|max|ultra (empty = provider default)
             "language": "",
+        },
+        "decision_high_risk": {
+            "provider": "auto",
+            "model": "gpt-5.5",
+            "base_url": "",
+            "api_key": "",
+            "timeout": 45,
+            "extra_body": {},
+            "reasoning_effort": "high",  # strong reasoning for irreversible actuator choices
         },
         "memory_query_rewrite": {
             "provider": "auto",
@@ -1882,6 +1932,10 @@ DEFAULT_CONFIG = {
         # seconds, and with this off the user stares at a spinner the whole
         # time even though tokens are streaming. Set false for quiet output.
         "show_reasoning": True,
+        # Show a lightweight source attribution chip when a turn has a clear
+        # upstream provider/tool source (e.g. Google Search). This is separate
+        # from reasoning blocks and can be toggled independently in the UI.
+        "show_attribution": False,
         # When reasoning display is on, the post-response "Reasoning" recap box
         # collapses long thinking to the first 10 lines. Set true to print the
         # complete thinking text uncollapsed (live streaming is always full).
@@ -1928,6 +1982,9 @@ DEFAULT_CONFIG = {
         "turn_completion_explainer": True,
         "show_cost": False,       # Show $ cost in the status bar (off by default)
         "skin": "default",
+        # Contrast: light | dark | auto. Skins are branding-only; colors
+        # always come from the light/dark palettes in display_mode.py.
+        "theme": "auto",
         # UI language for static user-facing messages (approval prompts, a
         # handful of gateway slash-command replies).  Does NOT affect agent
         # responses, log lines, tool outputs, or slash-command descriptions.
@@ -7407,6 +7464,14 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
         if managed_config:
             managed_expanded = _expand_env_vars(managed_config)
             expanded = _deep_merge(expanded, managed_expanded)
+        # Enforce model.min_params_b: drop undersized fallbacks and promote
+        # the first qualifying fallback when the primary is below the floor.
+        try:
+            from hermes_cli.fallback_config import apply_min_params_b
+
+            apply_min_params_b(expanded)
+        except Exception:
+            logger.debug("apply_min_params_b failed", exc_info=True)
         _LAST_EXPANDED_CONFIG_BY_PATH[path_key] = copy.deepcopy(expanded)
         if cache_sig is not None:
             # Cache stores a separate deepcopy so subsequent ``load_config()``

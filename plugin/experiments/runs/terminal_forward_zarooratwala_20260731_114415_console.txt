@@ -1,0 +1,98 @@
+=== launch start 20260731_114415 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_114415.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_114415_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_114415_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[011][OK][step 0] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[012][OK][step 0] observation_raw_source
+[observe_done_fused step=0] nodes=1 elapsed=3.74s
+[013][OK][step 0] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=3.74s attempt=1/3"
+[014][OK][step 0] observation | nodes=1
+[observation_raw step=0]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[015][OK][step 0] observation_raw | nodes=1
+[observe_complete step=0] nodes=1 elapsed=3.78s
+[016][OK][step 0] world_patch | screen='Screen #1' retention=1.0
+[017][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[018][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[019][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[020][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=230 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - Smart Links
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXMenuBar label='' enabled=True bbox=(0.0, 0.0, 1710.0, 38.0)
+  03. role=AXMenuBarItem label='Apple' enabled=True bbox=(10.0, 0.0, 34.0, 38.0)
+  04. role=AXMenu label='' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  05. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  06. role=AXMenuItem label='System Information' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  07. role=AXMenuItem label='' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  08. role=AXMenuItem label='System Settings…, 1 update' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  09. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  10. role=AXMenuItem label='' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  ... 220 more nodes
+[021][OK][step 0] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[022][OK][step 0] observation_raw_source
+[observe_done_fused step=0] nodes=170 elapsed=0.61s
+[023][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 230, 'macapptree': 0} elapsed=0.61s attempt=1/3"
+[024][OK][step 0] observation | nodes=170
+[observation_raw step=0]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=170 coverage=0.8644127435889682 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  02. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  03. role=AXMenuItem label='Settings' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  04. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  05. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  06. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  07. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  08. role=AXMenuBarItem label='Apple' enabled=True bbox=(10.0, 0.0, 34.0, 38.0)
+  09. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  10. role=AXMenuItem label='APR2026_settlement_details_report_20260723_195156' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Archived' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  12. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Arrange in Front' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  14. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1107.0, 0.0, 0.0)
+  15. role=AXMenuItem label='Back' enabled=False bbox=(0.0, 1107.0, 0.0, 0.0)
+  ... 155 more nodes
+[025][OK][step 0] observation_raw | nodes=170
+[observe_complete step=0] nodes=170 elapsed=0.61s

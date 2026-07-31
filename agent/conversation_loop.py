@@ -2698,16 +2698,44 @@ def run_conversation(
                     and _looks_like_image_rejection
                     and _status_ok
                 ):
+                    _already_adapted = bool(
+                        getattr(agent, "_vision_tools_stripped", False)
+                    )
                     agent._vision_supported = False
+                    agent._vision_tools_stripped = True
                     _imgs_removed = _strip_images_from_messages(messages)
                     if isinstance(api_messages, list):
                         _strip_images_from_messages(api_messages)
-                    agent._vprint(
-                        f"{agent.log_prefix}⚠️  Server rejected image content — "
-                        f"switching to text-only mode for this session"
-                        + (". Stripped images from history and retrying." if _imgs_removed else "."),
-                        force=True,
-                    )
+                    # Some gateways (e.g. LLM7) reject the *whole request* when
+                    # vision-related tools appear in the tools array — even with
+                    # no image content in messages. Drop those tools so the
+                    # text-only retry can succeed.
+                    from agent.vision_capability import VISION_SCHEMA_TOOL_NAMES
+
+                    _VISION_TOOL_NAMES = VISION_SCHEMA_TOOL_NAMES
+                    _tools_before = len(agent.tools or [])
+                    if agent.tools:
+                        agent.tools = [
+                            t for t in agent.tools
+                            if (t.get("function") or {}).get("name") not in _VISION_TOOL_NAMES
+                        ]
+                    _tools_removed = _tools_before - len(agent.tools or [])
+                    # Already adapted at startup — stay quiet (no scary warning).
+                    if _already_adapted:
+                        logger.debug(
+                            "vision rejection after proactive strip "
+                            "(tools_removed=%s imgs_removed=%s); retrying quietly",
+                            _tools_removed,
+                            _imgs_removed,
+                        )
+                    else:
+                        agent._vprint(
+                            f"{agent.log_prefix}⚠️  Server rejected image content — "
+                            f"switching to text-only mode for this session"
+                            + (". Stripped images from history and retrying." if _imgs_removed else ".")
+                            + (f" Removed {_tools_removed} vision tool(s)." if _tools_removed else ""),
+                            force=True,
+                        )
                     continue
 
                 # ── Bedrock AnthropicBedrock SDK streaming failure ──

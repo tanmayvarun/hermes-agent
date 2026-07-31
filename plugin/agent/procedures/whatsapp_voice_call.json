@@ -1,0 +1,54 @@
+{
+  "id": "whatsapp_voice_call",
+  "title": "Initiate a voice call from the conversation surface",
+  "app": "WhatsApp",
+  "summary": "Open the conversation, surface the call affordance, and start a call only once the target contact is grounded.",
+  "goal_kinds": ["whatsapp_voice_call"],
+  "family_keys": ["whatsapp_call"],
+  "tags": ["call", "voice", "audio", "ring", "conversation"],
+  "keywords": ["call", "voice", "audio", "ring", "phone", "conversation", "contact"],
+  "stages": [
+    {
+      "id": "open_conversation",
+      "objective": "open conversation with {contact}",
+      "required_predicates": ["source_conversation_open"],
+      "preferred_capabilities": ["OpenConversation", "SelectConversation"],
+      "recovery": ["search the contact", "return to chat list"],
+      "reversible": true,
+      "confidence_threshold": 0.55
+    },
+    {
+      "id": "reach_call_surface",
+      "objective": "reach the call surface",
+      "required_predicates": ["forward_surface_open"],
+      "preferred_capabilities": ["InitiateVoiceCall", "InitiateVideoCall"],
+      "recovery": ["open the call picker", "use the contact header"],
+      "reversible": true,
+      "confidence_threshold": 0.55
+    },
+    {
+      "id": "start_call",
+      "objective": "initiate the call",
+      "required_predicates": ["forward_completed"],
+      "preferred_capabilities": ["InitiateVoiceCall"],
+      "recovery": ["click the call CTA", "choose the voice option"],
+      "reversible": false,
+      "confidence_threshold": 0.7,
+      "notes": "Irreversible actuator; should only be selected when confidence is strong."
+    },
+    {
+      "id": "verify_ring",
+      "objective": "verify the call is ringing",
+      "required_predicates": ["forward_completed"],
+      "preferred_capabilities": ["Observe"],
+      "recovery": ["re-observe the call chrome", "treat ghost chrome as untrusted"],
+      "reversible": true,
+      "confidence_threshold": 0.45
+    }
+  ],
+  "metadata": {
+    "risk": "high",
+    "train_stage": "call"
+  }
+}
+

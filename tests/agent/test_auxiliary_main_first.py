@@ -168,8 +168,19 @@ class TestResolveAutoMainFirst:
             "agent.auxiliary_client.resolve_provider_client",
             return_value=(None, None),  # main provider has no client
         ), patch(
-            "agent.auxiliary_client._try_openrouter",
-            return_value=(chain_client, "google/gemini-3-flash-preview"),
+            "agent.auxiliary_client._try_configured_fallback_chain",
+            return_value=(None, None, ""),
+        ), patch(
+            "agent.auxiliary_client._try_main_fallback_chain",
+            return_value=(None, None, ""),
+        ), patch(
+            "agent.auxiliary_client._get_provider_chain",
+            return_value=[
+                (
+                    "openrouter/openai/gpt-oss-120b",
+                    lambda: (chain_client, "google/gemini-3-flash-preview"),
+                )
+            ],
         ):
             from agent.auxiliary_client import _resolve_auto
 
@@ -244,8 +255,19 @@ class TestResolveAutoMainFirst:
         ), patch(
             "agent.auxiliary_client._read_main_model", return_value="",
         ), patch(
-            "agent.auxiliary_client._try_openrouter",
-            return_value=(chain_client, "google/gemini-3-flash-preview"),
+            "agent.auxiliary_client._try_configured_fallback_chain",
+            return_value=(None, None, ""),
+        ), patch(
+            "agent.auxiliary_client._try_main_fallback_chain",
+            return_value=(None, None, ""),
+        ), patch(
+            "agent.auxiliary_client._get_provider_chain",
+            return_value=[
+                (
+                    "openrouter/openai/gpt-oss-120b",
+                    lambda: (chain_client, "google/gemini-3-flash-preview"),
+                )
+            ],
         ):
             from agent.auxiliary_client import _resolve_auto
 
@@ -545,7 +567,7 @@ class TestResolveVisionMainFirst:
             provider, client, model = resolve_vision_provider_client()
 
         assert client is fallback_client
-        assert provider in {"openrouter", "nous"}
+        assert provider in {"ollama-remote", "nous", "deepinfra"}
 
     def test_explicit_provider_override_still_wins(self):
         """Explicit config override bypasses main-first policy."""

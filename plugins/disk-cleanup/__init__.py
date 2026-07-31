@@ -12,7 +12,7 @@ Wires three behaviours:
    logs a single line to ``$HERMES_HOME/disk-cleanup/cleanup.log``.
 
 3. ``/disk-cleanup`` slash command — manual ``status``, ``dry-run``,
-   ``quick``, ``deep``, ``track``, ``forget``.
+   ``quick``, ``deep``, ``analyze``, ``track``, ``forget``.
 
 Replaces PR #12212's skill-plus-script design: the agent no longer
 needs to remember to run commands.
@@ -200,6 +200,7 @@ Subcommands:
   dry-run                    Preview what quick/deep would delete
   quick                      Run safe cleanup now (no prompts)
   deep                       Run quick, then list items that need prompts
+  analyze                    Show low-risk cleanup targets before acting
   track <path> <category>    Manually add a path to tracking
   forget <path>              Stop tracking a path (does not delete)
 
@@ -252,6 +253,10 @@ def _handle_slash(raw_args: str) -> Optional[str]:
 
     if sub == "quick":
         return _fmt_summary(dg.quick())
+
+    if sub == "analyze":
+        analysis = dg.analyze_low_risk_cleanup_targets()
+        return dg.format_cleanup_analysis(analysis)
 
     if sub == "deep":
         # In-session deep can't prompt the user interactively — show what

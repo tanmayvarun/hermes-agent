@@ -165,6 +165,15 @@ sacred:
   cancel gesture does exactly one thing.
 - Expensive, stateful surfaces (terminals, live tools) stay alive when hidden.
   Visibility is not lifecycle.
+- Actions that leave a durable external footprint need a confidence gate.
+  Prefer a model-backed selector plus a configurable irreversible-action
+  threshold over any click-order heuristic.
+- App-specific semantic layers may exist, but they are read-only lenses over
+  the shared world model. They may refine labels and region meaning, but they
+  must not become planners or embed recovery heuristics.
+- Learning should prefer reusable interface trajectories. If a state/action
+  pair consistently leads to a useful next UI state, that signal belongs in the
+  generic core memory, not in a one-off desktop-only shortcut.
 
 ## Make it feel instant
 

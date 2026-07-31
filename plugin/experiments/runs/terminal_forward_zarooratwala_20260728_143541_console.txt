@@ -1,0 +1,113 @@
+=== launch start 20260728_143541 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260728_143541.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260728_143541_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260728_143541_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=0.76s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 285, 'macapptree': 0} elapsed=0.76s"
+[012][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=0.77s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:45:47.
+Auxiliary: marking openrouter unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:45:47.
+Auxiliary conversation_relevance: fallback candidate openrouter failed (Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1785283200000'}, 'provider_name': None}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:46:06.
+[013][OK][step 0] world_patch | screen='call' retention=1.0
+[014][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[015][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=0.59s
+[018][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 287, 'macapptree': 0} elapsed=0.59s"
+[019][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=0.59s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:46:16.
+Auxiliary: marking ovhcloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:46:17.
+Auxiliary conversation_relevance: fallback candidate ovhcloud failed (Error code: 429 - {'message': 'API rate limit exceeded', 'request_id': '51ef43534920365712c6c538cb8ccb3d'}) — trying next fallback
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:46:26.
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:46:33.
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:46:38.
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:46:45.
+[020][OK][step 1] observation | nodes=207
+[021][OK][step 1] forward_task
+[022][OK][step 1] world_patch | screen='dialog' retention=1.0
+[023][OK][step 1] fusion_conflicts
+[024][OK][step 1] goal_status
+[025][OK][step 1] decision_engine
+[026][OK][step 1] planner_decision
+[027][OK][step 1] execution | message='typed \'Kulvinder\' into search field label=\'Search\' AXValue=\'Kulvinder\' open=\'Cmd+F search shortcut\' evidence="AXStaticText title=\'Kulvinder\' desc=\'Search\'" attempts=[\'open=Cmd+F search shortcut\', \'paste=True\'] submit=False' backend='ax'
+[028][OK][step 1] step | message='transition settle' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[029][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[030][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=221 elapsed=0.89s
+[031][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 318, 'macapptree': 0} elapsed=0.89s"
+[032][OK][step 1] observation | nodes=221
+[observe_complete step=1] nodes=221 elapsed=0.89s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:47:02.
+Auxiliary: marking api-key unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 14:47:03.
+Auxiliary perception: fallback candidate api-key failed (Error code: 429 - {'id': 'b10bd1e4-9b66-4028-a738-3bf2ca22dfe5', 'message': "You are using a Trial key, which is limited to 1000 API calls / month. You can continue to use the Trial key for free or upgrade to a Production key with higher rate limits at 'https://dashboard.cohere.com/api-keys'. Contact us on 'https://discord.gg/XW44jPfYJu' or email us at support@cohere.com with any questions"}) — trying next fallback
+Auxiliary Nous client unavailable: no Nous authentication found (run: hermes auth).
+Auxiliary: marking nous unhealthy for 60s (payment / credit error). Subsequent auxiliary calls will skip it until 14:38:03.
+Auxiliary perception: payment error on api-key and no fallback available (tried: openrouter (unhealthy), nous, local/custom)
+Auxiliary perception: payment error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7159, in call_llm
+    client.chat.completions.create(**kwargs), task,
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_utils/_utils.py", line 286, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1204, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1070, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.PermissionDeniedError: Error code: 403 - {'error': 'this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 27012b90-79b2-4767-a322-1030abfe3f22)'}
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 489, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 424, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 1039, in run_goal_closed_loop
+    transition, _after_wm, post_view = monitor.wait_for_change_or_stability(
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/transition/monitor.py", line 156, in wait_for_change_or_stability
+    world = ingest(obs)
+            ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 1027, in _ingest_obs
+    apply_observation(
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 286, in apply_observation
+    view, feats, wv = build_view_features(runtime, goal)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 239, in build_view_features
+    perception = synthesize_perception(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_synthesis.py", line 432, in synthesize_perception
+    response = call_llm(
+               ^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7561, in call_llm
+    raise LLMProviderExhaustedError(
+agent.auxiliary_client.LLMProviderExhaustedError: Auxiliary perception: payment error on auto and all fallbacks exhausted

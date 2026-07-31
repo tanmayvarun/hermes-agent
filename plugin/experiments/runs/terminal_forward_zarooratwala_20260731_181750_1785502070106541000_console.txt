@@ -1,0 +1,73 @@
+=== launch start 20260731_181750_1785502070106541000 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_181750_1785502070106541000.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_181750_1785502070106541000_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_181750_1785502070106541000_status.txt
+[001][OK][+0.00s] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[runtime_bind] provider=ollama-cloud model=gpt-oss:120b base_url=https://ollama.com/v1 aux_policy=ollama-only ollama_api_key_present=True ollama_api_key_len=57 ollama_api_key_sha1=2fa6439313
+[002][OK][step 0][+0.19s] step | message='checking Terminal Accessibility'
+[003][OK][step 0][+0.37s] check | message='pass' expected=True
+[004][OK][step 0][+0.40s] check | message='pass' expected=True
+[005][FAIL][step 0][+0.40s] check | message='fail' expected=True
+[006][OK][step 0][+0.40s] check | message='pass' expected=True
+[007][OK][step 0][+1.87s] step | message='launched via open -a WhatsApp'
+[008][OK][step 0][+1.87s] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0][+3.88s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0][+3.90s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=237 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - Smart Links
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXMenuBar label='' enabled=True bbox=(1920.0, 0.0, 1710.0, 38.0)
+  03. role=AXMenuBarItem label='Apple' enabled=True bbox=(1930.0, 0.0, 34.0, 38.0)
+  04. role=AXMenu label='' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuItem label='System Information' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  07. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='System Settings…, 1 update' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 227 more nodes
+[011][OK][step 0][+4.40s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[012][OK][step 0][+4.40s] observation_raw_source
+[observe_done_fused step=0] nodes=183 elapsed=0.51s
+[013][OK][step 0][+4.40s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 237, 'macapptree': 0} elapsed=0.51s attempt=1/3"
+[014][OK][step 0][+4.40s] observation | nodes=183
+[observation_raw step=0]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=183 coverage=0.8655192087431693 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='Settings' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='.env' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  07. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuBarItem label='Apple' enabled=True bbox=(1930.0, 0.0, 34.0, 38.0)
+  11. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 168 more nodes
+[015][OK][step 0][+4.40s] observation_raw | nodes=183
+[observe_complete step=0] nodes=183 elapsed=0.53s
+Auxiliary request payload: {"api_key_len": 57, "api_key_present": true, "api_key_sha1": "2fa6439313", "provider": "ollama-cloud", "request": {"extra_body": {"format": "json", "reasoning": {"effort": "low", "enabled": true}}, "messages": [{"content": "Return strict JSON only. Infer screen meaning from AX evidence.", "role": "system"}, {"content": "{\"goal\":{\"kind\":\"whatsapp_forward_message\",\"contact\":\"Kulvinder\",\"target_contact\":\"Pallavi\",\"link_query\":\"zarooratwala\",\"app\":\"WhatsApp\"},\"screen\":{\"app\":\"\",\"screen\":\"LIST\",\"window_name\":\"WhatsApp\",\"observation_node_count\":183,\"observation_degenerate\":false,\"held_last_good_world\":false,\"world_exploration_needed\":false,\"perception_incomplete\":false,\"perception_cycle_stalled\":false,\"search_visible\":false,\"search_focused\":false,\"search_query\":\"\",\"open_conversation\":\"\",\"voice_call_available\":false,\"call_state\":\"\",\"composer_visible\":false,\"blocking_overlay\":false,\"unexpected_dialogs\":[],\"system_warnings\":[]},\"evidence\":{\"visible_entities\":[{\"id\":10,\"label\":\"Apple\",\"role\":\"AXMenuBarItem\",\"entity_type\":\"unknown\",\"region_kind\":\"\",\"actions\":[]},{\"id\":56,\"label\":\"forward_zarooratwala_live_20260730_175323.jsonl\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":114,\"label\":\"run_forward_zarooratwala.command\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":127,\"label\":\"Show “forward_zarooratwala_live_20260730_175323.jsonl” in Finder\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":134,\"label\":\"Show “run_forward_zarooratwala.command” in Finder\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":136,\"label\":\"Show “terminal_forward_zarooratwala_20260730_175323_console.txt” in Finder\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":159,\"label\":\"terminal_forward_zarooratwala_20260730_175323_console.txt\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":1,\"label\":\"menuitem\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":2,\"label\":\"Quarters\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":3,\"label\":\"Settings\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]}],\"ranked_messages\":[],\"conversation_context\":[],\"scene_report\":{\"layout_confidence\":0.55,\"region_coverage\":1.0,\"affordance_entropy\":0.9935}},\"instructions\":\"Infer screen meaning from AX evidence only. Return strict JSON with screen_type, active_surface, likely_next_family, likely_next_target, likely_next_text, confidence, avoid_families, supporting_evidence, contradictions, needs_followup_observe.\"}", "role": "user"}], "model": "gpt-oss:120b", "reasoning_effort": "low", "temperature": 0.0, "timeout": 240.0}, "request_url": "https://ollama.com/v1/chat/completions", "task": "perception", "timeout_s": 240.0}

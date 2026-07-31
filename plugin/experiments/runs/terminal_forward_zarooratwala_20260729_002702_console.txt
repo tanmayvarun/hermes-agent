@@ -1,0 +1,35 @@
+=== launch start 20260729_002702 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_002702.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_002702_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_002702_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=0] fallback=pyobjc_ax
+[011][OK][step 0] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=0] nodes=1 elapsed=0.00s
+[012][OK][step 0] step | message='nodes=1 elapsed=0.00s'
+[013][OK][step 0] observation | nodes=1
+[observe_complete step=0] nodes=1 elapsed=0.37s
+Auxiliary: marking openrouter unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:38:41.
+Auxiliary perception: fallback candidate openrouter failed (Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1785283200000'}, 'provider_name': None}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+[014][OK][step 0] world_patch | screen='Screen #1' retention=1.0
+[015][OK][step 0] step | message="attempt 1: leaving open='' toward chat list"
+[016][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[017][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[018][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=0.61s
+[019][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 286, 'macapptree': 0} elapsed=0.61s"
+[020][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=0.61s

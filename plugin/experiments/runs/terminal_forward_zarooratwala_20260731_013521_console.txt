@@ -1,0 +1,510 @@
+=== launch start 20260731_013521 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_013521.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_013521_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_013521_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[011][OK][step 0] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[012][OK][step 0] observation_raw_source
+[observe_done_fused step=0] nodes=1 elapsed=5.08s
+[013][OK][step 0] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=5.08s attempt=1/3"
+[014][OK][step 0] observation | nodes=1
+[observation_raw step=0]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[015][OK][step 0] observation_raw | nodes=1
+[observe_complete step=0] nodes=1 elapsed=5.10s
+[016][OK][step 0] world_patch | screen='Screen #1' retention=1.0
+[017][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[018][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[019][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[020][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=288 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - IIT Ventures @ BLR, ‎10 unread messages
+  - Owners including Family- Godrej Nurture, ‎3 unread messages
+  - Godrej Nurture - Care & Share, ‎11 unread messages
+  - Tower - E Godrej Nurture, ‎21 unread messages
+  - UTI Mutual Fund, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 278 more nodes
+[021][OK][step 0] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[022][OK][step 0] observation_raw_source
+[observe_done_fused step=0] nodes=204 elapsed=0.66s
+[023][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 288, 'macapptree': 0} elapsed=0.66s attempt=1/3"
+[024][OK][step 0] observation | nodes=204
+[observation_raw step=0]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=204 coverage=0.8659445644150301 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - Godrej Nurture - Care & Share, 11 unread messages
+  - IIT Ventures @ BLR, 10 unread messages
+  - New Call Link
+  - Owners including Family- Godrej Nurture, 3 unread messages
+  - Search
+  - Search
+  - Search Chat
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  04. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  05. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  06. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  07. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62376.5, 109.7, 13.0)
+  08. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  10. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  11. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62376.5, 249.0, 13.0)
+  13. role=AXButton label='14/146' value='\u200eYour document, Papa ticket 3rd night, DEL_BLR_03082026_27382062029.pdf, \u200e4 pages, 30Julyat10:14\u202fPM, \u200eSent to 14/146, \u200eDelivered' enabled=True bbox=(173.0, 393.0, 375.0, 69.0)
+  14. role=AXSplitter label='21.929824829101562' value='21.929824829101562' enabled=True bbox=(548.0, 25.0, 1.0, 988.0)
+  15. role=AXSplitter label='3.918128728866577' value='3.918128728866577' enabled=True bbox=(172.0, 25.0, 1.0, 988.0)
+  ... 189 more nodes
+[025][OK][step 0] observation_raw | nodes=204
+[observe_complete step=0] nodes=204 elapsed=0.66s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[026][OK][step 1] observation_raw | nodes=204
+[027][OK][step 1] observation_fused | screen='LIST' retention=0.0
+[028][OK][step 1] observation | nodes=204
+[029][OK][step 1] forward_task
+[030][OK][step 1] world_patch | screen='conversation' retention=0.0
+[031][OK][step 1] fusion_conflicts
+[032][OK][step 1] goal_status
+[033][OK][step 1] decision_engine
+[034][OK][step 1] planner_decision
+[035][OK][step 1] execution | message='typed \'Kulvinder\' into search field label=\'Search\' AXValue=\'Kulvinder\' open=\'Cmd+F search shortcut\' evidence="AXStaticText title=\'Kulvinder\' desc=\'Search\'" attempts=[\'open=Cmd+F search shortcut\', \'paste=True\'] submit=False' backend='ax'
+[036][OK][step 1] step | message='transition settle' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[037][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[038][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=320 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - IIT Ventures @ BLR, ‎10 unread messages
+  - Owners including Family- Godrej Nurture, ‎3 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 310 more nodes
+[039][OK][step 1] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[040][OK][step 1] observation_raw_source
+[observe_done_fused step=1] nodes=218 elapsed=0.69s
+[041][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 320, 'macapptree': 0} elapsed=0.69s attempt=1/3"
+[042][OK][step 1] observation | nodes=218
+[observation_raw step=1]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=218 coverage=0.8658721769388356 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - Godrej Nurture - Care & Share, 11 unread messages
+  - IIT Ventures @ BLR, 10 unread messages
+  - Links
+  - Messages
+  - New Call Link
+  - Owners including Family- Godrej Nurture, 3 unread messages
+  - Search
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62376.5, 109.7, 13.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62376.5, 249.0, 13.0)
+  15. role=AXButton label='14/146' value='\u200eYour document, Papa ticket 3rd night, DEL_BLR_03082026_27382062029.pdf, \u200e4 pages, 30Julyat10:14\u202fPM, \u200eSent to 14/146, \u200eDelivered' enabled=True bbox=(173.0, 393.0, 375.0, 69.0)
+  ... 203 more nodes
+[043][OK][step 1] observation_raw | nodes=218
+[observe_complete step=1] nodes=218 elapsed=0.69s
+[044][OK][step 1] observation_raw | nodes=218
+[045][OK][step 1] observation_fused | screen='SEARCH_RESULTS' retention=0.9951219512195122
+[046][OK][step 1] step | message='transition poll' detail='0.3s'
+[047][OK][step 1] perception_settled
+[048][OK][step 1] post_transition_settled_view | screen='SEARCH_RESULTS'
+[049][OK][step 1] post_observation
+[050][OK][step 1] post_world_patch
+[051][OK][step 1] transition_eval
+[052][OK][step 1] transition_attribution
+[053][OK][step 1] verification
+[054][OK][step 1] branch_explore
+[055][OK][step 1] search_hypothesis_advance_blocked
+[observe_begin step=1] app=WhatsApp screenshot=True
+[056][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[057][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=320 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - IIT Ventures @ BLR, ‎10 unread messages
+  - Owners including Family- Godrej Nurture, ‎3 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 310 more nodes
+[058][OK][step 1] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[059][OK][step 1] observation_raw_source
+[observe_done_fused step=1] nodes=218 elapsed=0.67s
+[060][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 320, 'macapptree': 0} elapsed=0.67s attempt=1/3"
+[061][OK][step 1] observation | nodes=218
+[observation_raw step=1]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=218 coverage=0.8658721769388356 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - Godrej Nurture - Care & Share, 11 unread messages
+  - IIT Ventures @ BLR, 10 unread messages
+  - Links
+  - Messages
+  - New Call Link
+  - Owners including Family- Godrej Nurture, 3 unread messages
+  - Search
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62376.5, 109.7, 13.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62376.5, 249.0, 13.0)
+  15. role=AXButton label='14/146' value='\u200eYour document, Papa ticket 3rd night, DEL_BLR_03082026_27382062029.pdf, \u200e4 pages, 30Julyat10:14\u202fPM, \u200eSent to 14/146, \u200eDelivered' enabled=True bbox=(173.0, 393.0, 375.0, 69.0)
+  ... 203 more nodes
+[062][OK][step 1] observation_raw | nodes=218
+[observe_complete step=1] nodes=218 elapsed=0.67s
+[063][OK][step 2] observation_raw | nodes=218
+[064][OK][step 2] observation_fused | screen='SEARCH_RESULTS' retention=0.9954337899543378
+[065][OK][step 2] observation | nodes=218
+[066][OK][step 2] forward_task
+[067][OK][step 2] world_patch | screen='dialog' retention=0.9954337899543378
+[068][OK][step 2] fusion_conflicts
+[069][OK][step 2] goal_status
+[070][OK][step 2] decision_engine
+[071][OK][step 2] planner_decision
+[072][OK][step 1] click_target | semantic='Kulvinder Ji'
+[073][OK][step 2] execution | message="click 'Kulvinder Ji' center=(360.5, 202.0) via entity bounds" backend='ax'
+[074][OK][step 2] step | message='transition settle' detail='0.6s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[075][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[076][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=378 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - JioHome, ‎15 unread messages
+  - Airtel Care, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 368 more nodes
+[077][OK][step 2] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[078][OK][step 2] observation_raw_source
+[observe_done_fused step=2] nodes=269 elapsed=0.81s
+[079][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 378, 'macapptree': 0} elapsed=0.81s attempt=1/3"
+[080][OK][step 2] observation | nodes=269
+[observation_raw step=2]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=269 coverage=0.8655628110508036 degraded=False screenshot=None
+message_like=
+  - Aarthi Scans and Labs, 3 unread messages
+  - Airtel Care, 5 unread messages
+  - Airtel India, 1 unread message
+  - Compose message
+  - CreditMantri, 1 unread message
+  - Edit last message
+  - Emergent, 2 unread messages
+  - IITians in Manufacturing , 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXStaticText label='Kulvinder Ji' value='\u200eVideo call , \u200e2 min, 27Julyat12:07\u202fPM, \u200eSent to Kulvinder Ji' enabled=True bbox=(173.0, 168.0, 375.0, 68.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXStaticText label='14/146, You: otherwise kulvinderji ko call bhi kar lena pehle se, 11/01/26' enabled=True bbox=(173.0, 995.0, 375.0, 99.0)
+  ... 254 more nodes
+[081][OK][step 2] observation_raw | nodes=269
+[observe_complete step=2] nodes=269 elapsed=0.81s
+[082][OK][step 2] observation_raw | nodes=269
+[083][OK][step 2] observation_fused | screen='SEARCH_RESULTS' retention=0.9954337899543378
+[084][OK][step 2] step | message='transition poll' detail='0.3s'
+[085][OK][step 2] perception_settled
+[086][OK][step 2] post_transition_settled_view | screen='SEARCH_RESULTS'
+[087][OK][step 2] post_observation
+[088][OK][step 2] post_world_patch
+[089][OK][step 2] transition_eval
+[090][OK][step 2] transition_attribution
+[091][OK][step 2] verification
+[092][OK][step 2] transition_confirmation
+[093][OK][step 2] branch_explore
+[observe_begin step=2] app=WhatsApp screenshot=True
+[094][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[095][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=378 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - JioHome, ‎15 unread messages
+  - Airtel Care, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 368 more nodes
+[096][OK][step 2] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[097][OK][step 2] observation_raw_source
+[observe_done_fused step=2] nodes=269 elapsed=0.64s
+[098][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 378, 'macapptree': 0} elapsed=0.64s attempt=1/3"
+[099][OK][step 2] observation | nodes=269
+[observation_raw step=2]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=269 coverage=0.8655628110508036 degraded=False screenshot=None
+message_like=
+  - Aarthi Scans and Labs, 3 unread messages
+  - Airtel Care, 5 unread messages
+  - Airtel India, 1 unread message
+  - Compose message
+  - CreditMantri, 1 unread message
+  - Edit last message
+  - Emergent, 2 unread messages
+  - IITians in Manufacturing , 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXStaticText label='Kulvinder Ji' value='\u200eVideo call , \u200e2 min, 27Julyat12:07\u202fPM, \u200eSent to Kulvinder Ji' enabled=True bbox=(173.0, 168.0, 375.0, 68.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXStaticText label='14/146, You: otherwise kulvinderji ko call bhi kar lena pehle se, 11/01/26' enabled=True bbox=(173.0, 995.0, 375.0, 99.0)
+  ... 254 more nodes
+[100][OK][step 2] observation_raw | nodes=269
+[observe_complete step=2] nodes=269 elapsed=0.64s
+[101][OK][step 3] observation_raw | nodes=269
+[102][OK][step 3] observation_fused | screen='SEARCH_RESULTS' retention=0.9962962962962963
+[103][OK][step 3] observation | nodes=269
+[104][OK][step 3] forward_task
+[105][OK][step 3] world_patch | screen='dialog' retention=0.9962962962962963
+[106][OK][step 3] fusion_conflicts
+[107][OK][step 3] goal_status
+[108][OK][step 3] decision_engine
+[109][OK][step 3] planner_decision
+[110][FAIL][step 3] execution | message='unsupported action Hover' backend='ax'
+[111][FAIL][step 3] transition_attribution
+[observe_begin step=3] app=WhatsApp screenshot=True
+[112][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[113][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=3 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=378 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - JioHome, ‎15 unread messages
+  - Airtel Care, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 368 more nodes
+[114][OK][step 3] observation_raw_source
+[observation_raw_source step=3 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[115][OK][step 3] observation_raw_source
+[observe_done_fused step=3] nodes=269 elapsed=0.71s
+[116][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 378, 'macapptree': 0} elapsed=0.71s attempt=1/3"
+[117][OK][step 3] observation | nodes=269
+[observation_raw step=3]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=269 coverage=0.8655628110508036 degraded=False screenshot=None
+message_like=
+  - Aarthi Scans and Labs, 3 unread messages
+  - Airtel Care, 5 unread messages
+  - Airtel India, 1 unread message
+  - Compose message
+  - CreditMantri, 1 unread message
+  - Edit last message
+  - Emergent, 2 unread messages
+  - IITians in Manufacturing , 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXStaticText label='Kulvinder Ji' value='\u200eVideo call , \u200e2 min, 27Julyat12:07\u202fPM, \u200eSent to Kulvinder Ji' enabled=True bbox=(173.0, 168.0, 375.0, 68.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXStaticText label='14/146, You: otherwise kulvinderji ko call bhi kar lena pehle se, 11/01/26' enabled=True bbox=(173.0, 995.0, 375.0, 99.0)
+  ... 254 more nodes
+[118][OK][step 3] observation_raw | nodes=269
+[observe_complete step=3] nodes=269 elapsed=0.71s
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 560, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 495, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 849, in run_goal_closed_loop
+    decision = eng.decide(
+               ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/decision.py", line 1572, in decide
+    raise LLMProviderExhaustedError(f"strict selector mode: {reason}")
+agent.auxiliary_client.LLMProviderExhaustedError: strict selector mode: not_ambiguous_enough
+[119][OK][step 4] observation_raw | nodes=269
+[120][OK][step 4] observation_fused | screen='SEARCH_RESULTS' retention=0.9962962962962963
+[121][OK][step 4] observation | nodes=269
+[122][OK][step 4] forward_task
+[123][OK][step 4] world_patch | screen='dialog' retention=0.9962962962962963
+[124][OK][step 4] fusion_conflicts
+[125][OK][step 4] goal_status

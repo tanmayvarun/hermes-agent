@@ -1,0 +1,4 @@
+{"kind": "execution", "step": 1, "action_family": "type_query", "message": "typed Now"}
+{"kind": "transition_eval", "step": 1, "outcome": "promising_unresolved", "action_family": "type_query", "progress_delta": 1.2}
+{"kind": "search_hypothesis_advance_blocked", "step": 1, "reason": "promising_branch", "resolution_policy": "ask"}
+{"kind": "decision_engine", "step": 2, "decision": {"action_family": "open_contact", "semantic_target": "Now…"}}

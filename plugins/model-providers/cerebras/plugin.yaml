@@ -1,0 +1,5 @@
+name: cerebras-provider
+kind: model-provider
+version: 1.0.0
+description: Cerebras — wafer-scale free-tier inference
+author: Hermes Agent

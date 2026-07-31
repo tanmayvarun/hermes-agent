@@ -45,3 +45,9 @@ def test_healthy_bootstrap_still_injects_keepalive_client():
     result = aux._openai_http_client_kwargs("https://api.example.com/v1")
     assert "http_client" in result
     assert result["http_client"] is not None
+
+
+def test_ollama_cloud_uses_plain_sdk_client_path():
+    """Ollama Cloud should skip the custom keepalive wrapper entirely."""
+    result = aux._openai_http_client_kwargs("https://ollama.com/v1")
+    assert result == {}

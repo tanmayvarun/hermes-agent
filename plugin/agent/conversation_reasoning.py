@@ -1,0 +1,204 @@
+"""Generic conversation relevance ranking backed by object discovery.
+
+This module remains as a compatibility layer for the WhatsApp overlay and any
+other callers that still want a message-row shaped result. The actual ranking
+now lives in the generic object-discovery core.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field, is_dataclass
+from typing import Any, Dict, List, Optional, Sequence
+
+from plugin.agent.goal import Goal
+from plugin.agent.object_discovery import DiscoveryContext, build_content_query, resolve_content_rows
+
+_DEFAULT_RELEVANCE_THRESHOLD = 0.55
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    if is_dataclass(value):
+        return _json_safe(asdict(value))
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        try:
+            return _json_safe(value.to_dict())
+        except Exception:
+            pass
+    return str(value)
+
+
+@dataclass
+class ConversationMessageRelevance:
+    summary: str = ""
+    confidence: float = 0.0
+    ranked_messages: List[Dict[str, Any]] = field(default_factory=list)
+    likely_source_message_ids: List[int] = field(default_factory=list)
+    likely_source_message_text: str = ""
+    supporting_evidence: List[str] = field(default_factory=list)
+    contradictions: List[str] = field(default_factory=list)
+    needs_followup_observe: bool = False
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "summary": self.summary,
+            "confidence": round(float(self.confidence or 0.0), 4),
+            "ranked_messages": _json_safe(self.ranked_messages),
+            "likely_source_message_ids": [int(x) for x in self.likely_source_message_ids],
+            "likely_source_message_text": self.likely_source_message_text,
+            "supporting_evidence": list(self.supporting_evidence),
+            "contradictions": list(self.contradictions),
+            "needs_followup_observe": bool(self.needs_followup_observe),
+            "raw": _json_safe(self.raw),
+        }
+
+
+def should_run_conversation_relevance(goal: Goal, rows: Sequence[Dict[str, Any]]) -> bool:
+    if not rows:
+        return False
+    kind = (goal.kind or "").strip().lower()
+    if kind in {"whatsapp_forward_message", "whatsapp_read_message"}:
+        goal_terms = [
+            str(goal.link_query or "").strip().lower(),
+            str(goal.contact or "").strip().lower(),
+            str(goal.target_contact or "").strip().lower(),
+        ]
+        row_blobs = [
+            " ".join(
+                [
+                    str(row.get("text") or ""),
+                    str(row.get("label") or ""),
+                    str(row.get("description") or ""),
+                ]
+            ).lower()
+            for row in rows
+        ]
+        for term in goal_terms:
+            if not term:
+                continue
+            if any(term in blob for blob in row_blobs):
+                return False
+        return len(rows) >= 2
+    if "message" in kind or "forward" in kind:
+        return True
+    return len(rows) >= 3
+
+
+def _parse_resolution(goal: Goal, rows: Sequence[Dict[str, Any]], resolution: Any) -> ConversationMessageRelevance:
+    ranked_rows: List[Dict[str, Any]] = []
+    row_by_id = {int(row.get("entity_id") or 0): row for row in rows if int(row.get("entity_id") or 0)}
+    for cand in getattr(resolution, "candidates", []) or []:
+        obj = getattr(cand, "object", None)
+        if obj is None:
+            continue
+        source_ids = list(getattr(obj, "source_entity_ids", None) or [])
+        entity_id = source_ids[0] if source_ids else None
+        if entity_id is None:
+            try:
+                entity_id = int(str(getattr(cand, "object_id", "")).split("_")[-1])
+            except Exception:
+                continue
+        row = row_by_id.get(int(entity_id), {})
+        ranked_rows.append(
+            {
+                "entity_id": int(entity_id),
+                "score": max(0.0, min(1.0, float(getattr(cand, "score", 0.0) or 0.0))),
+                "reason": " ".join(getattr(cand, "reasons", []) or []) or "object_discovery",
+                "text": str(row.get("text") or getattr(obj, "text", "") or getattr(obj, "display_text", "") or ""),
+                "label": str(row.get("label") or getattr(obj, "title", "") or ""),
+                "description": str(row.get("description") or getattr(obj, "metadata", {}).get("description") or ""),
+            }
+        )
+
+    selected_ids = [int(x) for x in (getattr(resolution, "selected_source_entity_ids", None) or []) if str(x).strip()]
+    if not selected_ids and ranked_rows:
+        top = [item for item in ranked_rows if float(item.get("score") or 0.0) >= _DEFAULT_RELEVANCE_THRESHOLD]
+        selected_ids.extend([int(item["entity_id"]) for item in top[:3]])
+    if not selected_ids and ranked_rows:
+        selected_ids.append(int(ranked_rows[0]["entity_id"]))
+
+    likely_text = str(getattr(resolution, "selected_object_text", "") or "").strip()
+    if not likely_text and selected_ids:
+        row = row_by_id.get(selected_ids[0]) or {}
+        likely_text = str(row.get("text") or row.get("label") or "").strip()
+
+    summary = str((getattr(resolution, "raw", {}) or {}).get("summary") or "").strip()
+    evidence = list(getattr(resolution, "evidence", []) or [])
+    contradictions = list(getattr(resolution, "contradictions", []) or [])
+    if not summary and selected_ids:
+        summary = f"Selected message entity_id={selected_ids[0]}"
+
+    return ConversationMessageRelevance(
+        summary=summary,
+        confidence=float(getattr(resolution, "confidence", 0.0) or 0.0),
+        ranked_messages=ranked_rows,
+        likely_source_message_ids=selected_ids[:5],
+        likely_source_message_text=likely_text,
+        supporting_evidence=[str(x) for x in evidence if str(x)],
+        contradictions=[str(x) for x in contradictions if str(x)],
+        needs_followup_observe=bool(getattr(resolution, "status", "") == "needs_more_context")
+        or bool((getattr(resolution, "raw", {}) or {}).get("needs_followup_observe")),
+        raw=_json_safe(getattr(resolution, "raw", {}) or {}),
+    )
+
+
+def rank_conversation_messages(
+    goal: Goal,
+    view: Dict[str, Any],
+    rows: Sequence[Dict[str, Any]],
+    *,
+    world: Any = None,
+    force: bool = False,
+) -> Optional[ConversationMessageRelevance]:
+    """LLM-assisted ranking of visible conversation rows.
+
+    The compatibility wrapper converts rows into generic content objects and
+    asks the core object-discovery engine which one is most relevant. There is
+    still no deterministic fallback once we enter the LLM path.
+    """
+
+    rows = [row for row in rows if isinstance(row, dict) and row.get("entity_id") is not None]
+    if not rows:
+        return None
+    if not force and not should_run_conversation_relevance(goal, rows):
+        return None
+
+    window = max(1, min(500, int(view.get("conversation_context_window") or len(rows) or 1)))
+    query = build_content_query(goal)
+    context = DiscoveryContext(
+        source_app=str(goal.app or view.get("app") or "WhatsApp"),
+        container_id=str(view.get("open_conversation") or goal.contact or ""),
+        container_type="conversation",
+        window_name=str(view.get("window_name") or ""),
+        conversation_window=window,
+        visible_object_count=len(rows),
+        use_llm=True,
+    )
+    resolution = resolve_content_rows(
+        goal,
+        rows,
+        source_app=context.source_app,
+        container_id=context.container_id,
+        container_type=context.container_type,
+        context=context,
+        world=world,
+        force_llm=True,
+    )
+    result = _parse_resolution(goal, rows, resolution)
+    if world is not None:
+        world.last_conversation_relevance = {
+            "cache_key": getattr(world, "last_object_resolution", {}).get("cache_key")
+            if isinstance(getattr(world, "last_object_resolution", None), dict)
+            else "",
+            "summary": result.to_dict(),
+            "query": query.to_dict(),
+        }
+    return result
+

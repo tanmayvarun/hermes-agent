@@ -1,0 +1,204 @@
+=== host=-zsh pid=25525 TIMESTAMP=20260722_180952 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+AXIsProcessTrusted(initial)= True
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live ===
+[001][OK] run_start | goal='Call Pallavi on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] observation | nodes=286
+[011][OK][step 0] world_patch | screen='call' retention=1.0
+[012][OK][step 0] step | message='ending leftover call before closed-loop (attempt 1)'
+[013][OK][step 0] step | message='after preclear hangup' detail='1.8s'
+[014][OK][step 0] observation | nodes=286
+[015][OK][step 0] world_patch | screen='call' action='preclear_hangup' retention=1.0
+[016][OK][step 0] step | message='ending leftover call before closed-loop (attempt 2)'
+[017][OK][step 0] step | message='after preclear hangup' detail='1.8s'
+[018][OK][step 0] observation | nodes=286
+[019][OK][step 0] world_patch | screen='call' action='preclear_hangup' retention=1.0
+[020][OK][step 0] step | message='ending leftover call before closed-loop (attempt 3)'
+[021][OK][step 0] step | message='after preclear hangup' detail='1.8s'
+[022][OK][step 0] observation | nodes=286
+[023][OK][step 0] world_patch | screen='call' action='preclear_hangup' retention=1.0
+[024][WARN][step 0] step | message='call UI still present after preclear — controller will try End call as first action'
+[025][OK][step 0] step | message='closed-loop goal=Call Pallavi on WhatsApp' detail='planner.next_action after every observation'
+[026][OK][step 0] observation | nodes=286
+[027][OK][step 1] observation | nodes=286
+[028][OK][step 1] world_patch | screen='call' retention=1.0
+[029][OK][step 1] goal_status
+[030][OK][step 1] planner_decision
+[031][OK][step 1] execution | message="click 'End Call' center=None code=0" backend='ax'
+[032][OK][step 1] step | message='UI settle after action' detail='1.2s'
+[033][OK][step 1] observation | nodes=286
+[034][OK][step 1] post_observation | nodes=286
+[035][OK][step 1] post_world_patch | screen='call' retention=1.0
+[036][FAIL][step 1] verification
+[037][OK][step 1] observation | nodes=286
+[038][OK][step 2] observation | nodes=286
+[039][OK][step 2] world_patch | screen='call' retention=1.0
+[040][OK][step 2] goal_status
+[041][OK][step 2] planner_decision
+[042][OK][step 2] execution | message="click 'End Call' center=None code=0" backend='ax'
+[043][OK][step 2] step | message='UI settle after action' detail='1.2s'
+[044][OK][step 2] observation | nodes=336
+[045][OK][step 2] post_observation | nodes=336
+[046][OK][step 2] post_world_patch | screen='call' retention=0.986013986013986
+[047][FAIL][step 2] verification
+[048][OK][step 2] observation | nodes=335
+[049][OK][step 3] observation | nodes=335
+[050][OK][step 3] world_patch | screen='call' retention=0.9852941176470589
+[051][OK][step 3] goal_status
+[052][OK][step 3] planner_decision
+[053][OK][step 3] execution | message="click 'End Call' center=None code=0" backend='ax'
+[054][OK][step 3] step | message='UI settle after action' detail='1.2s'
+[055][OK][step 3] observation | nodes=335
+[056][OK][step 3] post_observation | nodes=335
+[057][OK][step 3] post_world_patch | screen='call' retention=0.9852941176470589
+[058][FAIL][step 3] verification
+[059][OK][step 3] observation | nodes=335
+[060][OK][step 4] observation | nodes=335
+[061][OK][step 4] world_patch | screen='call' retention=0.9852941176470589
+[062][OK][step 4] goal_status
+[063][OK][step 4] planner_decision
+[064][OK][step 4] execution | message="click 'End Call' center=None code=0" backend='ax'
+[065][OK][step 4] step | message='UI settle after action' detail='1.2s'
+[066][OK][step 4] observation | nodes=335
+[067][OK][step 4] post_observation | nodes=335
+[068][OK][step 4] post_world_patch | screen='call' retention=0.9823529411764705
+[069][FAIL][step 4] verification
+[070][OK][step 4] observation | nodes=335
+[071][OK][step 5] observation | nodes=335
+[072][OK][step 5] world_patch | screen='call' retention=0.9824046920821115
+[073][OK][step 5] goal_status
+[074][OK][step 5] planner_decision
+[075][OK][step 5] execution | message="click 'End Call' center=None code=0" backend='ax'
+[076][OK][step 5] step | message='UI settle after action' detail='1.2s'
+[077][OK][step 5] observation | nodes=263
+[078][OK][step 5] post_observation | nodes=263
+[079][OK][step 5] post_world_patch | screen='call' retention=0.7712609970674487
+[080][FAIL][step 5] verification
+[081][OK][step 5] observation | nodes=263
+[082][OK][step 6] observation | nodes=263
+[083][OK][step 6] world_patch | screen='call' retention=0.7712609970674487
+[084][OK][step 6] goal_status
+[085][OK][step 6] planner_decision
+[086][OK][step 6] execution | message="click 'End Call' center=None code=0" backend='ax'
+[087][OK][step 6] step | message='UI settle after action' detail='1.2s'
+[088][OK][step 6] observation | nodes=335
+[089][OK][step 6] post_observation | nodes=335
+[090][OK][step 6] post_world_patch | screen='call' retention=0.9794721407624634
+[091][FAIL][step 6] verification
+[092][OK][step 6] observation | nodes=335
+[093][OK][step 7] observation | nodes=335
+[094][OK][step 7] world_patch | screen='call' retention=0.97953216374269
+[095][OK][step 7] goal_status
+[096][OK][step 7] planner_decision
+[097][OK][step 7] execution | message="click 'End Call' center=None code=0" backend='ax'
+[098][OK][step 7] step | message='UI settle after action' detail='1.2s'
+[099][OK][step 7] observation | nodes=335
+[100][OK][step 7] post_observation | nodes=335
+[101][OK][step 7] post_world_patch | screen='call' retention=0.97953216374269
+[102][FAIL][step 7] verification
+[103][OK][step 7] observation | nodes=335
+[104][OK][step 8] observation | nodes=335
+[105][OK][step 8] world_patch | screen='call' retention=0.97953216374269
+[106][OK][step 8] goal_status
+[107][OK][step 8] planner_decision
+[108][OK][step 8] execution | message="click 'End Call' center=None code=0" backend='ax'
+[109][OK][step 8] step | message='UI settle after action' detail='1.2s'
+[110][OK][step 8] observation | nodes=335
+[111][OK][step 8] post_observation | nodes=335
+[112][OK][step 8] post_world_patch | screen='call' retention=0.97953216374269
+[113][FAIL][step 8] verification
+[114][OK][step 8] observation | nodes=335
+[115][OK][step 9] observation | nodes=335
+[116][OK][step 9] world_patch | screen='call' retention=0.97953216374269
+[117][OK][step 9] goal_status
+[118][OK][step 9] planner_decision
+[119][OK][step 9] execution | message="click 'End Call' center=None code=0" backend='ax'
+[120][OK][step 9] step | message='UI settle after action' detail='1.2s'
+[121][OK][step 9] observation | nodes=335
+[122][OK][step 9] post_observation | nodes=335
+[123][OK][step 9] post_world_patch | screen='call' retention=0.97953216374269
+[124][FAIL][step 9] verification
+[125][OK][step 9] observation | nodes=335
+[126][OK][step 10] observation | nodes=335
+[127][OK][step 10] world_patch | screen='call' retention=0.97953216374269
+[128][OK][step 10] goal_status
+[129][OK][step 10] planner_decision
+[130][OK][step 10] execution | message="click 'End Call' center=None code=0" backend='ax'
+[131][OK][step 10] step | message='UI settle after action' detail='1.2s'
+[132][OK][step 10] observation | nodes=335
+[133][OK][step 10] post_observation | nodes=335
+[134][OK][step 10] post_world_patch | screen='call' retention=0.97953216374269
+[135][FAIL][step 10] verification
+[136][OK][step 10] observation | nodes=335
+[137][OK][step 11] observation | nodes=335
+[138][OK][step 11] world_patch | screen='call' retention=0.97953216374269
+[139][OK][step 11] goal_status
+[140][OK][step 11] planner_decision
+[141][OK][step 11] execution | message="click 'End Call' center=None code=0" backend='ax'
+[142][OK][step 11] step | message='UI settle after action' detail='1.2s'
+[143][OK][step 11] observation | nodes=335
+[144][OK][step 11] post_observation | nodes=335
+[145][OK][step 11] post_world_patch | screen='call' retention=0.97953216374269
+[146][FAIL][step 11] verification
+[147][OK][step 11] observation | nodes=335
+[148][OK][step 12] observation | nodes=335
+[149][OK][step 12] world_patch | screen='call' retention=0.97953216374269
+[150][OK][step 12] goal_status
+[151][OK][step 12] planner_decision
+[152][OK][step 12] execution | message="click 'End Call' center=None code=0" backend='ax'
+[153][OK][step 12] step | message='UI settle after action' detail='1.2s'
+[154][OK][step 12] observation | nodes=336
+[155][OK][step 12] post_observation | nodes=336
+[156][OK][step 12] post_world_patch | screen='call' retention=0.97953216374269
+[157][FAIL][step 12] verification
+[158][OK][step 12] observation | nodes=336
+[159][OK][step 13] observation | nodes=336
+[160][OK][step 13] world_patch | screen='call' retention=0.9795918367346939
+[161][OK][step 13] goal_status
+[162][OK][step 13] planner_decision
+[163][OK][step 13] execution | message="click 'End Call' center=None code=0" backend='ax'
+[164][OK][step 13] step | message='UI settle after action' detail='1.2s'
+[165][OK][step 13] observation | nodes=336
+[166][OK][step 13] post_observation | nodes=336
+[167][OK][step 13] post_world_patch | screen='call' retention=0.9795918367346939
+[168][FAIL][step 13] verification
+[169][OK][step 13] observation | nodes=336
+[170][OK][step 14] observation | nodes=336
+[171][OK][step 14] world_patch | screen='call' retention=0.9795918367346939
+[172][OK][step 14] goal_status
+[173][OK][step 14] planner_decision
+[174][OK][step 14] execution | message="click 'End Call' center=None code=0" backend='ax'
+[175][OK][step 14] step | message='UI settle after action' detail='1.2s'
+[176][OK][step 14] observation | nodes=336
+[177][OK][step 14] post_observation | nodes=336
+[178][OK][step 14] post_world_patch | screen='call' retention=0.9795918367346939
+[179][FAIL][step 14] verification
+[180][OK][step 14] observation | nodes=336
+[181][OK][step 15] observation | nodes=336
+[182][OK][step 15] world_patch | screen='call' retention=0.9795918367346939
+[183][OK][step 15] goal_status
+[184][OK][step 15] planner_decision
+[185][OK][step 15] execution | message="click 'End Call' center=None code=0" backend='ax'
+[186][OK][step 15] step | message='UI settle after action' detail='1.2s'
+[187][OK][step 15] observation | nodes=336
+[188][OK][step 15] post_observation | nodes=336
+[189][OK][step 15] post_world_patch | screen='call' retention=0.9795918367346939
+[190][FAIL][step 15] verification
+[191][OK] world_summary
+[192][FAIL] check | message='fail' expected="closed-loop call ringing for 'Pallavi'"
+[193][OK] check | message='pass' expected='>=1 planner call per decision cycle'
+[194][FAIL] run_end | detail="closed_loop ok=False reason='Maximum iterations reached' iterations=15 planner_invocations=15 ringing=True"
+
+=== DONE ok=False live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=1

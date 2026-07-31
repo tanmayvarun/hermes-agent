@@ -1,0 +1,43 @@
+{
+  "id": "whatsapp_read_message",
+  "title": "Read and inspect a message inside a chat thread",
+  "app": "WhatsApp",
+  "summary": "Open the conversation, inspect the timeline, and identify visible message content before any higher-risk action.",
+  "goal_kinds": ["whatsapp_read_message", "whatsapp_search_message"],
+  "family_keys": ["whatsapp_message", "whatsapp_search"],
+  "tags": ["read", "message", "inspect", "timeline", "chat", "link"],
+  "keywords": ["read", "message", "inspect", "timeline", "chat", "link", "search", "find", "conversation"],
+  "stages": [
+    {
+      "id": "open_chat",
+      "objective": "open conversation with {contact}",
+      "required_predicates": ["source_conversation_open"],
+      "preferred_capabilities": ["OpenConversation", "SelectConversation"],
+      "recovery": ["search the contact in chat list", "back out to the list"],
+      "reversible": true,
+      "confidence_threshold": 0.55
+    },
+    {
+      "id": "inspect_messages",
+      "objective": "inspect the latest visible message",
+      "required_predicates": ["source_object_visible"],
+      "preferred_capabilities": ["Observe", "Scroll"],
+      "recovery": ["scroll the thread", "re-read visible rows"],
+      "reversible": true,
+      "confidence_threshold": 0.4
+    },
+    {
+      "id": "find_target_message",
+      "objective": "find the message matching {link_query}",
+      "required_predicates": ["source_object_selected"],
+      "preferred_capabilities": ["OpenMessage", "OpenLink", "SelectContent"],
+      "recovery": ["inspect nearby rows", "change the search hypothesis"],
+      "reversible": true,
+      "confidence_threshold": 0.55
+    }
+  ],
+  "metadata": {
+    "risk": "low",
+    "train_stage": "read-message"
+  }
+}

@@ -106,13 +106,60 @@ class TestFallbackChainInit:
     def test_merges_new_and_legacy_fallback_config(self):
         cli = _make_cli(config_overrides={
             "fallback_providers": [
-                {"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
+                {"provider": "openrouter", "model": "openai/gpt-oss-120b"},
             ],
-            "fallback_model": {"provider": "nous", "model": "Hermes-4"},
+            "fallback_model": {"provider": "nous", "model": "nvidia/nemotron-3-ultra-550b-a55b"},
         })
         assert cli._fallback_model == [
-            {"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
-            {"provider": "nous", "model": "Hermes-4"},
+            {"provider": "openrouter", "model": "openai/gpt-oss-120b"},
+            {"provider": "nous", "model": "nvidia/nemotron-3-ultra-550b-a55b"},
+        ]
+
+    def test_agent_init_uses_configured_ordered_chain_not_stale_snapshot(self, monkeypatch):
+        cli = _make_cli()
+        cli._fallback_model = [
+            {"provider": "ollama-remote", "model": "qwen2.5:32b"},
+        ]
+        cli._session_db = MagicMock()
+        cli._ensure_tirith_security = MagicMock()
+        cli._install_tool_callbacks = MagicMock()
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config",
+            lambda: {
+                "fallback_providers": [
+                    {"provider": "openrouter", "model": "openai/gpt-oss-120b"},
+                    {"provider": "ovhcloud", "model": "gpt-oss-120b"},
+                ],
+                "model": {"provider": "openrouter", "default": "openai/gpt-oss-120b"},
+            },
+        )
+        monkeypatch.setattr(
+            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            lambda **kwargs: {
+                "api_key": "runtime-key",
+                "base_url": "https://openrouter.ai/api/v1",
+                "provider": "openrouter",
+                "api_mode": "openai_chat",
+                "command": None,
+                "args": None,
+                "credential_pool": None,
+            },
+        )
+        monkeypatch.setattr("hermes_cli.mcp_startup.wait_for_mcp_discovery", lambda: None)
+
+        captured = {}
+
+        class _FakeAgent:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr("cli.AIAgent", _FakeAgent)
+
+        assert cli._init_agent() is True
+        assert captured["fallback_model"] == [
+            {"provider": "openrouter", "model": "openai/gpt-oss-120b"},
+            {"provider": "ovhcloud", "model": "gpt-oss-120b"},
         ]
 
 

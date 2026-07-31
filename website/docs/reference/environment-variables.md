@@ -15,6 +15,18 @@ Hermes reads environment variables from the process environment and, for user-ma
 | `OPENROUTER_API_KEY` | OpenRouter API key (recommended for flexibility) |
 | `OPENROUTER_BASE_URL` | Override the OpenRouter-compatible base URL |
 | `FIREWORKS_API_KEY` | Fireworks AI API key ([app.fireworks.ai](https://app.fireworks.ai/settings/users/api-keys)). Configure endpoint overrides with `model.base_url` in `config.yaml`. |
+| `LLM7_API_KEY` | Optional LLM7 gateway token ([token.llm7.io](https://token.llm7.io)). Basic access works without a key; a token raises rate limits. |
+| `LLM7_BASE_URL` | Override LLM7 base URL (default: `https://api.llm7.io/v1`) |
+| `GROQ_API_KEY` | Groq API key for chat + Whisper STT ([console.groq.com](https://console.groq.com/keys)) |
+| `GROQ_BASE_URL` | Override Groq OpenAI-compatible base URL (default: `https://api.groq.com/openai/v1`) |
+| `CEREBRAS_API_KEY` | Cerebras Cloud API key ([cloud.cerebras.ai](https://cloud.cerebras.ai/)) |
+| `CEREBRAS_BASE_URL` | Override Cerebras base URL (default: `https://api.cerebras.ai/v1`) |
+| `OVHCLOUD_API_KEY` | Optional OVHcloud AI Endpoints key (anonymous free tier works without a key) |
+| `OVHCLOUD_BASE_URL` | Override OVHcloud base URL (default: `https://oai.endpoints.kepler.ai.cloud.ovh.net/v1`) |
+| `SILICONFLOW_API_KEY` | SiliconFlow API key ([cloud.siliconflow.cn](https://cloud.siliconflow.cn/account/ak)) |
+| `SILICONFLOW_BASE_URL` | Override SiliconFlow base URL (default: `https://api.siliconflow.cn/v1`) |
+| `SAMBANOVA_API_KEY` | SambaNova Cloud API key ([cloud.sambanova.ai](https://cloud.sambanova.ai/apis)) |
+| `SAMBANOVA_BASE_URL` | Override SambaNova base URL (default: `https://api.sambanova.ai/v1`) |
 | `HERMES_OPENROUTER_CACHE` | Enable OpenRouter response caching (`1`/`true`/`yes`/`on`). Overrides `openrouter.response_cache` in config.yaml. See [Response Caching](https://openrouter.ai/docs/guides/features/response-caching). |
 | `HERMES_OPENROUTER_CACHE_TTL` | Cache TTL in seconds (1-86400). Overrides `openrouter.response_cache_ttl` in config.yaml. |
 | `NOUS_BASE_URL` | Override Nous Portal base URL (rarely needed; development/testing only) |
@@ -152,10 +164,8 @@ For native Anthropic auth, Hermes prefers Claude Code's own credential files whe
 | `AGENT_BROWSER_ENGINE` | Browser engine for local mode: `auto` (default — Chromium-family via CDP), or a specific engine override. |
 | `FAL_KEY` | Image generation ([fal.ai](https://fal.ai/)) |
 | `KREA_API_KEY` | Krea API key for Krea 2 image generation ([krea.ai](https://krea.ai/)) |
-| `GROQ_API_KEY` | Groq Whisper STT API key ([groq.com](https://groq.com/)) |
 | `ELEVENLABS_API_KEY` | ElevenLabs premium TTS voices ([elevenlabs.io](https://elevenlabs.io/)) |
 | `STT_GROQ_MODEL` | Override the Groq STT model (default: `whisper-large-v3-turbo`) |
-| `GROQ_BASE_URL` | Override the Groq OpenAI-compatible STT endpoint |
 | `STT_OPENAI_MODEL` | Override the OpenAI STT model (default: `whisper-1`) |
 | `STT_OPENAI_BASE_URL` | Override the OpenAI-compatible STT endpoint |
 | `GITHUB_TOKEN` | GitHub token for Skills Hub (higher API rate limits, skill publish) |

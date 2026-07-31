@@ -240,6 +240,16 @@ SCENARIOS: List[Dict[str, Any]] = [
         "prompt": "What's 7 times 8? Answer with just the number.",
         "expected_underlying_tools": [],
     },
+    {
+        "id": "F_write_documents_summary",
+        "description": "Core file-write task with a short knowledge summary",
+        "prompt": (
+            "Create a text file at /tmp/livetest/documents/cjp_neet_summary.txt "
+            "and mention the summary of CJP protest over NEET paper leak. "
+            "Then tell me you're done."
+        ),
+        "expected_underlying_tools": ["write_file"],
+    },
 ]
 
 
@@ -251,8 +261,9 @@ SCENARIOS: List[Dict[str, Any]] = [
 def setup_isolated_home(enabled: bool) -> Path:
     """Create a fresh ~/.hermes/ for one test, copying minimal credentials.
 
-    Also reads OPENROUTER_API_KEY from the user's real ``~/.hermes/.env`` so
-    the agent can authenticate against OpenRouter inside the isolated home.
+    Inherit the user's real Hermes config/env when present so provider/model
+    resolution matches their normal setup, then overlay the tool-search knobs
+    this harness needs.
     """
     home_dir = Path(tempfile.mkdtemp(prefix="hermes_ts_live_"))
     hermes_home = home_dir / ".hermes"
@@ -261,35 +272,50 @@ def setup_isolated_home(enabled: bool) -> Path:
     if ORIGINAL_AUTH.exists():
         shutil.copy(ORIGINAL_AUTH, hermes_home / "auth.json")
 
-    # Copy .env so OPENROUTER_API_KEY (or others) are visible to the agent
-    # running inside the isolated home.
+    # Copy .env so provider credentials and related settings are visible to the
+    # agent running inside the isolated home.
     real_env_file = Path.home() / ".hermes" / ".env"
     if real_env_file.exists():
         shutil.copy(real_env_file, hermes_home / ".env")
-        # Also load the real user env into this process so the provider
-        # resolver can authenticate. We go through the canonical loader
-        # (python-dotenv under the hood) rather than parsing the file by
-        # hand — it never materializes the secret in a local variable in
-        # this module, which both avoids a hand-rolled parser bug and keeps
-        # static analysis from tainting the transcript records with the key.
         from hermes_cli.env_loader import load_hermes_dotenv
         load_hermes_dotenv(hermes_home=str(Path.home() / ".hermes"))
 
-    cfg = {
-        "model": {
-            "provider": "openrouter",
-            "model": "anthropic/claude-haiku-4.5",
-        },
-        "tools": {
-            "tool_search": {
-                "enabled": "on" if enabled else "off",
-                "threshold_pct": 10,
-                "search_default_limit": 5,
-                "max_search_limit": 20,
-            },
-        },
-        "logging": {"level": "WARNING"},
+    cfg: Dict[str, Any] = {}
+    real_cfg_file = Path.home() / ".hermes" / "config.yaml"
+    if real_cfg_file.exists():
+        try:
+            import yaml
+
+            loaded_cfg = yaml.safe_load(real_cfg_file.read_text(encoding="utf-8"))
+            if isinstance(loaded_cfg, dict):
+                cfg = loaded_cfg
+        except Exception:
+            cfg = {}
+
+    model_cfg = cfg.setdefault("model", {})
+    if not isinstance(model_cfg, dict):
+        model_cfg = {}
+        cfg["model"] = model_cfg
+    if model_cfg.get("default") and not model_cfg.get("model"):
+        model_cfg["model"] = model_cfg["default"]
+
+    tools_cfg = cfg.setdefault("tools", {})
+    if not isinstance(tools_cfg, dict):
+        tools_cfg = {}
+        cfg["tools"] = tools_cfg
+    tools_cfg["tool_search"] = {
+        "enabled": "on" if enabled else "off",
+        "threshold_pct": 10,
+        "search_default_limit": 5,
+        "max_search_limit": 20,
     }
+
+    logging_cfg = cfg.setdefault("logging", {})
+    if not isinstance(logging_cfg, dict):
+        logging_cfg = {}
+        cfg["logging"] = logging_cfg
+    logging_cfg["level"] = "WARNING"
+
     (hermes_home / "config.yaml").write_text(_yaml_dump(cfg), encoding="utf-8")
     return hermes_home
 
@@ -300,6 +326,16 @@ def _yaml_dump(obj: Any) -> str:
         return yaml.safe_dump(obj, sort_keys=False)
     except ImportError:
         return json.dumps(obj, indent=2)
+
+
+def _load_yaml_dict(path: Path) -> Dict[str, Any]:
+    try:
+        import yaml
+
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
 
 
 def register_fake_tools() -> int:
@@ -354,9 +390,18 @@ def run_one_scenario(scenario: Dict[str, Any], enabled: bool, out_dir: Path) -> 
     reset_module_state()
     home = setup_isolated_home(enabled=enabled)
     os.environ["HERMES_HOME"] = str(home)
+    live_cfg = _load_yaml_dict(home / "config.yaml")
+    live_model_cfg = live_cfg.get("model") if isinstance(live_cfg.get("model"), dict) else {}
+    resolved_provider = str(live_model_cfg.get("provider") or "").strip() or None
+    resolved_model = str(
+        live_model_cfg.get("model")
+        or live_model_cfg.get("default")
+        or ""
+    ).strip()
 
-    # Pre-create the test file used by scenario D.
+    # Pre-create the test fixtures used by the file scenarios.
     Path("/tmp/livetest").mkdir(exist_ok=True)
+    Path("/tmp/livetest/documents").mkdir(exist_ok=True)
     Path("/tmp/livetest/notes.txt").write_text("Hello from the test fixture.\n", encoding="utf-8")
 
     n_registered = register_fake_tools()
@@ -384,8 +429,8 @@ def run_one_scenario(scenario: Dict[str, Any], enabled: bool, out_dir: Path) -> 
     try:
         from run_agent import AIAgent
         agent = AIAgent(
-            provider="openrouter",
-            model="anthropic/claude-haiku-4.5",
+            provider=resolved_provider,
+            model=resolved_model,
             enabled_toolsets=None,  # Default = all available toolsets, including the registered mcp-fake tools
             quiet_mode=True,
             save_trajectories=False,
@@ -423,7 +468,11 @@ def run_one_scenario(scenario: Dict[str, Any], enabled: bool, out_dir: Path) -> 
         "scenario_id": scenario["id"],
         "scenario_description": scenario["description"],
         "tool_search_enabled": enabled,
-        "model": "anthropic/claude-haiku-4.5 (via openrouter)",
+        "model": (
+            f"{resolved_model} (via {resolved_provider})"
+            if resolved_provider and resolved_model
+            else str(getattr(agent, "model", "") or "default-configured model")
+        ),
         "prompt": scenario["prompt"],
         "expected_underlying_tools": scenario.get("expected_underlying_tools", []),
         "n_fake_tools_registered": n_registered,

@@ -1,0 +1,57 @@
+=== host=-zsh pid=34393 TIMESTAMP=20260722_230954 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== contact: plugin support ===
+AXIsProcessTrusted(initial)= True
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live --contact 'plugin support' ===
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+[001][OK] run_start | goal='Call plugin support on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 326, 'macapptree': 63}"
+[011][OK][step 0] observation | nodes=326
+[012][OK][step 0] world_patch | screen='call' retention=1.0
+[013][OK][step 0] step | message='closed-loop goal=Call plugin support on WhatsApp' detail='DecisionEngine after every observation (policy prior + value)'
+[014][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 326, 'macapptree': 63}"
+[015][OK][step 0] observation | nodes=326
+[016][OK][step 1] observation | nodes=326
+[017][OK][step 1] world_patch | screen='call' retention=1.0
+[018][OK][step 1] goal_status
+[019][OK][step 1] decision_engine
+[020][OK][step 1] planner_decision
+[021][OK][step 0] click_target | semantic='Call'
+[022][OK][step 1] execution | message="click 'Voice Call' center=None code=0" backend='ax'
+[023][OK][step 1] step | message='UI settle after action' detail='1.2s'
+[024][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 353, 'macapptree': 64}"
+[025][OK][step 1] observation | nodes=353
+[026][OK][step 1] post_observation | nodes=353
+[027][OK][step 1] post_world_patch | screen='call' retention=1.0
+[028][OK][step 1] verification
+[029][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 354, 'macapptree': 64}"
+[030][OK][step 1] observation | nodes=354
+[031][OK][step 2] observation | nodes=354
+[032][OK][step 2] world_patch | screen='call' retention=1.0
+[033][OK][step 2] goal_status
+[034][OK] world_summary
+[035][OK][step 1] execution | message="click 'End Call' center=None code=0" backend='ax'
+[036][OK] check | message='pass' expected="closed-loop call ringing for 'plugin support'"
+[037][OK] check | message='pass' expected='>=1 planner call per decision cycle'
+[038][OK] run_end | detail="closed_loop ok=True reason='goal succeeded' iterations=2 planner_invocations=1 ringing=True"
+
+=== DONE ok=True live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=0

@@ -38,7 +38,7 @@ _HERMES_CORE_TOOLS = [
     # hidden outside the GUI).
     "read_terminal", "close_terminal",
     # File manipulation
-    "read_file", "write_file", "patch", "search_files",
+    "read_file", "write_file", "patch", "search_files", "locate_file",
     # Vision + image generation
     "vision_analyze", "image_generate",
     # Skills
@@ -52,6 +52,8 @@ _HERMES_CORE_TOOLS = [
     "text_to_speech",
     # Planning & memory
     "todo", "memory",
+    # Capability introspection
+    "list_capabilities", "describe_capability",
     # NOTE: the desktop Project tools (project_list/create/switch) are
     # deliberately NOT here. They only make sense where a GUI can follow the
     # move, so they live in the `project` toolset and are enabled solely by the
@@ -78,6 +80,13 @@ _HERMES_CORE_TOOLS = [
     "kanban_attach", "kanban_attach_url", "kanban_attachments",
     # Computer use (macOS, gated on cua-driver being installed via check_fn)
     "computer_use",
+    # Plugin World Model — macOS Accessibility GUI agent (WhatsApp call benchmark, etc.)
+    "world_state",
+    "world_observe",
+    "world_plan",
+    "world_act",
+    "world_recover",
+    "plugin_call_whatsapp",
 ]
 
 # Webhook events may originate from untrusted third-party content (for example,
@@ -97,7 +106,7 @@ TOOLSETS = {
     # Basic toolsets - individual tool categories
     "web": {
         "description": "Web research and content extraction tools",
-        "tools": ["web_search", "web_extract"],
+        "tools": ["web_search", "web_extract", "latest_media"],
         "includes": []  # No other toolsets included
     },
     
@@ -158,6 +167,24 @@ TOOLSETS = {
         "includes": []
     },
 
+    "plugin_world": {
+        "description": (
+            "Plugin World Model — observe/plan/act/recover through a "
+            "persistent macOS Accessibility world model (PyObjC AX + Ghost). "
+            "Includes plugin_call_whatsapp. Part of hermes-cli defaults; "
+            "does not replace computer_use."
+        ),
+        "tools": [
+            "world_state",
+            "world_observe",
+            "world_plan",
+            "world_act",
+            "world_recover",
+            "plugin_call_whatsapp",
+        ],
+        "includes": []
+    },
+
     "terminal": {
         "description": "Terminal/command execution and process management tools",
         "tools": ["terminal", "process"],
@@ -190,8 +217,8 @@ TOOLSETS = {
     
 
     "file": {
-        "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
-        "tools": ["read_file", "write_file", "patch", "search_files"],
+        "description": "File manipulation tools: read, write, patch (with fuzzy matching), search, and locate_file",
+        "tools": ["read_file", "write_file", "patch", "search_files", "locate_file"],
         "includes": []
     },
     
@@ -210,6 +237,12 @@ TOOLSETS = {
     "memory": {
         "description": "Persistent memory across sessions (personal notes + user profile)",
         "tools": ["memory"],
+        "includes": []
+    },
+
+    "capability": {
+        "description": "Capability registry introspection tools for choosing reusable higher-level workflows",
+        "tools": ["list_capabilities", "describe_capability"],
         "includes": []
     },
 
@@ -350,7 +383,7 @@ TOOLSETS = {
         "tools": [
             "web_search", "web_extract",
             "terminal", "process", "read_terminal", "close_terminal",
-            "read_file", "write_file", "patch", "search_files",
+            "read_file", "write_file", "patch", "search_files", "locate_file",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",
@@ -382,7 +415,7 @@ TOOLSETS = {
         "tools": [
             "web_search", "web_extract",
             "terminal", "process",
-            "read_file", "write_file", "patch", "search_files",
+            "read_file", "write_file", "patch", "search_files", "locate_file",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",
@@ -404,7 +437,7 @@ TOOLSETS = {
             # Terminal + process management
             "terminal", "process",
             # File manipulation
-            "read_file", "write_file", "patch", "search_files",
+            "read_file", "write_file", "patch", "search_files", "locate_file",
             # Vision + image generation
             "vision_analyze", "image_generate",
             # Skills

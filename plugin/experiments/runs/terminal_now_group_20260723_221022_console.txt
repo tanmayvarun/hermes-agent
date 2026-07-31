@@ -1,0 +1,107 @@
+=== host=-zsh pid=797 TIMESTAMP=20260723_221022 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== contact: now group ===
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live --contact 'now group' ===
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 22:20:36.
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 22:21:30.
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 22:21:45.
+Screen scaling factor: 2.0
+Parsing regular window structure
+[001][OK] run_start | goal='Call now group on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 337, 'macapptree': 81}"
+[011][OK][step 0] observation | nodes=242
+[012][OK][step 0] world_patch | screen='call' retention=1.0
+[013][OK][step 0] step | message='closed-loop goal=Call now group on WhatsApp' detail='transition-aware DecisionEngine (observe→act→evaluate progress)'
+[014][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 315, 'macapptree': 59}"
+[015][OK][step 0] observation | nodes=221
+[016][OK][step 1] observation | nodes=221
+[017][OK][step 1] world_patch | screen='call' retention=0.9132231404958677
+[018][OK][step 1] fusion_conflicts
+[019][OK][step 1] goal_status
+[020][OK][step 1] decision_engine
+[021][OK][step 1] planner_decision
+[022][OK][step 0] click_target | semantic='Now…'
+[023][OK][step 1] execution | message="click 'Now…' center=(255.5, 282.25) via entity bounds" backend='ax'
+[024][OK][step 1] step | message='transition settle' detail='0.6s'
+[025][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9821428571428571" detail="{'pyobjc_ax': 332, 'macapptree': 80}"
+[026][OK][step 1] observation | nodes=238
+[027][OK][step 1] step | message='transition poll' detail='0.3s'
+[028][OK][step 1] perception_settled
+[029][OK][step 1] post_observation
+[030][OK][step 1] post_world_patch
+[031][OK][step 1] transition_eval
+[032][OK][step 1] transition_attribution
+[033][OK][step 1] verification
+[034][OK][step 1] branch_explore
+[035][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9821428571428571" detail="{'pyobjc_ax': 332, 'macapptree': 80}"
+[036][OK][step 1] observation | nodes=238
+[037][OK][step 2] observation | nodes=238
+[038][OK][step 2] world_patch | screen='call' retention=0.9834710743801653
+[039][OK][step 2] fusion_conflicts
+[040][OK][step 2] goal_status
+[041][OK][step 2] decision_engine
+[042][OK][step 2] planner_decision
+[043][OK][step 1] click_target | semantic='Open call dropdown menu with Now…'
+[044][OK][step 2] execution | message="click 'Open call dropdown menu with Now…' center=(1636.0, 65.0) via entity bounds" backend='ax'
+[045][OK][step 2] step | message='transition settle' detail='0.6s'
+[046][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 275, 'macapptree': 23}"
+[047][OK][step 2] observation | nodes=198
+[048][OK][step 2] step | message='transition poll' detail='0.3s'
+[049][OK][step 2] perception_settled
+[050][OK][step 2] post_observation
+[051][OK][step 2] post_world_patch
+[052][OK][step 2] transition_eval
+[053][OK][step 2] transition_attribution
+[054][OK][step 2] verification
+[055][OK][step 2] branch_explore
+[056][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 275, 'macapptree': 23}"
+[057][OK][step 2] observation | nodes=198
+[058][OK][step 3] observation | nodes=198
+[059][OK][step 3] world_patch | screen='call' retention=0.8181818181818182
+[060][OK][step 3] fusion_conflicts
+[061][OK][step 3] goal_status
+[062][OK][step 3] decision_engine
+[063][OK][step 3] planner_decision
+[064][OK][step 2] click_target | semantic='Voice'
+[065][OK][step 3] execution | message="click 'Voice' center=(1460.0, 186.0) via entity bounds" backend='ax'
+[066][OK][step 3] step | message='transition settle' detail='0.6s'
+[067][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9821428571428571" detail="{'pyobjc_ax': 366, 'macapptree': 80}"
+[068][OK][step 3] observation | nodes=254
+[069][OK][step 3] step | message='transition poll' detail='0.3s'
+[070][OK][step 3] perception_settled
+[071][OK][step 3] post_observation
+[072][OK][step 3] post_world_patch
+[073][OK][step 3] transition_eval
+[074][OK][step 3] transition_attribution
+[075][OK][step 3] verification
+[076][OK] world_summary
+[077][OK][step 3] execution | message="click 'End Call' center=None code=0" backend='ax'
+[078][OK] check | message='pass' expected="closed-loop call ringing for 'now group'"
+[079][OK] check | message='pass' expected='>=1 planner call per decision cycle'
+[080][OK] run_end | detail="closed_loop ok=True reason='goal succeeded' iterations=3 planner_invocations=3 ringing=True"
+
+=== DONE ok=True live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=0

@@ -115,6 +115,8 @@ class TestBundledPluginsRegister:
         assert isinstance(schema, dict)
         assert "name" in schema
         assert "env_vars" in schema
+        assert schema.get("background_safe") is True
+        assert "requires_human_cta" in schema
         # Every cloud-browser plugin needs the agent-browser post-setup hook
         # so the picker auto-installs the CLI on selection.
         assert schema.get("post_setup") == "agent_browser"

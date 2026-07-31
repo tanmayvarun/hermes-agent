@@ -1,0 +1,489 @@
+=== launch start 20260731_151144 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_151144.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_151144_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_151144_status.txt
+[001][OK][+0.00s] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0][+0.20s] step | message='checking Terminal Accessibility'
+[003][OK][step 0][+0.37s] check | message='pass' expected=True
+[004][OK][step 0][+0.39s] check | message='pass' expected=True
+[005][FAIL][step 0][+0.39s] check | message='fail' expected=True
+[006][OK][step 0][+0.39s] check | message='pass' expected=True
+[007][OK][step 0][+1.32s] step | message='launched via open -a WhatsApp'
+[008][OK][step 0][+1.33s] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0][+3.33s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0][+3.34s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=287 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Owners including Family- Godrej Nurture, ‎14 unread messages
+  - IIT Ventures @ BLR, ‎12 unread messages
+  - Isha Electronic City, ‎Announcement group, ‎18 unread messages
+  - Magicbricks, ‎15 unread messages
+  - Godrej Nurture - Care & Share, ‎13 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 277 more nodes
+[011][OK][step 0][+5.30s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[012][OK][step 0][+5.30s] observation_raw_source
+[observe_done_fused step=0] nodes=198 elapsed=1.96s
+[013][OK][step 0][+5.31s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 287, 'macapptree': 0} elapsed=1.96s attempt=1/3"
+[014][OK][step 0][+5.31s] observation | nodes=198
+[observation_raw step=0]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=198 coverage=0.8658766196302564 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - Godrej Nurture - Care & Share, 13 unread messages
+  - Happy New Year, 42 unread messages
+  - IIT Ventures @ BLR, 12 unread messages
+  - Isha Electronic City, Announcement group, 18 unread messages
+  - Lenskart, 1 unread message
+  - Magicbricks, 15 unread messages
+  - New Call Link
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  04. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  05. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  06. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  07. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62448.0, 109.7, 13.0)
+  08. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  10. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  11. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62448.0, 249.0, 13.0)
+  13. role=AXSplitter label='21.929824829101562' value='21.929824829101562' enabled=True bbox=(548.0, 25.0, 1.0, 988.0)
+  14. role=AXSplitter label='3.918128728866577' value='3.918128728866577' enabled=True bbox=(172.0, 25.0, 1.0, 988.0)
+  15. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 183 more nodes
+[015][OK][step 0][+5.31s] observation_raw | nodes=198
+[observe_complete step=0] nodes=198 elapsed=1.98s
+[016][OK][step 0][+14.98s] world_patch | screen='conversation' retention=1.0
+[017][OK][step 0][+15.01s] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[018][OK][step 0][+15.01s] loop_budget
+[019][OK][step 1][+15.01s] progress_clock
+[observe_begin step=0] app=WhatsApp screenshot=True
+[020][OK][step 0][+15.01s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[021][OK][step 0][+15.01s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=289 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Owners including Family- Godrej Nurture, ‎14 unread messages
+  - IIT Ventures @ BLR, ‎12 unread messages
+  - Isha Electronic City, ‎Announcement group, ‎18 unread messages
+  - Magicbricks, ‎15 unread messages
+  - Godrej Nurture - Care & Share, ‎13 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 279 more nodes
+[022][OK][step 0][+15.46s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[023][OK][step 0][+15.46s] observation_raw_source
+[observe_done_fused step=0] nodes=198 elapsed=0.46s
+[024][OK][step 0][+15.47s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 289, 'macapptree': 0} elapsed=0.46s attempt=1/3"
+[025][OK][step 0][+15.47s] observation | nodes=198
+[observation_raw step=0]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=198 coverage=0.8658766196302564 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - Godrej Nurture - Care & Share, 13 unread messages
+  - Happy New Year, 42 unread messages
+  - IIT Ventures @ BLR, 12 unread messages
+  - Isha Electronic City, Announcement group, 18 unread messages
+  - Lenskart, 1 unread message
+  - Magicbricks, 15 unread messages
+  - New Call Link
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  04. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  05. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  06. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  07. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62448.0, 109.7, 13.0)
+  08. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  10. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  11. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62448.0, 249.0, 13.0)
+  13. role=AXSplitter label='21.929824829101562' value='21.929824829101562' enabled=True bbox=(548.0, 25.0, 1.0, 988.0)
+  14. role=AXSplitter label='3.918128728866577' value='3.918128728866577' enabled=True bbox=(172.0, 25.0, 1.0, 988.0)
+  15. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 183 more nodes
+[026][OK][step 0][+15.47s] observation_raw | nodes=198
+[observe_complete step=0] nodes=198 elapsed=0.46s
+Auxiliary: marking openrouter/openai/gpt-oss-120b unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:22:46.
+Auxiliary decision_high_risk: fallback candidate openrouter/openai/gpt-oss-120b failed (Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 2843. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account', 'code': 402, 'metadata': {'limit_source': 'openrouter_credits', 'remedy_hint': 'Add credits at https://openrouter.ai/settings/credits, or lower max_tokens / prompt size to fit your remaining balance.', 'provider_name': None, 'previous_errors': [{'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 8363. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 59284 tokens, but can only afford 2843. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 8363. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 3949. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 1895. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 59220 tokens, but can only afford 2901. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 3159. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 1895. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens, but can only afford 2369. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 2369. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 2369. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 2369. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 40960 tokens, but can only afford 1895. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 2369. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 2369. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 61984 tokens, but can only afford 1496. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 32768 tokens, but can only afford 5686. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}]}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:22:55.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:23:10.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:23:18.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:23:27.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+[027][OK][step 1][+15.47s] observation_raw | nodes=198
+[028][OK][step 1][+19.55s] observation_fused | screen='LIST' retention=1.0
+[029][OK][step 1][+19.55s] observation | nodes=198
+[030][OK][step 1][+19.56s] forward_task
+[031][OK][step 1][+19.56s] world_patch | screen='dialog' retention=1.0
+[032][OK][step 1][+19.56s] fusion_conflicts
+[033][OK][step 1][+19.58s] goal_status
+[034][OK][step 1][+110.55s] decision_budget
+[035][OK][step 1][+110.55s] decision_engine
+[036][OK][step 1][+110.55s] planner_decision
+[037][OK][step 1][+116.42s] execution | message='typed \'Kulvinder\' into search field label=\'Search\' AXValue=\'Kulvinder\' open=\'Cmd+F search shortcut\' evidence="AXStaticText title=\'Kulvinder\' desc=\'Search\'" attempts=[\'open=Cmd+F search shortcut\', \'paste=True\'] submit=False' backend='ax'
+[038][OK][step 1][+116.42s] step | message='transition settle' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[039][OK][step 1][+117.63s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[040][OK][step 1][+117.63s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=320 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Owners including Family- Godrej Nurture, ‎14 unread messages
+  - IIT Ventures @ BLR, ‎12 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 310 more nodes
+[041][OK][step 1][+118.38s] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[042][OK][step 1][+118.38s] observation_raw_source
+[observe_done_fused step=1] nodes=212 elapsed=0.76s
+[043][OK][step 1][+118.38s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 320, 'macapptree': 0} elapsed=0.76s attempt=1/3"
+[044][OK][step 1][+118.38s] observation | nodes=212
+[observation_raw step=1]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=212 coverage=0.8658066703716545 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - Godrej Nurture - Care & Share, 13 unread messages
+  - Happy New Year, 42 unread messages
+  - IIT Ventures @ BLR, 12 unread messages
+  - Isha Electronic City, Announcement group, 18 unread messages
+  - Lenskart, 1 unread message
+  - Links
+  - Magicbricks, 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62448.0, 109.7, 13.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62448.0, 249.0, 13.0)
+  15. role=AXStaticText label='14/146, You: otherwise kulvinderji ko call bhi kar lena pehle se, 11/01/26' enabled=True bbox=(173.0, 995.0, 375.0, 99.0)
+  ... 197 more nodes
+[045][OK][step 1][+118.39s] observation_raw | nodes=212
+[observe_complete step=1] nodes=212 elapsed=0.76s
+Auxiliary: marking openrouter/qwen/qwen3-14b unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:23:48.
+Auxiliary perception: fallback candidate openrouter/qwen/qwen3-14b failed (Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1562. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account', 'code': 402, 'metadata': {'limit_source': 'openrouter_credits', 'remedy_hint': 'Add credits at https://openrouter.ai/settings/credits, or lower max_tokens / prompt size to fit your remaining balance.', 'provider_name': None, 'previous_errors': [{'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 36164 tokens, but can only afford 6462. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens, but can only afford 5923. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}]}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+[046][OK][step 1][+118.39s] observation_raw | nodes=212
+[047][OK][step 1][+129.28s] observation_fused | screen='SEARCH_RESULTS' retention=1.0
+[048][OK][step 1][+129.39s] step | message='transition poll' detail='0.3s'
+[049][OK][step 1][+129.82s] perception_settled
+[050][OK][step 1][+129.82s] post_transition_settled_view | screen='SEARCH_RESULTS'
+[051][OK][step 1][+129.82s] post_observation
+[052][OK][step 1][+129.82s] post_world_patch
+[053][OK][step 1][+129.85s] transition_eval
+[054][OK][step 1][+129.85s] transition_attribution
+[055][OK][step 1][+129.85s] verification
+[056][OK][step 1][+129.87s] branch_explore
+[057][OK][step 1][+129.87s] search_hypothesis_advance_blocked
+[058][OK][step 2][+129.87s] progress_clock
+[observe_begin step=1] app=WhatsApp screenshot=True
+[059][OK][step 1][+129.87s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[060][OK][step 1][+129.87s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=320 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Owners including Family- Godrej Nurture, ‎14 unread messages
+  - IIT Ventures @ BLR, ‎12 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 310 more nodes
+[061][OK][step 1][+130.47s] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[062][OK][step 1][+130.47s] observation_raw_source
+[observe_done_fused step=1] nodes=212 elapsed=0.62s
+[063][OK][step 1][+130.48s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 320, 'macapptree': 0} elapsed=0.62s attempt=1/3"
+[064][OK][step 1][+130.48s] observation | nodes=212
+[observation_raw step=1]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=212 coverage=0.8658066703716545 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - Godrej Nurture - Care & Share, 13 unread messages
+  - Happy New Year, 42 unread messages
+  - IIT Ventures @ BLR, 12 unread messages
+  - Isha Electronic City, Announcement group, 18 unread messages
+  - Lenskart, 1 unread message
+  - Links
+  - Magicbricks, 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62448.0, 109.7, 13.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62448.0, 249.0, 13.0)
+  15. role=AXStaticText label='14/146, You: otherwise kulvinderji ko call bhi kar lena pehle se, 11/01/26' enabled=True bbox=(173.0, 995.0, 375.0, 99.0)
+  ... 197 more nodes
+[065][OK][step 1][+130.48s] observation_raw | nodes=212
+[observe_complete step=1] nodes=212 elapsed=0.62s
+[066][OK][step 2][+130.48s] observation_raw | nodes=212
+[067][OK][step 2][+136.37s] observation_fused | screen='SEARCH_RESULTS' retention=1.0
+[068][OK][step 2][+136.37s] observation | nodes=212
+[069][OK][step 2][+136.41s] forward_task
+[070][OK][step 2][+136.41s] world_patch | screen='dialog' retention=1.0
+[071][OK][step 2][+136.41s] fusion_conflicts
+[072][OK][step 2][+136.43s] goal_status
+[073][OK][step 2][+159.13s] decision_budget
+[074][OK][step 2][+159.13s] decision_engine
+[075][OK][step 2][+159.13s] planner_decision
+[076][OK][step 1][+159.14s] click_target | semantic='Kulvinder Ji'
+[077][OK][step 2][+160.34s] execution | message="click 'Kulvinder Ji' center=(360.5, 202.0) via entity bounds" backend='ax'
+[078][OK][step 2][+160.34s] step | message='transition settle' detail='0.6s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[079][OK][step 2][+160.95s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[080][OK][step 2][+160.95s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=378 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Paytm Bill Payments, ‎6 unread messages
+  - Tata Neu Credit, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 368 more nodes
+[081][OK][step 2][+161.74s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[082][OK][step 2][+161.74s] observation_raw_source
+[observe_done_fused step=2] nodes=263 elapsed=0.81s
+[083][OK][step 2][+161.75s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 378, 'macapptree': 0} elapsed=0.81s attempt=1/3"
+[084][OK][step 2][+161.75s] observation | nodes=263
+[observation_raw step=2]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=263 coverage=0.8655029495011056 degraded=False screenshot=None
+message_like=
+  - Aarthi Scans and Labs, 3 unread messages
+  - Airtel Care, 5 unread messages
+  - Airtel India, 1 unread message
+  - Compose message
+  - CreditMantri, 1 unread message
+  - Edit last message
+  - Emergent, 2 unread messages
+  - IITians in Manufacturing , 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXStaticText label='Kulvinder Ji' value='\u200eVideo call , \u200e2 min, 27Julyat12:07\u202fPM, \u200eSent to Kulvinder Ji' enabled=True bbox=(173.0, 168.0, 375.0, 68.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXStaticText label='14/146, You: otherwise kulvinderji ko call bhi kar lena pehle se, 11/01/26' enabled=True bbox=(173.0, 995.0, 375.0, 99.0)
+  ... 248 more nodes
+[085][OK][step 2][+161.75s] observation_raw | nodes=263
+[observe_complete step=2] nodes=263 elapsed=0.81s
+[086][OK][step 2][+161.75s] observation_raw | nodes=263
+[087][OK][step 2][+166.33s] observation_fused | screen='SEARCH_RESULTS' retention=1.0
+[088][OK][step 2][+166.53s] step | message='transition poll' detail='0.3s'
+[089][OK][step 2][+166.99s] perception_settled
+[090][OK][step 2][+166.99s] post_transition_settled_view | screen='SEARCH_RESULTS'
+[091][OK][step 2][+166.99s] post_observation
+[092][OK][step 2][+166.99s] post_world_patch
+[093][OK][step 2][+167.02s] transition_eval
+[094][OK][step 2][+167.02s] transition_attribution
+[095][OK][step 2][+167.02s] verification
+[096][OK][step 2][+167.02s] transition_confirmation
+[097][OK][step 2][+167.04s] branch_explore
+[098][OK][step 3][+167.04s] progress_clock
+[observe_begin step=2] app=WhatsApp screenshot=True
+[099][OK][step 2][+167.04s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[100][OK][step 2][+167.04s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=378 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Paytm Bill Payments, ‎6 unread messages
+  - Tata Neu Credit, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 368 more nodes
+[101][OK][step 2][+167.73s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[102][OK][step 2][+167.73s] observation_raw_source
+[observe_done_fused step=2] nodes=263 elapsed=0.69s
+[103][OK][step 2][+167.74s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 378, 'macapptree': 0} elapsed=0.69s attempt=1/3"
+[104][OK][step 2][+167.74s] observation | nodes=263
+[observation_raw step=2]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=263 coverage=0.8655029495011056 degraded=False screenshot=None
+message_like=
+  - Aarthi Scans and Labs, 3 unread messages
+  - Airtel Care, 5 unread messages
+  - Airtel India, 1 unread message
+  - Compose message
+  - CreditMantri, 1 unread message
+  - Edit last message
+  - Emergent, 2 unread messages
+  - IITians in Manufacturing , 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXStaticText label='Kulvinder Ji' value='\u200eVideo call , \u200e2 min, 27Julyat12:07\u202fPM, \u200eSent to Kulvinder Ji' enabled=True bbox=(173.0, 168.0, 375.0, 68.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXStaticText label='14/146, You: otherwise kulvinderji ko call bhi kar lena pehle se, 11/01/26' enabled=True bbox=(173.0, 995.0, 375.0, 99.0)
+  ... 248 more nodes
+[105][OK][step 2][+167.74s] observation_raw | nodes=263
+[observe_complete step=2] nodes=263 elapsed=0.70s
+Auxiliary: marking openrouter/nvidia/nemotron-3-ultra-550b-a55b unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:25:35.
+Auxiliary decision_high_risk: fallback candidate openrouter/nvidia/nemotron-3-ultra-550b-a55b failed (Error code: 402 - {'error': {'message': 'This request requires more credits, or fewer max_tokens. You requested up to 32768 tokens, but can only afford 454. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account', 'code': 402, 'metadata': {'limit_source': 'openrouter_credits', 'remedy_hint': 'Add credits at https://openrouter.ai/settings/credits, or lower max_tokens / prompt size to fit your remaining balance.', 'provider_name': None, 'previous_errors': [{'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 592. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens, but can only afford 646. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}, {'code': 402, 'message': 'This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 394. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account'}]}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:25:44.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:25:52.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:26:00.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:26:19.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:26:28.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:26:36.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:26:45.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:27:01.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-cloud) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 15:27:09.
+Auxiliary decision_high_risk: fallback candidate main-agent(ollama-cloud) failed (Request timed out.) — trying next fallback

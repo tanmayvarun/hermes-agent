@@ -19,6 +19,17 @@ This doc contains two kinds of content, maintained differently:
   change a primitive, token, or variant, update its entry here **in the same
   change** — a stale name in this file is a bug, exactly like a stale type.
 
+The same split applies to agent behavior:
+
+- **Core policy stays generic.** Confidence gates, irreversible-action safety,
+  storage-pressure recovery, and candidate-selection rules belong in shared
+  agent code and docs.
+- **Leaf behavior stays specific.** Desktop-only labels, widget names,
+  component variants, and app-local affordances belong in this design system
+  and the desktop leaf files.
+- **If a rule would apply to every app, do not bury it in a desktop-specific
+  workaround.** Move it to the shared agent docs or core implementation.
+
 When a rule and the code disagree, fix whichever is wrong rather than forking a
 one-off at the call site.
 
@@ -40,7 +51,11 @@ one-off at the call site.
 6. **Intent before automation.** Surface useful actions and previews, but do not
    open panes, move focus, or navigate because a tool happened to produce
    something.
-7. **Immediate feedback.** Direct manipulation updates the view first. Network
+7. **Irreversible actions need confidence.** When an interaction creates a
+   durable external footprint, gate it with the agent's configurable
+   irreversible-action confidence threshold instead of trying to outsmart the
+   model with local click-order heuristics.
+8. **Immediate feedback.** Direct manipulation updates the view first. Network
    or disk persistence reconciles afterward and rolls back visibly on failure.
 
 ## Information architecture

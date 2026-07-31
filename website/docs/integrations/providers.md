@@ -520,6 +520,45 @@ model:
 
 The base URL can be overridden with `GMI_BASE_URL` (default: `https://api.gmi-serving.com/v1`).
 
+### Free model gateways (LLM7, OVHcloud, Groq, Cerebras, SiliconFlow, SambaNova)
+
+These OpenAI-compatible free-tier backends from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) ship as first-class providers:
+
+| Provider | Env key | Approx free limits | Notes |
+|----------|---------|--------------------|-------|
+| **LLM7** | `LLM7_API_KEY` (optional) | ~30 RPM (120 with token) | Free gateway; **no key required** for basic access. Tool-calling works. |
+| **OVHcloud** | `OVHCLOUD_API_KEY` (optional) | **2 RPM**/IP anonymous | EU hosted; anonymous omits Authorization. Higher limits with Public Cloud key. |
+| **Cerebras** | `CEREBRAS_API_KEY` | ~30 RPM, **14,400 RPD** | Best free daily budget among these; needs free signup. |
+| **Groq** | `GROQ_API_KEY` | ~30 RPM, ~1,000 RPD | Ultra-fast LPU. Same key as Hermes Whisper STT. |
+| **SiliconFlow** | `SILICONFLOW_API_KEY` | ~30 RPM free models | Permanent free models; free API key required. |
+| **SambaNova** | `SAMBANOVA_API_KEY` | ~20 RPM / 20 RPD | Fast RDU free tier; free API key required. |
+
+```bash
+# LLM7 — no key required for basic access (verified live)
+hermes chat --provider llm7 --model gpt-oss:20b
+
+# OVHcloud — anonymous free tier (2 RPM)
+hermes chat --provider ovhcloud --model gpt-oss-20b
+
+# Highest free daily limit (needs free key)
+hermes chat --provider cerebras --model gpt-oss-120b
+
+# Groq / SiliconFlow / SambaNova — free API keys from their consoles
+hermes chat --provider groq --model llama-3.3-70b-versatile
+hermes chat --provider siliconflow --model Qwen/Qwen3-8B
+hermes chat --provider sambanova --model Meta-Llama-3.3-70B-Instruct
+```
+
+Or permanently in `config.yaml`:
+
+```yaml
+model:
+  provider: "llm7"       # or ovhcloud / groq / cerebras / siliconflow / sambanova
+  default: "gpt-oss:20b"
+```
+
+Select them from `hermes model` like any other provider.
+
 ### StepFun
 
 Step-series models via [StepFun](https://platform.stepfun.com) — OpenAI-compatible API, API key authentication.
@@ -1114,11 +1153,9 @@ Any service with an OpenAI-compatible API works. Some popular options:
 | Provider | Base URL | Notes |
 |----------|----------|-------|
 | [Together AI](https://together.ai) | `https://api.together.xyz/v1` | Cloud-hosted open models |
-| [Groq](https://groq.com) | `https://api.groq.com/openai/v1` | Ultra-fast inference |
 | [DeepSeek](https://deepseek.com) | `https://api.deepseek.com/v1` | DeepSeek models |
 | [Fireworks AI](https://fireworks.ai) | `https://api.fireworks.ai/inference/v1` | Fast open model hosting |
 | [GMI Cloud](https://www.gmicloud.ai/) | `https://api.gmi-serving.com/v1` | Managed OpenAI-compatible inference |
-| [Cerebras](https://cerebras.ai) | `https://api.cerebras.ai/v1` | Wafer-scale chip inference |
 | [Mistral AI](https://mistral.ai) | `https://api.mistral.ai/v1` | Mistral models |
 | [OpenAI](https://openai.com) | `https://api.openai.com/v1` | Direct OpenAI access |
 | [Azure OpenAI](https://azure.microsoft.com) | `https://YOUR.openai.azure.com/` | Enterprise OpenAI |
@@ -1303,25 +1340,14 @@ Switch models mid-session:
 
 Together's `/v1/models` endpoint works, so `hermes model` can auto-discover available models.
 
-#### Groq
+#### Groq / Cerebras / LLM7
 
-Ultra-fast inference (~500 tok/s on Llama-3.3-70B). Small catalog but strong for latency-sensitive interactive use.
-
-```yaml
-# ~/.hermes/config.yaml
-custom_providers:
-  - name: groq
-    base_url: https://api.groq.com/openai/v1
-    key_env: GROQ_API_KEY
-
-model:
-  default: llama-3.3-70b-versatile
-  provider: custom:groq
-```
+Prefer the first-class providers above ([Free model gateways](#free-model-gateways-llm7-groq-cerebras)):
 
 ```bash
-# ~/.hermes/.env
-GROQ_API_KEY=your-groq-key
+hermes chat --provider groq --model llama-3.3-70b-versatile
+hermes chat --provider cerebras --model gpt-oss-120b
+hermes chat --provider llm7 --model gpt-oss:20b
 ```
 
 #### Perplexity

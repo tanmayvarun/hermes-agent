@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "app_name": "WhatsApp",
+    "window_name": "Pallavi",
+    "bundle_id": "net.whatsapp.WhatsApp",
+    "screen": "chat",
+    "coverage": 1.0
+  },
+  "tree": {
+    "id": "wa-chat",
+    "name": "Pallavi",
+    "role": "AXWindow",
+    "children": [
+      {
+        "id": "title",
+        "name": "Pallavi",
+        "role": "AXStaticText",
+        "bbox": [300, 20, 120, 24],
+        "children": []
+      },
+      {
+        "id": "call-btn",
+        "name": "Call",
+        "role": "AXButton",
+        "bbox": [520, 18, 48, 28],
+        "enabled": true,
+        "children": []
+      },
+      {
+        "id": "composer",
+        "name": "Type a message",
+        "role": "AXTextField",
+        "bbox": [300, 520, 400, 36],
+        "enabled": true,
+        "children": []
+      },
+      {
+        "id": "messages",
+        "name": "Messages",
+        "role": "AXScrollArea",
+        "bbox": [300, 60, 400, 440],
+        "children": []
+      }
+    ]
+  }
+}

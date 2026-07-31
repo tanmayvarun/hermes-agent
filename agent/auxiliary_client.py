@@ -107,10 +107,16 @@ OpenAI = _OpenAIProxy()  # module-level name, resolves lazily on call/isinstance
 from agent.credential_pool import load_pool
 from agent.model_metadata import MINIMUM_CONTEXT_LENGTH, get_model_context_length
 from hermes_cli.config import get_hermes_home
+from hermes_cli.model_latency import record_model_outcome, record_model_latency
+from hermes_cli.model_routing import rank_task_models
 from hermes_constants import OPENROUTER_BASE_URL
 from utils import base_url_host_matches, base_url_hostname, env_float, model_forces_max_completion_tokens, normalize_proxy_env_vars
 
 logger = logging.getLogger(__name__)
+
+
+class LLMProviderExhaustedError(RuntimeError):
+    """Raised when auxiliary provider resolution has no viable response left."""
 
 
 # ── resolve_provider_client fall-through dedup ───────────────────────────
@@ -160,6 +166,130 @@ def _resolve_aux_verify(base_url: Optional[str]) -> Any:
 
 
 _WARNED_KEEPALIVE_IMPORT_SKEW = False
+_LAST_FALLBACK_CANDIDATE_REASON: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "last_fallback_candidate_reason",
+    default=None,
+)
+_LLM_LATENCY_CONTEXT: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
+    "llm_latency_context",
+    default=None,
+)
+
+
+def _record_current_llm_outcome(
+    *,
+    success: bool,
+    task: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+    timed_out: bool = False,
+) -> None:
+    ctx = _LLM_LATENCY_CONTEXT.get() or {}
+    started_at = ctx.get("started_at")
+    try:
+        started = float(started_at)
+    except Exception:
+        started = 0.0
+    if started <= 0:
+        return
+    try:
+        latency_s = max(time.perf_counter() - started, 0.0)
+    except Exception:
+        return
+    lat_provider = str(provider or ctx.get("provider") or "").strip()
+    lat_model = str(model or ctx.get("model") or "").strip()
+    lat_task = str(task or ctx.get("task") or "").strip() or None
+    lat_base_url = str(base_url or ctx.get("base_url") or "").strip()
+    if not lat_provider or not lat_model:
+        return
+    record_model_outcome(
+        lat_provider,
+        lat_model,
+        latency_s,
+        success=success,
+        timed_out=timed_out,
+        task=lat_task,
+        base_url=lat_base_url,
+    )
+
+
+def _redact_request_value(value: Any) -> Any:
+    """Recursively redact secret-bearing request fields for safe logging."""
+    if isinstance(value, dict):
+        redacted: Dict[str, Any] = {}
+        for key, nested in value.items():
+            key_norm = str(key).strip().lower()
+            if key_norm in {"api_key", "authorization", "auth", "token", "access_token"}:
+                redacted[key] = "<redacted>"
+            elif key_norm == "headers" and isinstance(nested, dict):
+                headers: Dict[str, Any] = {}
+                for h_key, h_val in nested.items():
+                    if str(h_key).strip().lower() == "authorization":
+                        headers[h_key] = "<redacted>"
+                    else:
+                        headers[h_key] = _redact_request_value(h_val)
+                redacted[key] = headers
+            else:
+                redacted[key] = _redact_request_value(nested)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_request_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_request_value(item) for item in value)
+    if isinstance(value, set):
+        return sorted(_redact_request_value(item) for item in value)
+    return value
+
+
+def _log_auxiliary_llm_request(
+    *,
+    task: Optional[str],
+    provider: Optional[str],
+    base_url: str,
+    api_key: Optional[str],
+    kwargs: Dict[str, Any],
+    timeout: float,
+) -> None:
+    request_url = ""
+    if base_url:
+        request_url = f"{base_url.rstrip('/')}/chat/completions"
+    api_key_val = str(api_key or "")
+    request_kwargs = _redact_request_value(kwargs)
+    raw_curl = ""
+    try:
+        payload_json = json.dumps(request_kwargs, ensure_ascii=False, sort_keys=True, default=str)
+        if request_url and api_key_val:
+            raw_curl = (
+                "curl -sS "
+                f"'{request_url}' "
+                "-H 'Content-Type: application/json' "
+                f"-H 'Authorization: Bearer {api_key_val}' "
+                f"-d '{payload_json}'"
+            )
+    except Exception:
+        raw_curl = ""
+    payload = {
+        "task": task or "call",
+        "provider": provider or "auto",
+        "request_url": request_url,
+        "api_key_present": bool(api_key_val),
+        "api_key_len": len(api_key_val) if api_key_val else 0,
+        "api_key_raw": api_key_val,
+        "api_key_sha1": hashlib.sha1(api_key_val.encode("utf-8")).hexdigest()[:10] if api_key_val else "",
+        "timeout_s": timeout,
+        "request": request_kwargs,
+        "curl": raw_curl,
+    }
+    try:
+        rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        # Emit to the run log/console as a plain line so request-shape
+        # debugging survives logger filtering and is visible in live runs.
+        print(f"Auxiliary request payload: {rendered}", flush=True)
+        logger.info("Auxiliary request payload: %s", rendered)
+    except Exception:
+        print(f"Auxiliary request payload: {payload!r}", flush=True)
+        logger.info("Auxiliary request payload: %r", payload)
 
 
 def _openai_http_client_kwargs(
@@ -168,6 +298,12 @@ def _openai_http_client_kwargs(
     async_mode: bool = False,
 ) -> Dict[str, Any]:
     """Inject keepalive httpx client with env-only proxy (not macOS system proxy)."""
+    # Ollama Cloud's OpenAI-compatible endpoint is already stable enough with
+    # the SDK default transport, and the custom keepalive wrapper has been seen
+    # to break auth on this host.  Keep the standard client path here so the
+    # Ollama Cloud runner uses the same working wire shape as direct SDK calls.
+    if base_url_host_matches(base_url or "", "ollama.com"):
+        return {}
     try:
         from agent.process_bootstrap import build_keepalive_http_client
         client = build_keepalive_http_client(
@@ -201,7 +337,23 @@ def _openai_http_client_kwargs(
     return {"http_client": client}
 
 def _create_openai_client(*, api_key: str, base_url: str, **kwargs: Any) -> Any:
-    kwargs = {**_openai_http_client_kwargs(base_url), **kwargs}
+    openai_http = _openai_http_client_kwargs(base_url)
+    if openai_http:
+        http_client = openai_http.get("http_client")
+        if http_client is not None and base_url_host_matches(base_url or "", "ollama.com"):
+            try:
+                def _log_ollama_request(request: Any) -> None:
+                    logger.info(
+                        "Auxiliary client: Ollama request url=%s method=%s",
+                        getattr(request, "url", ""),
+                        getattr(request, "method", ""),
+                    )
+                hooks = getattr(http_client, "event_hooks", None)
+                if isinstance(hooks, dict):
+                    hooks.setdefault("request", []).append(_log_ollama_request)
+            except Exception:
+                pass
+    kwargs = {**openai_http, **kwargs}
     # Hermes owns auxiliary retry + provider/model fallback policy (the
     # same-provider transient retry in call_llm plus the except-chain
     # fallback). The OpenAI SDK's own default (max_retries=2 → up to 3
@@ -211,6 +363,28 @@ def _create_openai_client(*, api_key: str, base_url: str, **kwargs: Any) -> Any:
     # by default and let Hermes control the budget; explicit callers can still
     # override via kwargs.
     kwargs.setdefault("max_retries", 0)
+
+    # Anonymous omit-auth providers (OVHcloud free tier): strip Authorization.
+    try:
+        from providers.base import OMIT_AUTH_API_KEY
+        import httpx as _httpx
+
+        if api_key == OMIT_AUTH_API_KEY:
+            http_client = kwargs.get("http_client")
+            if http_client is None:
+                http_client = _httpx.Client()
+
+            def _strip_authorization(request: Any) -> None:
+                request.headers.pop("Authorization", None)
+
+            hooks = getattr(http_client, "event_hooks", None)
+            if isinstance(hooks, dict):
+                hooks.setdefault("request", []).append(_strip_authorization)
+            kwargs["http_client"] = http_client
+            api_key = "omit-auth"
+    except Exception:
+        pass
+
     return OpenAI(api_key=api_key, base_url=base_url, **kwargs)
 
 
@@ -2060,6 +2234,44 @@ def _try_openrouter(explicit_api_key: str = None, model: str = None) -> Tuple[Op
                    default_headers=build_or_headers()), model or _OPENROUTER_MODEL
 
 
+def _try_ollama_remote(model: str = None) -> Tuple[Optional[Any], Optional[str]]:
+    """Try the configured remote Ollama provider before other fallbacks."""
+    try:
+        remote_base = ""
+        try:
+            from hermes_cli.config import get_env_value_prefer_dotenv
+
+            remote_base = (get_env_value_prefer_dotenv("OLLAMA_REMOTE_BASE_URL") or
+                           os.getenv("OLLAMA_REMOTE_BASE_URL", "")).strip()
+        except Exception:
+            remote_base = os.getenv("OLLAMA_REMOTE_BASE_URL", "").strip()
+        if not remote_base:
+            try:
+                from providers import get_provider_profile
+
+                profile = get_provider_profile("ollama-remote")
+                remote_base = str(getattr(profile, "base_url", "") or "").strip()
+            except Exception:
+                remote_base = ""
+        if not remote_base:
+            return None, None
+        resolved_model = model or _read_main_model() or "qwen2.5:32b"
+        client, final_model = resolve_provider_client(
+            "ollama-remote",
+            resolved_model,
+            explicit_base_url=remote_base,
+        )
+        if client is None:
+            _mark_provider_unhealthy("ollama-remote", ttl=60)
+            return None, None
+        logger.debug("Auxiliary client: ollama-remote (%s)", final_model or resolved_model)
+        return client, final_model or resolved_model
+    except Exception as exc:
+        logger.debug("Auxiliary client: ollama-remote unavailable: %s", exc)
+        _mark_provider_unhealthy("ollama-remote", ttl=60)
+        return None, None
+
+
 def _describe_openrouter_unavailable() -> str:
     """Return a more precise OpenRouter auth failure reason for logs."""
     pool_present, entry = _select_pool_entry("openrouter")
@@ -2458,6 +2670,29 @@ def clear_runtime_main() -> None:
         _RUNTIME_MAIN_API_MODE = ""
         _RUNTIME_MAIN_AUTH_MODE = ""
         _RUNTIME_MAIN_COMPAT_SNAPSHOT = ("", "", "", "", "", "")
+
+
+def get_runtime_main_snapshot() -> Dict[str, Any]:
+    """Return the current live main-runtime binding for this context.
+
+    This is the canonical snapshot for downstream LLM consumers. It reflects
+    the turn-local runtime override when one exists, otherwise the legacy
+    compatibility mirrors, and falls back to an empty dict when no runtime has
+    been bound.
+    """
+    runtime = _normalize_main_runtime(None)
+    snapshot = {field: "" for field in _MAIN_RUNTIME_FIELDS}
+    if not isinstance(runtime, dict):
+        return snapshot
+    for field in _MAIN_RUNTIME_FIELDS:
+        value = runtime.get(field, "")
+        if field == "api_key" and callable(value) and not isinstance(value, str):
+            snapshot[field] = value
+        elif isinstance(value, str):
+            snapshot[field] = value.strip()
+        elif value is not None:
+            snapshot[field] = value
+    return snapshot
 
 
 def _resolve_custom_runtime() -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -2901,25 +3136,194 @@ def _normalize_main_runtime(main_runtime: Optional[Dict[str, Any]]) -> Dict[str,
     return normalized
 
 
-def _get_provider_chain() -> List[tuple]:
-    """Return the ordered provider detection chain.
+def _selector_task_name(task: Optional[str]) -> str:
+    """Map auxiliary task names onto the central routing usecases."""
+    normalized = str(task or "").strip().lower().replace(" ", "_")
+    if normalized in {"vision", "browser_vision", "computer", "computer_use", "gui"}:
+        return "computer_use"
+    return normalized or "chat_runtime"
 
-    Built at call time (not module level) so that test patches
-    on the ``_try_*`` functions are picked up correctly.
 
-    NOTE: ``openai-codex`` is deliberately NOT in this chain.  The
-    ChatGPT-account Codex endpoint only accepts a shifting, undocumented
-    allow-list of model IDs, so falling back to it with a guessed model
-    fails more often than not.  Codex is used only when the user's main
-    provider *is* openai-codex (see Step 1 of ``_resolve_auto``) or when
-    a caller explicitly requests it with a model.
+def _select_ranked_provider_candidates(
+    task: Optional[str] = None,
+    *,
+    main_runtime: Optional[Dict[str, Any]] = None,
+) -> List[tuple[str, str, str]]:
+    """Return ranked provider/model candidates from the shared selector.
+
+    This is the single place auxiliary auto-routing gets its ordering from.
+    It delegates task fit, latency, and success history to
+    ``hermes_cli.model_routing.rank_task_models`` and then filters out
+    candidates that are already known to have failed in the current process.
     """
-    return [
-        ("openrouter", _try_openrouter),
-        ("nous", _try_nous),
-        ("local/custom", _try_custom_endpoint),
-        ("api-key", _resolve_api_key_provider),
-    ]
+    runtime = _normalize_main_runtime(main_runtime)
+    main_provider = str(runtime.get("provider") or _read_main_provider() or "").strip().lower()
+    main_model = str(runtime.get("model") or _read_main_model() or "").strip()
+    selector_task = _selector_task_name(task)
+    policy = (_auxiliary_provider_policy() or "auto").strip().lower()
+    hard_pin_ollama = _ollama_hard_pin_active(runtime)
+
+    try:
+        ranked = rank_task_models(
+            selector_task,
+            current_provider=main_provider,
+            current_base_url=str(runtime.get("base_url") or ""),
+            probe_custom_providers=True,
+            probe_current_custom_provider=False,
+        )
+    except Exception:
+        logger.debug("Auxiliary selector: rank_task_models failed", exc_info=True)
+        ranked = []
+
+    try:
+        from hermes_cli.config import load_config
+        from hermes_cli.fallback_config import get_fallback_chain
+
+        configured_chain = get_fallback_chain(load_config())
+    except Exception:
+        configured_chain = []
+
+    candidates: List[tuple[str, str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for cand in ranked:
+        provider = str(getattr(cand, "provider", "") or "").strip().lower()
+        model = str(getattr(cand, "model", "") or "").strip()
+        if not provider or not model:
+            continue
+        if provider == main_provider and model == main_model:
+            continue
+        if (policy == "ollama-only" or hard_pin_ollama) and not _is_ollama_like_route(
+            provider,
+            getattr(cand, "base_url", "") or "",
+            model,
+        ):
+            continue
+        key = (provider, model)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append((provider, model, getattr(cand, "base_url", "") or ""))
+
+    for entry in configured_chain:
+        provider = str(entry.get("provider") or "").strip().lower()
+        model = str(entry.get("model") or "").strip()
+        base_url = str(entry.get("base_url") or "").strip()
+        if not provider or not model:
+            continue
+        if provider == main_provider and model == main_model:
+            continue
+        if (policy == "ollama-only" or hard_pin_ollama) and not _is_ollama_like_route(provider, base_url, model):
+            continue
+        key = (provider, model)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append((provider, model, base_url))
+    return candidates
+
+
+def _get_provider_chain(task: Optional[str] = None, *, main_runtime: Optional[Dict[str, Any]] = None) -> List[tuple]:
+    """Return the ordered provider detection chain from the shared selector."""
+    chain: List[tuple] = []
+    for provider, model, _base_url in _select_ranked_provider_candidates(
+        task,
+        main_runtime=main_runtime,
+    ):
+        chain.append(
+            (
+                f"{provider}/{model}",
+                lambda provider=provider, model=model, main_runtime=main_runtime: resolve_provider_client(
+                    provider,
+                    model=model,
+                    main_runtime=main_runtime,
+                    task=task,
+                ),
+            )
+        )
+    if not chain:
+        runtime = _normalize_main_runtime(main_runtime)
+        policy = (_auxiliary_provider_policy() or "auto").strip().lower()
+        hard_pin_ollama = _ollama_hard_pin_active(runtime)
+        legacy_steps: list[tuple[str, Any]] = []
+        if hard_pin_ollama:
+            legacy_steps.append(("ollama-remote", lambda: _try_ollama_remote(str(runtime.get("model") or _read_main_model() or ""))))
+        else:
+            if task == "vision":
+                legacy_steps.append(("openrouter", lambda: _try_openrouter(model=str(runtime.get("model") or _read_main_model() or ""))))
+                legacy_steps.append(("nous", lambda: _try_nous(vision=True)))
+                legacy_steps.append(("custom", _try_custom_endpoint))
+                legacy_steps.append(("api-key", _resolve_api_key_provider))
+                legacy_steps.append(("ollama-remote", lambda: _try_ollama_remote(str(runtime.get("model") or _read_main_model() or ""))))
+            else:
+                legacy_steps.append(("openrouter", lambda: _try_openrouter(model=str(runtime.get("model") or _read_main_model() or ""))))
+                legacy_steps.append(("nous", lambda: _try_nous()))
+                legacy_steps.append(("custom", _try_custom_endpoint))
+                legacy_steps.append(("api-key", _resolve_api_key_provider))
+                legacy_steps.append(("ollama-remote", lambda: _try_ollama_remote(str(runtime.get("model") or _read_main_model() or ""))))
+            if policy == "ollama-only":
+                legacy_steps = [step for step in legacy_steps if step[0] == "ollama-remote"]
+
+        chain.extend(legacy_steps)
+    return chain
+
+
+def _auxiliary_provider_policy() -> str:
+    """Return the auxiliary LLM routing policy.
+
+    ``ollama-only`` keeps auxiliary perception / decision calls on the hosted
+    Ollama box and prevents split-brain fallbacks to rate-limited providers.
+    The policy is opt-in via environment so generic installs keep their
+    historical behavior unless the launcher requests the stricter mode.
+    """
+    try:
+        env_policy = str(os.getenv("HERMES_AUXILIARY_PROVIDER_POLICY", "") or "").strip().lower()
+        if env_policy:
+            return env_policy
+        # Live Ollama Cloud runtimes should default to ollama-only even when
+        # the launcher forgot to export the policy. This removes the stale
+        # cross-provider escape hatch that otherwise lets auxiliary calls drift
+        # into OpenRouter / other providers after a timeout or auth failure.
+        try:
+            main_provider = str(_read_main_provider() or "").strip().lower()
+            if main_provider in {"ollama", "ollama-remote", "remote-ollama", "ollama-cloud"}:
+                return "ollama-only"
+        except Exception:
+            pass
+        return ""
+    except Exception:
+        return ""
+
+
+def _is_ollama_like_route(provider: str = "", base_url: str = "", model: str = "") -> bool:
+    """Return True when the route is clearly an Ollama-backed endpoint."""
+    prov = str(provider or "").strip().lower()
+    base = str(base_url or "").strip().lower()
+    if prov in {"ollama", "ollama-remote", "remote-ollama", "ollama-cloud"}:
+        return True
+    if "ollama.com" in base:
+        return True
+    if "11434" in base:
+        return True
+    if prov.startswith("custom") and base:
+        return base_url_host_matches(base, "localhost") or base_url_host_matches(base, "127.0.0.1")
+    if model and ":" in model and prov in {"custom", "auto", ""}:
+        # Ollama-style model tags frequently use "name:tag" (e.g. qwen2.5:32b).
+        return bool(base) and ("11434" in base or base_url_host_matches(base, "localhost"))
+    return False
+
+
+def _ollama_hard_pin_active(runtime: Optional[Dict[str, Any]] = None) -> bool:
+    """Return True when auxiliary routing should stay on Ollama only.
+
+    The hard pin is active when the current live runtime itself is already
+    bound to an Ollama-backed provider. We intentionally do not key this off
+    ambient process policy so test harnesses and unrelated shells cannot
+    accidentally force the live router into Ollama-only mode.
+    """
+    rt = _normalize_main_runtime(runtime)
+    provider = str(rt.get("provider") or _read_main_provider() or "").strip()
+    model = str(rt.get("model") or _read_main_model() or "").strip()
+    return provider.lower() in {"ollama", "ollama-remote", "remote-ollama", "ollama-cloud"}
 
 
 # ── Auxiliary "recently 402'd" unhealthy-provider cache ────────────────────
@@ -2950,6 +3354,9 @@ _aux_unhealthy_logged_at: Dict[str, float] = {}
 # back to the chain labels used by _get_provider_chain(). Keep in sync
 # with the alias map in _try_payment_fallback below.
 _AUX_UNHEALTHY_LABEL_ALIASES = {
+    "ollama-remote": "ollama-remote",
+    "ollama_remote": "ollama-remote",
+    "remote-ollama": "ollama-remote",
     "openrouter": "openrouter",
     "nous": "nous",
     "custom": "local/custom",
@@ -2971,6 +3378,20 @@ def _normalize_chain_label(provider: str) -> str:
     return _AUX_UNHEALTHY_LABEL_ALIASES.get(p, p)
 
 
+def _fallback_unhealthy_key(fb_label: str, fb_provider: Optional[str] = None) -> str:
+    """Return the unhealthy-cache key for a fallback candidate.
+
+    Configured fallback-chain entries can list multiple models on the same
+    backend. Those entries should not poison the whole provider when just one
+    model times out, so chain labels use their exact ``fallback_chain[i](...)``
+    identity. For non-chain candidates we keep provider-level quarantine.
+    """
+    label = (fb_label or "").strip()
+    if label.startswith("fallback_chain["):
+        return label
+    return _normalize_chain_label(fb_provider or label)
+
+
 def _mark_provider_unhealthy(provider: str, ttl: Optional[float] = None) -> None:
     """Mark ``provider`` as recently-402'd, hidden from chain iteration
     until the TTL expires. Called from the payment-fallback branches in
@@ -2978,6 +3399,15 @@ def _mark_provider_unhealthy(provider: str, ttl: Optional[float] = None) -> None
     """
     label = _normalize_chain_label(provider)
     if not label:
+        return
+    if _auxiliary_provider_policy() == "ollama-only" and label == "ollama-remote":
+        # In ollama-only mode the hosted Ollama box is the only allowed
+        # auxiliary backend. Do not let a stale or misclassified unhealthy
+        # record hide the only permitted route across retries/runs.
+        logger.debug(
+            "Auxiliary: skipping unhealthy mark for %s under ollama-only policy",
+            label,
+        )
         return
     expires_at = time.time() + (ttl if ttl is not None else _AUX_UNHEALTHY_TTL_SECONDS)
     _aux_unhealthy_until[label] = expires_at
@@ -2995,6 +3425,8 @@ def _is_provider_unhealthy(label: str) -> bool:
     Lazily evicts expired entries so the cache stays small.
     """
     if not label:
+        return False
+    if _auxiliary_provider_policy() == "ollama-only" and label == "ollama-remote":
         return False
     expires_at = _aux_unhealthy_until.get(label)
     if expires_at is None:
@@ -3397,6 +3829,17 @@ def _is_invalid_aux_response_error(exc: Exception) -> bool:
         "auxiliary " in msg
         and "llm returned invalid response" in msg
         and "choices[0].message" in msg
+    )
+
+
+def _is_retryable_aux_fallback_error(exc: Exception) -> bool:
+    """Return True when a fallback candidate should be skipped and another tried."""
+    return (
+        _is_payment_error(exc)
+        or _is_connection_error(exc)
+        or _is_rate_limit_error(exc)
+        or _is_model_incompatible_error(exc)
+        or _is_invalid_aux_response_error(exc)
     )
 
 
@@ -3857,6 +4300,7 @@ def _call_fallback_candidate_sync(
     (#62452).
     """
     fb_timeout = _fallback_entry_timeout(task, fb_label)
+    _LAST_FALLBACK_CANDIDATE_REASON.set(None)
     if fb_timeout is not None and fb_timeout != effective_timeout:
         logger.info(
             "Auxiliary %s: %s using its configured timeout %.0fs "
@@ -3871,12 +4315,48 @@ def _call_fallback_candidate_sync(
         tools=tools, timeout=effective_timeout,
         extra_body=effective_extra_body, reasoning_config=reasoning_config,
         base_url=fb_base)
+    _LLM_LATENCY_CONTEXT.set(
+        {
+            "started_at": time.perf_counter(),
+            "provider": str(_auth_refresh_provider_for_route(fb_label, fb_base) or fb_label or ""),
+            "model": str(fb_model or ""),
+            "task": str(task or ""),
+            "base_url": fb_base,
+        }
+    )
     try:
         return _validate_llm_response(
             fb_client.chat.completions.create(**fb_kwargs), task)
     except Exception as fb_err:
         if not _is_auth_error(fb_err):
-            raise
+            if not _is_retryable_aux_fallback_error(fb_err):
+                _record_current_llm_outcome(
+                    success=False,
+                    task=task,
+                    provider=_auth_refresh_provider_for_route(fb_label, fb_base) or fb_label,
+                    model=fb_model,
+                    base_url=fb_base,
+                    timed_out=_is_timeout_error(fb_err),
+                )
+                raise
+            fb_provider = _auth_refresh_provider_for_route(fb_label, fb_base)
+            _mark_provider_unhealthy(
+                _fallback_unhealthy_key(fb_label, _recoverable_pool_provider(fb_provider or fb_label, fb_client) or fb_provider)
+            )
+            _record_current_llm_outcome(
+                success=False,
+                task=task,
+                provider=fb_provider or fb_label,
+                model=fb_model,
+                base_url=fb_base,
+                timed_out=_is_timeout_error(fb_err),
+            )
+            logger.warning(
+                "Auxiliary %s: fallback candidate %s failed (%s) — trying next fallback",
+                task or "call", fb_label, fb_err,
+            )
+            _LAST_FALLBACK_CANDIDATE_REASON.set(None)
+            return None
         fb_provider = _auth_refresh_provider_for_route(fb_label, fb_base)
         if fb_provider not in {"auto", "", None} and _refresh_provider_credentials(fb_provider):
             retry_client, retry_model = _get_cached_client(fb_provider, fb_model)
@@ -3893,17 +4373,36 @@ def _call_fallback_candidate_sync(
                         retry_client.chat.completions.create(**retry_kwargs), task)
                 except Exception as retry_err:
                     if not _is_auth_error(retry_err):
+                        _record_current_llm_outcome(
+                            success=False,
+                            task=task,
+                            provider=fb_provider or fb_label,
+                            model=retry_model or fb_model,
+                            base_url=str(getattr(retry_client, "base_url", "") or fb_base),
+                            timed_out=_is_timeout_error(retry_err),
+                        )
                         raise
         # Refresh unavailable or the refreshed credential still 401s —
         # the token is dead (expired setup token with no refresh token).
         # Quarantine the candidate so subsequent chain walks skip it, and
         # let the caller move on instead of aborting the whole task.
-        _mark_provider_unhealthy(fb_provider or fb_label)
+        _record_current_llm_outcome(
+            success=False,
+            task=task,
+            provider=fb_provider or fb_label,
+            model=fb_model,
+            base_url=fb_base,
+            timed_out=_is_timeout_error(fb_err),
+        )
+        _mark_provider_unhealthy(
+            _fallback_unhealthy_key(fb_label, fb_provider)
+        )
         logger.warning(
             "Auxiliary %s: fallback candidate %s has a stale/unrefreshable "
             "credential (%s) — skipping to next fallback",
             task or "call", fb_label, fb_err,
         )
+        _LAST_FALLBACK_CANDIDATE_REASON.set("stale fallback credential")
         return None
 
 
@@ -3923,6 +4422,7 @@ async def _call_fallback_candidate_async(
 ) -> Optional[Any]:
     """Async mirror of :func:`_call_fallback_candidate_sync`."""
     fb_timeout = _fallback_entry_timeout(task, fb_label)
+    _LAST_FALLBACK_CANDIDATE_REASON.set(None)
     if fb_timeout is not None and fb_timeout != effective_timeout:
         logger.info(
             "Auxiliary %s: %s using its configured timeout %.0fs "
@@ -3937,12 +4437,48 @@ async def _call_fallback_candidate_async(
         tools=tools, timeout=effective_timeout,
         extra_body=effective_extra_body, reasoning_config=reasoning_config,
         base_url=fb_base)
+    _LLM_LATENCY_CONTEXT.set(
+        {
+            "started_at": time.perf_counter(),
+            "provider": str(_auth_refresh_provider_for_route(fb_label, fb_base) or fb_label or ""),
+            "model": str(fb_model or ""),
+            "task": str(task or ""),
+            "base_url": fb_base,
+        }
+    )
     try:
         return _validate_llm_response(
             await fb_client.chat.completions.create(**fb_kwargs), task)
     except Exception as fb_err:
         if not _is_auth_error(fb_err):
-            raise
+            if not _is_retryable_aux_fallback_error(fb_err):
+                _record_current_llm_outcome(
+                    success=False,
+                    task=task,
+                    provider=_auth_refresh_provider_for_route(fb_label, fb_base) or fb_label,
+                    model=fb_model,
+                    base_url=fb_base,
+                    timed_out=_is_timeout_error(fb_err),
+                )
+                raise
+            fb_provider = _auth_refresh_provider_for_route(fb_label, fb_base)
+            _mark_provider_unhealthy(
+                _fallback_unhealthy_key(fb_label, _recoverable_pool_provider(fb_provider or fb_label, fb_client) or fb_provider)
+            )
+            _record_current_llm_outcome(
+                success=False,
+                task=task,
+                provider=fb_provider or fb_label,
+                model=fb_model,
+                base_url=fb_base,
+                timed_out=_is_timeout_error(fb_err),
+            )
+            logger.warning(
+                "Auxiliary %s (async): fallback candidate %s failed (%s) — trying next fallback",
+                task or "call", fb_label, fb_err,
+            )
+            _LAST_FALLBACK_CANDIDATE_REASON.set(None)
+            return None
         fb_provider = _auth_refresh_provider_for_route(fb_label, fb_base)
         if fb_provider not in {"auto", "", None} and _refresh_provider_credentials(fb_provider):
             retry_client, retry_model = _get_cached_client(
@@ -3960,13 +4496,32 @@ async def _call_fallback_candidate_async(
                         await retry_client.chat.completions.create(**retry_kwargs), task)
                 except Exception as retry_err:
                     if not _is_auth_error(retry_err):
+                        _record_current_llm_outcome(
+                            success=False,
+                            task=task,
+                            provider=fb_provider or fb_label,
+                            model=retry_model or fb_model,
+                            base_url=str(getattr(retry_client, "base_url", "") or fb_base),
+                            timed_out=_is_timeout_error(retry_err),
+                        )
                         raise
-        _mark_provider_unhealthy(fb_provider or fb_label)
+        _record_current_llm_outcome(
+            success=False,
+            task=task,
+            provider=fb_provider or fb_label,
+            model=fb_model,
+            base_url=fb_base,
+            timed_out=_is_timeout_error(fb_err),
+        )
+        _mark_provider_unhealthy(
+            _fallback_unhealthy_key(fb_label, fb_provider)
+        )
         logger.warning(
             "Auxiliary %s (async): fallback candidate %s has a stale/unrefreshable "
             "credential (%s) — skipping to next fallback",
             task or "call", fb_label, fb_err,
         )
+        _LAST_FALLBACK_CANDIDATE_REASON.set("stale fallback credential")
         return None
 
 
@@ -3988,6 +4543,7 @@ def _try_payment_fallback(
     # Also skip Step-1 main-provider path if it maps to the same backend.
     # (e.g. main_provider="openrouter" → skip "openrouter" in chain)
     main_provider = _read_main_provider()
+    hard_pin_ollama = _ollama_hard_pin_active()
     skip_labels = {skip}
     if main_provider and main_provider.lower() in skip:
         skip_labels.add(main_provider.lower())
@@ -3998,20 +4554,33 @@ def _try_payment_fallback(
     skip_chain_labels = {_alias_to_label.get(s, s) for s in skip_labels}
 
     tried = []
-    for label, try_fn in _get_provider_chain():
-        if label in skip_chain_labels:
+    runtime = _normalize_main_runtime(None)
+    for provider, model, _base_url in _select_ranked_provider_candidates(task, main_runtime=runtime):
+        if hard_pin_ollama and not _is_ollama_like_route(provider, _base_url, model):
             continue
-        if _is_provider_unhealthy(label):
-            _log_skip_unhealthy(label, task)
+        label = f"{provider}/{model}"
+        if provider in skip_chain_labels or label in skip_chain_labels:
+            continue
+        unhealthy_key = _normalize_chain_label(provider)
+        if _is_provider_unhealthy(unhealthy_key) or _is_provider_unhealthy(label):
+            _log_skip_unhealthy(unhealthy_key or label, task)
             tried.append(f"{label} (unhealthy)")
             continue
-        client, model = try_fn()
+        try:
+            client, resolved_model = resolve_provider_client(
+                provider,
+                model=model,
+                main_runtime=runtime,
+                task=task,
+            )
+        except Exception:
+            client, resolved_model = None, None
         if client is not None:
             logger.info(
                 "Auxiliary %s: %s on %s — falling back to %s (%s)",
-                task or "call", reason, failed_provider, label, model or "default",
+                task or "call", reason, failed_provider, label, resolved_model or model or "default",
             )
-            return client, model, label
+            return client, resolved_model or model, label
         tried.append(label)
 
     logger.warning(
@@ -4042,6 +4611,8 @@ def _try_main_agent_model_fallback(
     main_provider = (_read_main_provider() or "").strip()
     main_model = (_read_main_model() or "").strip()
     if not main_provider or not main_model or main_provider.lower() in {"auto", ""}:
+        return None, None, ""
+    if _ollama_hard_pin_active() and not _is_ollama_like_route(main_provider, _read_main_base_url(), main_model):
         return None, None, ""
 
     skip = (failed_provider or "").lower().strip()
@@ -4174,17 +4745,37 @@ def _try_configured_fallback_chain(
     if not chain or not isinstance(chain, list):
         return None, None, ""
 
-    skip = failed_provider.lower().strip()
+    start_index = 0
+    failed_label = (failed_provider or "").strip()
+    m = re.match(r"fallback_chain\[(\d+)\]", failed_label)
+    if m:
+        try:
+            start_index = int(m.group(1)) + 1
+        except Exception:
+            start_index = 0
+
     tried = []
     min_ctx = _task_minimum_context_length(task)
+    hard_pin_ollama = _ollama_hard_pin_active()
 
     for i, entry in enumerate(chain):
+        if i < start_index:
+            continue
         if not isinstance(entry, dict):
             continue
         fb_provider = str(entry.get("provider", "")).strip()
-        if not fb_provider or fb_provider.lower() == skip:
+        if not fb_provider:
             continue
         fb_model = str(entry.get("model", "")).strip() or None
+        fb_base_url = str(entry.get("base_url") or "").strip()
+
+        if ( _auxiliary_provider_policy() == "ollama-only" or hard_pin_ollama ) and not _is_ollama_like_route(
+            fb_provider,
+            fb_base_url,
+            fb_model or "",
+        ):
+            tried.append(f"fallback_chain[{i}]({fb_provider}) (policy skipped)")
+            continue
 
         label = f"fallback_chain[{i}]({fb_provider})"
 
@@ -4194,6 +4785,10 @@ def _try_configured_fallback_chain(
             fb_client, resolved_model = None, None
 
         if fb_client is not None:
+            if _is_provider_unhealthy(label):
+                _log_skip_unhealthy(label, task)
+                tried.append(f"{label} (unhealthy)")
+                continue
             if min_ctx is not None and resolved_model:
                 fb_ctx = _candidate_context_window(
                     fb_provider,
@@ -4298,6 +4893,8 @@ def _try_main_fallback_chain(
 
     if not chain:
         return None, None, ""
+    if _ollama_hard_pin_active():
+        return None, None, ""
 
     failed_norm = (failed_provider or "").strip().lower()
     main_norm = (_read_main_provider() or "").strip().lower()
@@ -4384,14 +4981,10 @@ def _resolve_auto(
 
     Priority:
       1. User's main provider + main model, regardless of provider type.
-         This means auxiliary tasks (compression, vision, web extraction,
-         session search, etc.) use the same model the user configured for
-         chat.  Users on OpenRouter/Nous get their chosen chat model; users
-         on DeepSeek/ZAI/Alibaba get theirs; etc.  Running aux tasks on the
-         user's picked model keeps behavior predictable — no surprise
-         switches to a cheap fallback model for side tasks.
-      2. OpenRouter → Nous → custom → Codex → API-key providers (fallback
-         chain, only used when the main provider has no working client).
+         This keeps auxiliary tasks aligned with the configured chat model
+         when the live runtime is healthy.
+      2. Configured fallback chains.
+      3. The shared task selector from ``hermes_cli.model_routing``.
     """
     global auxiliary_is_nous, _stale_base_url_warned
     auxiliary_is_nous = False  # Reset — _try_nous() will set True if it wins
@@ -4419,19 +5012,24 @@ def _resolve_auto(
                 "Run: hermes model to reconfigure, or remove "
                 "OPENAI_BASE_URL from ~/.hermes/.env",
                 _env_base, _cfg_provider,
-            )
+                )
             _stale_base_url_warned = True
 
-    # ── Step 1: main provider + main model → use them directly ──
+    # Resolve the main provider/model once up front so the hosted Ollama
+    # preflight can make a real routing decision without reaching below the
+    # assignment site.
+    main_provider = str(runtime_provider or _read_main_provider() or "")
+    main_model = str(runtime_model or _read_main_model() or "")
+    policy = _auxiliary_provider_policy()
+    hard_pin_ollama = _ollama_hard_pin_active(runtime)
+
+    # ── Step 0: main provider + main model → use them directly ──
     #
     # This is the primary aux backend for every user.  "auto" means
     # "use my main chat model for side tasks as well" — including users
     # on aggregators (OpenRouter, Nous) who previously got routed to a
     # cheap provider-side default.  Explicit per-task overrides set via
     # config.yaml (auxiliary.<task>.provider) still win over this.
-    main_provider = str(runtime_provider or _read_main_provider() or "")
-    main_model = str(runtime_model or _read_main_model() or "")
-
     # MoA virtual provider: the "model" is a preset name (e.g. "opus-gpt") and
     # there is no real "moa" HTTP endpoint, so resolving an aux client against
     # provider="moa"/model=<preset> sends the preset name as the model id and
@@ -4463,7 +5061,8 @@ def _resolve_auto(
             logger.debug("MoA aux resolution to aggregator failed", exc_info=True)
 
     if (main_provider and main_model
-            and main_provider not in {"auto", ""}):
+            and main_provider not in {"auto", ""}
+            and ((policy != "ollama-only" and not hard_pin_ollama) or _is_ollama_like_route(main_provider, runtime_base_url, main_model))):
         resolved_provider = main_provider
         explicit_base_url = runtime_base_url or None
         explicit_api_key = None
@@ -4528,24 +5127,9 @@ def _resolve_auto(
                             main_provider, resolved or main_model)
                 return client, resolved or main_model
 
-    # ── Step 2: user-configured fallback policy ─────────────────────────
-    # In auto mode, respect the task-specific fallback chain first, then the
-    # main agent's top-level fallback_providers/fallback_model chain. The
-    # hardcoded provider discovery chain below is only the convenience default
-    # for users who have not declared a fallback policy.
-    if task:
-        fb_client, fb_model, _fb_label = _try_configured_fallback_chain(
-            task, main_provider or "auto", reason="main provider unavailable")
-        if fb_client is not None:
-            return fb_client, fb_model
-    fb_client, fb_model, _fb_label = _try_main_fallback_chain(
-        task, main_provider or "auto", reason="main provider unavailable")
-    if fb_client is not None:
-        return fb_client, fb_model
-
-    # ── Step 3: aggregator / fallback chain ──────────────────────────────
+    # ── Step 1: shared selector candidates ───────────────────────────────
     tried = []
-    for label, try_fn in _get_provider_chain():
+    for label, try_fn in _get_provider_chain(task=task, main_runtime=runtime):
         if _is_provider_unhealthy(label):
             _log_skip_unhealthy(label)
             tried.append(f"{label} (unhealthy)")
@@ -4559,10 +5143,13 @@ def _resolve_auto(
                 logger.info("Auxiliary auto-detect: using %s (%s)", label, model or "default")
             return client, model
         tried.append(label)
-    logger.warning("Auxiliary auto-detect: no provider available (tried: %s). "
-                   "Compression, summarization, and memory flush will not work. "
-                   "Set OPENROUTER_API_KEY or configure a local model in config.yaml.",
-                   ", ".join(tried))
+
+    logger.warning(
+        "Auxiliary auto-detect: no provider available (tried: %s). "
+        "Compression, summarization, and memory flush will not work. "
+        "Configure Ollama Cloud or a supported fallback policy explicitly.",
+        ", ".join(tried),
+    )
     return None, None
 
 
@@ -4657,7 +5244,6 @@ def _normalize_resolved_model(model_name: Optional[str], provider: str) -> Optio
         return model_name
     try:
         from hermes_cli.model_normalize import normalize_model_for_provider
-
         return normalize_model_for_provider(model_name, provider)
     except Exception:
         return model_name
@@ -5132,6 +5718,47 @@ def resolve_provider_client(
         return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
                 else (client, final_model))
 
+    # ── Ollama Cloud ────────────────────────────────────────────────
+    # Keep this route explicit instead of relying on the generic API-key
+    # resolver. The live forward runner is pinned to Ollama Cloud and must
+    # use the same host/key pair that direct terminal curls validate.
+    if provider == "ollama-cloud":
+        try:
+            from hermes_cli.auth import resolve_api_key_provider_credentials
+        except ImportError:
+            logger.warning(
+                "resolve_provider_client: ollama-cloud requested but auth helpers are unavailable"
+            )
+            return None, None
+        creds = resolve_api_key_provider_credentials(provider)
+        api_key = str(explicit_api_key or creds.get("api_key") or "").strip()
+        base_url = str(explicit_base_url or creds.get("base_url") or "").strip()
+        if not api_key:
+            logger.warning(
+                "resolve_provider_client: ollama-cloud requested but no API key was found"
+            )
+            return None, None
+        if not base_url:
+            base_url = "https://ollama.com/v1"
+        try:
+            import hashlib as _hashlib
+
+            logger.info(
+                "resolve_provider_client: ollama-cloud direct route base_url=%s key_len=%d key_sha1=%s",
+                base_url,
+                len(api_key),
+                _hashlib.sha1(api_key.encode("utf-8")).hexdigest()[:10],
+            )
+        except Exception:
+            pass
+        client = _create_openai_client(api_key=api_key, base_url=_to_openai_base_url(base_url))
+        final_model = _normalize_resolved_model(
+            model or _get_aux_model_for_provider(provider) or _read_main_model() or "gpt-oss:120b",
+            provider,
+        )
+        return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
+                else (client, final_model))
+
     # ── API-key providers from PROVIDER_REGISTRY ─────────────────────
     try:
         from hermes_cli.auth import (
@@ -5453,6 +6080,7 @@ def get_async_text_auxiliary_client(task: str = "", *, main_runtime: Optional[Di
 
 _VISION_AUTO_PROVIDER_ORDER = (
     "openrouter",
+    "ollama-remote",
     "nous",
     "deepinfra",
 )
@@ -5538,9 +6166,9 @@ def _strict_vision_backend_available(provider: str) -> bool:
 def get_available_vision_backends() -> List[str]:
     """Return the currently available vision backends in auto-selection order.
 
-    Order: active provider → OpenRouter → Nous → stop.  This is the single
-    source of truth for setup, tool gating, and runtime auto-routing of
-    vision tasks.
+    Order: active provider → hosted Ollama → Nous → DeepInfra → stop.  This
+    is the single source of truth for setup, tool gating, and runtime
+    auto-routing of vision tasks.
     """
     available: List[str] = []
     # 1. Active provider — if the user configured a provider, try it first.
@@ -5553,7 +6181,8 @@ def get_available_vision_backends() -> List[str]:
             client, _ = resolve_provider_client(main_provider, _read_main_model())
             if client is not None:
                 available.append(main_provider)
-    # 2. OpenRouter, 3. Nous — skip if already covered by main provider.
+    # 2. Hosted Ollama, 3. Nous, 4. DeepInfra — skip if already covered by
+    # the main provider.
     for p in _VISION_AUTO_PROVIDER_ORDER:
         if p not in available and _strict_vision_backend_available(p):
             available.append(p)
@@ -5727,6 +6356,8 @@ def resolve_vision_provider_client(
         for candidate in _VISION_AUTO_PROVIDER_ORDER:
             if candidate == main_provider:
                 continue  # already tried above
+            if _auxiliary_provider_policy() == "ollama-only" and not _is_ollama_like_route(candidate):
+                continue
             sync_client, default_model = _resolve_strict_vision_backend(candidate)
             if sync_client is not None:
                 return _finalize(candidate, sync_client, default_model)
@@ -5735,6 +6366,8 @@ def resolve_vision_provider_client(
         return None, None, None
 
     if requested in _VISION_AUTO_PROVIDER_ORDER:
+        if _auxiliary_provider_policy() == "ollama-only" and not _is_ollama_like_route(requested):
+            return requested, None, None
         sync_client, default_model = _resolve_strict_vision_backend(
             requested, resolved_model
         )
@@ -6402,11 +7035,59 @@ def _get_auxiliary_task_config(task: str) -> Dict[str, Any]:
                 if isinstance(_defaults, dict):
                     merged = dict(_defaults)
                     merged.update(task_config)
-                    return merged
+                    task_config = merged
                 break
     except Exception:
         # Plugin discovery failure must not break aux task config reads.
         pass
+
+    # Allow launch-scoped task overrides so a specific auxiliary task can be
+    # pointed at a different model/provider without rewriting config.yaml.
+    # This keeps the core router generic while letting experiments steer the
+    # perception path independently of the main agent model.
+    task_key = re.sub(r"[^A-Z0-9]+", "_", str(task or "").upper()).strip("_")
+    if task_key:
+        env_prefixes = (f"HERMES_{task_key}", f"HERMES_AUXILIARY_{task_key}")
+        env_fields = {
+            "provider": "provider",
+            "model": "model",
+            "base_url": "base_url",
+            "api_key": "api_key",
+            "api_mode": "api_mode",
+            "timeout": "timeout",
+            "fallback_chain": "fallback_chain",
+        }
+        for field_name, cfg_key in env_fields.items():
+            for prefix in env_prefixes:
+                raw = os.getenv(f"{prefix}_{field_name.upper()}", "").strip()
+                if not raw:
+                    continue
+                if field_name == "timeout":
+                    try:
+                        task_config[cfg_key] = float(raw)
+                    except Exception:
+                        task_config[cfg_key] = raw
+                elif field_name == "fallback_chain":
+                    try:
+                        parsed = json.loads(raw)
+                    except Exception:
+                        logger.warning(
+                            "Auxiliary %s: could not parse %s_%s as JSON fallback chain",
+                            task or "call", prefix, field_name.upper(),
+                        )
+                        continue
+                    if isinstance(parsed, list):
+                        task_config[cfg_key] = parsed
+                    elif isinstance(parsed, dict):
+                        task_config[cfg_key] = [parsed]
+                    else:
+                        logger.warning(
+                            "Auxiliary %s: %s_%s is not a JSON list/dict — ignoring",
+                            task or "call", prefix, field_name.upper(),
+                        )
+                else:
+                    task_config[cfg_key] = raw
+                break
 
     return task_config
 
@@ -6466,6 +7147,17 @@ def _get_task_extra_body(task: str) -> Dict[str, Any]:
     if "reasoning" not in result:
         effort = task_config.get("reasoning_effort")
         if effort is not None and effort != "":
+            if task == "perception":
+                provider_norm = str(task_config.get("provider") or "").strip().lower()
+                model_norm = str(task_config.get("model") or "").strip().lower()
+                if provider_norm in {"ollama-remote", "ollama"} or "qwen2.5:32b" in model_norm:
+                    logger.info(
+                        "auxiliary.perception.reasoning_effort=%r ignored for provider=%s model=%s",
+                        effort,
+                        provider_norm or "auto",
+                        model_norm or "auto",
+                    )
+                    return result
             if task in ("moa_reference", "moa_aggregator"):
                 logger.warning(
                     "auxiliary.%s.reasoning_effort is not supported — MoA "
@@ -6825,6 +7517,25 @@ def _validate_llm_response(
         raise RuntimeError(
             f"Auxiliary {task or 'call'}: LLM returned None response"
         )
+    latency_ctx = _LLM_LATENCY_CONTEXT.get()
+    if latency_ctx:
+        try:
+            started_at = float(latency_ctx.get("started_at") or 0.0)
+            latency_s = max(time.perf_counter() - started_at, 0.0) if started_at > 0 else None
+            latency_provider = str(provider or latency_ctx.get("provider") or "")
+            latency_model = str(_obj_get(response, "model") or latency_ctx.get("model") or "")
+            latency_task = str(task or latency_ctx.get("task") or "")
+            latency_base_url = str(base_url or latency_ctx.get("base_url") or "")
+            if latency_s is not None and latency_provider and latency_model:
+                record_model_latency(
+                    latency_provider,
+                    latency_model,
+                    latency_s,
+                    task=latency_task or None,
+                    base_url=latency_base_url,
+                )
+        except Exception:
+            pass
     from agent.aux_accounting import record_aux_usage
     record_aux_usage(response, task, provider=provider, base_url=base_url)
     # Allow SimpleNamespace responses from adapters (CodexAuxiliaryClient,
@@ -6845,6 +7556,12 @@ def _validate_llm_response(
             f"Expected object with .choices[0].message — check provider "
             f"adapter or custom endpoint compatibility."
         ) from exc
+    _record_current_llm_outcome(
+        success=True,
+        task=task,
+        provider=provider,
+        base_url=base_url,
+    )
     return response
 
 
@@ -7037,7 +7754,7 @@ def call_llm(
                             task or "call", resolved_provider)
                 client, final_model = _get_cached_client("auto", main_runtime=main_runtime, task=task)
         if client is None:
-            raise RuntimeError(
+            raise LLMProviderExhaustedError(
                 f"No LLM provider configured for task={task} provider={resolved_provider}. "
                 f"Run: hermes setup")
 
@@ -7065,6 +7782,15 @@ def call_llm(
     if _is_anthropic_compat_endpoint(resolved_provider, _client_base):
         kwargs["messages"] = _convert_openai_images_to_anthropic(kwargs["messages"])
 
+    _log_auxiliary_llm_request(
+        task=task,
+        provider=resolved_provider,
+        base_url=_base_info or resolved_base_url or "",
+        api_key=resolved_api_key or getattr(client, "api_key", None),
+        kwargs=kwargs,
+        timeout=effective_timeout,
+    )
+
     # Streaming path: return the raw SDK Stream iterator directly. This is used by
     # the MoA aggregator so its tokens stream to the user. It deliberately skips
     # _validate_llm_response and the temperature/max_tokens/payment fallback chain
@@ -7078,6 +7804,16 @@ def call_llm(
         if stream_options:
             kwargs["stream_options"] = stream_options
         return client.chat.completions.create(**kwargs)
+
+    _LLM_LATENCY_CONTEXT.set(
+        {
+            "started_at": time.perf_counter(),
+            "provider": str(resolved_provider or "auto"),
+            "model": str(final_model or resolved_model or model or ""),
+            "task": str(task or ""),
+            "base_url": _base_info or resolved_base_url or "",
+        }
+    )
 
     # Handle unsupported temperature, max_tokens vs max_completion_tokens retry,
     # then payment fallback.
@@ -7425,7 +8161,20 @@ def call_llm(
             or _is_model_incompatible_error(first_err)
             or _is_invalid_aux_response_error(first_err)
         )
-        if should_fallback and (is_auto or is_capacity_error):
+        _record_current_llm_outcome(
+            success=False,
+            task=task,
+            provider=resolved_provider,
+            model=final_model or resolved_model or model,
+            base_url=_base_info or resolved_base_url,
+            timed_out=_is_timeout_error(first_err),
+        )
+        # Auth failures must also continue down the chain. For explicit routes
+        # they are not a "keep retrying the same provider" signal; they mean
+        # the current credential/model pair cannot serve this request, so the
+        # next configured provider should get a turn.
+        should_try_fallback = should_fallback and (is_auto or is_capacity_error)
+        if should_try_fallback:
             if _is_auth_error(first_err):
                 reason = "auth error"
             elif _is_payment_error(first_err):
@@ -7453,24 +8202,37 @@ def call_llm(
             #   2. For auto: top-level main fallback_providers/fallback_model
             #   3. For auto: built-in auxiliary discovery chain
             #   4. For explicit aux providers: main agent model safety net
-            fb_client, fb_model, fb_label = (None, None, "")
-            if is_auto:
-                fb_client, fb_model, fb_label = _try_configured_fallback_chain(
-                    task, resolved_provider or "auto", reason=reason)
-                if fb_client is None:
-                    fb_client, fb_model, fb_label = _try_main_fallback_chain(
-                        task, resolved_provider or "auto", reason=reason)
-                if fb_client is None:
-                    fb_client, fb_model, fb_label = _try_payment_fallback(
-                        resolved_provider, task, reason=reason)
-            else:
-                fb_client, fb_model, fb_label = _try_configured_fallback_chain(
-                    task, resolved_provider or "auto", reason=reason)
-                if fb_client is None:
-                    fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
-                        resolved_provider, task, reason=reason)
+            next_failed_provider = resolved_provider
+            while True:
+                fb_client, fb_model, fb_label = (None, None, "")
+                if is_auto:
+                    fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                        task, next_failed_provider or "auto", reason=reason)
+                    if fb_client is None:
+                        fb_client, fb_model, fb_label = _try_main_fallback_chain(
+                            task, next_failed_provider or "auto", reason=reason)
+                    if fb_client is None:
+                        fb_client, fb_model, fb_label = _try_payment_fallback(
+                            next_failed_provider, task, reason=reason)
+                else:
+                    fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                        task, next_failed_provider or "auto", reason=reason)
+                    if fb_client is None:
+                        fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
+                            next_failed_provider, task, reason=reason)
+                    if fb_client is None:
+                        # Explicit-provider requests still get one broader
+                        # provider-chain pass as a last resort, but only after
+                        # the configured chain and main-agent safety net have
+                        # both been exhausted. This preserves the historical
+                        # safety-net order while still letting a rate-limited
+                        # provider rotate away from a dead backend instead of
+                        # hard-failing immediately.
+                        fb_client, fb_model, fb_label = _try_payment_fallback(
+                            next_failed_provider, task, reason=reason)
 
-            if fb_client is not None:
+                if fb_client is None:
+                    break
                 fb_resp = _call_fallback_candidate_sync(
                     fb_client, fb_model, fb_label,
                     task=task, messages=messages,
@@ -7480,21 +8242,8 @@ def call_llm(
                     reasoning_config=reasoning_config)
                 if fb_resp is not None:
                     return fb_resp
-                # The candidate had a stale/unrefreshable credential and was
-                # quarantined — walk the discovery chain once more; unhealthy
-                # entries are skipped so the next viable candidate serves.
-                fb_client, fb_model, fb_label = _try_payment_fallback(
-                    resolved_provider, task, reason="stale fallback credential")
-                if fb_client is not None:
-                    fb_resp = _call_fallback_candidate_sync(
-                        fb_client, fb_model, fb_label,
-                        task=task, messages=messages,
-                        temperature=temperature, max_tokens=max_tokens,
-                        tools=tools, effective_timeout=effective_timeout,
-                        effective_extra_body=effective_extra_body,
-                        reasoning_config=reasoning_config)
-                    if fb_resp is not None:
-                        return fb_resp
+                reason = _LAST_FALLBACK_CANDIDATE_REASON.get() or reason
+                next_failed_provider = fb_label
             # All fallback layers exhausted — emit a single user-visible
             # warning so the operator knows aux task is about to fail.
             # (#26882) The error itself is re-raised below.
@@ -7503,17 +8252,18 @@ def call_llm(
                 "(fallback_chain + main agent model). Raising original error.",
                 task or "call", reason, resolved_provider,
             )
-        # Connection/timeout errors leave the cached client poisoned (closed
-        # httpx transport, half-read stream, dead async loop).  Drop it from
-        # the cache regardless of whether we found a fallback above so the
-        # next auxiliary call rebuilds a fresh client instead of reusing the
-        # dead one.  See issue #23432.
-        if _is_connection_error(first_err):
-            try:
-                _evict_cached_client_instance(client)
-            except Exception:
-                logger.debug("Auxiliary: cache eviction after connection error failed",
-                             exc_info=True)
+            if _is_connection_error(first_err):
+                try:
+                    _evict_cached_client_instance(client)
+                except Exception:
+                    logger.debug("Auxiliary: cache eviction after connection error failed",
+                                 exc_info=True)
+            if is_auto or not _is_connection_error(first_err):
+                raise LLMProviderExhaustedError(
+                    f"Auxiliary {task or 'call'}: {reason} on {resolved_provider} "
+                    "and all fallbacks exhausted"
+                ) from first_err
+            raise first_err
         raise
 
 
@@ -7679,6 +8429,25 @@ async def async_call_llm(
     # Convert image blocks for Anthropic-compatible endpoints (e.g. MiniMax)
     if _is_anthropic_compat_endpoint(resolved_provider, _client_base):
         kwargs["messages"] = _convert_openai_images_to_anthropic(kwargs["messages"])
+
+    _log_auxiliary_llm_request(
+        task=task,
+        provider=resolved_provider,
+        base_url=_client_base or resolved_base_url or "",
+        api_key=resolved_api_key or getattr(client, "api_key", None),
+        kwargs=kwargs,
+        timeout=effective_timeout,
+    )
+
+    _LLM_LATENCY_CONTEXT.set(
+        {
+            "started_at": time.perf_counter(),
+            "provider": str(resolved_provider or "auto"),
+            "model": str(final_model or resolved_model or model or ""),
+            "task": str(task or ""),
+            "base_url": _client_base or resolved_base_url or "",
+        }
+    )
 
     try:
         # Retry ONCE on the same provider for a transient transport blip
@@ -7947,6 +8716,14 @@ async def async_call_llm(
             or _is_model_incompatible_error(first_err)
             or _is_invalid_aux_response_error(first_err)
         )
+        _record_current_llm_outcome(
+            success=False,
+            task=task,
+            provider=resolved_provider,
+            model=final_model or resolved_model or model,
+            base_url=_client_base or resolved_base_url,
+            timed_out=_is_timeout_error(first_err),
+        )
         if should_fallback and (is_auto or is_capacity_error):
             if _is_auth_error(first_err):
                 reason = "auth error"
@@ -7971,24 +8748,31 @@ async def async_call_llm(
             #   2. For auto: top-level main fallback_providers/fallback_model
             #   3. For auto: built-in auxiliary discovery chain
             #   4. For explicit aux providers: main agent model safety net
-            fb_client, fb_model, fb_label = (None, None, "")
-            if is_auto:
-                fb_client, fb_model, fb_label = _try_configured_fallback_chain(
-                    task, resolved_provider or "auto", reason=reason)
-                if fb_client is None:
-                    fb_client, fb_model, fb_label = _try_main_fallback_chain(
-                        task, resolved_provider or "auto", reason=reason)
-                if fb_client is None:
-                    fb_client, fb_model, fb_label = _try_payment_fallback(
-                        resolved_provider, task, reason=reason)
-            else:
-                fb_client, fb_model, fb_label = _try_configured_fallback_chain(
-                    task, resolved_provider or "auto", reason=reason)
-                if fb_client is None:
-                    fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
-                        resolved_provider, task, reason=reason)
+            next_failed_provider = resolved_provider
+            while True:
+                fb_client, fb_model, fb_label = (None, None, "")
+                if is_auto:
+                    fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                        task, next_failed_provider or "auto", reason=reason)
+                    if fb_client is None:
+                        fb_client, fb_model, fb_label = _try_main_fallback_chain(
+                            task, next_failed_provider or "auto", reason=reason)
+                    if fb_client is None:
+                        fb_client, fb_model, fb_label = _try_payment_fallback(
+                            next_failed_provider, task, reason=reason)
+                else:
+                    fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                        task, next_failed_provider or "auto", reason=reason)
+                    if fb_client is None:
+                        fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
+                            next_failed_provider, task, reason=reason)
+                    if fb_client is None:
+                        fb_client, fb_model, fb_label = _try_payment_fallback(
+                            next_failed_provider, task, reason=reason)
 
-            if fb_client is not None:
+                if fb_client is None:
+                    break
+
                 # Convert sync fallback client to async
                 async_fb, async_fb_model = _to_async_client(
                     fb_client, fb_model or "", is_vision=(task == "vision")
@@ -8002,35 +8786,24 @@ async def async_call_llm(
                     reasoning_config=reasoning_config)
                 if fb_resp is not None:
                     return fb_resp
-                # Stale/unrefreshable candidate credential — quarantined; walk
-                # the discovery chain once more (unhealthy entries skipped).
-                fb_client, fb_model, fb_label = _try_payment_fallback(
-                    resolved_provider, task, reason="stale fallback credential")
-                if fb_client is not None:
-                    async_fb, async_fb_model = _to_async_client(
-                        fb_client, fb_model or "", is_vision=(task == "vision")
-                    )
-                    fb_resp = await _call_fallback_candidate_async(
-                        async_fb, async_fb_model or fb_model, fb_label,
-                        task=task, messages=messages,
-                        temperature=temperature, max_tokens=max_tokens,
-                        tools=tools, effective_timeout=effective_timeout,
-                        effective_extra_body=effective_extra_body,
-                        reasoning_config=reasoning_config)
-                    if fb_resp is not None:
-                        return fb_resp
+                reason = _LAST_FALLBACK_CANDIDATE_REASON.get() or reason
+                next_failed_provider = fb_label
             # All fallback layers exhausted — warn before re-raising. (#26882)
             logger.warning(
                 "Auxiliary %s (async): %s on %s and all fallbacks exhausted "
                 "(fallback_chain + main agent model). Raising original error.",
                 task or "call", reason, resolved_provider,
             )
-        # Mirror the sync path: drop poisoned clients on connection/timeout
-        # so the next aux call rebuilds.  See issue #23432.
-        if _is_connection_error(first_err):
-            try:
-                _evict_cached_client_instance(client)
-            except Exception:
-                logger.debug("Auxiliary (async): cache eviction after connection error failed",
-                             exc_info=True)
+            if _is_connection_error(first_err):
+                try:
+                    _evict_cached_client_instance(client)
+                except Exception:
+                    logger.debug("Auxiliary (async): cache eviction after connection error failed",
+                                 exc_info=True)
+            if is_auto or not _is_connection_error(first_err):
+                raise LLMProviderExhaustedError(
+                    f"Auxiliary {task or 'call'} (async): {reason} on {resolved_provider} "
+                    "and all fallbacks exhausted"
+                ) from first_err
+            raise first_err
         raise

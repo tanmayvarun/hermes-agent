@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Run Hermes CLI from this source tree (editable install).
+# Edit any .py file, then re-run — no reinstall needed.
+#
+# Usage:
+#   ./dev              # interactive chat
+#   ./dev chat         # same
+#   ./dev chat -q "hi" # one-shot
+#   ./dev model        # provider/model picker
+#   ./dev doctor       # any hermes subcommand
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+if [[ ! -x "$ROOT/.venv/bin/hermes" ]]; then
+  echo "Missing .venv — bootstrap with:"
+  echo "  python3.12 -m venv .venv && .venv/bin/pip install -e ."
+  exit 1
+fi
+
+exec "$ROOT/.venv/bin/hermes" "${@:-chat}"

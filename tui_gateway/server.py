@@ -10020,6 +10020,21 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 else:
                     run_message = _enrich_with_attached_images(prompt, images)
 
+            structured_goal_context = ""
+            try:
+                from plugin.agent.goal import Goal
+
+                inferred_goal = Goal.infer_from_text(prompt)
+                if inferred_goal.kind != "unknown":
+                    structured_goal_context = inferred_goal.execution_context_block()
+                    session["structured_goal_kind"] = inferred_goal.kind
+                    session["structured_goal_prompt"] = inferred_goal.description
+                else:
+                    session.pop("structured_goal_kind", None)
+                    session.pop("structured_goal_prompt", None)
+            except Exception as _goal_exc:
+                print(f"[tui_gateway] structured goal inference failed: {_goal_exc}", file=sys.stderr)
+
             def _stream(delta):
                 with session["history_lock"]:
                     _append_inflight_delta(session, delta)
@@ -10032,6 +10047,8 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 "conversation_history": list(history),
                 "stream_callback": _stream,
             }
+            if structured_goal_context:
+                run_kwargs["system_message"] = structured_goal_context
             try:
                 if "task_id" in inspect.signature(agent.run_conversation).parameters:
                     run_kwargs["task_id"] = session["session_key"]

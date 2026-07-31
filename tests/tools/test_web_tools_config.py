@@ -40,6 +40,7 @@ class TestFirecrawlClientConfig:
         self._managed_patchers = [
             patch("tools.web_tools.managed_nous_tools_enabled", return_value=True),
             patch("tools.managed_tool_gateway.managed_nous_tools_enabled", return_value=True),
+            patch("plugins.web.google_search.provider._google_search_browser_available", return_value=False),
         ]
         for p in self._managed_patchers:
             p.start()
@@ -226,6 +227,7 @@ class TestBackendSelection:
         self._managed_patchers = [
             patch("tools.web_tools.managed_nous_tools_enabled", return_value=True),
             patch("tools.managed_tool_gateway.managed_nous_tools_enabled", return_value=True),
+            patch("plugins.web.google_search.provider._google_search_browser_available", return_value=False),
         ]
         for p in self._managed_patchers:
             p.start()
@@ -349,6 +351,16 @@ class TestBackendSelection:
         with patch("tools.web_tools._load_web_config", return_value={}), \
              patch("tools.web_tools._ddgs_package_importable", return_value=False):
             assert _get_backend() == "firecrawl"
+
+    def test_fallback_google_search_beats_tavily_when_browser_path_is_available(self):
+        """When browser/computer-use search is available, Google Search leads the chain."""
+        from tools.web_tools import _get_backend
+        from tests.tools.conftest import register_all_web_providers
+
+        register_all_web_providers()
+        with patch("tools.web_tools._load_web_config", return_value={}), \
+             patch("plugins.web.google_search.provider._google_search_browser_available", return_value=True):
+            assert _get_backend() == "google-search"
 
     def test_invalid_config_falls_through_to_fallback(self):
         """web.backend=invalid → ignored, uses key-based fallback."""
@@ -487,7 +499,12 @@ class TestWebSearchSchema:
              patch.object(tools.web_tools._debug, "save"):
             result = json.loads(tools.web_tools.web_search_tool("docs", limit=500))
 
-        assert result == {"success": True, "data": {"web": []}}
+        assert result == {
+            "success": True,
+            "data": {"web": []},
+            "provider": "parallel",
+            "provider_label": "parallel",
+        }
         fake_search.assert_called_once_with("docs", 100)
 
 
@@ -556,6 +573,7 @@ class TestCheckWebApiKey:
             patch("tools.web_tools._ddgs_package_importable", return_value=False),
             patch("agent.web_search_registry.get_active_search_provider", return_value=None),
             patch("agent.web_search_registry.get_active_extract_provider", return_value=None),
+            patch("plugins.web.google_search.provider._google_search_browser_available", return_value=False),
         ]
         for p in self._managed_patchers:
             p.start()
@@ -756,12 +774,18 @@ class TestNonBuiltinProviderAvailability:
             os.environ.pop(key, None)
         from agent.web_search_registry import _reset_for_tests, register_provider
         _reset_for_tests()
+        self._google_patch = patch(
+            "plugins.web.google_search.provider._google_search_browser_available",
+            return_value=False,
+        )
+        self._google_patch.start()
         register_provider(self._create_fake_provider())
 
     def teardown_method(self):
         """Reset the registry and restore env after each test."""
         from agent.web_search_registry import _reset_for_tests
         _reset_for_tests()
+        self._google_patch.stop()
         for key in self._WEB_ENV_KEYS:
             os.environ.pop(key, None)
 

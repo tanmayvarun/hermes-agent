@@ -1,0 +1,27 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/main.py", line 83, in <module>
+    main(app_bundle, output_accessibility_file, output_screenshot_file, max_depth)
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/main.py", line 34, in main
+    window_element = get_main_window(windows, max_depth)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/main.py", line 17, in get_main_window
+    main_window = max([(window, len(window.recursive_children())) for window in ui_windows], key=lambda x: x[1])[0]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: max() iterable argument is empty
+Screen scaling factor: 2.0
+AX True
+Failed to extract app accessibility for net.whatsapp.WhatsApp. Error: None
+Traceback (most recent call last):
+  File "<stdin>", line 18, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/perception/macos/accessibility/observer.py", line 71, in observe
+    tree = get_tree(bundle)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/run.py", line 35, in get_tree
+    raise e
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/run.py", line 31, in get_tree
+    subprocess.check_call(command)
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13/Frameworks/Python.framework/Versions/3.12/lib/python3.12/subprocess.py", line 413, in check_call
+    raise CalledProcessError(retcode, cmd)
+subprocess.CalledProcessError: Command '['python', '-m', 'macapptree.main', '-a', 'net.whatsapp.WhatsApp', '--oa', '/var/folders/v5/8r_q0dn54fq76xdcv2d70zjm0000gn/T/tmpllnh3ezo']' returned non-zero exit status 1.

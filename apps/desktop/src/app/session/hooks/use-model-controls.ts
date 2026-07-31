@@ -12,10 +12,14 @@ import {
   $currentProvider,
   getComposerSelectionGeneration,
   getCurrentModelSource,
+  getRememberedComposerDefaultModel,
+  getRememberedComposerDefaultProvider,
+  getRememberedComposerDefaultContract,
   markComposerSelectionManual,
   setCurrentModel,
   setCurrentModelSource,
-  setCurrentProvider
+  setCurrentProvider,
+  setRememberedComposerDefault
 } from '@/store/session'
 import { $sessionStates, sessionTileDelegate } from '@/store/session-states'
 import type { ModelOptionsResponse } from '@/types/hermes'
@@ -68,37 +72,49 @@ export function useModelControls({ queryClient, requestGateway }: ModelControlsO
           return
         }
 
-        // A manual pick stays sticky UNLESS it was removed from the catalog (its
-        // model no longer exists on the provider), in which case keeping it would
-        // 404 every new chat — fall through to reseed from the profile default.
-        // Reads the model-options cache the composer already populated; an
-        // unknown/not-yet-loaded catalog conservatively preserves the pick.
-        const keepManualPick = () => {
-          if (force || !$currentModel.get() || getCurrentModelSource() !== 'manual') {
-            return false
-          }
-
-          const options = queryClient.getQueryData<ModelOptionsResponse>(['model-options', 'global'])
-
-          return !manualPickRemoved(options?.providers, $currentProvider.get(), $currentModel.get())
-        }
-
-        if (keepManualPick()) {
-          return
-        }
-
         // Snapshot the selection generation before awaiting so a picker click
         // that lands while getGlobalModelInfo is in flight wins over this older
         // default — value comparisons alone miss re-selecting the same row.
         const selectionGeneration = getComposerSelectionGeneration()
+        const previousDefaultModel = getRememberedComposerDefaultModel()
+        const previousDefaultProvider = getRememberedComposerDefaultProvider()
+        const previousDefaultContract = getRememberedComposerDefaultContract()
         const result = await getGlobalModelInfo()
+
+        const currentModel = $currentModel.get()
+        const currentProvider = $currentProvider.get()
+        const currentSource = getCurrentModelSource()
+        const backendContractId = String(result.contract_id || '')
+        const hasRememberedDefault = Boolean(previousDefaultModel || previousDefaultProvider)
+        const backendDefaultChanged =
+          hasRememberedDefault &&
+          (previousDefaultModel !== String(result.model || '') ||
+            previousDefaultProvider !== String(result.provider || '') ||
+            (previousDefaultContract && backendContractId && previousDefaultContract !== backendContractId))
+        const currentSelectionMatchesRememberedDefault =
+          hasRememberedDefault &&
+          currentModel === previousDefaultModel &&
+          currentProvider === previousDefaultProvider
+        const currentOptions = queryClient.getQueryData<ModelOptionsResponse>(['model-options', 'global'])
+        const manualPickStillValid =
+          !force &&
+          currentSource === 'manual' &&
+          !!currentModel &&
+          !manualPickRemoved(currentOptions?.providers, currentProvider, currentModel)
 
         if (
           profileRefreshEpochRef.current !== profileRefreshEpoch ||
           $activeSessionId.get() ||
-          getComposerSelectionGeneration() !== selectionGeneration ||
-          keepManualPick()
+          getComposerSelectionGeneration() !== selectionGeneration
         ) {
+          return
+        }
+
+        // A genuine manual pick survives normal refreshes. If it still matches
+        // the old backend default, though, a backend-default change means the
+        // sticky value is stale rather than user-intentional, so reseed from
+        // the backend default.
+        if (manualPickStillValid && !(backendDefaultChanged && currentSelectionMatchesRememberedDefault)) {
           return
         }
 
@@ -112,6 +128,11 @@ export function useModelControls({ queryClient, requestGateway }: ModelControlsO
 
         if (typeof result.model === 'string' || typeof result.provider === 'string') {
           setCurrentModelSource('default')
+          setRememberedComposerDefault(
+            String(result.provider || ''),
+            String(result.model || ''),
+            backendContractId
+          )
         }
       } catch {
         // The delayed session.info event still updates this once the agent is ready.

@@ -393,7 +393,9 @@ def build_turn_context(
     _reset_consol = getattr(agent._memory_store, "reset_consolidation_failures", None)
     if callable(_reset_consol):
         _reset_consol()
-    agent._vision_supported = True
+    agent._vision_supported = not bool(
+        getattr(agent, "_vision_tools_stripped", False)
+    )
 
     # Pre-turn connection health check: clean up dead TCP connections.
     if agent.api_mode != "anthropic_messages":

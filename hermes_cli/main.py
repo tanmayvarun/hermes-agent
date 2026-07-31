@@ -13409,16 +13409,15 @@ def main():
     moa_parser.set_defaults(func=cmd_moa)
 
     # =========================================================================
-    # fallback command — manage the fallback provider chain
+    # fallback command — manage the ordered model chain
     # =========================================================================
     from hermes_cli.fallback_cmd import cmd_fallback
 
     fallback_parser = subparsers.add_parser(
         "fallback",
-        help="Manage fallback providers (tried when the primary model fails)",
+        help="Manage the ordered model list (tried when the primary model fails)",
         description=(
-            "Manage the fallback provider chain.  Fallback providers are tried "
-            "in order when the primary model fails with rate-limit, overload, or "
+            "Manage the ordered model chain.  Models are tried in order when the primary model fails with rate-limit, overload, or "
             "connection errors.  See: "
             "https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers"
         ),
@@ -13427,7 +13426,7 @@ def main():
     fallback_subparsers.add_parser(
         "list",
         aliases=["ls"],
-        help="Show the current fallback chain (default when no subcommand)",
+        help="Show the current ordered model chain (default when no subcommand)",
     )
     fallback_subparsers.add_parser(
         "add",
@@ -13440,7 +13439,7 @@ def main():
     )
     fallback_subparsers.add_parser(
         "clear",
-        help="Remove all fallback entries",
+        help="Remove all ordered-model entries",
     )
     fallback_parser.set_defaults(func=cmd_fallback)
 

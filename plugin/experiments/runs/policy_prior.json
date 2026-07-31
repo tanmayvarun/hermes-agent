@@ -1,0 +1,49 @@
+{
+  "buckets": {
+    "whatsapp_voice_call|list|q=0|qm=0|c=0|co=0|d=0|r=0|l=0": {
+      "type_query": 26.5,
+      "open_search": 2.0,
+      "observe": 1.0,
+      "open_contact": 0.5,
+      "start_call": 0.2,
+      "dismiss": 0.5,
+      "end_call": 0.5
+    },
+    "whatsapp_voice_call|search|q=0|qm=0|c=0|co=0|d=0|r=0|l=0": {
+      "type_query": 25.5,
+      "observe": 5.0,
+      "open_search": 1.0,
+      "open_contact": 0.5
+    },
+    "whatsapp_voice_call|search|q=1|qm=1|c=1|co=0|d=0|r=0|l=0": {
+      "open_contact": 36.0,
+      "observe": 2.0,
+      "type_query": 0.3,
+      "start_call": 0.5
+    },
+    "whatsapp_voice_call|search|q=1|qm=1|c=0|co=0|d=0|r=0|l=0": {
+      "observe": 8.0,
+      "type_query": 1.0,
+      "open_contact": 1.0
+    },
+    "whatsapp_voice_call|conversation|q=0|qm=0|c=0|co=1|d=0|r=0|l=0": {
+      "start_call": 12.0,
+      "observe": 1.0,
+      "type_query": 0.5
+    },
+    "whatsapp_voice_call|dialog|q=0|qm=0|c=0|co=0|d=1|r=0|l=0": {
+      "dismiss": 15.0,
+      "observe": 1.0
+    },
+    "whatsapp_voice_call|calling|q=0|qm=0|c=0|co=0|d=0|r=0|l=1": {
+      "end_call": 30.0,
+      "observe": 1.0
+    },
+    "whatsapp_voice_call|calling|q=0|qm=0|c=0|co=0|d=0|r=1|l=0": {
+      "observe": 5.0
+    },
+    "whatsapp_voice_call|conversation|q=0|qm=0|c=1|co=1|d=0|r=0|l=0": {
+      "start_call": 24.0
+    }
+  }
+}

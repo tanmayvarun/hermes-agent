@@ -78,7 +78,7 @@ export function ConfigField({
 
   // `fallback_providers` is a list of {provider, model} objects; the generic
   // `list` branch below would stringify them to "[object Object]". Render the
-  // dedicated structured editor instead.
+  // dedicated ordered-model editor instead.
   if (schemaKey === 'fallback_providers') {
     return row(<FallbackModelsField onChange={onChange} value={value} />, true)
   }

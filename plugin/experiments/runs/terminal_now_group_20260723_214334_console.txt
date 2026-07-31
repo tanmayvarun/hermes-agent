@@ -1,0 +1,177 @@
+=== host=-zsh pid=65304 TIMESTAMP=20260723_214334 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== contact: now group ===
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live --contact 'now group' ===
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+[001][OK] run_start | goal='Call now group on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 330, 'macapptree': 78}"
+[011][OK][step 0] observation | nodes=236
+[012][OK][step 0] world_patch | screen='call' retention=1.0
+[013][OK][step 0] step | message='closed-loop goal=Call now group on WhatsApp' detail='transition-aware DecisionEngine (observe→act→evaluate progress)'
+[014][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 312, 'macapptree': 59}"
+[015][OK][step 0] observation | nodes=218
+[016][OK][step 1] observation | nodes=218
+[017][OK][step 1] world_patch | screen='call' retention=0.923728813559322
+[018][OK][step 1] fusion_conflicts
+[019][OK][step 1] goal_status
+[020][OK][step 1] decision_engine
+[021][OK][step 1] planner_decision
+[022][OK][step 0] click_target | semantic='Now…'
+[023][OK][step 1] execution | message="click 'Now…' center=(255.5, 556.25) via entity bounds" backend='ax'
+[024][OK][step 1] step | message='transition settle' detail='0.6s'
+[025][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9818181818181818" detail="{'pyobjc_ax': 331, 'macapptree': 79}"
+[026][OK][step 1] observation | nodes=235
+[027][OK][step 1] step | message='transition poll' detail='0.3s'
+[028][OK][step 1] perception_settled
+[029][OK][step 1] post_observation
+[030][OK][step 1] post_world_patch
+[031][OK][step 1] transition_eval
+[032][OK][step 1] transition_attribution
+[033][OK][step 1] verification
+[034][OK][step 1] branch_explore
+[035][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9818181818181818" detail="{'pyobjc_ax': 331, 'macapptree': 79}"
+[036][OK][step 1] observation | nodes=235
+[037][OK][step 2] observation | nodes=235
+[038][OK][step 2] world_patch | screen='call' retention=0.9915611814345991
+[039][OK][step 2] fusion_conflicts
+[040][OK][step 2] goal_status
+[041][OK][step 2] decision_engine
+[042][OK][step 2] planner_decision
+[043][OK][step 1] click_target | semantic='Voice'
+[044][OK][step 2] execution | message="click 'Voice message' center=(1684.5, 1016.5) via entity bounds" backend='ax'
+[045][OK][step 2] step | message='transition settle' detail='0.6s'
+[046][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9814814814814815" detail="{'pyobjc_ax': 330, 'macapptree': 79}"
+[047][OK][step 2] observation | nodes=235
+[048][OK][step 2] step | message='transition poll' detail='0.3s'
+[049][OK][step 2] perception_settled
+[050][OK][step 2] post_observation
+[051][OK][step 2] post_world_patch
+[052][OK][step 2] transition_eval
+[053][OK][step 2] transition_attribution
+[054][OK][step 2] verification
+[055][OK][step 2] branch_explore
+[056][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9814814814814815" detail="{'pyobjc_ax': 330, 'macapptree': 79}"
+[057][OK][step 2] observation | nodes=235
+[058][OK][step 3] observation | nodes=235
+[059][OK][step 3] world_patch | screen='call' retention=0.9832635983263598
+[060][OK][step 3] fusion_conflicts
+[061][OK][step 3] goal_status
+[062][OK][step 3] decision_engine
+[063][OK][step 3] planner_decision
+[064][OK][step 2] click_target | semantic='Voice'
+[065][OK][step 3] execution | message="click 'Send voice message' center=(1684.0, 1016.5) via entity bounds" backend='ax'
+[066][OK][step 3] step | message='transition settle' detail='0.6s'
+[067][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9814814814814815" detail="{'pyobjc_ax': 330, 'macapptree': 79}"
+[068][OK][step 3] observation | nodes=235
+[069][OK][step 3] step | message='transition poll' detail='0.3s'
+[070][OK][step 3] perception_settled
+[071][OK][step 3] post_observation
+[072][OK][step 3] post_world_patch
+[073][FAIL][step 3] transition_eval
+[074][OK][step 3] transition_attribution
+[075][FAIL][step 3] verification
+[076][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9814814814814815" detail="{'pyobjc_ax': 330, 'macapptree': 79}"
+[077][OK][step 3] observation | nodes=235
+[078][OK][step 4] observation | nodes=235
+[079][OK][step 4] world_patch | screen='call' retention=0.9832635983263598
+[080][OK][step 4] fusion_conflicts
+[081][OK][step 4] goal_status
+[082][OK][step 4] decision_engine
+[083][OK][step 4] planner_decision
+[084][OK][step 3] click_target | semantic='More'
+[085][OK][step 4] execution | message="click 'More' center=(154.0, 65.0) via entity bounds" backend='ax'
+[086][OK][step 4] step | message='transition settle' detail='0.6s'
+[087][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9814814814814815" detail="{'pyobjc_ax': 336, 'macapptree': 79}"
+[088][OK][step 4] observation | nodes=238
+[089][OK][step 4] step | message='transition poll' detail='0.3s'
+[090][OK][step 4] perception_settled
+[091][OK][step 4] post_observation
+[092][OK][step 4] post_world_patch
+[093][FAIL][step 4] transition_eval
+[094][OK][step 4] transition_attribution
+[095][FAIL][step 4] verification
+[096][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9803921568627451" detail="{'pyobjc_ax': 334, 'macapptree': 79}"
+[097][OK][step 4] observation | nodes=240
+[098][OK][step 5] observation | nodes=240
+[099][OK][step 5] world_patch | screen='call' retention=0.9875518672199171
+[100][OK][step 5] fusion_conflicts
+[101][OK][step 5] goal_status
+[102][OK][step 5] decision_engine
+[103][OK][step 5] planner_decision
+[104][OK][step 4] click_target | semantic='Open call dropdown menu'
+[105][OK][step 5] execution | message="click 'Open call dropdown menu with Now…' center=(1636.0, 65.0) via entity bounds" backend='ax'
+[106][OK][step 5] step | message='transition settle' detail='0.6s'
+[107][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 278, 'macapptree': 23}"
+[108][OK][step 5] observation | nodes=197
+[109][OK][step 5] step | message='transition poll' detail='0.3s'
+[110][OK][step 5] perception_settled
+[111][OK][step 5] post_observation
+[112][OK][step 5] post_world_patch
+[113][OK][step 5] transition_eval
+[114][OK][step 5] transition_attribution
+[115][OK][step 5] verification
+[116][OK][step 5] branch_explore
+[117][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 278, 'macapptree': 23}"
+[118][OK][step 5] observation | nodes=197
+[119][OK][step 6] observation | nodes=197
+[120][OK][step 6] world_patch | screen='call' retention=0.8106995884773662
+[121][OK][step 6] fusion_conflicts
+[122][OK][step 6] goal_status
+[123][OK][step 6] decision_engine
+[124][OK][step 6] planner_decision
+[125][OK][step 5] click_target | semantic='Voice'
+[126][OK][step 6] execution | message="click 'Voice' center=(1460.0, 186.0) via entity bounds" backend='ax'
+[127][OK][step 6] step | message='transition settle' detail='0.6s'
+[128][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9821428571428571" detail="{'pyobjc_ax': 370, 'macapptree': 80}"
+[129][OK][step 6] observation | nodes=253
+[130][OK][step 6] step | message='transition poll' detail='0.3s'
+[131][OK][step 6] perception_settled
+[132][OK][step 6] post_observation
+[133][OK][step 6] post_world_patch
+[134][OK][step 6] transition_eval
+[135][OK][step 6] transition_attribution
+[136][OK][step 6] verification
+[137][OK] world_summary
+[138][OK][step 6] execution | message="click 'End Call' center=None code=0" backend='ax'
+[139][OK] check | message='pass' expected="closed-loop call ringing for 'now group'"
+[140][OK] check | message='pass' expected='>=1 planner call per decision cycle'
+[141][OK] run_end | detail="closed_loop ok=True reason='goal succeeded' iterations=6 planner_invocations=6 ringing=True"
+
+=== DONE ok=True live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=0

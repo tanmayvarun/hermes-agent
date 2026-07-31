@@ -1,0 +1,5 @@
+name: cohere-provider
+kind: model-provider
+version: 1.0.0
+description: Cohere trial/free-tier compatibility API
+author: Hermes Agent

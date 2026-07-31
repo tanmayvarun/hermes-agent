@@ -5968,6 +5968,8 @@ _EMPTY_MODEL_INFO: dict = {
     "auto_context_length": 0,
     "config_context_length": 0,
     "effective_context_length": 0,
+    "contract_id": "",
+    "contract_source": "",
     "capabilities": {},
 }
 
@@ -6020,6 +6022,14 @@ def get_model_info(profile: Optional[str] = None):
         # Effective is what the agent actually uses
         effective_ctx = config_ctx_int if config_ctx_int > 0 else auto_ctx
 
+        contract = None
+        try:
+            from hermes_cli.model_contract import resolve_model_contract
+
+            contract = resolve_model_contract(cfg, source="config")
+        except Exception:
+            contract = None
+
         # Try to get model capabilities from models.dev
         caps = {}
         try:
@@ -6043,6 +6053,8 @@ def get_model_info(profile: Optional[str] = None):
             "auto_context_length": auto_ctx,
             "config_context_length": config_ctx_int,
             "effective_context_length": effective_ctx,
+            "contract_id": "" if contract is None else contract.fingerprint,
+            "contract_source": "" if contract is None else contract.source,
             "capabilities": caps,
         }
     except HTTPException:

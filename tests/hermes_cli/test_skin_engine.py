@@ -5,13 +5,17 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def reset_skin_state():
-    """Reset skin engine state between tests."""
+    """Reset skin engine + force dark contrast between tests."""
     from hermes_cli import skin_engine
+    from hermes_cli import display_mode
+
     skin_engine._active_skin = None
     skin_engine._active_skin_name = "default"
+    display_mode.set_theme_override("dark")
     yield
     skin_engine._active_skin = None
     skin_engine._active_skin_name = "default"
+    display_mode.set_theme_override("auto")
 
 
 class TestSkinConfig:
@@ -44,14 +48,14 @@ class TestSkinConfig:
 
 class TestBuiltinSkins:
     def test_ares_skin_loads(self):
+        from hermes_cli.display_mode import DARK_COLORS
         from hermes_cli.skin_engine import load_skin
         skin = load_skin("ares")
         assert skin.name == "ares"
         assert skin.tool_prefix == "╎"
-        assert skin.get_color("banner_border") == "#9F1C1C"
-        assert skin.get_color("response_border") == "#C7A96B"
-        assert skin.get_color("session_label") == "#C7A96B"
-        assert skin.get_color("session_border") == "#6E584B"
+        # Stored skin YAML colors remain for branding packs; contrast uses mode palette.
+        assert skin.colors.get("banner_border") == "#9F1C1C"
+        assert skin.get_color("banner_border") == DARK_COLORS["banner_border"]
         assert skin.get_branding("agent_name") == "Ares Agent"
 
     def test_ares_has_spinner_customization(self):
@@ -63,50 +67,53 @@ class TestBuiltinSkins:
         assert len(wings[0]) == 2
 
     def test_mono_skin_loads(self):
+        from hermes_cli.display_mode import DARK_COLORS
         from hermes_cli.skin_engine import load_skin
         skin = load_skin("mono")
         assert skin.name == "mono"
-        assert skin.get_color("banner_title") == "#e6edf3"
+        assert skin.colors.get("banner_title") == "#e6edf3"
+        assert skin.get_color("banner_title") == DARK_COLORS["banner_title"]
 
     def test_slate_skin_loads(self):
+        from hermes_cli.display_mode import DARK_COLORS
         from hermes_cli.skin_engine import load_skin
         skin = load_skin("slate")
         assert skin.name == "slate"
-        assert skin.get_color("banner_title") == "#7eb8f6"
+        assert skin.colors.get("banner_title") == "#7eb8f6"
+        assert skin.get_color("banner_title") == DARK_COLORS["banner_title"]
 
     def test_daylight_skin_loads(self):
+        from hermes_cli.display_mode import DARK_COLORS
         from hermes_cli.skin_engine import load_skin
 
         skin = load_skin("daylight")
         assert skin.name == "daylight"
         assert skin.tool_prefix == "│"
-        assert skin.get_color("banner_title") == "#0F172A"
-        assert skin.get_color("status_bar_bg") == "#E5EDF8"
-        assert skin.get_color("voice_status_bg") == "#E5EDF8"
-        assert skin.get_color("completion_menu_bg") == "#F8FAFC"
-        assert skin.get_color("completion_menu_current_bg") == "#DBEAFE"
-        assert skin.get_color("completion_menu_meta_bg") == "#EEF2FF"
-        assert skin.get_color("completion_menu_meta_current_bg") == "#BFDBFE"
+        # Daylight's stored light-terminal colors are ignored for contrast.
+        assert skin.colors.get("banner_title") == "#0F172A"
+        assert skin.get_color("banner_title") == DARK_COLORS["banner_title"]
+        assert skin.get_color("status_bar_bg") == DARK_COLORS["status_bar_bg"]
 
     def test_warm_lightmode_skin_loads(self):
+        from hermes_cli.display_mode import DARK_COLORS
         from hermes_cli.skin_engine import load_skin
 
         skin = load_skin("warm-lightmode")
         assert skin.name == "warm-lightmode"
-        assert skin.get_color("banner_text") == "#2C1810"
-        assert skin.get_color("completion_menu_bg") == "#F5EFE0"
+        assert skin.colors.get("banner_text") == "#2C1810"
+        assert skin.get_color("banner_text") == DARK_COLORS["banner_text"]
 
     def test_charizard_skin_has_dark_ember_completion_menu(self):
+        from hermes_cli.display_mode import DARK_COLORS
         from hermes_cli.skin_engine import load_skin
 
         skin = load_skin("charizard")
         assert skin.name == "charizard"
-        assert skin.get_color("banner_dim") == "#C58A45"
-        assert skin.get_color("completion_menu_bg") == "#0B0503"
-        assert skin.get_color("completion_menu_current_bg") == "#4A1B07"
-        assert skin.get_color("completion_menu_meta_bg") == "#120806"
-        assert skin.get_color("completion_menu_meta_current_bg") == "#5A260D"
-        assert skin.get_color("selection_bg") == "#5A260D"
+        assert skin.colors.get("banner_dim") == "#C58A45"
+        assert skin.colors.get("completion_menu_bg") == "#0B0503"
+        # Live contrast comes from the mode palette.
+        assert skin.get_color("banner_dim") == DARK_COLORS["banner_dim"]
+        assert skin.get_color("completion_menu_bg") == DARK_COLORS["completion_menu_bg"]
 
     def test_unknown_skin_falls_back_to_default(self):
         from hermes_cli.skin_engine import load_skin
@@ -201,11 +208,13 @@ class TestUserSkins:
 
         skin = load_skin("custom")
         assert skin.name == "custom"
-        assert skin.get_color("banner_title") == "#FF0000"
+        assert skin.colors.get("banner_title") == "#FF0000"
         assert skin.get_branding("agent_name") == "Custom Agent"
         assert skin.tool_prefix == "▸"
-        # Should inherit defaults for unspecified colors
-        assert skin.get_color("banner_border") == "#CD7F32"  # from default
+        # Contrast ignores skin YAML — uses active light/dark palette.
+        from hermes_cli.display_mode import DARK_COLORS
+        assert skin.get_color("banner_title") == DARK_COLORS["banner_title"]
+        assert skin.get_color("banner_border") == DARK_COLORS["banner_border"]
 
     def test_load_user_skin_invalid_section_types_fall_back_to_defaults(self, tmp_path, monkeypatch):
         from hermes_cli.skin_engine import load_skin
@@ -386,5 +395,7 @@ class TestCliBrandingHelpers:
         set_active_skin("daylight")
         skin = get_active_skin()
         overrides = get_prompt_toolkit_style_overrides()
-        assert overrides["status-bar"] == f"bg:{skin.get_color('status_bar_bg')} {skin.get_color('banner_text')}"
+        assert overrides["status-bar"] == (
+            f"bg:{skin.get_color('status_bar_bg')} {skin.get_color('status_bar_text')}"
+        )
         assert overrides["voice-status"] == f"bg:{skin.get_color('voice_status_bg')} {skin.get_color('ui_label')}"

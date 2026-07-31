@@ -1,0 +1,60 @@
+=== host=-zsh pid=14877 TIMESTAMP=20260724_010427 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== contact: now group ===
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live --contact 'now group' ===
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+[001][OK] run_start | goal='Call now group on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 366, 'macapptree': 114}"
+[011][OK][step 0] observation | nodes=263
+[012][OK][step 0] world_patch | screen='call' retention=1.0
+[013][OK][step 0] step | message='ending leftover call before closed-loop (attempt 1)'
+[014][OK][step 0] step | message='after preclear hangup' detail='1.8s'
+[015][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 366, 'macapptree': 114}"
+[016][OK][step 0] observation | nodes=263
+[017][OK][step 0] world_patch | screen='call' action='preclear_hangup' retention=1.0
+[018][OK][step 0] step | message='ending leftover call before closed-loop (attempt 2)'
+[019][OK][step 0] step | message='after preclear hangup' detail='1.8s'
+[020][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 366, 'macapptree': 114}"
+[021][OK][step 0] observation | nodes=263
+[022][OK][step 0] world_patch | screen='call' action='preclear_hangup' retention=1.0
+[023][OK][step 0] step | message='ending leftover call before closed-loop (attempt 3)'
+[024][OK][step 0] step | message='after preclear hangup' detail='1.8s'
+[025][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 366, 'macapptree': 114}"
+[026][OK][step 0] observation | nodes=263
+[027][OK][step 0] world_patch | screen='call' action='preclear_hangup' retention=1.0
+[028][WARN][step 0] step | message='call UI still present after preclear — controller will try End call as first action'
+[029][OK][step 0] step | message='closed-loop goal=Call now group on WhatsApp' detail='transition-aware DecisionEngine (observe→act→evaluate progress)'
+[030][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 336, 'macapptree': 84}"
+[031][OK][step 0] observation | nodes=236
+[032][OK][step 1] observation | nodes=236
+[033][OK][step 1] world_patch | screen='call' retention=0.8973384030418251
+[034][OK][step 1] fusion_conflicts
+[035][OK][step 1] goal_status
+[036][OK] world_summary
+[037][OK][step 0] execution | message="click 'end-to-end encrypted' center=(332.738281, 52790.5) via entity bounds" backend='ax'
+[038][OK] check | message='pass' expected="closed-loop call ringing for 'now group'"
+[039][FAIL] check | message='fail' expected='>=1 planner call per decision cycle'
+[040][OK] run_end | detail="closed_loop ok=True reason='goal succeeded' iterations=1 planner_invocations=0 ringing=True"
+
+=== DONE ok=True live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=0

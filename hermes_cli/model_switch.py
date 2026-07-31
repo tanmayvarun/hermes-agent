@@ -33,6 +33,7 @@ from hermes_cli.providers import (
     host_mandated_api_mode,
     is_aggregator,
     resolve_provider_full,
+    _ollama_cloud_only_mode,
 )
 from hermes_cli.model_normalize import (
     normalize_model_for_provider,
@@ -1656,6 +1657,7 @@ def list_authenticated_providers(
     probe_current_custom_provider: bool = False,
     for_picker: bool = False,
     excluded_providers: list | None = None,
+    min_params_b: float | None = None,
 ) -> List[dict]:
     """Detect which providers have credentials and list their curated models.
 
@@ -1716,6 +1718,7 @@ def list_authenticated_providers(
             clear_provider_models_cache()
         except Exception:
             pass
+    ollama_only = _ollama_cloud_only_mode()
 
 
     results: List[dict] = []
@@ -1920,11 +1923,18 @@ def list_authenticated_providers(
         # /model picker sees the SAME list `hermes model` would build, with
         # disk caching to keep the picker open snappy. Falls back to the
         # curated static list when the live fetcher returns nothing.
-        model_ids = cached_provider_model_ids(hermes_id)
+        model_ids = cached_provider_model_ids(
+            hermes_id,
+            min_params_b=min_params_b,
+        )
         if not model_ids:
             model_ids = curated.get(hermes_id, [])
             if hermes_id in _MODELS_DEV_PREFERRED:
-                model_ids = _merge_with_models_dev(hermes_id, model_ids)
+                model_ids = _merge_with_models_dev(
+                    hermes_id,
+                    model_ids,
+                    min_params_b=min_params_b,
+                )
         # A providers.<built-in>.models block extends the provider's discovered
         # catalog. Section 3 cannot emit it later because this built-in row owns
         # the slug, so merge declarations here before applying max_models.
@@ -2059,12 +2069,18 @@ def list_authenticated_providers(
             # catalog. ``cached_provider_model_ids()`` falls back to the
             # curated list when the live endpoint is unreachable, so this
             # is safe for unauthenticated and offline cases too.
-            model_ids = cached_provider_model_ids(hermes_slug)
+            model_ids = cached_provider_model_ids(
+                hermes_slug,
+                min_params_b=min_params_b,
+            )
         # For aws_sdk providers (bedrock), use live discovery so the list
         # reflects the active region (eu.*, ap.*) not the static us.* list.
         elif overlay.auth_type == "aws_sdk":
             try:
-                _ids = cached_provider_model_ids(hermes_slug)
+                _ids = cached_provider_model_ids(
+                    hermes_slug,
+                    min_params_b=min_params_b,
+                )
                 model_ids = _ids if _ids else (curated.get(hermes_slug, []) or curated.get(pid, []))
             except Exception:
                 model_ids = curated.get(hermes_slug, []) or curated.get(pid, [])
@@ -2109,11 +2125,18 @@ def list_authenticated_providers(
             # Unified pathway — see Section 1 rationale. Fall back to the
             # curated dict (with models.dev merge for preferred providers)
             # when the live fetcher comes up empty.
-            model_ids = cached_provider_model_ids(hermes_slug)
+            model_ids = cached_provider_model_ids(
+                hermes_slug,
+                min_params_b=min_params_b,
+            )
             if not model_ids:
                 model_ids = curated.get(hermes_slug, []) or curated.get(pid, [])
                 if hermes_slug in _MODELS_DEV_PREFERRED:
-                    model_ids = _merge_with_models_dev(hermes_slug, model_ids)
+                    model_ids = _merge_with_models_dev(
+                        hermes_slug,
+                        model_ids,
+                        min_params_b=min_params_b,
+                    )
         total = len(model_ids)
         if hermes_slug in _UNCAPPED_PICKER_PROVIDERS:
             top = model_ids  # Aggregator: show full catalog regardless of max_models
@@ -2183,13 +2206,19 @@ def list_authenticated_providers(
         # region (eu.*, us.*, ap.*) instead of the hardcoded us.* static list.
         if _cp_config and getattr(_cp_config, "auth_type", "") == "aws_sdk":
             try:
-                _ids = cached_provider_model_ids(_cp.slug)
+                _ids = cached_provider_model_ids(
+                    _cp.slug,
+                    min_params_b=min_params_b,
+                )
                 _cp_model_ids = _ids if _ids else curated.get(_cp.slug, [])
             except Exception:
                 _cp_model_ids = curated.get(_cp.slug, [])
         else:
             # Unified pathway — same as sections 1 and 2.
-            _cp_model_ids = cached_provider_model_ids(_cp.slug)
+            _cp_model_ids = cached_provider_model_ids(
+                _cp.slug,
+                min_params_b=min_params_b,
+            )
             if not _cp_model_ids:
                 _cp_model_ids = curated.get(_cp.slug, [])
         _cp_total = len(_cp_model_ids)
@@ -2741,6 +2770,12 @@ def list_authenticated_providers(
                 _row["total_models"] = _row.get("total_models", len(_models)) + 1
             break
 
+    if ollama_only:
+        results = [
+            row for row in results
+            if str(row.get("slug", "")).strip().lower() == "ollama-cloud"
+        ]
+
     # Sort: current provider first, then by model count descending
     results.sort(key=lambda r: (not r["is_current"], -r["total_models"]))
 
@@ -2776,6 +2811,7 @@ def list_picker_providers(
     current_model: str = "",
     include_moa: bool = False,
     excluded_providers: list | None = None,
+    min_params_b: float | None = None,
 ) -> List[dict]:
     """Interactive-picker variant of :func:`list_authenticated_providers`.
 
@@ -2807,6 +2843,7 @@ def list_picker_providers(
         current_model=current_model,
         for_picker=True,
         excluded_providers=excluded_providers,
+        min_params_b=min_params_b,
     )
     if include_moa:
         providers = _prepend_moa_picker_provider(providers, current_provider=current_provider)

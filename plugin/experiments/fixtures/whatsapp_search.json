@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "app_name": "WhatsApp",
+    "window_name": "WhatsApp",
+    "bundle_id": "net.whatsapp.WhatsApp",
+    "screen": "search",
+    "coverage": 1.0
+  },
+  "tree": {
+    "id": "wa-root-search",
+    "name": "WhatsApp",
+    "role": "AXWindow",
+    "children": [
+      {
+        "id": "search-field",
+        "name": "Search or start new chat",
+        "role": "AXTextField",
+        "bbox": [40, 30, 320, 32],
+        "enabled": true,
+        "value": "",
+        "children": []
+      },
+      {
+        "id": "search-btn",
+        "name": "Search",
+        "role": "AXButton",
+        "bbox": [400, 20, 60, 28],
+        "enabled": true,
+        "children": []
+      },
+      {
+        "id": "results",
+        "name": "Search",
+        "role": "AXList",
+        "bbox": [20, 80, 280, 400],
+        "children": [
+          {
+            "id": "hit-pallavi",
+            "name": "Pallavi",
+            "role": "AXStaticText",
+            "bbox": [24, 90, 200, 40],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

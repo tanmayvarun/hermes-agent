@@ -328,16 +328,47 @@ def get_curated_openrouter_models() -> list[tuple[str, str]] | None:
     back to their hardcoded list.
     """
     block = _get_provider_block("openrouter")
-    if not block:
+    try:
+        from hermes_cli.models import OPENROUTER_MODELS as _OPENROUTER_SNAPSHOT
+    except Exception:
+        _OPENROUTER_SNAPSHOT = []
+
+    manifest_rows: list[tuple[str, str]] = []
+    manifest_by_id: dict[str, str] = {}
+    if block:
+        for m in block.get("models", []):
+            if not isinstance(m, dict):
+                continue
+            mid = str(m.get("id") or "").strip()
+            if not mid:
+                continue
+            desc = str(m.get("description") or "")
+            manifest_rows.append((mid, desc))
+            manifest_by_id[mid.lower()] = desc
+
+    if not manifest_rows and not _OPENROUTER_SNAPSHOT:
         return None
-    out: list[tuple[str, str]] = []
-    for m in block.get("models", []):
-        mid = str(m.get("id") or "").strip()
-        if not mid:
-            continue
-        desc = str(m.get("description") or "")
-        out.append((mid, desc))
-    return out or None
+
+    merged: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def _append(mid: str, desc: str) -> None:
+        key = mid.strip().lower()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        merged.append((mid, desc))
+
+    # Preserve the repository's explicit OpenRouter priority ordering first.
+    for mid, fallback_desc in _OPENROUTER_SNAPSHOT:
+        desc = manifest_by_id.get(mid.lower(), fallback_desc)
+        _append(mid, desc)
+
+    # Append any manifest-only additions after the curated front-of-list.
+    for mid, desc in manifest_rows:
+        _append(mid, desc)
+
+    return merged or None
 
 
 def get_curated_nous_models() -> list[str] | None:

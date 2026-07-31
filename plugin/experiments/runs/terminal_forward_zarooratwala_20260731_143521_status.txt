@@ -1,0 +1,5 @@
+status=launching
+stamp=20260731_143521
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_143521.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_143521_console.txt
+cwd=/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent

@@ -1,0 +1,29 @@
+=== launch start 20260729_035946 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_035946.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_035946_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_035946_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observe_done_fused step=0] nodes=207 elapsed=4.11s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 286, 'macapptree': 0} elapsed=4.11s attempt=1/3"
+[012][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=4.13s
+Auxiliary perception: fallback candidate ollama-remote failed (Request timed out.) — trying next fallback
+Auxiliary perception: connection error on ollama-remote and no fallback available (tried: )
+Auxiliary perception: connection error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[013][OK][step 0] world_patch | screen='conversation' retention=1.0
+[014][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[015][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True

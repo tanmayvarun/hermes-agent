@@ -54,10 +54,10 @@ function entriesEqual(a: FallbackEntry[], b: FallbackEntry[]): boolean {
 }
 
 /**
- * Structured editor for the top-level `fallback_providers` config list — a
- * chain of `{provider, model}` pairs tried in order when the default model
- * fails. Replaces the generic comma-string `list` input, which stringified the
- * objects to "[object Object], [object Object]".
+ * Structured editor for the top-level `fallback_providers` config list — an
+ * ordered chain of `{provider, model}` pairs tried in order when the default
+ * model fails. Replaces the generic comma-string `list` input, which
+ * stringified the objects to "[object Object], [object Object]".
  *
  * Mirrors the Auxiliary Models picker in `model-settings.tsx`: provider + model
  * selects sourced from `getGlobalModelOptions()`. Half-filled rows are kept in

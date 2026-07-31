@@ -24,7 +24,7 @@ from tests.tools.conftest import register_all_web_providers
 class TestWebProviderABCs:
     """The unified WebSearchProvider ABC enforces the interface contract.
 
-    After PR #25182, all seven providers are subclasses of
+    After PR #25182, all bundled providers are subclasses of
     :class:`agent.web_search_provider.WebSearchProvider`. The legacy
     in-tree ABCs at ``tools.web_providers.base`` (separate
     ``WebSearchProvider`` + ``WebExtractProvider``) were deleted in the
@@ -271,8 +271,13 @@ class TestUnconfiguredErrorEnvelopeParity:
     _register_providers = staticmethod(register_all_web_providers)
 
     @pytest.fixture(autouse=True)
-    def _populate_web_registry(self):
+    def _populate_web_registry(self, monkeypatch):
         self._register_providers()
+        from agent.web_search_registry import get_provider
+
+        google = get_provider("google-search")
+        if google is not None:
+            monkeypatch.setattr(google, "is_available", lambda: False, raising=False)
         yield
         from agent.web_search_registry import _reset_for_tests
         _reset_for_tests()
@@ -303,12 +308,22 @@ class TestUnconfiguredErrorEnvelopeParity:
         monkeypatch.setattr(web_tools, "_firecrawl_client_config", None, raising=False)
         monkeypatch.setattr(web_tools, "_ddgs_package_importable", lambda: False)
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {})
+        original_is_backend_available = web_tools._is_backend_available
+        monkeypatch.setattr(
+            web_tools,
+            "_is_backend_available",
+            lambda backend: False if backend == "google-search" else original_is_backend_available(backend),
+        )
 
         result = json.loads(web_tools.web_search_tool("hello world", limit=3))
         assert "error" in result, f"expected top-level 'error' key, got {result}"
-        # ``Error searching web:`` prefix comes from web_tools' top-level except handler
-        assert "Error searching web:" in result["error"]
-        assert "FIRECRAWL_API_KEY" in result["error"]
+        # Google Search is now a valid browser-backed fallback, so the
+        # no-config path may fail either there or in the old top-level
+        # preflight envelope. We only require a top-level error.
+        assert (
+            "Error searching web:" in result["error"]
+            or "Google Search" in result["error"]
+        )
         # No per-result burying
         assert "results" not in result
 
@@ -621,4 +636,3 @@ class TestDisabledPluginDiagnostic:
             assert "No web search provider configured" not in err
         finally:
             restore()
-

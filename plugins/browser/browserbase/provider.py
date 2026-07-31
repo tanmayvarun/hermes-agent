@@ -282,6 +282,8 @@ class BrowserbaseBrowserProvider(BrowserProvider):
             "name": "Browserbase",
             "badge": "paid",
             "tag": "Cloud browser with stealth and proxies",
+            "background_safe": True,
+            "requires_human_cta": False,
             "env_vars": [
                 {
                     "key": "BROWSERBASE_API_KEY",

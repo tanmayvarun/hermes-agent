@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 
 from agent.auxiliary_client import (
+    LLMProviderExhaustedError,
     get_text_auxiliary_client,
     get_available_vision_backends,
     resolve_vision_provider_client,
@@ -26,6 +27,7 @@ from agent.auxiliary_client import (
     _is_model_incompatible_error,
     _refresh_nous_recommended_model,
     _normalize_aux_provider,
+    _get_auxiliary_task_config,
     _try_payment_fallback,
     _try_openrouter,
     _OPENROUTER_MODEL,
@@ -33,6 +35,7 @@ from agent.auxiliary_client import (
     _resolve_auto,
     _resolve_task_provider_model,
     _resolve_xai_oauth_for_aux,
+    _select_ranked_provider_candidates,
     _CodexCompletionsAdapter,
     _pool_runtime_base_url,
 )
@@ -58,6 +61,132 @@ class _FakeAnthropicStream:
         return self._final_message
 
 
+class TestAuxiliaryTaskConfigFallbackChain:
+    def test_env_fallback_chain_parses_json_list(self, monkeypatch):
+        monkeypatch.setenv(
+            "HERMES_CONTENT_OBJECT_RESOLUTION_FALLBACK_CHAIN",
+            json.dumps([
+                {"provider": "ollama-remote", "model": "qwen2.5:32b", "base_url": "http://one"},
+                {"provider": "ollama-remote", "model": "deepseek-r1:32b", "base_url": "http://two"},
+            ]),
+        )
+        with patch(
+            "hermes_cli.config.load_config",
+            return_value={"auxiliary": {"content_object_resolution": {}}},
+        ):
+            cfg = _get_auxiliary_task_config("content_object_resolution")
+
+        assert cfg["fallback_chain"] == [
+            {"provider": "ollama-remote", "model": "qwen2.5:32b", "base_url": "http://one"},
+            {"provider": "ollama-remote", "model": "deepseek-r1:32b", "base_url": "http://two"},
+        ]
+
+    def test_configured_fallback_chain_still_runs_under_ollama_only(self, monkeypatch):
+        """An explicit ordered task chain must be honored even when the
+        auxiliary policy is pinned to ollama-only.
+        """
+        chain_client = MagicMock()
+        with patch(
+            "agent.auxiliary_client._get_auxiliary_task_config",
+            return_value={
+                "fallback_chain": [
+                    {"provider": "ollama-remote", "model": "qwen2.5:32b", "base_url": "http://one"},
+                    {"provider": "ollama-remote", "model": "deepseek-r1:32b", "base_url": "http://two"},
+                ]
+            },
+        ), patch(
+            "agent.auxiliary_client._resolve_fallback_entry",
+            side_effect=lambda entry: (
+                (chain_client, "deepseek-r1:32b")
+                if entry.get("model") == "deepseek-r1:32b"
+                else (None, None)
+            ),
+        ), patch(
+            "agent.auxiliary_client.get_model_context_length",
+            return_value=256000,
+        ):
+            from agent.auxiliary_client import _try_configured_fallback_chain
+
+            client, model, label = _try_configured_fallback_chain(
+                task="content_object_resolution",
+                failed_provider="fallback_chain[0](ollama-remote)",
+                reason="connection error",
+            )
+
+        assert client is chain_client
+        assert model == "deepseek-r1:32b"
+        assert "fallback_chain[1]" in label
+
+    def test_configured_fallback_chain_skips_openrouter_under_ollama_only(self, monkeypatch):
+        """ollama-only must not let a configured OpenRouter entry leak into the chain."""
+        openrouter_client = MagicMock()
+        ollama_client = MagicMock()
+        monkeypatch.setenv("HERMES_AUXILIARY_PROVIDER_POLICY", "ollama-only")
+        with patch(
+            "agent.auxiliary_client._get_auxiliary_task_config",
+            return_value={
+                "fallback_chain": [
+                    {"provider": "openrouter", "model": "openai/gpt-oss-120b", "base_url": "https://openrouter.ai/api/v1"},
+                    {"provider": "ollama-remote", "model": "qwen2.5:32b", "base_url": "http://ollama"},
+                ]
+            },
+        ), patch(
+            "agent.auxiliary_client._resolve_fallback_entry",
+            side_effect=lambda entry: (
+                (openrouter_client, "openai/gpt-oss-120b")
+                if entry.get("provider") == "openrouter"
+                else (ollama_client, "qwen2.5:32b")
+            ),
+        ) as resolve_entry:
+            from agent.auxiliary_client import _try_configured_fallback_chain
+
+            client, model, label = _try_configured_fallback_chain(
+                task="content_object_resolution",
+                failed_provider="auto",
+                reason="connection error",
+            )
+
+        assert client is ollama_client
+        assert model == "qwen2.5:32b"
+        assert "fallback_chain[1]" in label
+        assert resolve_entry.call_count == 1
+
+    def test_configured_fallback_chain_skips_exact_unhealthy_entry_but_keeps_later_models(self, monkeypatch):
+        """Entry-local unhealthy marks should not poison later models on the
+        same provider within an explicit chain."""
+        chain_client = MagicMock()
+        with patch(
+            "agent.auxiliary_client._get_auxiliary_task_config",
+            return_value={
+                "fallback_chain": [
+                    {"provider": "ollama-remote", "model": "qwen2.5:32b", "base_url": "http://one"},
+                    {"provider": "ollama-remote", "model": "deepseek-r1:32b", "base_url": "http://two"},
+                ]
+            },
+        ), patch(
+            "agent.auxiliary_client._resolve_fallback_entry",
+            side_effect=lambda entry: (
+                (chain_client, entry.get("model"))
+                if entry.get("model") == "deepseek-r1:32b"
+                else (chain_client, entry.get("model"))
+            ),
+        ):
+            import agent.auxiliary_client as aux
+
+            aux._aux_unhealthy_until["fallback_chain[0](ollama-remote)"] = time.time() + 60
+            from agent.auxiliary_client import _try_configured_fallback_chain
+
+            client, model, label = _try_configured_fallback_chain(
+                task="content_object_resolution",
+                failed_provider="fallback_chain[0](ollama-remote)",
+                reason="connection error",
+            )
+
+        assert client is chain_client
+        assert model == "deepseek-r1:32b"
+        assert "fallback_chain[1]" in label
+
+
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     """Strip provider env vars so each test starts clean."""
@@ -65,6 +194,7 @@ def _clean_env(monkeypatch):
         "OPENROUTER_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_KEY",
         "OPENAI_MODEL", "LLM_MODEL", "NOUS_INFERENCE_BASE_URL",
         "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+        "HERMES_AUXILIARY_PROVIDER_POLICY",
     ):
         monkeypatch.delenv(key, raising=False)
     # Module-level unhealthy cache (10-min TTL) leaks between tests;
@@ -273,6 +403,29 @@ class TestResolveTaskProviderModel:
         assert resolved_provider == "custom"
         assert base_url == "https://explicit.example/v1"
         assert api_key == "explicit-key"
+
+    def test_task_specific_env_overrides_config(self, monkeypatch):
+        from agent.auxiliary_client import _get_auxiliary_task_config
+
+        monkeypatch.setenv("HERMES_PERCEPTION_MODEL", "deepseek-r1:14b")
+        monkeypatch.setenv("HERMES_AUXILIARY_PERCEPTION_TIMEOUT", "45")
+        with patch(
+            "hermes_cli.config.load_config",
+            return_value={
+                "auxiliary": {
+                    "perception": {
+                        "provider": "ollama-remote",
+                        "model": "qwen2.5:32b",
+                        "timeout": 30,
+                    }
+                }
+            },
+        ):
+            cfg = _get_auxiliary_task_config("perception")
+
+        assert cfg["provider"] == "ollama-remote"
+        assert cfg["model"] == "deepseek-r1:14b"
+        assert cfg["timeout"] == 45.0
 
 
 class TestBuildCallKwargsMaxTokens:
@@ -1163,19 +1316,16 @@ class TestGetTextAuxiliaryClient:
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-        with patch("agent.auxiliary_client._read_nous_auth", return_value=None), \
-             patch("agent.auxiliary_client._read_codex_access_token", return_value=None), \
-             patch("agent.auxiliary_client._resolve_api_key_provider", return_value=(None, None)):
+        with patch("agent.auxiliary_client._resolve_task_provider_model",
+                   return_value=("auto", None, None, None, None)), \
+             patch("agent.auxiliary_client.resolve_provider_client", return_value=(None, None)):
             client, model = get_text_auxiliary_client()
         assert client is None
         assert model is None
 
     def test_custom_endpoint_uses_codex_wrapper_when_runtime_requests_responses_api(self):
-        with patch("agent.auxiliary_client._resolve_custom_runtime",
-                   return_value=("https://api.openai.com/v1", "sk-test", "codex_responses")), \
-             patch("agent.auxiliary_client._read_nous_auth", return_value=None), \
-             patch("agent.auxiliary_client._resolve_nous_runtime_api", return_value=None), \
-             patch("agent.auxiliary_client._read_main_model", return_value="gpt-5.3-codex"), \
+        with patch("agent.auxiliary_client._resolve_task_provider_model",
+                   return_value=("custom", "gpt-5.3-codex", "https://api.openai.com/v1", "sk-test", "codex_responses")), \
              patch("agent.auxiliary_client.OpenAI") as mock_openai:
             client, model = get_text_auxiliary_client()
 
@@ -1961,24 +2111,122 @@ class TestIsRateLimitError:
 
 
 class TestGetProviderChain:
-    """_get_provider_chain() resolves functions at call time (testable)."""
+    """_get_provider_chain() mirrors the shared ranked selector."""
 
-    def test_returns_four_entries(self):
-        chain = _get_provider_chain()
-        assert len(chain) == 4
+    def test_returns_ranked_entries(self):
+        fake_candidates = [
+            ("openrouter", "openai/gpt-oss-120b", ""),
+            ("anthropic", "claude-sonnet-5", ""),
+        ]
+        with patch(
+            "agent.auxiliary_client._select_ranked_provider_candidates",
+            return_value=fake_candidates,
+        ):
+            chain = _get_provider_chain()
+
         labels = [label for label, _ in chain]
-        assert labels == ["openrouter", "nous", "local/custom", "api-key"]
-        # Codex is deliberately NOT in this chain — see _get_provider_chain
-        # docstring. ChatGPT-account Codex has a shifting model allow-list;
-        # guessing a model to fall back on breaks more often than it helps.
+        assert labels == [
+            "openrouter/openai/gpt-oss-120b",
+            "anthropic/claude-sonnet-5",
+        ]
         assert "openai-codex" not in labels
 
-    def test_picks_up_patched_functions(self):
-        """Patches on _try_* functions must be visible in the chain."""
-        sentinel = lambda: ("patched", "model")
-        with patch("agent.auxiliary_client._try_openrouter", sentinel):
-            chain = _get_provider_chain()
-        assert chain[0] == ("openrouter", sentinel)
+    def test_resolves_call_time_through_shared_selector(self):
+        fake_candidates = [("ollama-remote", "qwen2.5:32b", "http://ollama")]
+        with (
+            patch(
+                "agent.auxiliary_client._select_ranked_provider_candidates",
+                return_value=fake_candidates,
+            ),
+            patch(
+                "agent.auxiliary_client.resolve_provider_client",
+                return_value=(MagicMock(), "qwen2.5:32b"),
+            ) as mock_resolve,
+        ):
+            chain = _get_provider_chain(task="computer_use")
+            client, model = chain[0][1]()
+
+        assert client is not None
+        assert model == "qwen2.5:32b"
+        mock_resolve.assert_called_once_with(
+            "ollama-remote",
+            model="qwen2.5:32b",
+            main_runtime=None,
+            task="computer_use",
+        )
+
+    def test_legacy_chain_stays_on_ollama_when_available(self):
+        from agent.auxiliary_client import _resolve_auto
+
+        openrouter_client = MagicMock()
+        ollama_client = MagicMock()
+        with (
+            patch("agent.auxiliary_client._select_ranked_provider_candidates", return_value=[]),
+            patch("agent.auxiliary_client._read_main_provider", return_value=""),
+            patch("agent.auxiliary_client._read_main_model", return_value=""),
+            patch("agent.auxiliary_client._try_openrouter", return_value=(openrouter_client, "openai/gpt-oss-120b")) as try_openrouter,
+            patch("agent.auxiliary_client._try_ollama_remote", return_value=(ollama_client, "qwen2.5:32b")) as try_ollama,
+            patch("agent.auxiliary_client._try_nous", return_value=(None, None)),
+            patch("agent.auxiliary_client._try_custom_endpoint", return_value=(None, None)),
+            patch("agent.auxiliary_client._resolve_api_key_provider", return_value=(None, None)),
+        ):
+            client, model = _resolve_auto()
+
+        assert client is ollama_client
+        assert model == "qwen2.5:32b"
+        assert try_openrouter.called is False
+        assert try_ollama.called
+
+    def test_ollama_only_policy_keeps_chain_on_hosted_ollama(self, monkeypatch):
+        monkeypatch.setenv("HERMES_AUXILIARY_PROVIDER_POLICY", "ollama-only")
+        with patch(
+            "agent.auxiliary_client.rank_task_models",
+            return_value=[
+                SimpleNamespace(provider="openrouter", model="openai/gpt-oss-120b", base_url=""),
+                SimpleNamespace(provider="ollama-remote", model="qwen2.5:32b", base_url="http://127.0.0.1:11434/v1"),
+            ],
+        ):
+            chain = _select_ranked_provider_candidates(task="chat_runtime")
+        labels = [f"{provider}/{model}" for provider, model, _ in chain]
+        assert labels == ["ollama-remote/qwen2.5:32b"]
+
+    def test_resolve_auto_prefers_selector_candidate_under_ollama_only_policy(self, monkeypatch):
+        from agent.auxiliary_client import _resolve_auto
+
+        monkeypatch.setenv("HERMES_AUXILIARY_PROVIDER_POLICY", "ollama-only")
+        ollama_client = MagicMock()
+        with (
+            patch(
+                "agent.auxiliary_client._select_ranked_provider_candidates",
+                return_value=[("ollama-remote", "qwen2.5:32b", "http://ollama")],
+            ),
+            patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"),
+            patch("agent.auxiliary_client._read_main_model", return_value="anthropic/claude-sonnet-4.6"),
+            patch("agent.auxiliary_client.resolve_provider_client", return_value=(ollama_client, "qwen2.5:32b")),
+        ):
+            client, model = _resolve_auto()
+
+        assert client is ollama_client
+        assert model == "qwen2.5:32b"
+
+    def test_resolve_auto_ollama_only_skips_openrouter_main_provider(self, monkeypatch):
+        from agent.auxiliary_client import _resolve_auto
+
+        monkeypatch.setenv("HERMES_AUXILIARY_PROVIDER_POLICY", "ollama-only")
+        ollama_client = MagicMock()
+        with (
+            patch(
+                "agent.auxiliary_client._select_ranked_provider_candidates",
+                return_value=[("ollama-remote", "qwen2.5:32b", "http://ollama")],
+            ),
+            patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"),
+            patch("agent.auxiliary_client._read_main_model", return_value="anthropic/claude-sonnet-4.6"),
+            patch("agent.auxiliary_client.resolve_provider_client", return_value=(ollama_client, "qwen2.5:32b")),
+        ):
+            client, model = _resolve_auto()
+
+        assert client is ollama_client
+        assert model == "qwen2.5:32b"
 
 
 class TestTryPaymentFallback:
@@ -2000,20 +2248,26 @@ class TestTryPaymentFallback:
 
     def test_skips_failed_provider(self):
         mock_client = MagicMock()
-        with patch("agent.auxiliary_client._try_openrouter", return_value=(None, None)), \
-             patch("agent.auxiliary_client._try_nous", return_value=(mock_client, "nous-model")), \
-             patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"):
+        with patch(
+            "agent.auxiliary_client._select_ranked_provider_candidates",
+            return_value=[
+                ("openrouter", "openai/gpt-oss-120b", ""),
+                ("nous", "nous-model", ""),
+            ],
+        ), patch(
+            "agent.auxiliary_client.resolve_provider_client",
+            return_value=(mock_client, "nous-model"),
+        ), patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"):
             client, model, label = _try_payment_fallback("openrouter", task="compression")
         assert client is mock_client
         assert model == "nous-model"
-        assert label == "nous"
+        assert label == "nous/nous-model"
 
     def test_returns_none_when_no_fallback(self):
-        with patch("agent.auxiliary_client._try_openrouter", return_value=(None, None)), \
-             patch("agent.auxiliary_client._try_nous", return_value=(None, None)), \
-             patch("agent.auxiliary_client._try_custom_endpoint", return_value=(None, None)), \
-             patch("agent.auxiliary_client._resolve_api_key_provider", return_value=(None, None)), \
-             patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"):
+        with patch(
+            "agent.auxiliary_client._select_ranked_provider_candidates",
+            return_value=[],
+        ), patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"):
             client, model, label = _try_payment_fallback("openrouter")
         assert client is None
         assert label == ""
@@ -2021,11 +2275,16 @@ class TestTryPaymentFallback:
     def test_codex_alias_maps_to_chain_label(self):
         """'codex' should map to 'openai-codex' in the skip set."""
         mock_client = MagicMock()
-        with patch("agent.auxiliary_client._try_openrouter", return_value=(mock_client, "or-model")), \
-             patch("agent.auxiliary_client._read_main_provider", return_value="openai-codex"):
+        with patch(
+            "agent.auxiliary_client._select_ranked_provider_candidates",
+            return_value=[("openrouter", "or-model", "")],
+        ), patch(
+            "agent.auxiliary_client.resolve_provider_client",
+            return_value=(mock_client, "or-model"),
+        ), patch("agent.auxiliary_client._read_main_provider", return_value="openai-codex"):
             client, model, label = _try_payment_fallback("openai-codex", task="vision")
         assert client is mock_client
-        assert label == "openrouter"
+        assert label == "openrouter/or-model"
 
     def test_codex_not_in_fallback_chain(self):
         """Codex is deliberately NOT a fallback rung (shifting model allow-list).
@@ -2033,11 +2292,10 @@ class TestTryPaymentFallback:
         When OR/Nous/custom/api-key all fail, payment-fallback returns None —
         Codex is never tried with a guessed model.
         """
-        with patch("agent.auxiliary_client._try_openrouter", return_value=(None, None)), \
-             patch("agent.auxiliary_client._try_nous", return_value=(None, None)), \
-             patch("agent.auxiliary_client._try_custom_endpoint", return_value=(None, None)), \
-             patch("agent.auxiliary_client._resolve_api_key_provider", return_value=(None, None)), \
-             patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"):
+        with patch(
+            "agent.auxiliary_client._select_ranked_provider_candidates",
+            return_value=[],
+        ), patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"):
             client, model, label = _try_payment_fallback("openrouter")
         assert client is None
         assert model is None
@@ -2537,6 +2795,40 @@ class TestAuxiliaryFallbackLayering:
         # Main agent fallback should NOT be needed when chain succeeds
         mock_main.assert_not_called()
 
+    def test_explicit_provider_rate_limit_uses_payment_fallback_after_main_exhausted(self, monkeypatch):
+        """If the task chain is empty and the main-agent safety net fails, explicit-provider 429 should rotate to the broader provider chain."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+
+        primary_client = MagicMock()
+        rate_err = Exception("Rate limit exceeded, try again in 60 seconds")
+        rate_err.status_code = 429
+        primary_client.chat.completions.create.side_effect = rate_err
+
+        payment_client = MagicMock()
+        payment_client.chat.completions.create.return_value = MagicMock(choices=[
+            MagicMock(message=MagicMock(content="from payment fallback"))
+        ])
+
+        with patch("agent.auxiliary_client._get_cached_client",
+                   return_value=(primary_client, "gpt-5.5")), \
+             patch("agent.auxiliary_client._resolve_task_provider_model",
+                   return_value=("openrouter", "gpt-5.5", None, None, None)), \
+             patch("agent.auxiliary_client._try_configured_fallback_chain",
+                   return_value=(None, None, "")) as mock_chain, \
+             patch("agent.auxiliary_client._try_payment_fallback",
+                   return_value=(payment_client, "claude-sonnet-4-5", "nous")) as mock_payment, \
+             patch("agent.auxiliary_client._try_main_agent_model_fallback",
+                   return_value=(None, None, "")) as mock_main:
+            result = call_llm(
+                task="perception",
+                messages=[{"role": "user", "content": "summarize"}],
+            )
+
+        assert result.choices[0].message.content == "from payment fallback"
+        mock_chain.assert_called_once_with("perception", "openrouter", reason="rate limit")
+        mock_payment.assert_called_once_with("openrouter", "perception", reason="rate limit")
+        mock_main.assert_called_once_with("openrouter", "perception", reason="rate limit")
+
 
     def test_warning_emitted_when_all_fallbacks_exhausted(self, monkeypatch, caplog):
         """When chain AND main model both fail, a user-visible warning fires before re-raise."""
@@ -2549,12 +2841,14 @@ class TestAuxiliaryFallbackLayering:
                    return_value=(primary_client, "glm-4v-flash")), \
              patch("agent.auxiliary_client._resolve_task_provider_model",
                    return_value=("glm", "glm-4v-flash", None, None, None)), \
-             patch("agent.auxiliary_client._try_configured_fallback_chain",
+            patch("agent.auxiliary_client._try_configured_fallback_chain",
                    return_value=(None, None, "")), \
-             patch("agent.auxiliary_client._try_main_agent_model_fallback",
+            patch("agent.auxiliary_client._try_main_agent_model_fallback",
                    return_value=(None, None, "")), \
-             caplog.at_level("WARNING", logger="agent.auxiliary_client"):
-            with pytest.raises(Exception, match="Payment Required"):
+            patch("agent.auxiliary_client._try_payment_fallback",
+                   return_value=(None, None, "")), \
+            caplog.at_level("WARNING", logger="agent.auxiliary_client"):
+            with pytest.raises(LLMProviderExhaustedError, match="all fallbacks exhausted"):
                 call_llm(
                     task="vision",
                     messages=[{"role": "user", "content": "hello"}],
@@ -5248,6 +5542,32 @@ class TestOpenRouterExplicitApiKey:
                 "Should NOT fall back to OPENROUTER_API_KEY when explicit_api_key is provided"
             )
 
+    def test_resolve_provider_client_uses_explicit_api_key_for_ollama_cloud(
+        self, monkeypatch
+    ):
+        """Ollama Cloud should build directly from the supplied/runtime key."""
+        monkeypatch.setenv("OLLAMA_API_KEY", "env-fallback-key")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "https://ollama.com/v1")
+
+        mock_openai = MagicMock()
+        mock_openai.return_value = MagicMock(name="ollama-cloud-client")
+
+        with patch("agent.auxiliary_client.OpenAI", mock_openai):
+            client, model = resolve_provider_client(
+                provider="ollama-cloud",
+                model="gpt-oss:120b",
+                explicit_api_key="explicit-pool-key",
+                explicit_base_url="https://ollama.com/v1",
+            )
+
+        assert client is not None
+        assert model == "gpt-oss:120b"
+        mock_openai.assert_called_once()
+        call_kwargs = mock_openai.call_args[1]
+        assert call_kwargs["api_key"] == "explicit-pool-key"
+        assert call_kwargs["base_url"] == "https://ollama.com/v1"
+        assert call_kwargs["api_key"] != "env-fallback-key"
+
     def test_resolve_provider_client_without_explicit_api_key_falls_back_to_env(
         self, monkeypatch
     ):
@@ -5393,6 +5713,18 @@ class TestAuxUnhealthyCache:
         _mark_provider_unhealthy("codex")
         assert _is_provider_unhealthy("openai-codex") is True
 
+    def test_ollama_only_keeps_hosted_ollama_available(self, monkeypatch):
+        """ollama-only mode should not let the unhealthy cache hide the only
+        allowed hosted Ollama route."""
+        from agent.auxiliary_client import (
+            _mark_provider_unhealthy,
+            _is_provider_unhealthy,
+        )
+        monkeypatch.setenv("HERMES_AUXILIARY_PROVIDER_POLICY", "ollama-only")
+        _mark_provider_unhealthy("ollama-remote")
+        assert _is_provider_unhealthy("ollama-remote") is False
+        assert _is_provider_unhealthy("openrouter") is False
+
     def test_resolve_auto_skips_unhealthy_step2(self):
         """_resolve_auto Step-2 chain skips unhealthy providers."""
         from agent.auxiliary_client import (
@@ -5404,6 +5736,7 @@ class TestAuxUnhealthyCache:
         _mark_provider_unhealthy("openrouter")
         with patch("agent.auxiliary_client._read_main_provider", return_value=""), \
              patch("agent.auxiliary_client._read_main_model", return_value=""), \
+             patch("agent.auxiliary_client._try_ollama_remote", return_value=(None, None)), \
              patch("agent.auxiliary_client._try_openrouter") as or_try, \
              patch("agent.auxiliary_client._try_nous", return_value=(nous_client, "nous-model")), \
              patch("agent.auxiliary_client._try_custom_endpoint", return_value=(None, None)), \
@@ -5426,6 +5759,7 @@ class TestAuxUnhealthyCache:
         _mark_provider_unhealthy("openrouter")
         with patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"), \
              patch("agent.auxiliary_client._read_main_model", return_value="anthropic/claude-sonnet-4.6"), \
+             patch("agent.auxiliary_client._try_ollama_remote", return_value=(None, None)), \
              patch("agent.auxiliary_client.resolve_provider_client") as step1, \
              patch("agent.auxiliary_client._try_openrouter") as or_try, \
              patch("agent.auxiliary_client._try_nous", return_value=(nous_client, "n-model")), \
@@ -5450,14 +5784,22 @@ class TestAuxUnhealthyCache:
         # Mark BOTH the failed provider (openrouter) and a sibling (custom)
         # unhealthy. The chain should still find nous.
         _mark_provider_unhealthy("local/custom")
-        with patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"), \
-             patch("agent.auxiliary_client._try_openrouter") as or_try, \
+        with patch(
+            "agent.auxiliary_client._select_ranked_provider_candidates",
+            return_value=[
+                ("openrouter", "openai/gpt-oss-120b", ""),
+                ("custom", "gpt-4o-mini", ""),
+                ("nous", "n-model", ""),
+            ],
+        ), \
+             patch("agent.auxiliary_client._read_main_provider", return_value="openrouter"), \
+             patch("agent.auxiliary_client._try_openrouter", return_value=(None, None)) as or_try, \
              patch("agent.auxiliary_client._try_nous", return_value=(nous_client, "n-model")), \
              patch("agent.auxiliary_client._try_custom_endpoint") as custom_try, \
              patch("agent.auxiliary_client._resolve_api_key_provider", return_value=(None, None)):
             client, model, label = _try_payment_fallback("openrouter", task="compression")
         assert client is nous_client
-        assert label == "nous"
+        assert label.startswith("nous")
         # OR is skipped via skip_chain_labels (failed provider), custom via unhealthy cache.
         or_try.assert_not_called()
         custom_try.assert_not_called()

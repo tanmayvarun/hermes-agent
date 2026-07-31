@@ -1,0 +1,5 @@
+name: siliconflow-provider
+kind: model-provider
+version: 1.0.0
+description: SiliconFlow — free-tier OpenAI-compatible inference
+author: Hermes Agent

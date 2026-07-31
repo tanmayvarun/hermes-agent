@@ -1,8 +1,10 @@
 """Hermes CLI skin/theme engine.
 
-A data-driven skin system that lets users customize the CLI's visual appearance.
-Skins are defined as YAML files in ~/.hermes/skins/ or as built-in presets.
-No code changes are needed to add a new skin.
+A data-driven skin system for branding (name, logos, spinner, welcome text).
+
+Contrast colors are NOT per-skin — Hermes has exactly two display modes
+(``light`` and ``dark``) via ``hermes_cli.display_mode``. Set
+``display.theme: light|dark|auto`` in config.yaml (default ``auto``).
 
 SKIN YAML SCHEMA
 ================
@@ -140,8 +142,14 @@ class SkinConfig:
     banner_hero: str = ""    # Rich-markup hero art (replaces HERMES_CADUCEUS)
 
     def get_color(self, key: str, fallback: str = "") -> str:
-        """Get a color value with fallback."""
-        return self.colors.get(key, fallback)
+        """Get a UI color from the active light/dark mode palette.
+
+        Skin YAML ``colors:`` are ignored for contrast — only
+        ``display.theme`` / terminal detection selects light vs dark.
+        """
+        from hermes_cli.display_mode import resolve_color
+
+        return resolve_color(key, fallback=fallback)
 
     def get_spinner_wings(self) -> List[Tuple[str, str]]:
         """Get spinner wing pairs, or empty list if none."""
@@ -788,10 +796,16 @@ def get_active_skin_name() -> str:
 
 
 def init_skin_from_config(config: dict) -> None:
-    """Initialize the active skin from CLI config at startup.
+    """Initialize display theme + active skin branding from CLI config.
 
     Call this once during CLI init with the loaded config dict.
     """
+    try:
+        from hermes_cli.display_mode import init_theme_from_config
+
+        init_theme_from_config(config)
+    except Exception:
+        pass
     display = config.get("display") or {}
     if not isinstance(display, dict):
         display = {}

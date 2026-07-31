@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-07-20T08:23:45Z",
+  "updated_at": "2026-07-29T15:50:23Z",
   "metadata": {
     "source": "hermes-agent repo",
     "docs": "https://hermes-agent.nousresearch.com/docs/reference/model-catalog"
@@ -12,6 +12,11 @@
         "note": "Descriptions drive picker badges. Live /api/v1/models filters curated ids by tool-calling support and free pricing. The entry labeled \"default\": true is the model Hermes silently lands on when the user never picked one."
       },
       "models": [
+        {
+          "id": "openai/gpt-oss-120b",
+          "description": "default",
+          "default": true
+        },
         {
           "id": "anthropic/claude-fable-5",
           "description": ""
@@ -114,8 +119,7 @@
         },
         {
           "id": "z-ai/glm-5.2",
-          "description": "default",
-          "default": true
+          "description": "default"
         },
         {
           "id": "z-ai/glm-5.1",

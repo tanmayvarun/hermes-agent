@@ -306,6 +306,8 @@ class BrowserUseBrowserProvider(BrowserProvider):
             "name": "Browser Use",
             "badge": "paid",
             "tag": "Cloud browser with remote execution",
+            "background_safe": True,
+            "requires_human_cta": False,
             "env_vars": [
                 {
                     "key": "BROWSER_USE_API_KEY",

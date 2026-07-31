@@ -331,22 +331,22 @@ class TestDefaultModelFromCache:
             assert model_catalog.get_default_model_from_cache("openrouter") is None
             fetch.assert_not_called()
 
-    def test_shipped_manifest_labels_glm52_default(self, isolated_home):
+    def test_shipped_manifest_labels_gpt_oss_120b_default(self, isolated_home):
         """Contract with the in-repo manifest: both provider blocks label the
         same default entry the code constant points at."""
         import hermes_cli.model_catalog as model_catalog
-        from hermes_cli.models import PREFERRED_SILENT_DEFAULT_MODEL
+        from hermes_cli.models import PREFERRED_SILENT_DEFAULT_MODELS
 
         repo_root = Path(model_catalog.__file__).resolve().parent.parent
         manifest = json.loads(
             (repo_root / "website" / "static" / "api" / "model-catalog.json").read_text()
         )
-        for provider in ("openrouter", "nous"):
+        for provider, expected_default in PREFERRED_SILENT_DEFAULT_MODELS.items():
             block = manifest["providers"][provider]
             labeled = [m["id"] for m in block["models"] if m.get("default")]
-            assert labeled == [PREFERRED_SILENT_DEFAULT_MODEL], (
+            assert labeled == [expected_default], (
                 f"{provider}: exactly one entry must be labeled default and it "
-                f"must match PREFERRED_SILENT_DEFAULT_MODEL"
+                f"must match PREFERRED_SILENT_DEFAULT_MODELS[{provider!r}]"
             )
 
 

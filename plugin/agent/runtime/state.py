@@ -1,0 +1,249 @@
+"""Plugin runtime state — WorldModel is primary; ExecutionState tracks closed-loop progress."""
+
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Any, Deque, Dict, List, Optional, Tuple
+
+from plugin.agent.action import Action, PlanStep
+from plugin.agent.transition.belief_state import Belief, BeliefStore, BeliefUpdate, Experiment, GoalCondition, Hypothesis, Uncertainty
+from plugin.agent.transition.attribution import HypothesisLayers
+from plugin.agent.transition.experience import StateExperience
+from plugin.agent.transition.types import ExplorationBranch, InteractionContext
+from plugin.worldmodel.capability import CapabilityMemory
+from plugin.worldmodel.model import WorldModel, WorldPatch
+
+
+@dataclass
+class ExecutionState:
+    iteration: int = 0
+    step: int = 0  # alias used by older code
+    last_action: Optional[str] = None
+    last_plan_step: Optional[PlanStep] = None
+    last_target_id: Optional[int] = None
+    last_result: Optional[Dict[str, Any]] = None
+    last_world_signature: Optional[str] = None
+    repeated_action_count: int = 0
+    unchanged_world_count: int = 0
+    planner_invocations: int = 0
+    recent_action_state_pairs: Deque[Tuple[str, str]] = field(
+        default_factory=lambda: deque(maxlen=8)
+    )
+    prohibited_actions: Dict[str, int] = field(default_factory=dict)  # key → remaining skips
+    last_verification: Optional[Dict[str, Any]] = None
+    failures: List[str] = field(default_factory=list)
+    # One-shot overlay when ax_type proved the query but ingest missed it
+    search_query_hint: str = ""
+    search_query_hint_ttl: int = 0  # consume across a few cycles then drop
+    search_hypothesis_index: int = 0
+    search_refinement_pending: bool = False
+    open_contact_fail_streak: int = 0
+    type_query_fail_streak: int = 0
+    end_call_fail_streak: int = 0
+    ambiguous_observe_count: int = 0
+    last_resolved_contact: str = ""
+    world_id: str = "w0"
+    world_seq: int = 0
+    belief_store: BeliefStore = field(default_factory=BeliefStore)
+    active_uncertainty: Optional[Uncertainty] = None
+    active_hypotheses: List[Hypothesis] = field(default_factory=list)
+    active_experiment: Optional[Experiment] = None
+    goal_conditions: List[GoalCondition] = field(default_factory=list)
+    belief_updates: List[BeliefUpdate] = field(default_factory=list)
+    last_belief_update: Optional[BeliefUpdate] = None
+    state_experience: StateExperience = field(default_factory=StateExperience)
+    hypothesis_layers: HypothesisLayers = field(default_factory=HypothesisLayers)
+    last_transition: Optional[Dict[str, Any]] = None
+    last_attribution: Optional[Dict[str, Any]] = None
+    active_action_world_id: str = ""
+    # World-uncertainty flag: prefer re-observe + fresh affordances; never revise intent
+    world_exploration_needed: bool = False
+    world_explore_observe_count: int = 0
+    # Trajectory / branch awareness
+    interaction_context: InteractionContext = field(default_factory=InteractionContext)
+    exploration_branch: ExplorationBranch = field(default_factory=ExplorationBranch)
+    perception_incomplete: bool = False
+    last_perception_failure_modes: List[str] = field(default_factory=list)
+    perception_cycle_stalled: bool = False
+    last_perception_stall_signature: str = ""
+    perception_stall_count: int = 0
+    perception_stall_reason: str = ""
+    capability_memory: CapabilityMemory = field(default_factory=CapabilityMemory)
+    # Forward binding: identical Observe suppression
+    identical_observe_streak: int = 0
+    last_observe_signature: str = ""
+    suppress_observe: bool = False
+    storage_cleanup_signature: str = ""
+    storage_cleanup_count: int = 0
+
+    def bump_world_id(self, *, significant: bool = True) -> str:
+        if significant:
+            self.world_seq += 1
+            self.world_id = f"w{self.world_seq}"
+        return self.world_id
+
+    def advance_search_hypothesis(self, n_hypotheses: int) -> bool:
+        """Move to next search hypothesis. Returns True if advanced."""
+        if n_hypotheses <= 1:
+            return False
+        if self.search_hypothesis_index >= n_hypotheses - 1:
+            return False
+        self.search_hypothesis_index += 1
+        self.search_refinement_pending = True
+        self.open_contact_fail_streak = 0
+        self.type_query_fail_streak = 0
+        self.clear_search_query_hint()
+        return True
+
+    def set_search_query_hint(self, query: str, *, ttl: int = 3) -> None:
+        q = (query or "").strip()
+        if not q:
+            return
+        self.search_query_hint = q
+        self.search_query_hint_ttl = max(ttl, 1)
+
+    def peek_search_query_hint(self) -> str:
+        if self.search_query_hint_ttl <= 0:
+            return ""
+        return self.search_query_hint
+
+    def tick_search_query_hint(self) -> None:
+        if self.search_query_hint_ttl > 0:
+            self.search_query_hint_ttl -= 1
+            if self.search_query_hint_ttl <= 0:
+                self.search_query_hint = ""
+
+    def clear_search_query_hint(self) -> None:
+        self.search_query_hint = ""
+        self.search_query_hint_ttl = 0
+
+
+    def action_key(self, step: PlanStep) -> str:
+        return f"{step.action.lower()}|{step.semantic_target}|{step.text}"
+
+    def record(self, step: PlanStep, execution: Dict[str, Any]) -> None:
+        self.iteration += 1
+        self.step = self.iteration
+        self.last_plan_step = step
+        self.last_action = step.action.lower()
+        self.last_result = execution
+
+    def record_verification(self, verification: Dict[str, Any]) -> None:
+        self.last_verification = verification
+
+    def apply_belief_update(self, update: BeliefUpdate) -> Belief:
+        belief = self.belief_store.apply_update(update)
+        self.belief_updates.append(update)
+        self.last_belief_update = update
+        return belief
+
+    def record_belief_updates(self, updates: List[BeliefUpdate]) -> None:
+        for update in updates or []:
+            self.apply_belief_update(update)
+
+    def set_active_uncertainty(self, uncertainty: Optional[Uncertainty]) -> None:
+        self.active_uncertainty = uncertainty
+        self.belief_store.active_uncertainty_id = ""
+        if uncertainty is not None:
+            key = uncertainty.question.strip().lower()
+            self.belief_store.uncertainties[key] = uncertainty
+            self.belief_store.active_uncertainty_id = key
+
+    def set_active_hypotheses(self, hypotheses: List[Hypothesis]) -> None:
+        self.active_hypotheses = list(hypotheses or [])
+        self.belief_store.active_hypothesis_ids = []
+        for hyp in self.active_hypotheses:
+            key = hyp.explanation.strip().lower()
+            self.belief_store.hypotheses[key] = hyp
+            self.belief_store.active_hypothesis_ids.append(key)
+
+    def set_active_experiment(self, experiment: Optional[Experiment]) -> None:
+        self.active_experiment = experiment
+        self.belief_store.active_experiment_id = ""
+        if experiment is not None:
+            key = experiment.capability.strip().lower()
+            self.belief_store.experiments[key] = experiment
+            self.belief_store.active_experiment_id = key
+
+    def add_goal_condition(self, goal_condition: GoalCondition) -> None:
+        self.goal_conditions.append(goal_condition)
+        self.belief_store.goal_conditions[goal_condition.proposition] = goal_condition
+
+    def record_failure(self, reason: str) -> None:
+        self.failures.append(reason)
+
+    def note_world_signature(self, signature: str, step: Optional[PlanStep]) -> None:
+        if self.last_world_signature is not None and signature == self.last_world_signature:
+            self.unchanged_world_count += 1
+        else:
+            self.unchanged_world_count = 0
+        if step is not None:
+            key = self.action_key(step)
+            pair = (key, signature)
+            if self.recent_action_state_pairs and self.recent_action_state_pairs[-1] == pair:
+                self.repeated_action_count += 1
+            else:
+                self.repeated_action_count = 1
+            self.recent_action_state_pairs.append(pair)
+            # Same action + same world twice → prohibit briefly
+            if self.repeated_action_count >= 2:
+                self.prohibited_actions[key] = max(self.prohibited_actions.get(key, 0), 2)
+        self.last_world_signature = signature
+
+    def is_prohibited(self, step: PlanStep) -> bool:
+        key = self.action_key(step)
+        left = self.prohibited_actions.get(key, 0)
+        return left > 0
+
+    def note_perception_stall(self, signature: str, *, reason: str = "") -> bool:
+        """Track repeated unresolved perception states and surface a cycle-stall flag."""
+        sig = " ".join((signature or "").strip().split())
+        if not sig:
+            return self.perception_cycle_stalled
+        if sig == self.last_perception_stall_signature:
+            self.perception_stall_count += 1
+        else:
+            self.last_perception_stall_signature = sig
+            self.perception_stall_count = 1
+        self.perception_stall_reason = reason or self.perception_stall_reason
+        self.perception_cycle_stalled = self.perception_stall_count >= 2
+        return self.perception_cycle_stalled
+
+    def clear_perception_stall(self) -> None:
+        self.perception_cycle_stalled = False
+        self.last_perception_stall_signature = ""
+        self.perception_stall_count = 0
+        self.perception_stall_reason = ""
+
+    def tick_prohibitions(self) -> None:
+        dead = []
+        for k, v in self.prohibited_actions.items():
+            if v <= 1:
+                dead.append(k)
+            else:
+                self.prohibited_actions[k] = v - 1
+        for k in dead:
+            self.prohibited_actions.pop(k, None)
+
+    def oscillating(self) -> bool:
+        pairs = list(self.recent_action_state_pairs)
+        if len(pairs) < 4:
+            return False
+        a, b, c, d = pairs[-4:]
+        return a == c and b == d and a != b
+
+
+@dataclass
+class RuntimeState:
+    world_model: WorldModel = field(default_factory=WorldModel)
+    active_task: str = ""
+    execution_state: ExecutionState = field(default_factory=ExecutionState)
+    conversation: List[Dict[str, str]] = field(default_factory=list)
+    patches: List[WorldPatch] = field(default_factory=list)
+
+    def note_user(self, text: str) -> None:
+        self.conversation.append({"role": "user", "content": text})
+
+    def note_assistant(self, text: str) -> None:
+        self.conversation.append({"role": "assistant", "content": text})

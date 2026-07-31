@@ -1,0 +1,10 @@
+=== launch start 20260731_181106_1785501666904660000 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_181106_1785501666904660000.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_181106_1785501666904660000_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_181106_1785501666904660000_status.txt
+[001][OK][+0.00s] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[runtime_bind] provider=ollama-cloud model=gpt-oss:120b base_url=https://ollama.com/v1 aux_policy=ollama-only ollama_api_key_present=True ollama_api_key_len=57 ollama_api_key_sha1=2fa6439313
+[002][OK][step 0][+0.20s] step | message='checking Terminal Accessibility'
+[003][FAIL][step 0][+0.40s] check | message='fail' expected=True
+[004][FAIL][+0.40s] run_end | detail='Accessibility not trusted for this host'
+OK=False LOG=plugin/experiments/runs/forward_zarooratwala_live_20260731_181106_1785501666904660000.jsonl

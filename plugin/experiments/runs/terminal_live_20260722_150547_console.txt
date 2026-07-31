@@ -1,0 +1,64 @@
+=== host=-zsh pid=60739 TIMESTAMP=20260722_150547 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+AXIsProcessTrusted(initial)= True
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live ===
+[001][OK] run_start | goal='Call Pallavi on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] observation | nodes=269
+[011][OK][step 0] world_patch | screen='call' retention=1.0
+[012][OK][step 0] step | message='ending leftover call before benchmark'
+[013][OK][step 0] step | message='after preclear hangup' detail='1.5s'
+[014][OK][step 0] observation | nodes=351
+[015][OK][step 0] world_patch | screen='call' action='preclear_hangup' retention=0.9962825278810409
+[016][OK][step 0] planner_decision | screen='call' goal='Call Pallavi'
+[017][OK][step 1] step | message='Click → Search' action='Click' semantic='Search' rationale='focus search'
+[018][OK][step 1] check | message='pass' action='Click' expected='Search'
+[019][OK][step 1] execution | message='open Search via Cmd+F search shortcut' semantic='Search' backend='ax'
+[020][OK][step 1] step | message='UI settle after action' detail='1.2s'
+[021][OK][step 1] observation | nodes=351
+[022][OK][step 1] world_patch | screen='call' action='open_search' retention=0.9971590909090909
+[023][OK][step 1] step | message='completed Click' screen='call'
+[024][OK][step 2] step | message='Type → Search' action='Type' semantic='Search' rationale='find Pallavi'
+[025][OK][step 2] check | message='pass' action='Type' expected='Search'
+[026][OK][step 2] execution | message='typed \'Pallavi\' into search field label=\'TESTSET\' AXValue=\'Pallavi\' open=\'Cmd+F search shortcut\' evidence="AXTextField value=\'Pallavi\'" submit=False' semantic='search_text_field' backend='ax'
+[027][OK][step 2] step | message='wait for search results' detail='2.0s'
+[028][OK][step 2] observation | nodes=269
+[029][OK][step 2] world_patch | screen='call' action='open_search' retention=0.7642045454545454
+[030][OK][step 2] check | message='pass' expected="query 'Pallavi' in search field / results"
+[031][OK][step 2] step | message="completed Type 'Pallavi' into search" screen='call'
+[032][OK][step 3] step | message='Click → Pallavi' action='Click' semantic='Pallavi' rationale='open chat'
+[033][OK][step 3] check | message='pass' action='Click' expected='Pallavi'
+[034][OK][step 3] execution | message="click 'Pallavi' center=(177.5, 55.0) code=0" semantic='Pallavi' backend='ax'
+[035][OK][step 3] step | message='UI settle after action' detail='1.2s'
+[036][OK][step 3] observation | nodes=269
+[037][OK][step 3] world_patch | screen='call' action='open_chat' retention=0.7642045454545454
+[038][OK][step 3] step | message='completed Click' screen='call'
+[039][OK][step 4] step | message='Click → Call' action='Click' semantic='Call' rationale='place voice call (prefer Voice call control if present)'
+[040][OK][step 4] check | message='pass' action='Click' expected='Call'
+[041][OK][step 4] execution | message="click 'Voice Call' center=None code=0" semantic='Voice Call' backend='ax'
+[042][OK][step 4] step | message='UI settle after action' detail='1.2s'
+[043][OK][step 4] observation | nodes=352
+[044][OK][step 4] world_patch | screen='call' action='call' retention=1.0
+[045][OK][step 4] observation | nodes=269
+[046][OK][step 4] world_patch | screen='call' retention=0.7642045454545454
+[047][OK][step 4] check | message='pass' expected='ringing/calling/end-call UI'
+[048][OK][step 4] check | message='pass' expected='Calling / End call / ringing UI'
+[049][OK][step 4] execution | message="click 'End Call' center=None code=0" backend='ax'
+[050][OK][step 4] step | message='after hangup' detail='1.0s'
+[051][OK][step 4] step | message='completed Click' screen='call'
+[052][OK] world_summary
+[053][OK] check | message='pass' expected="live call ringing after searching 'Pallavi'"
+[054][OK] run_end | detail="live executed=4 typed=True ringing=True screen=call patterns=['\\\\bend call\\\\b']"
+
+=== DONE ok=True live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=0

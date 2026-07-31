@@ -193,6 +193,76 @@ The synchronous orchestration engine (`AIAgent` in `run_agent.py`). Handles prov
 
 → [Agent Loop Internals](./agent-loop.md)
 
+### Decision / Actuation
+
+The plugin closed-loop paths (`plugin/agent/controller.py`, `plugin/agent/decision.py`) do not rank actuators with local score heuristics in the live path. They build grounded candidates from the world model, ask an LLM selector to choose the next actuator, and block irreversible actions unless the selector confidence clears the configurable `agent.irreversible_action_confidence_threshold` gate (default `0.7` in `config.yaml`).
+
+When perception or tool output indicates storage pressure (`storage full`, `out of space`, `no space left on device`, etc.), the controller first runs the bundled cleanup path (`disk-cleanup quick` plus environment cleanup) and then re-observes before resuming the original task.
+
+This subsystem is intentionally split into **core** and **leaf** responsibilities:
+
+- **Core:** `plugin/agent/controller.py`, `plugin/agent/decision.py`, `plugin/agent/runtime/recovery.py`, `plugin/agent/transition/*`. These modules stay app-agnostic. They handle candidate generation, confidence gating, irreversible-action policy, storage-pressure recovery, branch tracking, and rollback.
+- **Leafs:** app overlays / target resolvers such as `plugin/agent/apps/whatsapp.py`, `plugin/agent/apps/whatsapp_targets.py`, and the app-specific policy helpers under `plugin/agent/policy/*`. These teach the core how a particular UI names its surfaces and affordances.
+
+When adding new behavior, prefer putting reusable control policy in the core and UI vocabulary in the leaf. If a fix only makes sense for one app, keep it out of shared actuation rules.
+
+### Reasoning Consultation Layer
+
+The run logs for the poster prompt use case point to a recurring architecture problem: the runtime keeps asking the cloud model to reason over too much irrelevant state, then deterministic code continues to pile on when the answer is actually "abstain" or "reobserve." The fix is to make cloud LLM usage a first-class reasoning consultant with strict projection boundaries.
+
+The intended contract is:
+
+1. **Deterministic code proves what it can.** Geometry validation, ownership, containment, surface classification, and obvious stage gates stay local.
+2. **Cloud consultation handles semantic uncertainty.** Use the cloud model when the runtime cannot prove which region, entity, affordance, or branch is correct.
+3. **Minimal projection only.** The cloud request should receive a task-specific projection, not the full AX tree, graph dump, or raw session history.
+4. **Abstention is valid.** A consultation result may return `needs_followup_observe`, `ambiguous`, or `not_found`; the runtime must preserve that abstention instead of auto-selecting a low-score fallback.
+5. **Consultation is advisory, not authoritative.** The runtime still validates the result against observed evidence before acting.
+
+Recommended injection points for cloud consultation:
+
+- **Source validation / scene segmentation** when the observation is incomplete or contradictory.
+- **Entity semantics** when a node could be one of several plausible UI roles.
+- **Content object resolution** when the visible objects are ambiguous or the active container is not proven.
+- **Affordance ranking** when multiple grounded actuators are plausible and the cost of a wrong choice is high.
+- **Transition prediction / contradiction analysis** after an action does not produce the expected state.
+- **Strategic branching** when the current branch is exhausted and the controller needs a qualitatively different search path.
+- **Context projection** before each LLM call so the request stays small, relevant, and stage-specific.
+
+The consultation layer should be implemented as a shared, typed service, not ad hoc prompt strings sprinkled through the controller. A good shape is:
+
+```text
+raw observation
+→ deterministic validation / filtering
+→ consultation request projection
+→ cloud consultation (minimal schema)
+→ validated result / abstention
+→ controller decision or backtrack
+```
+
+The consultation request should carry only:
+
+- current phase / local objective
+- a compact observed world summary
+- grounded candidates touching the current objective
+- explicit contradictions and missing evidence
+- the maximum allowed answer shape for that task
+
+It should not carry:
+
+- the full raw AX tree
+- unrelated global menu items
+- repeated low-value capability graphs
+- stale prior worlds
+- deterministic guesses masquerading as facts
+
+Implementation plan, in order:
+
+1. Add a shared consultation interface in the agent core.
+2. Make projection helpers produce task-specific payloads for perception, object resolution, selector choice, and branch strategy.
+3. Route only uncertain decisions through the cloud consultant.
+4. Preserve abstentions instead of auto-falling back to low-score candidates.
+5. Add regression tests that prove the cloud model receives a minimal projection and that unresolved decisions stay unresolved.
+
 ### Prompt System
 
 Prompt construction and maintenance across the conversation lifecycle:

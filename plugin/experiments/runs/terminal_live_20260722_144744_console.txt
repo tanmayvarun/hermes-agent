@@ -1,0 +1,44 @@
+=== host=-zsh pid=54511 TIMESTAMP=20260722_144744 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+AXIsProcessTrusted(initial)= True
+prompted, trusted_now= True
+
+>>> Enable Terminal (or iTerm) in System Settings → Privacy & Security → Accessibility
+>>> Waiting up to 120s for AXIsProcessTrusted() == True …
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live ===
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+[001][OK] run_start | goal='Call Pallavi on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] observation | nodes=69
+[011][OK][step 0] world_patch | screen='conversation' retention=1.0
+[012][OK][step 0] planner_decision | screen='conversation' goal='Call Pallavi'
+[013][OK][step 1] step | message='Click → Search' action='Click' semantic='Search' rationale='focus search'
+[014][OK][step 1] check | message='pass' action='Click' expected='Search'
+[015][OK][step 1] execution | message="click 'Search results' center=None code=0" semantic='Search results' backend='ax'
+[016][OK][step 1] step | message='UI settle after action' detail='1.2s'
+[017][OK][step 1] observation | nodes=69
+[018][OK][step 1] world_patch | screen='conversation' action='open_search' retention=1.0
+[019][OK][step 1] step | message='completed Click' screen='conversation'
+[020][OK][step 2] step | message='Type → Search' action='Type' semantic='Search' rationale='find Pallavi'
+[021][OK][step 2] check | message='pass' action='Type' expected='Search'
+[022][FAIL][step 2] execution | message="typed 'Pallavi' into search field label='Search' AXValue='' submit=False" semantic='search_text_field' backend='ax'
+[023][FAIL][step 2] step | message="typed 'Pallavi' into search field label='Search' AXValue='' submit=False"
+[024][OK] world_summary
+[025][FAIL] check | message='fail' expected='live call ringing verified via AX'
+[026][FAIL] run_end | detail='live executed=1 ringing=False screen=conversation patterns=[]'
+
+=== DONE ok=False live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=1

@@ -1,0 +1,197 @@
+=== launch start 20260731_204258_1785510778022323000 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_204258_1785510778022323000.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_204258_1785510778022323000_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_204258_1785510778022323000_status.txt
+[001][OK][+0.00s] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[runtime_bind] provider=ollama-cloud model=gpt-oss:120b base_url=https://ollama.com/v1 aux_policy=ollama-only ollama_api_key_present=True ollama_api_key_len=57 ollama_api_key_sha1=2fa6439313
+[002][OK][step 0][+0.18s] step | message='checking Terminal Accessibility'
+[003][OK][step 0][+0.45s] check | message='pass' expected=True
+[004][OK][step 0][+0.49s] check | message='pass' expected=True
+[005][FAIL][step 0][+0.49s] check | message='fail' expected=True
+[006][OK][step 0][+0.49s] check | message='pass' expected=True
+[007][OK][step 0][+1.90s] step | message='launched via open -a WhatsApp'
+[008][OK][step 0][+1.90s] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0][+3.90s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0][+3.92s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='WhatsApp' source='pyobjc_ax'
+nodes=237 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - ‎New Call Link
+  - Smart Links
+  - ‎Search Chat
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXMenuBar label='' enabled=True bbox=(1920.0, 0.0, 1710.0, 38.0)
+  03. role=AXMenuBarItem label='Apple' enabled=True bbox=(1930.0, 0.0, 34.0, 38.0)
+  04. role=AXMenu label='' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuItem label='System Information' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  07. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='System Settings…, 1 update' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  10. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 227 more nodes
+[011][OK][step 0][+5.38s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[012][OK][step 0][+5.38s] observation_raw_source
+[observe_done_fused step=0] nodes=183 elapsed=1.47s
+[013][OK][step 0][+5.39s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 237, 'macapptree': 0} elapsed=1.47s attempt=1/3"
+[014][OK][step 0][+5.39s] observation | nodes=183
+[observation_raw step=0]
+app='WhatsApp' window='WhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=183 coverage=0.8655192087431693 degraded=False screenshot=None
+message_like=
+  - New Call Link
+  - Search
+  - Search Chat
+  - Smart Links
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXMenuItem label='Settings' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  04. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  05. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  06. role=AXMenuItem label='About WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  07. role=AXMenuItem label='Always On Top' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXMenuItem label='App Store…, 7 updates' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  09. role=AXMenuBarItem label='Apple' enabled=True bbox=(1930.0, 0.0, 34.0, 38.0)
+  10. role=AXMenuItem label='Applications' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='Archive Utility' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXMenuItem label='Archived' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  13. role=AXMenuItem label='Arrange' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='Arrange in Front' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='AutoFill' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 168 more nodes
+[015][OK][step 0][+5.39s] observation_raw | nodes=183
+[observe_complete step=0] nodes=183 elapsed=1.49s
+Auxiliary request payload: {"api_key_len": 57, "api_key_present": true, "api_key_sha1": "2fa6439313", "provider": "ollama-cloud", "request": {"extra_body": {"format": "json", "reasoning": {"effort": "low", "enabled": true}}, "messages": [{"content": "Return strict JSON only. Infer screen meaning from AX evidence.", "role": "system"}, {"content": "{\"goal\":{\"kind\":\"whatsapp_forward_message\",\"contact\":\"Kulvinder\",\"target_contact\":\"Pallavi\",\"link_query\":\"zarooratwala\",\"app\":\"WhatsApp\"},\"screen\":{\"app\":\"\",\"screen\":\"LIST\",\"window_name\":\"WhatsApp\",\"observation_node_count\":183,\"observation_degenerate\":false,\"held_last_good_world\":false,\"world_exploration_needed\":false,\"perception_incomplete\":false,\"perception_cycle_stalled\":false,\"search_visible\":false,\"search_focused\":false,\"search_query\":\"\",\"open_conversation\":\"\",\"voice_call_available\":false,\"call_state\":\"\",\"composer_visible\":false,\"blocking_overlay\":false,\"unexpected_dialogs\":[],\"system_warnings\":[]},\"evidence\":{\"visible_entities\":[{\"id\":9,\"label\":\"Apple\",\"role\":\"AXMenuBarItem\",\"entity_type\":\"unknown\",\"region_kind\":\"\",\"actions\":[]},{\"id\":111,\"label\":\"run_forward_zarooratwala.command\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":128,\"label\":\"Show “run_forward_zarooratwala.command” in Finder\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":1,\"label\":\"menuitem\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":2,\"label\":\"Quarters\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":3,\"label\":\"Settings\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":4,\"label\":\"WhatsApp\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":5,\"label\":\"About This Mac\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":6,\"label\":\"About WhatsApp\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]},{\"id\":7,\"label\":\"Always On Top\",\"role\":\"AXMenuItem\",\"entity_type\":\"menu\",\"region_kind\":\"\",\"actions\":[\"click\"]}],\"ranked_messages\":[],\"conversation_context\":[],\"scene_report\":{\"layout_confidence\":0.55,\"region_coverage\":1.0,\"affordance_entropy\":0.9935}},\"instructions\":\"Infer screen meaning from AX evidence only. Return strict JSON with screen_type, active_surface, likely_next_family, likely_next_target, likely_next_text, confidence, avoid_families, supporting_evidence, contradictions, needs_followup_observe.\"}", "role": "user"}], "model": "gpt-oss:120b", "reasoning_effort": "low", "temperature": 0.0, "timeout": 240.0}, "request_url": "https://ollama.com/v1/chat/completions", "task": "perception", "timeout_s": 240.0}
+[016][OK][step 0][+9.79s] world_patch | screen='Screen #1' retention=1.0
+[017][OK][step 0][+9.80s] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[018][OK][step 0][+9.80s] loop_budget
+[019][OK][step 1][+9.80s] progress_clock
+[observe_begin step=0] app=WhatsApp screenshot=True
+[020][OK][step 0][+9.80s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[021][OK][step 0][+9.80s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=334 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Helping Hands - IITR 2013 & 2014, ‎4 unread messages
+  - Owners including Family- Godrej Nurture, ‎18 unread messages
+  - Tickertape, ‎2 unread messages
+  - Paytm Bill Payments, ‎7 unread messages
+  - Dreams Realty, ‎3 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 324 more nodes
+[022][OK][step 0][+10.92s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[023][OK][step 0][+10.92s] observation_raw_source
+[observe_done_fused step=0] nodes=251 elapsed=1.16s
+[024][OK][step 0][+10.96s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 334, 'macapptree': 0} elapsed=1.16s attempt=1/3"
+[025][OK][step 0][+10.96s] observation | nodes=251
+[observation_raw step=0]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=251 coverage=0.866094837755642 degraded=False screenshot=None
+message_like=
+  - 3 unread messages
+  - Compose message
+  - Dreams Realty, 3 unread messages
+  - Edit last message
+  - HD photo, 8:41 PM, Received from GN Jennifer BE6E User
+  - Helping Hands - IITR 2013 & 2014, 4 unread messages
+  - Isha Electronic City, Announcement group, 19 unread messages
+  - message, Also why is it saying 14/-KWH?, 8:42 PM, Received from GN Jennifer BE6E User
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  04. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  05. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  06. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  07. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  09. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  10. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  12. role=AXSplitter label='21.929824829101562' value='21.929824829101562' enabled=True bbox=(548.0, 25.0, 1.0, 988.0)
+  13. role=AXHeading label='3 unread messages' enabled=True bbox=(549.0, 294.0, 1266.0, 40.0)
+  14. role=AXSplitter label='3.918128728866577' value='3.918128728866577' enabled=True bbox=(172.0, 25.0, 1.0, 988.0)
+  15. role=AXMenuItem label='8 hours' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 236 more nodes
+[026][OK][step 0][+10.96s] observation_raw | nodes=251
+[observe_complete step=0] nodes=251 elapsed=1.16s
+[027][OK][step 1][+10.96s] observation_raw | nodes=251
+Auxiliary request payload: {"api_key_len": 57, "api_key_present": true, "api_key_sha1": "3ef47978e2", "provider": "ollama-cloud", "request": {"messages": [{"content": "You interpret normalized content objects from accessibility-derived rows. Return only strict JSON. Do not invent objects or ids.", "role": "system"}, {"content": "{\n  \"context\": {\n    \"container_id\": \"GN Jennifer BE6E User\",\n    \"container_type\": \"conversation\",\n    \"conversation_window\": 100,\n    \"notes\": [],\n    \"retry_count\": 0,\n    \"source_app\": \"WhatsApp\",\n    \"use_llm\": true,\n    \"visible_object_count\": 13,\n    \"window_name\": \"\"\n  },\n  \"instructions\": \"You are a generic object-discovery synthesizer. Given a goal query and a collection of visible content objects, select the object that best satisfies the goal. The adapter already exposed the visible objects; do not invent hidden ones or app-specific step plans. Return strict JSON with keys: summary, confidence, selected_object_id, ranked_objects, selected_source_entity_ids, selected_object_text, supporting_evidence, contradictions, next_information_actions, needs_followup_observe. Each ranked_objects item must include object_id, score, and reason. Prefer the object whose identity and container best match the goal.\",\n  \"objects\": [\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"Isha Electronic City, Announcement group, 19 unread messages\",\n      \"metadata\": {\n        \"blob\": \"Isha Electronic City, Announcement group, 19 unread messages Isha Electronic City, Announcement group, 19 unread messages Isha Electronic City, Announcement group, 19 unread messages Community admin, Message from Maybe Shashikanth Bhandarkar, Link, Namaskaram @all 🙏🏻 We are happy to invite you to the Shakti Chalana Kriya Review. 🗓️ *Date: 1st August* 🕢 *Time: 7:30 AM – 10:00 AM* 📍 *Venue: Incture Technologies, 4th Floor, 27B, 2nd Cross Rd, Electronic City Phase I, Konappana Agrahara, Bengaluru – 560100* https://maps.app.goo.gl/bTiwN5rncg4AWx1o7?g_st=ac Registration is mandatory for attending the session. Kindly complete your registration using the link below: 🔗 https://forms.gle/pj9WHmB5FmCT5xka8 Your registration will help us make the necessary arrangements for the session. Looking forward to seeing you. 🙏, Incture Technologies · Konappana Agrahara, Karnataka, 5:27 PM, Received in Isha Electronic City, Disappearing message https://maps.app.goo.gl/bTiwN5rncg4AWx1o7?g_st=ac\",\n        \"description\": \"Isha Electronic City, Announcement group, 19 unread messages\",\n        \"entity_type\": \"button\",\n        \"label\": \"Isha Electronic City, Announcement group, 19 unread messages\",\n        \"role\": \"AXButton\",\n        \"url_identity\": {\n          \"host\": \"maps.app.goo.gl\",\n          \"host_tokens\": [\n            \"maps\",\n            \"app\",\n            \"goo\",\n            \"gl\"\n          ],\n          \"path_tokens\": [\n            \"btiwn5rncg4awx1o7\"\n          ],\n          \"query_tokens\": [\n            \"g\",\n            \"st\",\n            \"ac\"\n          ],\n          \"raw_url\": \"https://maps.app.goo.gl/bTiwN5rncg4AWx1o7?g_st=ac\",\n          \"registrable_domain\": \"goo.gl\",\n          \"scheme\": \"https\"\n        }\n      },\n      \"object_id\": \"212\",\n      \"object_type\": \"message_with_link\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        212\n      ],\n      \"text\": \"Isha Electronic City, Announcement group, 19 unread messages Isha Electronic City, Announcement group, 19 unread messages Community admin, Message from Maybe Shashikanth Bhandarkar, Link, Namaskaram @all 🙏🏻 We are happy…\",\n      \"title\": \"Isha Electronic City, Announcement group, 19 unread messages\",\n      \"url\": \"https://maps.app.goo.gl/bTiwN5rncg4AWx1o7?g_st=ac\",\n      \"visible\": true\n    },\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"Owners including Family- Godrej Nurture, 18 unread messages\",\n      \"metadata\": {\n        \"blob\": \"Owners including Family- Godrej Nurture, 18 unread messages Owners including Family- Godrej Nurture, 18 unread messages Owners including Family- Godrej Nurture, 18 unread messages Photo from Maybe Shabtab, 🌸 Onam is Kerala at its most joyful! A celebration rooted in the annual homecoming of our beloved King. Come celebrate Onam with all of us at Godrej Nurture. Everyone’s invited. Join the community for all deets : https://tinyurl.com/GNOnam26 If you haven't experienced Onam before, consider this your window seat to Kerala: flowers, drums, games, sadhya, traditions, and a whole lot of fun. Date : 12th September '26, Saturday., 8:29 PM, Received in Owners including Family- Godrej Nurture https://tinyurl.com/GNOnam26\",\n        \"description\": \"Owners including Family- Godrej Nurture, 18 unread messages\",\n        \"entity_type\": \"button\",\n        \"label\": \"Owners including Family- Godrej Nurture, 18 unread messages\",\n        \"role\": \"AXButton\",\n        \"url_identity\": {\n          \"host\": \"tinyurl.com\",\n          \"host_tokens\": [\n            \"tinyurl\",\n            \"com\"\n          ],\n          \"path_tokens\": [\n            \"gnonam26\"\n          ],\n          \"query_tokens\": [],\n          \"raw_url\": \"https://tinyurl.com/GNOnam26\",\n          \"registrable_domain\": \"tinyurl.com\",\n          \"scheme\": \"https\"\n        }\n      },\n      \"object_id\": \"225\",\n      \"object_type\": \"message_with_link\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        225\n      ],\n      \"text\": \"Owners including Family- Godrej Nurture, 18 unread messages Owners including Family- Godrej Nurture, 18 unread messages Photo from Maybe Shabtab, 🌸 Onam is Kerala at its most joyful! A celebration rooted in the annual h…\",\n      \"title\": \"Owners including Family- Godrej Nurture, 18 unread messages\",\n      \"url\": \"https://tinyurl.com/GNOnam26\",\n      \"visible\": true\n    },\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mis…\",\n      \"metadata\": {\n        \"blob\": \"Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mismatch, 8:30 PM, Sent to GN Jennifer BE6E User, Delivered Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mismatch, 8:30 PM, Sent to GN Jennifer BE6E User, Delivered Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mismatch, 8:30 PM, Sent to GN Jennifer BE6E User, Delivered\",\n        \"description\": \"Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mismatch, 8:30 PM, Sent to GN Jennifer BE6E User, Delivered\",\n        \"entity_type\": \"static\",\n        \"label\": \"Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mismatch, 8:30 PM, Sent to GN Jennifer BE6E User, Delivered\",\n        \"role\": \"AXStaticText\"\n      },\n      \"object_id\": \"248\",\n      \"object_type\": \"message\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        248\n      ],\n      \"text\": \"Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mismatch, 8:30 PM, Sent to GN Jennifer BE6E User, Delivered Your message, As per ou…\",\n      \"title\": \"Your message, As per our system total wallet topup amount - Rs 12126.72 Kindly tally this against Bank statement and let us know if any mis…\",\n      \"url\": \"\",\n      \"visible\": true\n    },\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"[CoE - IoT & AI] BLR Startups\",\n      \"metadata\": {\n        \"blob\": \"[CoE - IoT & AI] BLR Startups [CoE - IoT & AI] BLR Startups [CoE - IoT & AI] BLR Startups Message from Digiferate Nivedita, Hi All, Looking for sales interns. Outreach will be the primary responsibility, 6:57 PM, Received in [CoE - IoT & AI] BLR Startups, Edited, Muted\",\n        \"description\": \"[CoE - IoT & AI] BLR Startups\",\n        \"entity_type\": \"button\",\n        \"label\": \"[CoE - IoT & AI] BLR Startups\",\n        \"role\": \"AXButton\"\n      },\n      \"object_id\": \"192\",\n      \"object_type\": \"action\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        192\n      ],\n      \"text\": \"[CoE - IoT & AI] BLR Startups [CoE - IoT & AI] BLR Startups Message from Digiferate Nivedita, Hi All, Looking for sales interns. Outreach will be the primary responsibility, 6:57 PM, Received in [CoE - IoT & AI] BLR Sta…\",\n      \"title\": \"[CoE - IoT & AI] BLR Startups\",\n      \"url\": \"\",\n      \"visible\": true\n    },\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"Dreams Realty, 3 unread messages\",\n      \"metadata\": {\n        \"blob\": \"Dreams Realty, 3 unread messages Dreams Realty, 3 unread messages Dreams Realty, 3 unread messages Photo, 🏡 Exclusive Ready-to-Move Luxury Villas for Sale! ✅ 4.5 BHK – Prestige Silver Oak, Whitefield ✅ 3 BHK – Prestige Ozone, Whitefield ✅ 3 BHK – Chaithanya Samarpan, Kadugodi ✨ Premium gated communities ✨ Semi-furnished villas ✨ Prime East Bangalore locations 📲 Contact us today to book your site visit! Dreams Realty 📞 +91 63644 24848 | +91 86604 23029 Reply STOP to STOP Receiving Message from us, 6:41 PM, Received from + 9 1,9 9 0 0 9,3 3 2 9 6\",\n        \"description\": \"Dreams Realty, 3 unread messages\",\n        \"entity_type\": \"button\",\n        \"label\": \"Dreams Realty, 3 unread messages\",\n        \"role\": \"AXButton\"\n      },\n      \"object_id\": \"201\",\n      \"object_type\": \"action\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        201\n      ],\n      \"text\": \"Dreams Realty, 3 unread messages Dreams Realty, 3 unread messages Photo, 🏡 Exclusive Ready-to-Move Luxury Villas for Sale! ✅ 4.5 BHK – Prestige Silver Oak, Whitefield ✅ 3 BHK – Prestige Ozone, Whitefield ✅ 3 BHK – Chait…\",\n      \"title\": \"Dreams Realty, 3 unread messages\",\n      \"url\": \"\",\n      \"visible\": true\n    },\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"Happy New Year\",\n      \"metadata\": {\n        \"blob\": \"Happy New Year Happy New Year Happy New Year Message from Maybe Divya Bharti, Thanks 😊, 7:55 PM, Received in Happy New Year\",\n        \"description\": \"Happy New Year\",\n        \"entity_type\": \"button\",\n        \"label\": \"Happy New Year\",\n        \"role\": \"AXButton\"\n      },\n      \"object_id\": \"209\",\n      \"object_type\": \"action\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        209\n      ],\n      \"text\": \"Happy New Year Happy New Year Message from Maybe Divya Bharti, Thanks 😊, 7:55 PM, Received in Happy New Year\",\n      \"title\": \"Happy New Year\",\n      \"url\": \"\",\n      \"visible\": true\n    },\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"Helping Hands - IITR 2013 & 2014, 4 unread messages\",\n      \"metadata\": {\n        \"blob\": \"Helping Hands - IITR 2013 & 2014, 4 unread messages Helping Hands - IITR 2013 & 2014, 4 unread messages Helping Hands - IITR 2013 & 2014, 4 unread messages Photo from Maybe Sid C, 8:38 PM, Received in Helping Hands - IITR 2013 & 2014, Muted\",\n        \"description\": \"Helping Hands - IITR 2013 & 2014, 4 unread messages\",\n        \"entity_type\": \"button\",\n        \"label\": \"Helping Hands - IITR 2013 & 2014, 4 unread messages\",\n        \"role\": \"AXButton\"\n      },\n      \"object_id\": \"211\",\n      \"object_type\": \"action\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        211\n      ],\n      \"text\": \"Helping Hands - IITR 2013 & 2014, 4 unread messages Helping Hands - IITR 2013 & 2014, 4 unread messages Photo from Maybe Sid C, 8:38 PM, Received in Helping Hands - IITR 2013 & 2014, Muted\",\n      \"title\": \"Helping Hands - IITR 2013 & 2014, 4 unread messages\",\n      \"url\": \"\",\n      \"visible\": true\n    },\n    {\n      \"container_id\": \"GN Jennifer BE6E User\",\n      \"container_type\": \"conversation\",\n      \"display_text\": \"Paytm Bill Payments, 7 unread messages\",\n      \"metadata\": {\n        \"blob\": \"Paytm Bill Payments, 7 unread messages Paytm Bill Payments, 7 unread messages Paytm Bill Payments, 7 unread messages Photo, *💳 Credit Card Bill is here!* Your *Axis Bank - 0939* Credit Card Bill has been generated. Amount: *₹10,993.44* Due Date: *7th Aug* 👉 Pay now on Paytm to avoid late payment charges., 7:16 PM, Received from + 9 1,9 6 6 7 0,0 2 8 0 5\",\n        \"description\": \"Paytm Bill Payments, 7 unread messages\",\n        \"entity_type\": \"button\",\n        \"label\": \"Paytm Bill Payments, 7 unread messages\",\n        \"role\": \"AXButton\"\n      },\n      \"object_id\": \"226\",\n      \"object_type\": \"action\",\n      \"sender\": \"\",\n      \"source_app\": \"WhatsApp\",\n      \"source_entity_ids\": [\n        226\n      ],\n      \"text\": \"Paytm Bill Payments, 7 unread messages Paytm Bill Payments, 7 unread messages Photo, *💳 Credit Card Bill is here!* Your *Axis Bank - 0939* Credit Card Bill has been generated. Amount: *₹10,993.44* Due Date: *7th Aug* 👉…\",\n      \"title\": \"Paytm Bill Payments, 7 unread messages\",\n      \"url\": \"\",\n      \"visible\": true\n    }\n  ],\n  \"query\": {\n    \"context_hypotheses\": [\n      \"find the source content matching zarooratwala\",\n      \"open source conversation Kulvinder\",\n      \"inspect source conversation timeline\",\n      \"identify the source message or link\",\n      \"forward to Pallavi\",\n      \"find source content matching zarooratwala\",\n      \"find the zarooratwala link sent to kulvinder on whatsapp\"\n    ],\n    \"desired_operation\": \"forward\",\n    \"destination\": \"Pallavi\",\n    \"goal_kind\": \"whatsapp_forward_message\",\n    \"prompt\": \"find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi\",\n    \"raw\": \"find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi\",\n    \"semantic_aliases\": [\n      \"zarooratwala\"\n    ],\n    \"semantic_reference\": \"zarooratwala\",\n    \"source_container\": \"Kulvinder\",\n    \"source_container_type\": \"conversation\",\n    \"target_types\": [\n      \"link\",\n      \"message_with_link\",\n      \"message\"\n    ]\n  }\n}", "role": "user"}], "model": "gpt-oss:120b", "temperature": 0.1, "timeout": 15.0}, "request_url": "https://ollama.com/v1/chat/completions", "task": "content_object_resolution", "timeout_s": 15.0}
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 596, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 531, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 800, in run_goal_closed_loop
+    snap_pre = refresh_perception(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 412, in refresh_perception
+    return apply_observation(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 361, in apply_observation
+    view, feats, wv = build_view_features(runtime, goal)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 140, in build_view_features
+    feats = overlay.features(runtime.world_model, goal, worldview_score=wv).to_dict()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/apps/whatsapp.py", line 988, in features
+    conversation_relevance = rank_conversation_messages(
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/conversation_reasoning.py", line 184, in rank_conversation_messages
+    resolution = resolve_content_rows(
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/object_discovery.py", line 685, in resolve_content_rows
+    return resolve_content_objects(query, objects, context=context, world=world, force_llm=force_llm)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/object_discovery.py", line 663, in resolve_content_objects
+    return get_object_discovery_engine().resolve(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/object_discovery.py", line 595, in resolve
+    consultation = consult_reasoning(
+                   ^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/reasoning_consultation.py", line 137, in consult_reasoning
+    response = caller(
+               ^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7825, in call_llm
+    client.chat.completions.create(**kwargs), task,
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_utils/_utils.py", line 286, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1204, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1070, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.AuthenticationError: Error code: 401 - {'error': 'Unauthorized'}

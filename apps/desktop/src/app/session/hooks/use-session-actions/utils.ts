@@ -73,7 +73,7 @@ const _chatMessageFieldsExhaustive: {
   [K in Exclude<keyof ChatMessage, (typeof COMPARED_FIELDS)[number] | (typeof IGNORED_FIELDS)[number]>]: never
 } = {}
 
-const COMPARED_FIELDS = ['id', 'role', 'pending', 'error', 'hidden', 'branchGroupId'] as const
+const COMPARED_FIELDS = ['id', 'role', 'pending', 'error', 'hidden', 'branchGroupId', 'attribution'] as const
 const IGNORED_FIELDS = ['timestamp', 'attachmentRefs', 'parts'] as const
 
 // Compile-time check: every ChatMessagePart discriminant must be handled by

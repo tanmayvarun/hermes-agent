@@ -1,0 +1,19 @@
+=== host=-zsh pid=49272 TIMESTAMP=20260722_144053 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+AXIsProcessTrusted= False
+=== starting call-pallavi --live ===
+[001][OK] run_start | goal='Call Pallavi on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][WARN][step 0] step | message='process not AX-trusted — requesting prompt (enable Terminal/iTerm, not Cursor)'
+[004][FAIL][step 0] check | message='fail' expected=True
+[005][FAIL] run_end | detail='Accessibility not granted to this process. Run from Terminal.app or iTerm (not Cursor), then: System Settings → Privacy & Security → Accessibility → enable Terminal/iTerm. See plugin/PERMISSIONS.md'
+
+*** LIVE BLOCKED: grant Accessibility to Terminal.app / iTerm, then re-run this command in that terminal (not Cursor). ***
+  cd hermes-agent && source .venv/bin/activate && export PYTHONPATH=.
+  python -m plugin call-pallavi --live --hangup --contact Pallavi
+
+
+=== DONE ok=False live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=1

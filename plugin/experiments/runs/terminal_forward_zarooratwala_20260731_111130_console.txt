@@ -1,0 +1,9 @@
+=== launch start 20260731_111130 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_111130.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_111130_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_111130_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][FAIL][step 0] check | message='fail' expected=True
+[004][FAIL] run_end | detail='Accessibility not trusted for this host'
+OK=False LOG=plugin/experiments/runs/forward_zarooratwala_live_20260731_111130.jsonl

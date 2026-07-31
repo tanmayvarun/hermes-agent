@@ -1025,24 +1025,46 @@ class AIAgent:
             pass
 
     def _emit_pending_fallback_notice(self) -> None:
-        """Surface the one-shot fallback-switch notice on successful recovery.
+        """Record a successful fallback switch without noisy mid-answer spam.
 
-        A provider/model switch is a durable state change operators must see,
-        unlike transient retry chatter that ``_clear_status_buffer`` drops.
-        ``try_activate_fallback`` records the switch in
-        ``self._pending_fallback_notice``; this emits it exactly once via
-        ``_emit_status`` and then clears it, so a successful fallback still
-        produces one visible notice.  On terminal failure the buffered switch
-        line is flushed instead (and this notice discarded) — see
-        ``_flush_status_buffer`` — so the user always sees the switch once.
+        A provider/model switch is logged for operators. CLI users do **not**
+        see ``Switched to fallback model`` at normal verbosity — research and
+        chat answers should stay clean. Set ``HERMES_SHOW_FALLBACK_NOTICE=1``
+        or run with verbose to surface the notice via ``_emit_status``.
+
+        ``try_activate_fallback`` still records
+        ``self._pending_fallback_notice``; this clears it exactly once.
+        On terminal failure the buffered switch line is flushed instead
+        (and this notice discarded) — see ``_flush_status_buffer``.
         """
         try:
             notice = getattr(self, "_pending_fallback_notice", None)
-            if notice:
-                # Clear before emitting so a (swallowed) callback error can't
-                # leave the notice set for a stale re-emit on a later turn.
-                self._pending_fallback_notice = None
+            if not notice:
+                return
+            # Clear before emitting so a (swallowed) callback error can't
+            # leave the notice set for a stale re-emit on a later turn.
+            self._pending_fallback_notice = None
+            logger.info("%s%s", getattr(self, "log_prefix", ""), notice)
+
+            show = os.environ.get("HERMES_SHOW_FALLBACK_NOTICE", "").lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+            verbose = bool(getattr(self, "verbose", False))
+            if show or verbose:
                 self._emit_status(notice)
+            else:
+                # Dim / non-forced path — hidden in quiet CLI, visible if
+                # the driver prints verbose debug lines.
+                try:
+                    self._vprint(
+                        f"{getattr(self, 'log_prefix', '')}{notice}",
+                        force=False,
+                    )
+                except Exception:
+                    pass
         except Exception:
             # Never break the conversation loop on a notice hiccup.
             pass

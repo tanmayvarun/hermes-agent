@@ -1,6 +1,12 @@
 """Tests for hermes_cli/fallback_config.py — fallback entry API-key resolution."""
 
-from hermes_cli.fallback_config import resolve_entry_api_key
+from __future__ import annotations
+
+from hermes_cli.fallback_config import (
+    get_fallback_chain,
+    get_ordered_model_chain,
+    resolve_entry_api_key,
+)
 
 
 class TestResolveEntryApiKey:
@@ -38,3 +44,28 @@ class TestResolveEntryApiKey:
         monkeypatch.setenv("FB_KEY", "env-key")
         entry = {"api_key": "   ", "key_env": "FB_KEY"}
         assert resolve_entry_api_key(entry) == "env-key"
+
+
+class TestOrderedModelChain:
+    def test_ordered_model_chain_preserves_config_order(self):
+        config = {
+            "fallback_providers": [
+                {"provider": "openrouter", "model": "openai/gpt-oss-120b", "base_url": "http://one"},
+                {"provider": "ovhcloud", "model": "gpt-oss-120b", "base_url": "http://two"},
+            ],
+            "fallback_model": {"provider": "ollama-remote", "model": "qwen2.5:32b", "base_url": "http://three"},
+        }
+
+        ordered = get_ordered_model_chain(config)
+
+        assert ordered == [
+            {"provider": "openrouter", "model": "openai/gpt-oss-120b", "base_url": "http://one"},
+            {"provider": "ovhcloud", "model": "gpt-oss-120b", "base_url": "http://two"},
+        ]
+
+    def test_get_fallback_chain_is_alias_for_ordered_model_chain(self):
+        config = {
+            "fallback_providers": [{"provider": "ollama-remote", "model": "qwen2.5:32b"}],
+        }
+
+        assert get_fallback_chain(config) == get_ordered_model_chain(config)

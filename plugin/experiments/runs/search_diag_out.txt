@@ -1,0 +1,22 @@
+pid=6758
+scale=2.0 frame=<CoreFoundation.CGRect origin=<CoreFoundation.CGPoint x=0.0 y=0.0> size=<CoreFoundation.CGSize width=1710.0 height=1107.0>> visible=<CoreFoundation.CGRect origin=<CoreFoundation.CGPoint x=0.0 y=55.0> size=<CoreFoundation.CGSize width=1710.0 height=1013.0>>
+nodes=336
+ROLE=AXStaticText title='PallaviPallavi' desc='Search' ph='' pos=None size=None center=None focused=True value='PallaviPallavi'
+ROLE=AXGroup title='' desc='Search results' ph='' pos=None size=None center=None focused=False value=''
+ROLE=AXMenuItem title='Search' desc='' ph='' pos=None size=None center=None focused=False value=''
+ROLE=AXMenuItem title='Search Chat' desc='' ph='' pos=None size=None center=None focused=False value=''
+ROLE=AXTextField title='' desc='' ph='Search' pos=None size=None center=None focused=False value=''
+ROLE=AXTable title='' desc='search result' ph='' pos=None size=None center=None focused=False value=''
+--- Cmd+F via System Events ---
+nodes_after_cmd_f=336
+  AXStaticText title='PallaviPallavi' ph='' value='PallaviPallavi' focused=True center=None
+  AXGroup title='' ph='' value='' focused=False center=None
+  AXMenuItem title='Search' ph='' value='' focused=False center=None
+  AXMenuItem title='Search Chat' ph='' value='' focused=False center=None
+  AXTextField title='' ph='Search' value='' focused=False center=None
+  AXTable title='' ph='' value='' focused=False center=None
+--- type Pallavi via System Events ---
+after_type label='Search' AXValue=''
+--- click Search coordinate variants ---
+search_el_center=None
+DONE_DIAG

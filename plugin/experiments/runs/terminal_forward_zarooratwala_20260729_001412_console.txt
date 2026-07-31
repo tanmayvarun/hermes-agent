@@ -1,0 +1,98 @@
+=== launch start 20260729_001412 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_001412.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_001412_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_001412_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=0] fallback=pyobjc_ax
+[011][OK][step 0] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=0] nodes=1 elapsed=0.01s
+[012][OK][step 0] step | message='nodes=1 elapsed=0.01s'
+[013][OK][step 0] observation | nodes=1
+[observe_complete step=0] nodes=1 elapsed=1.02s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:24:24.
+Auxiliary: marking openrouter unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:24:25.
+Auxiliary perception: fallback candidate openrouter failed (Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1785283200000'}, 'provider_name': None}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+Auxiliary: marking ovhcloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:24:27.
+Auxiliary perception: fallback candidate ovhcloud failed (Error code: 429 - {'message': 'API rate limit exceeded', 'request_id': '0f8fae3a764ec06f023eb92e40acac50'}) — trying next fallback
+[014][OK][step 0] world_patch | screen='Screen #1' retention=1.0
+[015][OK][step 0] step | message="attempt 1: leaving open='' toward chat list"
+[016][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[017][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[018][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=1.42s
+[019][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 286, 'macapptree': 0} elapsed=1.42s"
+[020][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=1.42s
+[021][OK][step 0] world_patch | screen='call' action='preclear_list'
+[022][OK][step 0] step | message="attempt 2: leaving open='' toward chat list"
+[023][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[024][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[025][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=0.81s
+[026][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 287, 'macapptree': 0} elapsed=0.81s"
+[027][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=0.81s
+[028][OK][step 0] world_patch | screen='dialog' action='preclear_list'
+[029][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[030][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[031][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[032][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=0.57s
+[033][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 287, 'macapptree': 0} elapsed=0.57s"
+[034][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=0.57s
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 489, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 424, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 570, in run_goal_closed_loop
+    snap_pre = refresh_perception(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 314, in refresh_perception
+    return apply_observation(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 286, in apply_observation
+    view, feats, wv = build_view_features(runtime, goal)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 239, in build_view_features
+    perception = synthesize_perception(
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_synthesis.py", line 432, in synthesize_perception
+    response = call_llm(
+               ^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7233, in call_llm
+    client.chat.completions.create(**kwargs), task,
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_utils/_utils.py", line 286, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1204, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1070, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.NotFoundError: Error code: 404 - {'error': {'message': "model 'mistral-large-3:675b' not found", 'type': 'not_found_error', 'param': None, 'code': None}}

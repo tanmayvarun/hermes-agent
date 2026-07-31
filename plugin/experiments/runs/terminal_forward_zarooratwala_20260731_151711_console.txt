@@ -1,0 +1,15 @@
+=== launch start 20260731_151711 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_151711.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_151711_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_151711_status.txt
+[001][OK][+0.00s] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0][+0.20s] step | message='checking Terminal Accessibility'
+[003][OK][step 0][+0.36s] check | message='pass' expected=True
+[004][OK][step 0][+0.39s] check | message='pass' expected=True
+[005][FAIL][step 0][+0.39s] check | message='fail' expected=True
+[006][OK][step 0][+0.39s] check | message='pass' expected=True
+[007][OK][step 0][+1.36s] step | message='launched via open -a WhatsApp'
+[008][OK][step 0][+1.37s] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0][+3.41s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True

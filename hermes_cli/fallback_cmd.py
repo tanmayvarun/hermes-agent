@@ -1,19 +1,19 @@
 """
-hermes fallback — manage the fallback provider chain.
+hermes fallback — manage the ordered model chain.
 
-Fallback providers are tried in order when the primary model fails with
-rate-limit, overload, or connection errors. See:
+Models are tried left-to-right when the primary model fails with
+rate-limit, overload, connection, or invalid-response errors. See:
 https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers
 
 Subcommands:
-  hermes fallback [list]   Show the current fallback chain (default when no subcommand)
+  hermes fallback [list]   Show the current ordered model chain (default when no subcommand)
   hermes fallback add      Pick provider + model via the same picker as `hermes model`,
                            then append the selection to the chain
   hermes fallback remove   Pick an entry to delete from the chain
-  hermes fallback clear    Remove all fallback entries
+  hermes fallback clear    Remove all ordered-model entries
 
 Storage: ``fallback_providers`` in ``~/.hermes/config.yaml`` (top-level, list of
-``{provider, model, base_url?, api_mode?}`` dicts).  The legacy single-dict
+``{provider, model, base_url?, api_mode?}`` dicts). The legacy single-dict
 ``fallback_model`` format is migrated to the new list format on first add.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from hermes_cli.fallback_config import get_fallback_chain
 # ---------------------------------------------------------------------------
 
 def _read_chain(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return the normalized fallback chain as a list of dicts.
+    """Return the normalized ordered model chain as a list of dicts.
 
     Accepts both the new list format (``fallback_providers``) and the legacy
     ``fallback_model`` format. When both are present, the effective chain is
@@ -105,7 +105,7 @@ def _restore_auth_active_provider(value: Any) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_fallback_list(args) -> None:  # noqa: ARG001
-    """Print the current fallback chain."""
+    """Print the current ordered model chain."""
     from hermes_cli.config import load_config
 
     config = load_config()
@@ -113,7 +113,7 @@ def cmd_fallback_list(args) -> None:  # noqa: ARG001
 
     print()
     if not chain:
-        print("  No fallback providers configured.")
+        print("  No ordered model providers configured.")
         print()
         print("  Add one with:  hermes fallback add")
         print()
@@ -123,11 +123,11 @@ def cmd_fallback_list(args) -> None:  # noqa: ARG001
     if primary:
         print(f"  Primary:   {primary}")
         print()
-    print(f"  Fallback chain ({len(chain)} {'entry' if len(chain) == 1 else 'entries'}):")
+    print(f"  Ordered model chain ({len(chain)} {'entry' if len(chain) == 1 else 'entries'}):")
     for i, entry in enumerate(chain, 1):
         print(f"    {i}. {_format_entry(entry)}")
     print()
-    print("  Tried in order when the primary fails (rate-limit, 5xx, connection errors).")
+    print("  Tried in order when the primary fails (rate-limit, 5xx, connection, invalid-response errors).")
     print("  Docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers")
     print()
 
@@ -158,8 +158,8 @@ def cmd_fallback_add(args) -> None:
     active_provider_before = _snapshot_auth_active_provider()
 
     print()
-    print("  Adding a fallback provider.  The picker below is the same one used by")
-    print("  `hermes model` — select the provider + model you want as a fallback.")
+    print("  Adding an ordered model entry. The picker below is the same one used by")
+    print("  `hermes model` — select the provider + model you want in the chain.")
     print()
 
     try:
@@ -180,7 +180,7 @@ def cmd_fallback_add(args) -> None:
         _restore_model_cfg(model_before)
         _restore_auth_active_provider(active_provider_before)
         print()
-        print("  No fallback added.")
+        print("  No model entry added.")
         return
 
     # Picker picked the same thing that's already the primary → nothing changed,
@@ -192,7 +192,7 @@ def cmd_fallback_add(args) -> None:
         _restore_auth_active_provider(active_provider_before)
         print()
         print(f"  Selected model matches the current primary ({_format_entry(new_entry)}).")
-        print("  A provider cannot be a fallback for itself — no change.")
+        print("  A provider cannot be an ordered-chain entry for itself — no change.")
         return
 
     # Reload the config with the primary restored, then append the new entry
@@ -210,7 +210,7 @@ def cmd_fallback_add(args) -> None:
         if existing.get("provider") == new_entry["provider"] \
                 and existing.get("model") == new_entry["model"]:
             print()
-            print(f"  {_format_entry(new_entry)} is already in the fallback chain — skipped.")
+            print(f"  {_format_entry(new_entry)} is already in the ordered model chain — skipped.")
             return
 
     chain.append(new_entry)
@@ -218,7 +218,7 @@ def cmd_fallback_add(args) -> None:
     save_config(final_cfg)
 
     print()
-    print(f"  Added fallback: {_format_entry(new_entry)}")
+    print(f"  Added model entry: {_format_entry(new_entry)}")
     print(f"  Chain is now {len(chain)} {'entry' if len(chain) == 1 else 'entries'} long.")
     print()
     print("  Run `hermes fallback list` to view, or `hermes fallback remove` to delete.")
@@ -245,7 +245,7 @@ def cmd_fallback_remove(args) -> None:  # noqa: ARG001
 
     if not chain:
         print()
-        print("  No fallback providers configured — nothing to remove.")
+        print("  No ordered model providers configured — nothing to remove.")
         print()
         return
 
@@ -277,7 +277,7 @@ def cmd_fallback_remove(args) -> None:  # noqa: ARG001
 
 
 def cmd_fallback_clear(args) -> None:  # noqa: ARG001
-    """Remove all fallback entries (with confirmation)."""
+    """Remove all ordered-model entries (with confirmation)."""
     from hermes_cli.config import load_config, save_config
 
     config = load_config()
@@ -285,12 +285,12 @@ def cmd_fallback_clear(args) -> None:  # noqa: ARG001
 
     if not chain:
         print()
-        print("  No fallback providers configured — nothing to clear.")
+        print("  No ordered model providers configured — nothing to clear.")
         print()
         return
 
     print()
-    print(f"  Current fallback chain ({len(chain)} {'entry' if len(chain) == 1 else 'entries'}):")
+    print(f"  Current ordered model chain ({len(chain)} {'entry' if len(chain) == 1 else 'entries'}):")
     for i, entry in enumerate(chain, 1):
         print(f"    {i}. {_format_entry(entry)}")
     print()

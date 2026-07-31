@@ -1535,6 +1535,60 @@ def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> Option
     return None
 
 
+def warm_ollama_model_keepalive(
+    model: str,
+    base_url: str,
+    *,
+    api_key: str = "",
+    keep_alive: int = -1,
+    timeout: float = 5.0,
+) -> bool:
+    """Warm an Ollama model and pin it in memory with ``keep_alive``.
+
+    This issues a tiny generate request against the active Ollama server so
+    startup can both verify the model is reachable and leave it resident for
+    later agent turns. Returns ``True`` when the request succeeds, ``False``
+    on any failure or when the endpoint is not Ollama.
+    """
+    import httpx
+
+    bare_model = _strip_provider_prefix(model)
+    if not bare_model:
+        return False
+
+    server_url = _localhost_to_ipv4(base_url.rstrip("/"))
+    if server_url.endswith("/v1"):
+        server_url = server_url[:-3]
+
+    try:
+        server_type = detect_local_server_type(base_url, api_key=api_key)
+    except Exception:
+        return False
+    if server_type != "ollama":
+        return False
+
+    headers = _auth_headers(api_key)
+    payload = {
+        "model": bare_model,
+        "prompt": "Reply with a single token: ok",
+        "stream": False,
+        "keep_alive": keep_alive,
+    }
+
+    try:
+        with httpx.Client(timeout=timeout, headers=headers) as client:
+            resp = client.post(f"{server_url}/api/generate", json=payload)
+            if resp.status_code != 200:
+                return False
+            try:
+                data = resp.json()
+            except Exception:
+                return False
+            return bool(data.get("response") is not None or data.get("done") is True)
+    except Exception:
+        return False
+
+
 def query_ollama_supports_vision(model: str, base_url: str, api_key: str = "") -> Optional[bool]:
     """Return True/False when Ollama ``/api/show`` reports vision support.
 

@@ -1,0 +1,266 @@
+=== host=-zsh pid=83767 TIMESTAMP=20260722_185309 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+AXIsProcessTrusted(initial)= True
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live ===
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+[001][OK] run_start | goal='Call Pallavi on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 337, 'macapptree': 74}"
+[011][OK][step 0] observation | nodes=337
+[012][OK][step 0] world_patch | screen='call' retention=1.0
+[013][OK][step 0] step | message='closed-loop goal=Call Pallavi on WhatsApp' detail='DecisionEngine after every observation (policy prior + value)'
+[014][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 313, 'macapptree': 51}"
+[015][OK][step 0] observation | nodes=313
+[016][OK][step 1] observation | nodes=313
+[017][OK][step 1] world_patch | screen='call' retention=0.9169139465875371
+[018][FAIL][step 1] worldview_low
+[019][OK][step 0] step | message='low worldview — secondary settle' detail='1.2s'
+[020][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 313, 'macapptree': 51}"
+[021][OK][step 0] observation | nodes=313
+[022][OK][step 1] goal_status
+[023][OK][step 1] decision_engine
+[024][OK][step 1] planner_decision
+[025][OK][step 1] execution | message='typed \'Pallavi\' into search field label=\'Search\' AXValue=\'Pallavi\' open=\'clicked Search center=(177.5, 55.0)\' evidence="AXStaticText title=\'Pallavi\' desc=\'Search\'" submit=False' backend='ax'
+[026][OK][step 1] step | message='UI settle after action' detail='1.7999999999999998s'
+[027][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 330, 'macapptree': 68}"
+[028][OK][step 1] observation | nodes=330
+[029][OK][step 1] post_observation | nodes=330
+[030][OK][step 1] post_world_patch | screen='call' retention=0.9208211143695014
+[031][OK][step 1] verification
+[032][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 330, 'macapptree': 68}"
+[033][OK][step 1] observation | nodes=330
+[034][OK][step 2] observation | nodes=330
+[035][OK][step 2] world_patch | screen='call' retention=0.9243697478991597
+[036][FAIL][step 2] worldview_low
+[037][OK][step 1] step | message='low worldview — secondary settle' detail='1.2s'
+[038][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 330, 'macapptree': 68}"
+[039][OK][step 1] observation | nodes=330
+[040][OK][step 2] goal_status
+[041][OK][step 2] decision_engine
+[042][OK][step 2] planner_decision
+[043][OK][step 1] click_target | semantic='Pallavi'
+[044][OK][step 2] execution | message="click 'Pallavi' center=(255.5, 302.25) via entity bounds" backend='ax'
+[045][OK][step 2] step | message='UI settle after action' detail='1.2s'
+[046][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 351, 'macapptree': 88}"
+[047][OK][step 2] observation | nodes=351
+[048][OK][step 2] post_observation | nodes=351
+[049][OK][step 2] post_world_patch | screen='call' retention=0.9719887955182073
+[050][OK][step 2] verification
+[051][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 351, 'macapptree': 88}"
+[052][OK][step 2] observation | nodes=351
+[053][OK][step 3] observation | nodes=351
+[054][OK][step 3] world_patch | screen='call' retention=0.9722991689750693
+[055][FAIL][step 3] worldview_low
+[056][OK][step 2] step | message='low worldview — secondary settle' detail='1.2s'
+[057][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 351, 'macapptree': 88}"
+[058][OK][step 2] observation | nodes=351
+[059][OK][step 3] goal_status
+[060][OK][step 3] decision_engine
+[061][OK][step 3] planner_decision
+[062][OK][step 2] click_target | semantic='Call'
+[063][OK][step 3] execution | message="click 'Voice Call' center=None code=0" backend='ax'
+[064][OK][step 3] step | message='UI settle after action' detail='1.2s'
+[065][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 351, 'macapptree': 88}"
+[066][OK][step 3] observation | nodes=351
+[067][OK][step 3] post_observation | nodes=351
+[068][OK][step 3] post_world_patch | screen='call' retention=0.9722991689750693
+[069][FAIL][step 3] verification
+[070][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 351, 'macapptree': 88}"
+[071][OK][step 3] observation | nodes=351
+[072][OK][step 4] observation | nodes=351
+[073][OK][step 4] world_patch | screen='call' retention=0.9722991689750693
+[074][FAIL][step 4] worldview_low
+[075][OK][step 3] step | message='low worldview — secondary settle' detail='1.2s'
+[076][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 351, 'macapptree': 88}"
+[077][OK][step 3] observation | nodes=351
+[078][OK][step 4] goal_status
+[079][OK][step 4] decision_engine
+[080][OK][step 4] planner_decision
+[081][OK][step 3] click_target | semantic='Call'
+[082][OK][step 4] execution | message="click 'Voice Call' center=None code=0" backend='ax'
+[083][OK][step 4] step | message='UI settle after action' detail='1.2s'
+[084][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[085][OK][step 4] observation | nodes=350
+[086][OK][step 4] post_observation | nodes=350
+[087][OK][step 4] post_world_patch | screen='call' retention=0.9695290858725761
+[088][FAIL][step 4] verification
+[089][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 351, 'macapptree': 88}"
+[090][OK][step 4] observation | nodes=351
+[091][OK][step 5] observation | nodes=351
+[092][OK][step 5] world_patch | screen='call' retention=0.9722991689750693
+[093][FAIL][step 5] worldview_low
+[094][OK][step 4] step | message='low worldview — secondary settle' detail='1.2s'
+[095][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[096][OK][step 4] observation | nodes=350
+[097][OK][step 5] goal_status
+[098][OK][step 5] decision_engine
+[099][OK][step 5] planner_decision
+[100][OK][step 5] execution | message='typed \'Pallavi\' into search field label=\'Search\' AXValue=\'Pallavi\' open=\'clicked Search center=(177.5, 55.0)\' evidence="AXStaticText title=\'Pallavi\' desc=\'Search\'" submit=False' backend='ax'
+[101][OK][step 5] step | message='UI settle after action' detail='1.7999999999999998s'
+[102][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[103][OK][step 5] observation | nodes=350
+[104][OK][step 5] post_observation | nodes=350
+[105][OK][step 5] post_world_patch | screen='call' retention=0.9695290858725761
+[106][OK][step 5] verification
+[107][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[108][OK][step 5] observation | nodes=350
+[109][OK][step 6] observation | nodes=350
+[110][OK][step 6] world_patch | screen='call' retention=0.9695290858725761
+[111][FAIL][step 6] worldview_low
+[112][OK][step 5] step | message='low worldview — secondary settle' detail='1.2s'
+[113][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[114][OK][step 5] observation | nodes=350
+[115][OK][step 6] goal_status
+[116][OK][step 6] decision_engine
+[117][OK][step 6] planner_decision
+[118][OK][step 5] click_target | semantic='Call'
+[119][OK][step 6] execution | message="click 'Voice Call' center=None code=0" backend='ax'
+[120][OK][step 6] step | message='UI settle after action' detail='1.2s'
+[121][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[122][OK][step 6] observation | nodes=350
+[123][OK][step 6] post_observation | nodes=350
+[124][OK][step 6] post_world_patch | screen='call' retention=0.9695290858725761
+[125][FAIL][step 6] verification
+[126][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[127][OK][step 6] observation | nodes=350
+[128][OK][step 7] observation | nodes=350
+[129][OK][step 7] world_patch | screen='call' retention=0.9695290858725761
+[130][FAIL][step 7] worldview_low
+[131][OK][step 6] step | message='low worldview — secondary settle' detail='1.2s'
+[132][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[133][OK][step 6] observation | nodes=350
+[134][OK][step 7] goal_status
+[135][OK][step 7] decision_engine
+[136][OK][step 7] planner_decision
+[137][OK][step 6] click_target | semantic='Call'
+[138][OK][step 7] execution | message="click 'Voice Call' center=None code=0" backend='ax'
+[139][OK][step 7] step | message='UI settle after action' detail='1.2s'
+[140][OK][step 7] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[141][OK][step 7] observation | nodes=350
+[142][OK][step 7] post_observation | nodes=350
+[143][OK][step 7] post_world_patch | screen='call' retention=0.9695290858725761
+[144][FAIL][step 7] verification
+[145][OK][step 7] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[146][OK][step 7] observation | nodes=350
+[147][OK][step 8] observation | nodes=350
+[148][OK][step 8] world_patch | screen='call' retention=0.9695290858725761
+[149][FAIL][step 8] worldview_low
+[150][OK][step 7] step | message='low worldview — secondary settle' detail='1.2s'
+[151][OK][step 7] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 350, 'macapptree': 88}"
+[152][OK][step 7] observation | nodes=350
+[153][OK][step 8] goal_status
+[154][OK][step 8] decision_engine
+[155][OK][step 8] planner_decision
+[156][OK][step 7] click_target | semantic='Pallavi'
+[157][OK][step 8] execution | message="click 'Pallavi' center=(255.5, 216.0) via entity bounds" backend='ax'
+[158][OK][step 8] step | message='UI settle after action' detail='1.2s'
+[159][OK][step 8] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 349, 'macapptree': 85}"
+[160][OK][step 8] observation | nodes=349
+[161][OK][step 8] post_observation | nodes=349
+[162][OK][step 8] post_world_patch | screen='call' retention=0.9556786703601108
+[163][OK][step 8] verification
+[164][OK][step 8] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 349, 'macapptree': 85}"
+[165][OK][step 8] observation | nodes=349
+[166][OK][step 9] observation | nodes=349
+[167][OK][step 9] world_patch | screen='call' retention=0.9561643835616438
+[168][FAIL][step 9] worldview_low
+[169][OK][step 8] step | message='low worldview — secondary settle' detail='1.2s'
+[170][OK][step 8] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 349, 'macapptree': 85}"
+[171][OK][step 8] observation | nodes=349
+[172][OK][step 9] goal_status
+[173][OK][step 9] decision_engine
+[174][OK][step 9] planner_decision
+[175][OK][step 8] click_target | semantic='Call'
+[176][OK][step 9] execution | message="click 'Voice Call' center=None code=0" backend='ax'
+[177][OK][step 9] step | message='UI settle after action' detail='1.2s'
+[178][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 356, 'macapptree': 67}"
+[179][OK][step 9] observation | nodes=356
+[180][OK][step 9] post_observation | nodes=356
+[181][OK][step 9] post_world_patch | screen='call' retention=0.9095890410958904
+[182][OK][step 9] verification
+[183][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 357, 'macapptree': 67}"
+[184][OK][step 9] observation | nodes=357
+[185][OK][step 10] observation | nodes=357
+[186][OK][step 10] world_patch | screen='call' retention=0.9151670951156813
+[187][FAIL][step 10] worldview_low
+[188][OK][step 9] step | message='low worldview — secondary settle' detail='1.2s'
+[189][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 357, 'macapptree': 67}"
+[190][OK][step 9] observation | nodes=357
+[191][OK][step 10] goal_status
+[192][OK] world_summary
+[193][OK][step 9] execution | message="click 'End Call' center=None code=0" backend='ax'
+[194][OK] check | message='pass' expected="closed-loop call ringing for 'Pallavi'"
+[195][OK] check | message='pass' expected='>=1 planner call per decision cycle'
+[196][OK] run_end | detail="closed_loop ok=True reason='goal succeeded' iterations=10 planner_invocations=9 ringing=True"
+
+=== DONE ok=True live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=0

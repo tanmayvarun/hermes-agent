@@ -1,0 +1,880 @@
+=== launch start 20260731_174108_1785499868552850000 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260731_174108_1785499868552850000.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_174108_1785499868552850000_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260731_174108_1785499868552850000_status.txt
+[001][OK][+0.00s] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[runtime_bind] provider=ollama-cloud model=gpt-oss:120b base_url=https://ollama.com/v1 aux_policy=ollama-only ollama_api_key_present=True ollama_api_key_len=57 ollama_api_key_sha1=2fa6439313
+[002][OK][step 0][+0.41s] step | message='checking Terminal Accessibility'
+[003][OK][step 0][+1.03s] check | message='pass' expected=True
+[004][OK][step 0][+1.21s] check | message='pass' expected=True
+[005][FAIL][step 0][+1.21s] check | message='fail' expected=True
+[006][OK][step 0][+1.21s] check | message='pass' expected=True
+[007][OK][step 0][+2.17s] step | message='launched via open -a WhatsApp'
+[008][OK][step 0][+2.17s] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0][+4.17s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0][+4.19s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[011][OK][step 0][+4.22s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+Auxiliary perception: auth error on ollama-cloud and no fallback available (tried: )
+Auxiliary perception: auth error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[012][OK][step 0][+4.29s] observation_raw_source
+[observe_done_fused step=0] nodes=1 elapsed=5.24s
+[013][OK][step 0][+9.43s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=5.24s attempt=1/3"
+[014][OK][step 0][+9.43s] observation | nodes=1
+[observation_raw step=0]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[015][OK][step 0][+9.43s] observation_raw | nodes=1
+[observe_complete step=0] nodes=1 elapsed=5.26s
+[016][OK][step 0][+12.96s] world_patch | screen='Screen #1' retention=1.0
+[017][OK][step 0][+12.96s] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[018][OK][step 0][+12.96s] loop_budget
+[019][OK][step 1][+12.96s] progress_clock
+[observe_begin step=0] app=WhatsApp screenshot=True
+[020][OK][step 0][+12.96s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[021][OK][step 0][+12.96s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=0 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=278 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Isha Electronic City, ‎Announcement group, ‎19 unread messages
+  - Balakrishna - TradeWise, ‎11 unread messages
+  - [CoE - IoT & AI] BLR Startups, ‎2 unread messages
+  - Godrej Nurture - Care & Share, ‎14 unread messages
+  - Owners including Family- Godrej Nurture, ‎15 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(173.0, 25.0, 375.0, 92.0)
+  07. role=AXHeading label='\u200eChats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  08. role=AXStaticText label='\u200eSearch' enabled=True bbox=(105.0, 25.0, 355.0, 32.0)
+  09. role=AXButton label='' enabled=True bbox=(183.0, 77.0, 355.0, 32.0)
+  10. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(5.0, 25.0, 167.0, 878.0)
+  ... 268 more nodes
+[022][OK][step 0][+14.27s] observation_raw_source
+[observation_raw_source step=0 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[023][OK][step 0][+14.27s] observation_raw_source
+[observe_done_fused step=0] nodes=206 elapsed=1.32s
+[024][OK][step 0][+14.28s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 278, 'macapptree': 0} elapsed=1.32s attempt=1/3"
+[025][OK][step 0][+14.28s] observation | nodes=206
+[observation_raw step=0]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=206 coverage=0.8665378416484791 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - [CoE - IoT & AI] BLR Startups, 2 unread messages
+  - Balakrishna - TradeWise, 11 unread messages
+  - Godrej Nurture - Care & Share, 14 unread messages
+  - IIT Ventures @ BLR, 12 unread messages
+  - Isha Electronic City, Announcement group, 19 unread messages
+  - Lenskart, 1 unread message
+  - Magicbricks, 15 unread messages
+raw_nodes=
+  01. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  02. role=AXButton label='Settings' enabled=True bbox=(5.0, 903.0, 167.0, 48.0)
+  03. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  04. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  05. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  06. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62448.0, 109.7, 13.0)
+  07. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  08. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  09. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  10. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62448.0, 249.0, 13.0)
+  12. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  13. role=AXMenuItem label='.env' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXButton label='[CoE - IoT & AI] BLR Startups, 2 unread messages' value="\u200eMessage from nibedit Coe, \u200eLink, *Innoverse DeepTech Enabler -Cohort 1*\n\nThe Innoverse DeepTech Enabler - Cohort 1 is now inviting applications from high-potential, growth-stage DeepTech startups ready to scale their innovations, expand market access, and build global partnerships.\nDesigned as a growth acceleration program, this initiative will empower startups through strategic collaborations, market-making opportunities, capital networks, mentorship, and ecosystem support-enabling them to transform cutting-edge technologies into globally competitive enterprises.\nWho can apply?\n• Growth-stage DeepTech startups\n• Annual revenue between *5 Crore and 50 Crore*\n• Prior reputed VC fundraise between *1 Crore and 50 Crore*\n\nPriority sectors\n• Electronics System Design & Manufacturing (ESDM)\n• Defence and Aerospace\n• Space Technology\n• BioDeepTech\n• Al (for these four sectors)\nWhat selected startups will gain\n• Access to technology and innovation networks\n• Connections with investors and capital partners Market access and Go to Market opportunities\n• Strategic mentorship from industry leaders\n• Policy and regulatory guidance\n• \u2060Global ecosystem linkages\n\nIf your startup is building transformative DeepTech solutions with the potential to create global impact, this is your opportunity to accelerate growth with one of Karnataka's most ambitious innovation initiatives.\n: Applications for Cohort 1 are now open at\nhttps://theinnoverse.com/apply/deeptech-enabler\n\n*Applications close on 15th August 2026*, Innoverse — Powering growth-ready deep-tech, Innoverse Foundation is an innovation-led deep-tech accelerator ecosystem — where growth-ready startups come to sharpen their business and technology strategy., 5:17\u202fPM, \u200eReceived in [CoE - IoT & AI] BLR Startups, \u200eEdited, \u200eMuted" enabled=True bbox=(173.0, 462.0, 375.0, 69.0)
+  15. role=AXMenuItem label='About This Mac' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 191 more nodes
+[026][OK][step 0][+14.28s] observation_raw | nodes=206
+[observe_complete step=0] nodes=206 elapsed=1.32s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[027][OK][step 1][+14.28s] observation_raw | nodes=206
+[028][OK][step 1][+28.22s] observation_fused | screen='LIST' retention=0.0
+[029][OK][step 1][+28.22s] observation | nodes=206
+[030][OK][step 1][+28.25s] forward_task
+[031][OK][step 1][+28.25s] world_patch | screen='conversation' retention=0.0
+[032][OK][step 1][+28.25s] fusion_conflicts
+[033][OK][step 1][+28.27s] goal_status
+[034][OK][step 1][+62.69s] decision_budget
+[035][OK][step 1][+62.69s] decision_engine
+[036][OK][step 1][+62.70s] planner_decision
+[037][OK][step 1][+69.60s] execution | message='typed \'Kulvinder\' into search field label=\'Search\' AXValue=\'Kulvinder\' open=\'Cmd+F search shortcut\' evidence="AXStaticText title=\'Kulvinder\' desc=\'Search\'" attempts=[\'open=Cmd+F search shortcut\', \'paste=True\'] submit=False' backend='ax'
+[038][OK][step 1][+69.60s] step | message='transition settle' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[039][OK][step 1][+70.80s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[040][OK][step 1][+70.80s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=318 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Isha Electronic City, ‎Announcement group, ‎19 unread messages
+  - Balakrishna - TradeWise, ‎11 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 308 more nodes
+[041][OK][step 1][+71.57s] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[042][OK][step 1][+71.57s] observation_raw_source
+[observe_done_fused step=1] nodes=220 elapsed=0.78s
+[043][OK][step 1][+71.58s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 318, 'macapptree': 0} elapsed=0.78s attempt=1/3"
+[044][OK][step 1][+71.58s] observation | nodes=220
+[observation_raw step=1]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=220 coverage=0.8665378386757553 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - [CoE - IoT & AI] BLR Startups, 2 unread messages
+  - Balakrishna - TradeWise, 11 unread messages
+  - Godrej Nurture - Care & Share, 14 unread messages
+  - IIT Ventures @ BLR, 12 unread messages
+  - Isha Electronic City, Announcement group, 19 unread messages
+  - Lenskart, 1 unread message
+  - Links
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62448.0, 109.7, 13.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62448.0, 249.0, 13.0)
+  15. role=AXMenuItem label='.env' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 205 more nodes
+[045][OK][step 1][+71.58s] observation_raw | nodes=220
+[observe_complete step=1] nodes=220 elapsed=0.78s
+[046][OK][step 1][+71.58s] observation_raw | nodes=220
+[047][OK][step 1][+76.31s] observation_fused | screen='SEARCH_RESULTS' retention=0.9951690821256038
+[048][OK][step 1][+76.42s] step | message='transition poll' detail='0.3s'
+[049][OK][step 1][+76.85s] perception_settled
+[050][OK][step 1][+76.86s] post_transition_settled_view | screen='SEARCH_RESULTS'
+[051][OK][step 1][+76.86s] post_observation
+[052][OK][step 1][+76.86s] post_world_patch
+[053][OK][step 1][+76.88s] transition_eval
+[054][OK][step 1][+76.88s] transition_attribution
+[055][OK][step 1][+76.88s] verification
+[056][OK][step 1][+76.90s] branch_explore
+[057][OK][step 1][+76.90s] search_hypothesis_advance_blocked
+[058][OK][step 2][+76.90s] progress_clock
+[observe_begin step=1] app=WhatsApp screenshot=True
+[059][OK][step 1][+76.90s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[060][OK][step 1][+76.90s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=1 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=318 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Isha Electronic City, ‎Announcement group, ‎19 unread messages
+  - Balakrishna - TradeWise, ‎11 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 308 more nodes
+[061][OK][step 1][+77.51s] observation_raw_source
+[observation_raw_source step=1 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[062][OK][step 1][+77.51s] observation_raw_source
+[observe_done_fused step=1] nodes=220 elapsed=0.62s
+[063][OK][step 1][+77.53s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 318, 'macapptree': 0} elapsed=0.62s attempt=1/3"
+[064][OK][step 1][+77.53s] observation | nodes=220
+[observation_raw step=1]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=220 coverage=0.8665378386757553 degraded=False screenshot=None
+message_like=
+  - Your personal messages are end-to-end encrypted
+  - [CoE - IoT & AI] BLR Startups, 2 unread messages
+  - Balakrishna - TradeWise, 11 unread messages
+  - Godrej Nurture - Care & Share, 14 unread messages
+  - IIT Ventures @ BLR, 12 unread messages
+  - Isha Electronic City, Announcement group, 19 unread messages
+  - Lenskart, 1 unread message
+  - Links
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXLink label='end-to-end encrypted' enabled=True bbox=(382.9, 62448.0, 109.7, 13.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXStaticText label='Your personal messages are end-to-end encrypted' enabled=True bbox=(244.0, 62448.0, 249.0, 13.0)
+  15. role=AXMenuItem label='.env' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 205 more nodes
+[065][OK][step 1][+77.53s] observation_raw | nodes=220
+[observe_complete step=1] nodes=220 elapsed=0.62s
+[066][OK][step 2][+77.53s] observation_raw | nodes=220
+[067][OK][step 2][+80.65s] observation_fused | screen='SEARCH_RESULTS' retention=0.995475113122172
+[068][OK][step 2][+80.65s] observation | nodes=220
+[069][OK][step 2][+80.67s] forward_task
+[070][OK][step 2][+80.67s] world_patch | screen='dialog' retention=0.995475113122172
+[071][OK][step 2][+80.67s] fusion_conflicts
+[072][OK][step 2][+80.70s] goal_status
+[073][OK][step 2][+106.20s] decision_budget
+[074][OK][step 2][+106.20s] decision_engine
+[075][OK][step 2][+106.20s] planner_decision
+[076][OK][step 1][+106.22s] click_target | semantic='Kulvinder Ji'
+[077][OK][step 2][+107.69s] execution | message="click 'Kulvinder Ji' center=(360.5, 202.0) via entity bounds" backend='ax'
+[078][OK][step 2][+107.69s] step | message='transition settle' detail='0.6s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[079][OK][step 2][+108.29s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[080][OK][step 2][+108.29s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=376 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Paytm Bill Payments, ‎6 unread messages
+  - Tata Neu Credit, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 366 more nodes
+[081][OK][step 2][+110.51s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[082][OK][step 2][+110.51s] observation_raw_source
+[observe_done_fused step=2] nodes=271 elapsed=2.23s
+[083][OK][step 2][+110.52s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 376, 'macapptree': 0} elapsed=2.23s attempt=1/3"
+[084][OK][step 2][+110.52s] observation | nodes=271
+[observation_raw step=2]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=271 coverage=0.866105483795816 degraded=False screenshot=None
+message_like=
+  - Aarthi Scans and Labs, 3 unread messages
+  - Airtel Care, 5 unread messages
+  - Airtel India, 1 unread message
+  - Compose message
+  - CreditMantri, 1 unread message
+  - Edit last message
+  - Emergent, 2 unread messages
+  - IITians in Manufacturing , 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXStaticText label='Kulvinder Ji' value='\u200eVideo call , \u200e2 min, 27Julyat12:07\u202fPM, \u200eSent to Kulvinder Ji' enabled=True bbox=(173.0, 168.0, 375.0, 68.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='.env' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 256 more nodes
+[085][OK][step 2][+110.52s] observation_raw | nodes=271
+[observe_complete step=2] nodes=271 elapsed=2.23s
+[086][OK][step 2][+110.52s] observation_raw | nodes=271
+[087][OK][step 2][+119.38s] observation_fused | screen='SEARCH_RESULTS' retention=0.995475113122172
+[088][OK][step 2][+119.52s] step | message='transition poll' detail='0.3s'
+[089][OK][step 2][+119.99s] perception_settled
+[090][OK][step 2][+119.99s] post_transition_settled_view | screen='SEARCH_RESULTS'
+[091][OK][step 2][+119.99s] post_observation
+[092][OK][step 2][+119.99s] post_world_patch
+[093][OK][step 2][+120.02s] transition_eval
+[094][OK][step 2][+120.02s] transition_attribution
+[095][OK][step 2][+120.02s] verification
+[096][OK][step 2][+120.02s] transition_confirmation
+[097][OK][step 2][+120.05s] branch_explore
+[098][OK][step 3][+120.05s] progress_clock
+[observe_begin step=2] app=WhatsApp screenshot=True
+[099][OK][step 2][+120.05s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[100][OK][step 2][+120.05s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=2 source=pyobjc_ax]
+app='WhatsApp' window='\u200eWhatsApp' source='pyobjc_ax'
+nodes=376 coverage=1.0 degraded=False screenshot=None
+message_like=
+  - ‎Search
+  - Search results
+  - ‎Links
+  - ‎Messages
+  - Paytm Bill Payments, ‎6 unread messages
+  - Tata Neu Credit, ‎5 unread messages
+raw_nodes=
+  01. role=AXApplication label='WhatsApp' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+  02. role=AXWindow label='\u200eWhatsApp' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  03. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  04. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  05. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  06. role=AXGroup label='' enabled=True bbox=(5.0, 25.0, 167.0, 988.0)
+  07. role=AXGroup label='\u200eMain Navigation' enabled=True bbox=(105.0, 25.0, 67.0, 878.0)
+  08. role=AXButton label='\u200eChats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  09. role=AXButton label='\u200eCalls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  10. role=AXButton label='\u200eUpdates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  ... 366 more nodes
+[101][OK][step 2][+120.74s] observation_raw_source
+[observation_raw_source step=2 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[102][OK][step 2][+120.74s] observation_raw_source
+[observe_done_fused step=2] nodes=271 elapsed=0.70s
+[103][OK][step 2][+120.75s] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 376, 'macapptree': 0} elapsed=0.70s attempt=1/3"
+[104][OK][step 2][+120.75s] observation | nodes=271
+[observation_raw step=2]
+app='WhatsApp' window='\u200eWhatsApp' source='fused:pyobjc_ax+macapptree'
+nodes=271 coverage=0.866105483795816 degraded=False screenshot=None
+message_like=
+  - Aarthi Scans and Labs, 3 unread messages
+  - Airtel Care, 5 unread messages
+  - Airtel India, 1 unread message
+  - Compose message
+  - CreditMantri, 1 unread message
+  - Edit last message
+  - Emergent, 2 unread messages
+  - IITians in Manufacturing , 15 unread messages
+raw_nodes=
+  01. role=AXGroup label='' enabled=True bbox=(105.0, 25.0, 1710.0, 988.0)
+  02. role=AXMenuItem label='' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  03. role=AXButton label='image' enabled=True bbox=(458.0, 612.0, 72.0, 72.0)
+  04. role=AXButton label='Settings' enabled=True bbox=(105.0, 903.0, 67.0, 48.0)
+  05. role=AXButton label='Chats' enabled=True bbox=(115.0, 69.0, 48.0, 48.0)
+  06. role=AXButton label='Archived' enabled=True bbox=(115.0, 238.0, 48.0, 48.0)
+  07. role=AXButton label='Calls' enabled=True bbox=(115.0, 121.0, 48.0, 48.0)
+  08. role=AXHeading label='Chats' enabled=True bbox=(193.0, 41.0, 48.0, 20.0)
+  09. role=AXStaticText label='Kulvinder Ji' value='\u200eVideo call , \u200e2 min, 27Julyat12:07\u202fPM, \u200eSent to Kulvinder Ji' enabled=True bbox=(173.0, 168.0, 375.0, 68.0)
+  10. role=AXMenuItem label='Quarters' enabled=False bbox=(0.0, 1080.0, 0.0, 0.0)
+  11. role=AXButton label='Starred' enabled=True bbox=(115.0, 290.0, 48.0, 48.0)
+  12. role=AXButton label='Updates' enabled=True bbox=(115.0, 173.0, 48.0, 48.0)
+  13. role=AXMenuItem label='WhatsApp' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  14. role=AXMenuItem label='.env' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  15. role=AXMenuItem label='1 week' enabled=True bbox=(0.0, 1080.0, 0.0, 0.0)
+  ... 256 more nodes
+[105][OK][step 2][+120.75s] observation_raw | nodes=271
+[observe_complete step=2] nodes=271 elapsed=0.70s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[106][OK][step 3][+120.75s] observation_raw | nodes=271
+[107][OK][step 3][+124.56s] observation_fused | screen='SEARCH_RESULTS' retention=0.9963235294117647
+[108][OK][step 3][+124.56s] observation | nodes=271
+[109][OK][step 3][+124.61s] forward_task
+[110][OK][step 3][+124.61s] world_patch | screen='dialog' retention=0.9963235294117647
+[111][OK][step 3][+124.61s] fusion_conflicts
+[112][OK][step 3][+124.64s] goal_status
+[113][OK][step 3][+172.01s] decision_budget
+[114][OK][step 3][+172.01s] decision_engine
+[115][OK][step 3][+172.01s] planner_decision
+[116][OK][step 2][+172.04s] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[117][OK][step 3][+173.08s] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1182.0, 620.5) via entity bounds" backend='ax'
+[118][OK][step 3][+173.08s] step | message='transition settle' detail='0.6s'
+[observe_begin step=3] app=WhatsApp screenshot=True
+[119][OK][step 3][+173.69s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[120][OK][step 3][+173.69s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=3 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[121][OK][step 3][+173.70s] observation_raw_source
+[observation_raw_source step=3 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[122][OK][step 3][+173.79s] observation_raw_source
+[observe_done_fused step=3] nodes=1 elapsed=2.32s
+[123][OK][step 3][+176.00s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=2.32s attempt=1/3"
+[124][OK][step 3][+176.00s] observation | nodes=1
+[observation_raw step=3]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[125][OK][step 3][+176.00s] observation_raw | nodes=1
+[observe_complete step=3] nodes=1 elapsed=2.32s
+[126][OK][step 3][+176.00s] observation_raw | nodes=1
+[127][OK][step 3][+176.16s] observation_fused | screen='SEARCH_RESULTS' retention=1.0
+[128][OK][step 3][+176.32s] step | message='transition poll' detail='0.3s'
+[129][OK][step 3][+176.79s] perception_settled
+[130][OK][step 3][+176.79s] post_transition_settled_view | screen='SEARCH_RESULTS'
+[131][OK][step 3][+176.79s] post_observation
+[132][OK][step 3][+176.79s] post_world_patch
+[133][OK][step 3][+176.82s] transition_eval
+[134][OK][step 3][+176.82s] transition_attribution
+[135][OK][step 3][+176.82s] verification
+[136][OK][step 3][+176.82s] transition_confirmation
+[137][OK][step 3][+176.85s] branch_explore
+[138][OK][step 3][+176.85s] search_hypothesis_advance_blocked
+[139][OK][step 4][+176.85s] progress_clock
+[observe_begin step=3] app=WhatsApp screenshot=True
+[140][OK][step 3][+176.85s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[141][OK][step 3][+176.85s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=3 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[142][OK][step 3][+176.86s] observation_raw_source
+[observation_raw_source step=3 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[143][OK][step 3][+176.89s] observation_raw_source
+[observe_done_fused step=3] nodes=1 elapsed=5.28s
+[144][OK][step 3][+182.13s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=5.28s attempt=1/3"
+[145][OK][step 3][+182.13s] observation | nodes=1
+[observation_raw step=3]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[146][OK][step 3][+182.13s] observation_raw | nodes=1
+[observe_complete step=3] nodes=1 elapsed=5.28s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[147][OK][step 4][+182.13s] observation_raw | nodes=1
+[148][OK][step 4][+182.30s] observation_fused | screen='SEARCH_RESULTS' retention=1.0
+[149][OK][step 4][+182.30s] observation | nodes=1
+[150][OK][step 4][+182.34s] forward_task
+[151][OK][step 4][+182.34s] world_patch | screen='dialog' retention=1.0
+[152][OK][step 4][+182.37s] goal_status
+[153][OK][step 4][+210.85s] decision_budget
+[154][OK][step 4][+210.86s] decision_engine
+[155][OK][step 4][+210.86s] planner_decision
+[156][OK][step 3][+210.89s] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[157][OK][step 4][+211.88s] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1182.0, 620.5) via entity bounds" backend='ax'
+[158][OK][step 4][+211.88s] step | message='transition settle' detail='0.6s'
+[observe_begin step=4] app=WhatsApp screenshot=True
+[159][OK][step 4][+212.49s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+[160][OK][step 4][+212.49s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=4 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[161][OK][step 4][+212.49s] observation_raw_source
+[observation_raw_source step=4 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[162][OK][step 4][+212.55s] observation_raw_source
+[observe_done_fused step=4] nodes=1 elapsed=3.10s
+[163][OK][step 4][+215.59s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=3.10s attempt=1/3"
+[164][OK][step 4][+215.59s] observation | nodes=1
+[observation_raw step=4]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[165][OK][step 4][+215.59s] observation_raw | nodes=1
+[observe_complete step=4] nodes=1 elapsed=3.10s
+[166][OK][step 4][+215.59s] observation_raw | nodes=1
+[167][OK][step 4][+215.75s] observation_fused | screen='SEARCH_RESULTS' retention=1.0
+[168][OK][step 4][+215.99s] step | message='transition poll' detail='0.3s'
+[169][OK][step 4][+216.47s] perception_settled
+[170][OK][step 4][+216.47s] post_transition_settled_view | screen='SEARCH_RESULTS'
+[171][OK][step 4][+216.47s] post_observation
+[172][OK][step 4][+216.47s] post_world_patch
+[173][OK][step 4][+216.50s] transition_eval
+[174][OK][step 4][+216.50s] transition_attribution
+[175][OK][step 4][+216.50s] verification
+[176][OK][step 4][+216.50s] transition_confirmation
+[177][OK][step 4][+216.53s] branch_explore
+[178][OK][step 5][+216.53s] progress_clock
+[observe_begin step=4] app=WhatsApp screenshot=True
+[179][OK][step 4][+216.53s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+[180][OK][step 4][+216.53s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=4 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[181][OK][step 4][+216.53s] observation_raw_source
+[observation_raw_source step=4 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[182][OK][step 4][+216.58s] observation_raw_source
+[observe_done_fused step=4] nodes=1 elapsed=2.69s
+[183][OK][step 4][+219.22s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=2.69s attempt=1/3"
+[184][OK][step 4][+219.22s] observation | nodes=1
+[observation_raw step=4]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[185][OK][step 4][+219.22s] observation_raw | nodes=1
+[observe_complete step=4] nodes=1 elapsed=2.69s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[186][OK][step 5][+219.22s] observation_raw | nodes=1
+[187][OK][step 5][+222.62s] observation_fused | screen='CONVERSATION' retention=1.0
+[188][OK][step 5][+222.62s] observation | nodes=1
+[189][OK][step 5][+222.66s] forward_task
+[190][OK][step 5][+222.66s] world_patch | screen='dialog' retention=1.0
+[191][OK][step 5][+222.68s] goal_status
+[192][OK][step 5][+311.67s] decision_budget
+[193][OK][step 5][+311.67s] decision_engine
+[194][OK][step 5][+311.67s] planner_decision
+[195][FAIL][step 5][+312.16s] execution | message="AX element not found for 'Forward'" backend='ax'
+[196][FAIL][step 5][+312.16s] transition_attribution
+[197][WARN][step 6][+312.17s] progress_clock
+[observe_begin step=5] app=WhatsApp screenshot=True
+[198][OK][step 5][+312.17s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=5] prefer_source=pyobjc_ax secondary=True
+[199][OK][step 5][+312.17s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=5 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[200][OK][step 5][+312.18s] observation_raw_source
+[observation_raw_source step=5 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+Auxiliary perception: auth error on ollama-cloud and no fallback available (tried: )
+Auxiliary perception: auth error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[201][OK][step 5][+312.23s] observation_raw_source
+[observe_done_fused step=5] nodes=1 elapsed=2.44s
+[202][OK][step 5][+314.60s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=2.44s attempt=1/3"
+[203][OK][step 5][+314.60s] observation | nodes=1
+[observation_raw step=5]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[204][OK][step 5][+314.60s] observation_raw | nodes=1
+[observe_complete step=5] nodes=1 elapsed=2.44s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[205][OK][step 6][+314.60s] observation_raw | nodes=1
+[206][OK][step 6][+314.74s] observation_fused | screen='CONVERSATION' retention=1.0
+[207][OK][step 6][+314.74s] observation | nodes=1
+[208][OK][step 6][+314.77s] forward_task
+[209][OK][step 6][+314.77s] world_patch | screen='dialog' retention=1.0
+[210][OK][step 6][+314.80s] goal_status
+[211][OK][step 6][+369.67s] decision_budget
+[212][OK][step 6][+369.67s] decision_engine
+[213][OK][step 6][+369.67s] planner_decision
+[214][FAIL][step 6][+369.67s] execution | message='unsupported action Hover' backend='ax'
+[215][FAIL][step 6][+369.67s] transition_attribution
+[216][WARN][step 7][+369.67s] progress_clock
+[observe_begin step=6] app=WhatsApp screenshot=True
+[217][OK][step 6][+369.67s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+[218][OK][step 6][+369.67s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=6 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[219][OK][step 6][+369.68s] observation_raw_source
+[observation_raw_source step=6 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[220][OK][step 6][+369.71s] observation_raw_source
+[observe_done_fused step=6] nodes=1 elapsed=2.24s
+[221][OK][step 6][+371.91s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=2.24s attempt=1/3"
+[222][OK][step 6][+371.91s] observation | nodes=1
+[observation_raw step=6]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[223][OK][step 6][+371.91s] observation_raw | nodes=1
+[observe_complete step=6] nodes=1 elapsed=2.24s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[224][OK][step 7][+371.92s] observation_raw | nodes=1
+[225][OK][step 7][+372.06s] observation_fused | screen='CONVERSATION' retention=1.0
+[226][OK][step 7][+372.06s] observation | nodes=1
+[227][OK][step 7][+372.09s] forward_task
+[228][OK][step 7][+372.09s] world_patch | screen='dialog' retention=1.0
+[229][OK][step 7][+372.11s] goal_status
+[230][OK][step 7][+426.42s] decision_budget
+[231][OK][step 7][+426.42s] decision_engine
+[232][OK][step 7][+426.42s] planner_decision
+[233][FAIL][step 7][+426.43s] execution | message='unsupported action ContextClick' backend='ax'
+[234][FAIL][step 7][+426.43s] transition_attribution
+[235][WARN][step 8][+426.43s] progress_clock
+[observe_begin step=7] app=WhatsApp screenshot=True
+[236][OK][step 7][+426.43s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=7] prefer_source=pyobjc_ax secondary=True
+[237][OK][step 7][+426.43s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=7 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[238][OK][step 7][+426.43s] observation_raw_source
+[observation_raw_source step=7 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[239][OK][step 7][+426.46s] observation_raw_source
+[observe_done_fused step=7] nodes=1 elapsed=3.34s
+[240][OK][step 7][+429.77s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=3.34s attempt=1/3"
+[241][OK][step 7][+429.77s] observation | nodes=1
+[observation_raw step=7]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[242][OK][step 7][+429.77s] observation_raw | nodes=1
+[observe_complete step=7] nodes=1 elapsed=3.34s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[243][OK][step 8][+429.77s] observation_raw | nodes=1
+[244][OK][step 8][+429.91s] observation_fused | screen='CONVERSATION' retention=1.0
+[245][OK][step 8][+429.91s] observation | nodes=1
+[246][OK][step 8][+429.95s] forward_task
+[247][OK][step 8][+429.95s] world_patch | screen='dialog' retention=1.0
+[248][OK][step 8][+429.97s] goal_status
+[249][OK][step 8][+476.24s] decision_budget
+[250][OK][step 8][+476.24s] decision_engine
+[251][OK][step 8][+476.25s] planner_decision
+[252][FAIL][step 8][+476.25s] execution | message='unsupported action Hover' backend='ax'
+[253][FAIL][step 8][+476.25s] transition_attribution
+[254][WARN][step 9][+476.25s] progress_clock
+[observe_begin step=8] app=WhatsApp screenshot=True
+[255][OK][step 8][+476.25s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=8] prefer_source=pyobjc_ax secondary=True
+[256][OK][step 8][+476.25s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=8 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[257][OK][step 8][+476.25s] observation_raw_source
+[observation_raw_source step=8 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[258][OK][step 8][+476.28s] observation_raw_source
+[observe_done_fused step=8] nodes=1 elapsed=6.77s
+[259][OK][step 8][+483.02s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=6.77s attempt=1/3"
+[260][OK][step 8][+483.02s] observation | nodes=1
+[observation_raw step=8]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[261][OK][step 8][+483.02s] observation_raw | nodes=1
+[observe_complete step=8] nodes=1 elapsed=6.77s
+Auxiliary decision_high_risk: connection error on ollama-cloud and no fallback available (tried: )
+Auxiliary decision_high_risk: connection error on ollama-cloud and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[262][OK][step 9][+483.02s] observation_raw | nodes=1
+[263][OK][step 9][+483.16s] observation_fused | screen='CONVERSATION' retention=1.0
+[264][OK][step 9][+483.17s] observation | nodes=1
+[265][OK][step 9][+483.20s] forward_task
+[266][OK][step 9][+483.20s] world_patch | screen='dialog' retention=1.0
+[267][OK][step 9][+483.22s] goal_status
+[268][OK][step 9][+540.94s] decision_budget
+[269][OK][step 9][+540.94s] decision_engine
+[270][OK][step 9][+540.95s] planner_decision
+[271][FAIL][step 9][+541.43s] execution | message="AX element not found for 'Forward'" backend='ax'
+[272][FAIL][step 9][+541.43s] transition_attribution
+[273][WARN][step 10][+541.43s] progress_clock
+[observe_begin step=9] app=WhatsApp screenshot=True
+[274][OK][step 9][+541.43s] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=9] prefer_source=pyobjc_ax secondary=True
+[275][OK][step 9][+541.43s] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observation_raw_source step=9 source=pyobjc_ax]
+app='WhatsApp' window='' source='pyobjc_ax'
+nodes=1 coverage=0.0 degraded=True screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[276][OK][step 9][+541.45s] observation_raw_source
+[observation_raw_source step=9 source=macapptree]
+app='WhatsApp' window='' source='macapptree'
+nodes=0 coverage=0.0 degraded=True screenshot=None
+[277][OK][step 9][+541.49s] observation_raw_source
+[observe_done_fused step=9] nodes=1 elapsed=2.82s
+[278][OK][step 9][+544.26s] step | message="sources=['pyobjc_ax'] agreement=0.7" detail="{'pyobjc_ax': 1, 'macapptree': 0} elapsed=2.82s attempt=1/3"
+[279][OK][step 9][+544.26s] observation | nodes=1
+[observation_raw step=9]
+app='WhatsApp' window='' source='fused:pyobjc_ax'
+nodes=1 coverage=0.1656 degraded=False screenshot=None
+raw_nodes=
+  01. role=AXUnknown label='AXUnknown' enabled=True bbox=(0.0, 0.0, 0.0, 0.0)
+[280][OK][step 9][+544.26s] observation_raw | nodes=1
+[observe_complete step=9] nodes=1 elapsed=2.82s
+Auxiliary: marking ollama-cloud/qwen3.5:397b unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 18:02:37.
+Auxiliary branch_strategy: fallback candidate ollama-cloud/qwen3.5:397b failed (Request timed out.) — trying next fallback
+Auxiliary branch_strategy: connection error on ollama-cloud/qwen3.5:397b and no fallback available (tried: )
+Auxiliary branch_strategy: connection error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event
+    data = self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 126, in read
+    with map_exceptions(exc_map):
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1005, in request
+    response = self._client.send(
+               ^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7775, in call_llm
+    _backoff = min(_TRANSIENT_RETRY_BACKOFF_BASE * (2.0 ** (_attempt - 1)), 8.0)
+^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 7769, in call_llm
+    transient_err,
+        ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_utils/_utils.py", line 286, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1204, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1023, in request
+    raise APITimeoutError(request=request) from err
+openai.APITimeoutError: Request timed out.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 596, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 531, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 1018, in run_goal_closed_loop
+    decision = eng.decide(
+               ^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/decision.py", line 913, in decide
+    branch_strategy, branch_strategy_trace = select_branch_strategy_with_llm(
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/decision_selector.py", line 449, in select_branch_strategy_with_llm
+    response = caller(
+               ^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/agent/auxiliary_client.py", line 8159, in call_llm
+    next_failed_provider = fb_label
+agent.auxiliary_client.LLMProviderExhaustedError: Auxiliary branch_strategy: connection error on auto and all fallbacks exhausted
+[281][OK][step 10][+544.26s] observation_raw | nodes=1
+[282][OK][step 10][+544.40s] observation_fused | screen='CONVERSATION' retention=1.0
+[283][OK][step 10][+544.40s] observation | nodes=1
+[284][OK][step 10][+544.43s] forward_task
+[285][OK][step 10][+544.43s] world_patch | screen='dialog' retention=1.0
+[286][OK][step 10][+544.45s] goal_status

@@ -1,0 +1,5 @@
+name: pollinations-provider
+kind: model-provider
+version: 1.0.0
+description: Pollinations — OpenAI-compatible free tiers
+author: Hermes Agent

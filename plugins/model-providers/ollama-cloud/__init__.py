@@ -81,9 +81,21 @@ class OllamaCloudProfile(ProviderProfile):
 ollama_cloud = OllamaCloudProfile(
     name="ollama-cloud",
     aliases=("ollama_cloud",),
+    display_name="Ollama Cloud",
+    description="Ollama Cloud — hosted open models (OpenAI-compatible)",
+    signup_url="https://ollama.com/settings/keys",
     default_aux_model="nemotron-3-nano:30b",
-    env_vars=("OLLAMA_API_KEY",),
+    env_vars=("OLLAMA_API_KEY", "OLLAMA_BASE_URL"),
     base_url="https://ollama.com/v1",
+    auth_type="api_key",
+    fallback_models=(
+        "nemotron-3-nano:30b",
+        "gpt-oss:20b-cloud",
+        "gpt-oss:120b-cloud",
+        "qwen3-coder:480b-cloud",
+        "deepseek-v3.1:671b-cloud",
+        "llama3.3:70b-cloud",
+    ),
 )
 
 register_provider(ollama_cloud)

@@ -1,0 +1,60 @@
+{
+  "meta": {
+    "app_name": "WhatsApp",
+    "window_name": "Kulvinder Ji",
+    "bundle_id": "net.whatsapp.WhatsApp",
+    "screen": "conversation",
+    "source_run_id": "wa-forward-live-1785441923",
+    "captured_at": "2026-07-31T01:35:21+05:30",
+    "scenario": "zarooratwala_forward_message_hover_reveal"
+  },
+  "states": [
+    {
+      "name": "before_hover",
+      "summary": "Conversation open with target message visible, but no contextual message actions exposed.",
+      "visible_actions": [
+        "open conversation",
+        "read message row",
+        "scroll timeline"
+      ],
+      "sample_visible_labels": [
+        "Kulvinder Ji",
+        "Zarooratwala",
+        "ZarooratWala - Fresh Groceries Delivered",
+        "https://www.zarooratwala.com/?utm_source=ig&utm_medium=social",
+        "Voice message"
+      ],
+      "hidden_actions_expected": [
+        "reply",
+        "react",
+        "star",
+        "pin",
+        "forward"
+      ]
+    },
+    {
+      "name": "after_hover",
+      "summary": "Hovering near the message card exposed the contextual action affordance.",
+      "visible_actions": [
+        "reply",
+        "react",
+        "star",
+        "pin",
+        "forward"
+      ],
+      "sample_visible_labels": [
+        "Reply",
+        "React",
+        "Star",
+        "Pin",
+        "Forward"
+      ],
+      "hidden_actions_expected": []
+    }
+  ],
+  "expected_behavior": {
+    "policy": "Use a latent affordance probe or message actions interaction before re-searching or switching to contact-card actions.",
+    "next_best_action": "probe_hover_or_context_menu_on_message_row",
+    "goal_effect": "Preserve source-conversation progress while revealing the forward path."
+  }
+}

@@ -1,0 +1,829 @@
+=== launch start 20260729_191336 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_191336.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_191336_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_191336_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[observe_done_fused step=0] nodes=206 elapsed=1.40s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 289, 'macapptree': 0} elapsed=1.40s attempt=1/3"
+[012][OK][step 0] observation | nodes=206
+[observe_complete step=0] nodes=206 elapsed=1.42s
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:24:38.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:24:53.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:25:23.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:25:38.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:25:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:26:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:26:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:26:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:26:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:27:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:27:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:27:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:27:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:28:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:28:25.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:28:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:28:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:29:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:29:25.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:29:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:29:56.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:30:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:30:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:30:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:30:56.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:31:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:31:27.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:31:42.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:31:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:32:12.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:32:27.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:32:42.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:32:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:33:12.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:33:28.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:33:43.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:33:58.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:34:13.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:34:28.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:34:43.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:34:51.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:35:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:35:22.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:35:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:36:07.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:36:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:36:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:36:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:37:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:37:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:37:38.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:37:53.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:38:08.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:38:23.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:38:38.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:38:53.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:39:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:39:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:39:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:39:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:40:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:40:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:40:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:40:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:41:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:41:25.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:41:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:41:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:42:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:42:25.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:42:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:42:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:43:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:43:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:43:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:43:56.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:44:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:44:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:44:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:44:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:45:05.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:45:20.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:45:35.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:45:50.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:46:05.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:46:20.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:46:50.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:47:05.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:47:21.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:47:36.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:47:51.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:48:06.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:48:21.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:48:36.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:48:51.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:49:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:49:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:49:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:49:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:50:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:50:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:50:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:50:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:51:08.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:51:23.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:51:38.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:51:53.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:52:08.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:52:23.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:52:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:52:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:53:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:53:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:53:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:53:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:54:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:54:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:54:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:54:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:55:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:55:18.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:55:33.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:55:48.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:56:03.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:56:18.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:56:33.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:56:48.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:57:04.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:57:34.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:57:49.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:58:04.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:58:19.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:58:34.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:58:49.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:59:04.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:59:20.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:59:35.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 19:59:50.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:00:05.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:00:20.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:00:35.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:00:50.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:01:05.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:01:21.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:01:36.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:01:51.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:02:06.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:02:21.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:02:36.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:02:51.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:03:06.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:03:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:03:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:03:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:04:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:04:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:04:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:04:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:05:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:05:23.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:05:31.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:05:46.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:06:01.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:06:16.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:06:31.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:06:46.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:07:01.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:07:16.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:07:31.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:07:47.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:08:17.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:08:32.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:08:47.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:09:02.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:09:17.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:09:32.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:09:47.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:10:02.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:10:18.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:10:33.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:10:48.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:11:03.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:11:18.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:11:33.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:11:48.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:12:03.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:12:19.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:12:34.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:12:49.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:13:04.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:13:19.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:13:34.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:13:49.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:14:04.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:14:20.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:14:35.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:14:50.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:15:05.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:15:20.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:15:35.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:15:43.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:15:58.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:16:14.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:16:29.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:16:44.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:16:59.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:17:14.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:17:29.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:17:44.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:17:59.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:18:14.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:18:30.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:19:00.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:19:15.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:19:30.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:19:45.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:20:00.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:20:15.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:20:30.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:20:45.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:21:01.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:21:16.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:21:31.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:21:46.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:22:01.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:22:16.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:22:31.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:22:47.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:23:02.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:23:17.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:23:32.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:23:47.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:24:02.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:24:17.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:24:32.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:24:47.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:25:03.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:25:18.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:25:33.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:25:48.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:25:56.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:26:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:26:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:26:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:26:56.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:27:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:27:27.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:27:42.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:27:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:28:12.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:28:27.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:28:42.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:28:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:29:12.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:29:42.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:29:58.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:30:13.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:30:28.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:30:43.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:30:58.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:31:13.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:31:28.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:31:43.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:31:58.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:32:14.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:32:29.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:32:44.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:32:59.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:33:14.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:33:29.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:33:44.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:33:59.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:34:15.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:34:30.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:34:45.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:35:00.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:35:15.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:35:30.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:35:45.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:36:00.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:36:09.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:36:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:36:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:36:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:37:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:37:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:37:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:37:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:38:09.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:38:25.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:38:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:38:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:39:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:39:25.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:39:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:39:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:40:25.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:40:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:40:56.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:41:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:41:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:41:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:41:56.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:42:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:42:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:42:42.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:42:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:43:12.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:43:27.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:43:42.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:43:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:44:12.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:44:28.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:44:43.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:44:58.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:45:13.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:45:28.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:45:43.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:45:58.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:46:14.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:46:22.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:46:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:46:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:47:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:47:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:47:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:47:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:48:08.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:48:23.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:48:38.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:48:53.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:49:08.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:49:23.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:49:38.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:49:53.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:50:08.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:50:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:50:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[2](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:51:09.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[2](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:51:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:51:39.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:51:54.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:52:09.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:52:24.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:52:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:52:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:53:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:53:25.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:53:40.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:53:55.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:54:10.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:54:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:54:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:54:56.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:55:11.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:55:26.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:55:41.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:55:57.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:56:12.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:56:27.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[0](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:56:35.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[0](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:56:50.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:57:05.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:57:21.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:57:36.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:57:51.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:58:06.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:58:21.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:58:36.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:58:51.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking fallback_chain[1](ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:59:06.
+Auxiliary content_object_resolution: fallback candidate fallback_chain[1](ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:59:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:59:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 20:59:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 21:00:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 21:00:22.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 21:00:37.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 21:00:52.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 21:01:07.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+Auxiliary: marking main-agent(ollama-remote) unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 21:01:23.
+Auxiliary content_object_resolution: fallback candidate main-agent(ollama-remote) failed (Request timed out.) — trying next fallback
+[013][OK][step 0] world_patch | screen='conversation' retention=1.0
+[014][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[015][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Auxiliary perception: fallback candidate ollama-remote failed (Request timed out.) — trying next fallback
+Auxiliary perception: connection error on ollama-remote and no fallback available (tried: )
+Auxiliary perception: connection error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=1/3'
+[018][FAIL][step 0] step | message='empty fused observe attempt=1/3' detail='elapsed=123.37s'
+[019][OK][step 0] step | message='retry after empty fused observe' detail='1.0s'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Auxiliary perception: fallback candidate ollama-remote failed (Request timed out.) — trying next fallback
+Auxiliary perception: connection error on ollama-remote and no fallback available (tried: )
+Auxiliary perception: connection error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[020][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=2/3'
+[021][FAIL][step 0] step | message='empty fused observe attempt=2/3' detail='elapsed=123.33s'
+[022][OK][step 0] step | message='retry after empty fused observe' detail='1.0s'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Traceback (most recent call last):
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/call_pallavi.py", line 226, in _live_observe
+    raise RuntimeError("strict perception required fused observation with nodes > 0")
+RuntimeError: strict perception required fused observation with nodes > 0
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 601, in run_forward_message
+    ok = run_forward_message_live(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 536, in run_forward_message_live
+    result = run_goal_closed_loop(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/controller.py", line 570, in run_goal_closed_loop
+    snap_pre = refresh_perception(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/agent/perception_cycle.py", line 338, in refresh_perception
+    observe(),
+    ^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/run_forward_message.py", line 524, in _observe
+    return _live_observe(
+           ^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/call_pallavi.py", line 230, in _live_observe
+    raise RuntimeError("strict perception required fused observation") from e
+RuntimeError: strict perception required fused observation
+[023][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True' detail='attempt=3/3'
+[024][FAIL][step 0] step | message='empty fused observe attempt=3/3' detail='elapsed=55.76s'

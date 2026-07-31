@@ -12,6 +12,7 @@ export type ChatMessage = {
   id: string
   role: SessionMessage['role']
   parts: ChatMessagePart[]
+  attribution?: string
   timestamp?: number
   pending?: boolean
   error?: string
@@ -517,6 +518,47 @@ function parseMaybeJsonObject(value: unknown): Record<string, unknown> {
   }
 }
 
+function toolResultAttribution(result: unknown): string {
+  const record = parseMaybeJsonObject(result)
+  const direct = firstStringField(record, ['provider_label', 'provider', 'source_label', 'source'])
+
+  if (direct) {
+    return direct
+  }
+
+  const nestedData = record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+    ? (record.data as Record<string, unknown>)
+    : null
+
+  if (!nestedData) {
+    return ''
+  }
+
+  return firstStringField(nestedData, ['provider_label', 'provider', 'source_label', 'source'])
+}
+
+function assistantMessageAttribution(message: ChatMessage): string {
+  if (message.attribution?.trim()) {
+    return message.attribution.trim()
+  }
+
+  for (let i = message.parts.length - 1; i >= 0; i -= 1) {
+    const part = message.parts[i]
+
+    if (part.type !== 'tool-call' || part.toolName !== 'web_search' || part.result === undefined) {
+      continue
+    }
+
+    const attribution = toolResultAttribution(part.result)
+
+    if (attribution) {
+      return attribution
+    }
+  }
+
+  return ''
+}
+
 function firstNonEmptyObject(...values: unknown[]): Record<string, unknown> {
   for (const value of values) {
     const parsed = parseMaybeJsonObject(value)
@@ -851,7 +893,13 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
   flushPendingTools(messages.length)
 
   const withoutGeneratedImageEchoes = result.map(message =>
-    message.role === 'assistant' ? { ...message, parts: dedupeGeneratedImageEchoesInParts(message.parts) } : message
+    message.role === 'assistant'
+      ? {
+          ...message,
+          parts: dedupeGeneratedImageEchoesInParts(message.parts),
+          attribution: assistantMessageAttribution(message)
+        }
+      : message
   )
 
   return withUniqueToolCallIds(

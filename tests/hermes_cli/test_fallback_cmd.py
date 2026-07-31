@@ -156,7 +156,7 @@ class TestListCommand:
         from hermes_cli.fallback_cmd import cmd_fallback_list
         cmd_fallback_list(types.SimpleNamespace())
         out = capsys.readouterr().out
-        assert "No fallback providers configured" in out
+        assert "No ordered model providers configured" in out
         assert "hermes fallback add" in out
 
     def test_list_with_entries(self, isolated_home, capsys):
@@ -170,7 +170,7 @@ class TestListCommand:
         from hermes_cli.fallback_cmd import cmd_fallback_list
         cmd_fallback_list(types.SimpleNamespace())
         out = capsys.readouterr().out
-        assert "Fallback chain (2 entries)" in out
+        assert "Ordered model chain (2 entries)" in out
         assert "anthropic/claude-sonnet-4.6" in out
         assert "Hermes-4" in out
         # Primary should be shown too
@@ -228,7 +228,7 @@ class TestAddCommand:
             }
         ]
         out = capsys.readouterr().out
-        assert "Added fallback" in out
+        assert "Added model entry" in out
 
     def test_add_rejects_duplicate(self, isolated_home, capsys):
         _write_config(isolated_home, {
@@ -253,7 +253,7 @@ class TestAddCommand:
         # Should still have exactly one entry
         assert len(cfg["fallback_providers"]) == 1
         out = capsys.readouterr().out
-        assert "already in the fallback chain" in out
+        assert "already in the ordered model chain" in out
 
     def test_add_rejects_same_as_primary(self, isolated_home, capsys):
         _write_config(isolated_home, {
@@ -457,14 +457,14 @@ class TestDispatcher:
         from hermes_cli.fallback_cmd import cmd_fallback
         cmd_fallback(types.SimpleNamespace(fallback_command=None))
         out = capsys.readouterr().out
-        assert "No fallback providers configured" in out
+        assert "No ordered model providers configured" in out
 
     def test_list_alias(self, isolated_home, capsys):
         _write_config(isolated_home, {})
         from hermes_cli.fallback_cmd import cmd_fallback
         cmd_fallback(types.SimpleNamespace(fallback_command="ls"))
         out = capsys.readouterr().out
-        assert "No fallback providers configured" in out
+        assert "No ordered model providers configured" in out
 
     def test_remove_alias(self, isolated_home, capsys):
         _write_config(isolated_home, {})

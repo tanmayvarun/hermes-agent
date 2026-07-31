@@ -1,0 +1,175 @@
+=== launch start 20260729_020651 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_020651.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_020651_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_020651_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=1.45s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 285, 'macapptree': 0} elapsed=1.45s"
+[012][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=1.47s
+Auxiliary: marking openrouter unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 02:18:30.
+Auxiliary perception: fallback candidate openrouter failed (Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1785283200000'}, 'limit_source': 'openrouter_free_tier_daily', 'remedy_hint': 'Wait for the daily reset (see X-RateLimit-Reset), or purchase credits to raise your free-model daily limit.', 'provider_name': None}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+[013][OK][step 0] world_patch | screen='conversation' retention=1.0
+[014][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[015][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=1.34s
+[018][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 287, 'macapptree': 0} elapsed=1.34s"
+[019][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=1.34s
+[020][OK][step 1] observation | nodes=207
+[021][OK][step 1] forward_task
+[022][OK][step 1] world_patch | screen='dialog' retention=1.0
+[023][OK][step 1] fusion_conflicts
+[024][OK][step 1] goal_status
+[025][OK][step 1] decision_engine
+[026][OK][step 1] planner_decision
+[027][OK][step 1] execution | message='typed \'Kulvinder\' into search field label=\'Search\' AXValue=\'Kulvinder\' open=\'Cmd+F search shortcut\' evidence="AXStaticText title=\'Kulvinder\' desc=\'Search\'" attempts=[\'open=Cmd+F search shortcut\', \'paste=True\'] submit=False' backend='ax'
+[028][OK][step 1] step | message='transition settle' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[029][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[030][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=221 elapsed=1.28s
+[031][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 318, 'macapptree': 0} elapsed=1.28s"
+[032][OK][step 1] observation | nodes=221
+[observe_complete step=1] nodes=221 elapsed=1.28s
+[033][OK][step 1] step | message='transition poll' detail='0.3s'
+[034][OK][step 1] perception_settled
+[035][OK][step 1] post_observation
+[036][OK][step 1] post_world_patch
+[037][OK][step 1] transition_eval
+[038][OK][step 1] transition_attribution
+[039][OK][step 1] verification
+[040][OK][step 1] branch_explore
+[041][OK][step 1] search_hypothesis_advance_blocked
+[observe_begin step=1] app=WhatsApp screenshot=True
+[042][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[043][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=181 elapsed=0.45s
+[044][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 234, 'macapptree': 0} elapsed=0.45s"
+[045][OK][step 1] observation | nodes=181
+[observe_complete step=1] nodes=181 elapsed=0.46s
+[046][OK][step 2] observation | nodes=181
+[047][OK][step 2] forward_task
+[048][OK][step 2] world_patch | screen='dialog' retention=0.8190045248868778
+[049][OK][step 2] goal_status
+[050][OK][step 2] decision_engine
+[051][OK][step 2] planner_decision
+[052][OK][step 2] execution | message='pyautogui scroll' backend='pyautogui'
+[053][OK][step 2] step | message='transition settle' detail='0.6s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[054][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+Auxiliary: marking openrouter unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 02:28:57.
+Auxiliary perception: fallback candidate openrouter failed (Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1785283200000'}, 'limit_source': 'openrouter_free_tier_daily', 'remedy_hint': 'Wait for the daily reset (see X-RateLimit-Reset), or purchase credits to raise your free-model daily limit.', 'provider_name': None}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+[055][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=2] fallback=pyobjc_ax
+[056][OK][step 2] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=2] nodes=1 elapsed=0.00s
+[057][OK][step 2] step | message='nodes=1 elapsed=0.00s'
+[058][OK][step 2] observation | nodes=1
+[observe_complete step=2] nodes=1 elapsed=96.97s
+[059][OK][step 2] step | message='transition poll' detail='0.3s'
+[060][OK][step 2] perception_retry
+[061][OK][step 2] step | message='perception retry (fusion_agreement_low)' detail='1.2s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[062][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[063][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=2] fallback=pyobjc_ax
+[064][OK][step 2] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=2] nodes=1 elapsed=0.01s
+[065][OK][step 2] step | message='nodes=1 elapsed=0.01s'
+[066][OK][step 2] observation | nodes=1
+[observe_complete step=2] nodes=1 elapsed=97.33s
+[067][FAIL][step 2] perception_unsettled
+[068][OK][step 2] post_observation
+[069][OK][step 2] post_world_patch
+[070][OK][step 2] transition_eval
+[071][OK][step 2] transition_attribution
+[072][OK][step 2] verification
+[073][OK][step 2] branch_explore
+[observe_begin step=2] app=WhatsApp screenshot=True
+[074][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[075][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=2] fallback=pyobjc_ax
+[076][OK][step 2] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=2] nodes=1 elapsed=0.02s
+[077][OK][step 2] step | message='nodes=1 elapsed=0.02s'
+[078][OK][step 2] observation | nodes=1
+[observe_complete step=2] nodes=1 elapsed=97.75s
+[079][OK][step 3] observation | nodes=1
+[080][OK][step 3] forward_task
+[081][OK][step 3] world_patch | screen='dialog' retention=1.0
+[082][OK][step 3] goal_status
+[083][OK][step 3] decision_engine
+[084][OK][step 3] planner_decision
+[085][OK][step 3] execution | message='pyautogui scroll' backend='pyautogui'
+[086][OK][step 3] step | message='transition settle' detail='0.6s'
+[observe_begin step=3] app=WhatsApp screenshot=True
+[087][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[088][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=3] fallback=pyobjc_ax
+[089][OK][step 3] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=3] nodes=1 elapsed=0.01s
+[090][OK][step 3] step | message='nodes=1 elapsed=0.01s'
+[091][OK][step 3] observation | nodes=1
+[observe_complete step=3] nodes=1 elapsed=98.93s
+[092][OK][step 3] step | message='transition poll' detail='0.3s'
+[093][OK][step 3] perception_retry
+[094][OK][step 3] step | message='perception retry (fusion_agreement_low)' detail='1.2s'
+[observe_begin step=3] app=WhatsApp screenshot=True
+[095][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[096][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=3] fallback=pyobjc_ax
+[097][OK][step 3] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=3] nodes=1 elapsed=0.02s
+[098][OK][step 3] step | message='nodes=1 elapsed=0.02s'
+[099][OK][step 3] observation | nodes=1
+[observe_complete step=3] nodes=1 elapsed=96.47s
+[100][FAIL][step 3] perception_unsettled
+[101][OK][step 3] post_observation
+[102][OK][step 3] post_world_patch
+[103][OK][step 3] transition_eval
+[104][OK][step 3] transition_attribution
+[105][OK][step 3] verification
+[106][OK][step 3] branch_explore
+[observe_begin step=3] app=WhatsApp screenshot=True
+[107][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[108][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_try_pyobjc step=3] fallback=pyobjc_ax
+[109][OK][step 3] step | message='fallback=pyobjc_ax'
+[observe_done_pyobjc step=3] nodes=1 elapsed=0.00s
+[110][OK][step 3] step | message='nodes=1 elapsed=0.00s'
+[111][OK][step 3] observation | nodes=1
+[observe_complete step=3] nodes=1 elapsed=96.13s
+[112][OK][step 4] observation | nodes=1
+[113][OK][step 4] forward_task
+[114][OK][step 4] world_patch | screen='dialog' retention=1.0
+[115][OK][step 4] goal_status
+[116][FAIL][step 4] decision_engine
+[117][FAIL][step 4] planner_decision
+[118][OK] world_summary
+[119][FAIL] check | message='fail' expected="forward 'zarooratwala' from 'Kulvinder' to 'Pallavi'"
+[120][FAIL] run_end | detail="closed_loop ok=False reason='DecisionEngine produced no valid action' iterations=3"
+OK=False LOG=plugin/experiments/runs/forward_zarooratwala_live_20260729_020651.jsonl

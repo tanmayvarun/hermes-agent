@@ -256,6 +256,7 @@ export interface HermesConfig {
   display?: {
     personality?: string
     skin?: string
+    show_attribution?: boolean
   }
   terminal?: {
     cwd?: string
@@ -275,6 +276,8 @@ export interface ModelInfoResponse {
   auto_context_length?: number
   capabilities?: Record<string, unknown>
   config_context_length?: number
+  contract_id?: string
+  contract_source?: string
   effective_context_length?: number
   model: string
   provider: string
@@ -415,6 +418,7 @@ export interface SessionMessage {
   codex_reasoning_items?: unknown
   content: unknown
   context?: unknown
+  attribution?: string
   name?: string
   reasoning?: null | string
   reasoning_content?: null | string

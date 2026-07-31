@@ -118,6 +118,7 @@ CONFIGURABLE_TOOLSETS = [
     ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
     ("yuanbao",          "🤖 Yuanbao",                  "group info, member queries, DM"),
     ("computer_use",     "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"),
+    ("plugin_world",     "🧩 Plugin World Model (macOS AX)", "WhatsApp call + world_observe/plan/act via Accessibility"),
 ]
 
 
@@ -2378,8 +2379,8 @@ def _plugin_web_search_providers() -> list[dict]:
     marker) so the picker behaves identically whether a provider is
     hardcoded or plugin-registered.
 
-    After PR #25182, all seven web providers (brave-free, ddgs, searxng,
-    exa, parallel, tavily, firecrawl) are plugins; this helper is the sole
+    After PR #25182, all bundled web providers (google-search, brave-free,
+    ddgs, searxng, exa, parallel, tavily, firecrawl, xai) are plugins; this helper is the sole
     source of provider rows for the Web Search & Extract category.
     """
     try:

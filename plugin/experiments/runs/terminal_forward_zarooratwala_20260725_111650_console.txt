@@ -1,0 +1,442 @@
+=== host=-zsh pid=78240 TIMESTAMP=20260725_111650 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== prompt: find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi ===
+AXIsProcessTrusted= True — continuing
+=== starting forward-message live ===
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=False
+[009][OK][step 0] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=260 elapsed=3.78s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=3.78s"
+[012][OK][step 0] observation | nodes=260
+[observe_complete step=0] nodes=260 elapsed=3.80s
+[013][OK][step 0] world_patch | screen='conversation' retention=1.0
+[014][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[observe_begin step=0] app=WhatsApp screenshot=False
+[015][OK][step 0] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[016][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=260 elapsed=6.30s
+[017][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=6.30s"
+[018][OK][step 0] observation | nodes=260
+[observe_complete step=0] nodes=260 elapsed=6.31s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:27:09.
+[019][OK][step 1] observation | nodes=260
+[020][OK][step 1] forward_task
+[021][OK][step 1] world_patch | screen='conversation' retention=1.0
+[022][OK][step 1] fusion_conflicts
+[023][OK][step 1] goal_status
+[024][OK][step 1] decision_engine
+[025][OK][step 1] planner_decision
+[026][OK][step 0] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[027][OK][step 1] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1077.0, 706.25) via entity bounds" backend='ax'
+[028][OK][step 1] step | message='transition settle' detail='0.6s'
+[observe_begin step=1] app=WhatsApp screenshot=False
+[029][OK][step 1] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[030][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=260 elapsed=5.23s
+[031][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=5.23s"
+[032][OK][step 1] observation | nodes=260
+[observe_complete step=1] nodes=260 elapsed=5.23s
+[033][OK][step 1] step | message='transition poll' detail='0.3s'
+[034][OK][step 1] perception_settled
+[035][OK][step 1] post_observation
+[036][OK][step 1] post_world_patch
+[037][OK][step 1] transition_eval
+[038][OK][step 1] transition_attribution
+[039][OK][step 1] verification
+[040][OK][step 1] branch_explore
+[observe_begin step=1] app=WhatsApp screenshot=False
+[041][OK][step 1] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[042][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=260 elapsed=4.34s
+[043][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=4.34s"
+[044][OK][step 1] observation | nodes=260
+[observe_complete step=1] nodes=260 elapsed=4.34s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:27:44.
+[045][OK][step 2] observation | nodes=260
+[046][OK][step 2] forward_task
+[047][OK][step 2] world_patch | screen='conversation' retention=1.0
+[048][OK][step 2] fusion_conflicts
+[049][OK][step 2] goal_status
+[050][OK][step 2] decision_engine
+[051][OK][step 2] planner_decision
+[052][OK][step 2] execution | message="click 'Forward' center=None code=0" backend='ax'
+[053][OK][step 2] step | message='transition settle' detail='0.6s'
+[observe_begin step=2] app=WhatsApp screenshot=False
+[054][OK][step 2] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[055][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=2] nodes=260 elapsed=3.88s
+[056][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=3.88s"
+[057][OK][step 2] observation | nodes=260
+[observe_complete step=2] nodes=260 elapsed=3.88s
+[058][OK][step 2] step | message='transition poll' detail='0.3s'
+[059][OK][step 2] perception_settled
+[060][OK][step 2] post_observation
+[061][OK][step 2] post_world_patch
+[062][FAIL][step 2] transition_eval
+[063][OK][step 2] transition_attribution
+[064][FAIL][step 2] verification
+[065][FAIL][step 2] forward_predicate_rollback | expected='DestinationPickerVisible'
+[observe_begin step=2] app=WhatsApp screenshot=False
+[066][OK][step 2] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[067][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=2] nodes=260 elapsed=6.67s
+[068][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=6.67s"
+[069][OK][step 2] observation | nodes=260
+[observe_complete step=2] nodes=260 elapsed=6.67s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:28:12.
+[070][OK][step 3] observation | nodes=260
+[071][OK][step 3] forward_task
+[072][OK][step 3] world_patch | screen='conversation' retention=1.0
+[073][OK][step 3] fusion_conflicts
+[074][OK][step 3] goal_status
+[075][OK][step 3] decision_engine
+[076][OK][step 3] planner_decision
+[077][OK][step 2] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[078][OK][step 3] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1077.0, 706.25) via entity bounds" backend='ax'
+[079][OK][step 3] step | message='transition settle' detail='0.6s'
+[observe_begin step=3] app=WhatsApp screenshot=False
+[080][OK][step 3] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[081][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=3] nodes=260 elapsed=7.60s
+[082][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=7.60s"
+[083][OK][step 3] observation | nodes=260
+[observe_complete step=3] nodes=260 elapsed=7.60s
+[084][OK][step 3] step | message='transition poll' detail='0.3s'
+[085][OK][step 3] perception_settled
+[086][OK][step 3] post_observation
+[087][OK][step 3] post_world_patch
+[088][OK][step 3] transition_eval
+[089][OK][step 3] transition_attribution
+[090][OK][step 3] verification
+[091][OK][step 3] branch_explore
+[092][OK][step 3] search_hypothesis_advance_blocked
+[observe_begin step=3] app=WhatsApp screenshot=False
+[093][OK][step 3] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[094][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=3] nodes=260 elapsed=7.30s
+[095][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=7.30s"
+[096][OK][step 3] observation | nodes=260
+[observe_complete step=3] nodes=260 elapsed=7.30s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:28:49.
+[097][OK][step 4] observation | nodes=260
+[098][OK][step 4] forward_task
+[099][OK][step 4] world_patch | screen='conversation' retention=1.0
+[100][OK][step 4] fusion_conflicts
+[101][OK][step 4] goal_status
+[102][OK][step 4] decision_engine
+[103][OK][step 4] planner_decision
+[104][OK][step 3] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[105][OK][step 4] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1077.0, 706.25) via entity bounds" backend='ax'
+[106][OK][step 4] step | message='transition settle' detail='0.6s'
+[observe_begin step=4] app=WhatsApp screenshot=False
+[107][OK][step 4] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[108][OK][step 4] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=4] nodes=260 elapsed=7.25s
+[109][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=7.26s"
+[110][OK][step 4] observation | nodes=260
+[observe_complete step=4] nodes=260 elapsed=7.26s
+[111][OK][step 4] step | message='transition poll' detail='0.3s'
+[112][OK][step 4] perception_settled
+[113][OK][step 4] post_observation
+[114][OK][step 4] post_world_patch
+[115][OK][step 4] transition_eval
+[116][OK][step 4] transition_attribution
+[117][OK][step 4] verification
+[118][OK][step 4] branch_explore
+[observe_begin step=4] app=WhatsApp screenshot=False
+[119][OK][step 4] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[120][OK][step 4] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=4] nodes=260 elapsed=4.49s
+[121][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=4.49s"
+[122][OK][step 4] observation | nodes=260
+[observe_complete step=4] nodes=260 elapsed=4.49s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:30:10.
+[123][OK][step 5] observation | nodes=260
+[124][OK][step 5] forward_task
+[125][OK][step 5] world_patch | screen='conversation' retention=1.0
+[126][OK][step 5] fusion_conflicts
+[127][OK][step 5] goal_status
+[128][OK][step 5] decision_engine
+[129][OK][step 5] planner_decision
+[130][OK][step 4] click_target | semantic='Quoted message, Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered'
+[131][OK][step 5] execution | message="click 'Quoted message, Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered' center=(1074.0, 964.0) via entity bounds" backend='ax'
+[132][OK][step 5] step | message='transition settle' detail='0.6s'
+[observe_begin step=5] app=WhatsApp screenshot=False
+[133][OK][step 5] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=5] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[134][OK][step 5] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=5] nodes=260 elapsed=4.43s
+[135][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=4.43s"
+[136][OK][step 5] observation | nodes=260
+[observe_complete step=5] nodes=260 elapsed=4.43s
+[137][OK][step 5] step | message='transition poll' detail='0.3s'
+[138][OK][step 5] perception_settled
+[139][OK][step 5] post_observation
+[140][OK][step 5] post_world_patch
+[141][OK][step 5] transition_eval
+[142][OK][step 5] transition_attribution
+[143][OK][step 5] verification
+[144][OK][step 5] branch_explore
+[observe_begin step=5] app=WhatsApp screenshot=False
+[145][OK][step 5] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=5] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[146][OK][step 5] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=5] nodes=260 elapsed=5.49s
+[147][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=5.49s"
+[148][OK][step 5] observation | nodes=260
+[observe_complete step=5] nodes=260 elapsed=5.49s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:30:37.
+[149][OK][step 6] observation | nodes=260
+[150][OK][step 6] forward_task
+[151][OK][step 6] world_patch | screen='conversation' retention=1.0
+[152][OK][step 6] fusion_conflicts
+[153][OK][step 6] goal_status
+[154][OK][step 6] decision_engine
+[155][OK][step 6] planner_decision
+[156][OK][step 5] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[157][OK][step 6] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1077.0, 706.25) via entity bounds" backend='ax'
+[158][OK][step 6] step | message='transition settle' detail='0.6s'
+[observe_begin step=6] app=WhatsApp screenshot=False
+[159][OK][step 6] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[160][OK][step 6] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=6] nodes=260 elapsed=6.85s
+[161][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=6.85s"
+[162][OK][step 6] observation | nodes=260
+[observe_complete step=6] nodes=260 elapsed=6.85s
+[163][OK][step 6] step | message='transition poll' detail='0.3s'
+[164][OK][step 6] perception_settled
+[165][OK][step 6] post_observation
+[166][OK][step 6] post_world_patch
+[167][OK][step 6] transition_eval
+[168][OK][step 6] transition_attribution
+[169][OK][step 6] verification
+[170][OK][step 6] branch_explore
+[171][OK][step 6] search_hypothesis_advance_blocked
+[observe_begin step=6] app=WhatsApp screenshot=False
+[172][OK][step 6] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[173][OK][step 6] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=6] nodes=260 elapsed=9.79s
+[174][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=9.80s"
+[175][OK][step 6] observation | nodes=260
+[observe_complete step=6] nodes=260 elapsed=9.80s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:31:30.
+[176][OK][step 7] observation | nodes=260
+[177][OK][step 7] forward_task
+[178][OK][step 7] world_patch | screen='conversation' retention=1.0
+[179][OK][step 7] fusion_conflicts
+[180][OK][step 7] goal_status
+[181][OK][step 7] decision_engine
+[182][OK][step 7] planner_decision
+[183][OK][step 6] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[184][OK][step 7] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1077.0, 706.25) via entity bounds" backend='ax'
+[185][OK][step 7] step | message='transition settle' detail='0.6s'
+[observe_begin step=7] app=WhatsApp screenshot=False
+[186][OK][step 7] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=7] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[187][OK][step 7] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=7] nodes=260 elapsed=6.90s
+[188][OK][step 7] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=6.90s"
+[189][OK][step 7] observation | nodes=260
+[observe_complete step=7] nodes=260 elapsed=6.90s
+[190][OK][step 7] step | message='transition poll' detail='0.3s'
+[191][OK][step 7] perception_settled
+[192][OK][step 7] post_observation
+[193][OK][step 7] post_world_patch
+[194][OK][step 7] transition_eval
+[195][OK][step 7] transition_attribution
+[196][OK][step 7] verification
+[197][OK][step 7] branch_explore
+[observe_begin step=7] app=WhatsApp screenshot=False
+[198][OK][step 7] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=7] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[199][OK][step 7] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=7] nodes=260 elapsed=10.02s
+[200][OK][step 7] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=10.02s"
+[201][OK][step 7] observation | nodes=260
+[observe_complete step=7] nodes=260 elapsed=10.03s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:31:52.
+[202][OK][step 8] observation | nodes=260
+[203][OK][step 8] forward_task
+[204][OK][step 8] world_patch | screen='conversation' retention=1.0
+[205][OK][step 8] fusion_conflicts
+[206][OK][step 8] goal_status
+[207][OK][step 8] decision_engine
+[208][OK][step 8] planner_decision
+[209][OK][step 7] click_target | semantic='Quoted message, Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered'
+[210][OK][step 8] execution | message="click 'Quoted message, Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered' center=(1074.0, 964.0) via entity bounds" backend='ax'
+[211][OK][step 8] step | message='transition settle' detail='0.6s'
+[observe_begin step=8] app=WhatsApp screenshot=False
+[212][OK][step 8] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=8] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[213][OK][step 8] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=8] nodes=260 elapsed=8.55s
+[214][OK][step 8] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=8.55s"
+[215][OK][step 8] observation | nodes=260
+[observe_complete step=8] nodes=260 elapsed=8.55s
+[216][OK][step 8] step | message='transition poll' detail='0.3s'
+[217][OK][step 8] perception_settled
+[218][OK][step 8] post_observation
+[219][OK][step 8] post_world_patch
+[220][OK][step 8] transition_eval
+[221][OK][step 8] transition_attribution
+[222][OK][step 8] verification
+[223][OK][step 8] branch_explore
+[observe_begin step=8] app=WhatsApp screenshot=False
+[224][OK][step 8] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=8] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[225][OK][step 8] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=8] nodes=260 elapsed=8.33s
+[226][OK][step 8] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=8.33s"
+[227][OK][step 8] observation | nodes=260
+[observe_complete step=8] nodes=260 elapsed=8.33s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:32:15.
+[228][OK][step 9] observation | nodes=260
+[229][OK][step 9] forward_task
+[230][OK][step 9] world_patch | screen='conversation' retention=1.0
+[231][OK][step 9] fusion_conflicts
+[232][OK][step 9] goal_status
+[233][OK][step 9] decision_engine
+[234][OK][step 9] planner_decision
+[235][OK][step 8] click_target | semantic='Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered'
+[236][OK][step 9] execution | message="click 'Your message, Link, https://www.zarooratwala.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdgTO4XNleHRuA2FlbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTI0MjcAAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ, ZarooratWala – Fresh Groceries Delivered, 23Julyat5:29 PM, Sent to Kulvinder Ji, Delivered' center=(1077.0, 706.25) via entity bounds" backend='ax'
+[237][OK][step 9] step | message='transition settle' detail='0.6s'
+[observe_begin step=9] app=WhatsApp screenshot=False
+[238][OK][step 9] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=9] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[239][OK][step 9] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=9] nodes=261 elapsed=8.70s
+[240][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 368, 'macapptree': 111} elapsed=8.70s"
+[241][OK][step 9] observation | nodes=261
+[observe_complete step=9] nodes=261 elapsed=8.70s
+[242][OK][step 9] step | message='transition poll' detail='0.3s'
+[243][OK][step 9] perception_settled
+[244][OK][step 9] post_observation
+[245][OK][step 9] post_world_patch
+[246][OK][step 9] transition_eval
+[247][OK][step 9] transition_attribution
+[248][OK][step 9] verification
+[249][OK][step 9] branch_explore
+[250][OK][step 9] search_hypothesis_advance_blocked
+[observe_begin step=9] app=WhatsApp screenshot=False
+[251][OK][step 9] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=9] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[252][OK][step 9] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=9] nodes=260 elapsed=6.86s
+[253][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=6.86s"
+[254][OK][step 9] observation | nodes=260
+[observe_complete step=9] nodes=260 elapsed=6.87s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:32:36.
+[255][OK][step 10] observation | nodes=260
+[256][OK][step 10] forward_task
+[257][OK][step 10] world_patch | screen='conversation' retention=0.9961685823754789
+[258][OK][step 10] fusion_conflicts
+[259][OK][step 10] goal_status
+[260][OK][step 10] decision_engine
+[261][OK][step 10] planner_decision
+[262][OK][step 10] step | message='wait / re-perceive' detail='1.2s'
+[observe_begin step=10] app=WhatsApp screenshot=False
+[263][OK][step 10] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=10] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[264][OK][step 10] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=10] nodes=260 elapsed=4.83s
+[265][OK][step 10] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=4.83s"
+[266][OK][step 10] observation | nodes=260
+[observe_complete step=10] nodes=260 elapsed=4.84s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:32:46.
+[267][OK][step 11] observation | nodes=260
+[268][OK][step 11] forward_task
+[269][OK][step 11] world_patch | screen='conversation' retention=0.9961685823754789
+[270][OK][step 11] fusion_conflicts
+[271][OK][step 11] goal_status
+[272][OK][step 11] decision_engine
+[273][OK][step 11] planner_decision
+[274][OK][step 11] step | message='wait / re-perceive' detail='1.2s'
+[observe_begin step=11] app=WhatsApp screenshot=False
+[275][OK][step 11] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=11] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[276][OK][step 11] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=11] nodes=260 elapsed=6.52s
+[277][OK][step 11] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.9859154929577465" detail="{'pyobjc_ax': 367, 'macapptree': 111} elapsed=6.52s"
+[278][OK][step 11] observation | nodes=260
+[observe_complete step=11] nodes=260 elapsed=6.52s
+Auxiliary: marking auto unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 11:32:57.
+[279][OK][step 12] observation | nodes=260
+[280][OK][step 12] forward_task
+[281][OK][step 12] world_patch | screen='conversation' retention=0.9961685823754789
+[282][OK][step 12] fusion_conflicts
+[283][OK][step 12] goal_status
+[284][FAIL][step 12] decision_engine
+[285][FAIL][step 12] planner_decision
+[286][OK] world_summary
+[287][FAIL] check | message='fail' expected="forward 'zarooratwala' from 'Kulvinder' to 'Pallavi'"
+[288][FAIL] run_end | detail="closed_loop ok=False reason='DecisionEngine produced no valid action' iterations=11"
+
+=== DONE ok=False live=True ===
+JSONL: plugin/experiments/runs/forward_zarooratwala_live.jsonl
+Summary: plugin/experiments/runs/forward_zarooratwala_live.md
+EXIT_CODE=1

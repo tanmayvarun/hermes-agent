@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
 import { notifyError } from '@/store/notifications'
 import { $voicePlayback } from '@/store/voice-playback'
+import { $showAttribution } from '@/store/session'
 
 interface MessageActionProps {
   messageId: string
@@ -65,6 +66,13 @@ export const AssistantMessage: FC<{
   const isRunning = messageStatus === 'running'
   const isPlaceholder = useAuiState(s => s.message.status?.type === 'running' && s.message.content.length === 0)
   const hasVisibleText = useAuiState(s => contentHasVisibleText(s.message.content))
+  const showAttribution = useStore($showAttribution)
+  const sourceAttribution = useAuiState(s => {
+    const custom = s.message.metadata?.custom as Record<string, unknown> | undefined
+    const label = custom && typeof custom.attribution === 'string' ? custom.attribution.trim() : ''
+
+    return label
+  })
 
   // Preview targets only materialize once the turn completes — while running
   // the selector returns '' (stable), so per-token flushes skip the regex
@@ -101,6 +109,13 @@ export const AssistantMessage: FC<{
         className="wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground"
         data-slot="aui_assistant-message-content"
       >
+        {showAttribution && sourceAttribution && (
+          <div className="mb-2 flex justify-end">
+            <span className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--dt-foreground)_18%,transparent)] bg-[color-mix(in_srgb,var(--dt-foreground)_5%,transparent)] px-2 py-0.5 text-[0.68rem] font-medium tracking-wide text-[color-mix(in_srgb,var(--dt-foreground)_68%,var(--ui-text-secondary))]">
+              Source · {sourceAttribution}
+            </span>
+          </div>
+        )}
         {/* Todos render in the composer status stack now, not inline. */}
         <MessagePrimitive.Parts components={MESSAGE_PARTS_COMPONENTS} />
         {isRunning && <StreamStallIndicator />}

@@ -2027,15 +2027,82 @@ PATCH_SCHEMA = {
     },
 }
 
+LOCATE_FILE_SCHEMA = {
+    "name": "locate_file",
+    "description": (
+        "Find a file by natural-language or filename-ish query using a staged search engine "
+        "(filename → scoped home dirs → content). Prefer this over raw search_files loops when "
+        "the user asks to find/locate a specific document or file. Returns ranked candidates with "
+        "confidence scores and stops early on a strong filename hit. Use search_files only if "
+        "locate_file returns empty and the user asks to dig deeper, or for coding grep-style work."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "Natural language or filename-ish query, e.g. "
+                    "'Plugin 3.3kW Technical Specifications V3'"
+                ),
+            },
+            "roots": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional search roots. Default: ['.', '~/Downloads', '~/Desktop', "
+                    "'~/Documents', '~']. Prefer leaving unset for find-on-this-machine intents."
+                ),
+            },
+            "extensions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional extensions to prefer (e.g. ['pdf', 'docx']). Inferred from the "
+                    "query when omitted (specs/brochure → pdf/docx)."
+                ),
+            },
+            "max_candidates": {
+                "type": "integer",
+                "description": "Maximum candidates to return (default 5)",
+                "default": 5,
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+
 SEARCH_FILES_SCHEMA = {
     "name": "search_files",
-    "description": "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. Ripgrep-backed, faster than shell equivalents.\n\nContent search (target='content'): Regex search inside files. Output modes: full matches with line numbers, file paths only, or match counts.\n\nFile search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use this instead of ls — results sorted by modification time.",
+    "description": (
+        "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. "
+        "Ripgrep-backed, faster than shell equivalents. For 'find this file' intents prefer "
+        "locate_file first (staged filename/scoped/content with confidence early-stop).\n\n"
+        "Content search (target='content'): Regex search inside files. Output modes: full matches with "
+        "line numbers, file paths only, or match counts.\n\n"
+        "File search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use "
+        "this instead of ls — results sorted by modification time.\n\n"
+        "Search scope: default path='.' is the session working directory only. To search outside the "
+        "project (home, Downloads, Desktop, Documents, or computer-wide), pass an absolute path — "
+        "e.g. '~', '~/Downloads', '/Users/<you>', or '/' . Prefer '~' / common home folders before "
+        "'/' (full-disk searches are slow). Absolute paths are allowed; credentials/env secrets in "
+        "results are still filtered."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"},
             "target": {"type": "string", "enum": ["content", "files"], "description": "'content' searches inside file contents, 'files' searches for files by name", "default": "content"},
-            "path": {"type": "string", "description": "Directory or file to search in (default: current working directory)", "default": "."},
+            "path": {
+                "type": "string",
+                "description": (
+                    "Directory or file to search in. Default '.' = current working directory only. "
+                    "Use absolute paths for broader scope: '~' (home), '~/Downloads', '~/Desktop', "
+                    "'~/Documents', or '/' for computer-wide (prefer home first)."
+                ),
+                "default": ".",
+            },
             "file_glob": {"type": "string", "description": "Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)"},
             "limit": {"type": "integer", "description": "Maximum number of results to return (default: 50)", "default": 50},
             "offset": {"type": "integer", "description": "Skip first N results for pagination (default: 0)", "default": 0},
@@ -2101,7 +2168,21 @@ def _handle_search_files(args, **kw):
         output_mode=args.get("output_mode", "content"), context=args.get("context", 0), task_id=tid)
 
 
+def _handle_locate_file(args, **kw):
+    tid = kw.get("task_id") or "default"
+    from tools.locate_file import locate_file_tool
+
+    return locate_file_tool(
+        query=args.get("query", ""),
+        roots=args.get("roots"),
+        extensions=args.get("extensions"),
+        max_candidates=args.get("max_candidates", 5),
+        task_id=tid,
+    )
+
+
 registry.register(name="read_file", toolset="file", schema=READ_FILE_SCHEMA, handler=_handle_read_file, check_fn=_check_file_reqs, emoji="📖", max_result_size_chars=100_000)
 registry.register(name="write_file", toolset="file", schema=WRITE_FILE_SCHEMA, handler=_handle_write_file, check_fn=_check_file_reqs, emoji="✍️", max_result_size_chars=100_000)
 registry.register(name="patch", toolset="file", schema=PATCH_SCHEMA, handler=_handle_patch, check_fn=_check_file_reqs, emoji="🔧", max_result_size_chars=100_000)
 registry.register(name="search_files", toolset="file", schema=SEARCH_FILES_SCHEMA, handler=_handle_search_files, check_fn=_check_file_reqs, emoji="🔎", max_result_size_chars=100_000)
+registry.register(name="locate_file", toolset="file", schema=LOCATE_FILE_SCHEMA, handler=_handle_locate_file, check_fn=_check_file_reqs, emoji="📍", max_result_size_chars=100_000)

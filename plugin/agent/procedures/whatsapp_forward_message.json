@@ -1,0 +1,65 @@
+{
+  "id": "whatsapp_forward_message",
+  "title": "Forward a source message to a destination contact",
+  "app": "WhatsApp",
+  "summary": "Find the source content in the source conversation, bind the destination, and forward only after the source message is identified.",
+  "goal_kinds": ["whatsapp_forward_message"],
+  "family_keys": ["whatsapp_forward", "whatsapp_message"],
+  "tags": ["forward", "share", "link", "message", "timeline", "conversation"],
+  "keywords": ["forward", "share", "send", "link", "message", "source", "destination", "timeline", "search", "inspect"],
+  "stages": [
+    {
+      "id": "locate_source",
+      "objective": "find the source content matching {link_query}",
+      "required_predicates": ["source_conversation_open"],
+      "preferred_capabilities": ["SearchConversation", "OpenConversation"],
+      "recovery": ["search conversation", "open source conversation"],
+      "reversible": true,
+      "confidence_threshold": 0.55,
+      "notes": "Prefer reading the source thread before touching forwarding chrome."
+    },
+    {
+      "id": "open_source_conversation",
+      "objective": "open source conversation {contact}",
+      "required_predicates": ["source_conversation_open"],
+      "preferred_capabilities": ["OpenConversation", "SelectConversation"],
+      "recovery": ["select the matching conversation row", "return to chat list if needed"],
+      "reversible": true,
+      "confidence_threshold": 0.6,
+      "notes": "Conversation rows are gateways, not evidence of message discovery."
+    },
+    {
+      "id": "inspect_timeline",
+      "objective": "inspect source conversation timeline",
+      "required_predicates": ["source_object_visible"],
+      "preferred_capabilities": ["Scroll", "Observe"],
+      "recovery": ["scroll the timeline", "re-read visible rows"],
+      "reversible": true,
+      "confidence_threshold": 0.45
+    },
+    {
+      "id": "identify_source_message",
+      "objective": "identify the source message or link",
+      "required_predicates": ["source_object_selected"],
+      "preferred_capabilities": ["SelectContent", "OpenMessage", "OpenLink"],
+      "recovery": ["backtrack to the source thread", "inspect nearby rows"],
+      "reversible": true,
+      "confidence_threshold": 0.65
+    },
+    {
+      "id": "forward_destination",
+      "objective": "forward to {target_contact}",
+      "required_predicates": ["destination_selected"],
+      "preferred_capabilities": ["ForwardMessage", "SelectForwardTarget"],
+      "recovery": ["choose the destination contact", "confirm the forward picker"],
+      "reversible": false,
+      "confidence_threshold": 0.7,
+      "notes": "Irreversible actuator; only engage once the source binding is strong."
+    }
+  ],
+  "metadata": {
+    "risk": "high",
+    "train_stage": "forward-message"
+  }
+}
+

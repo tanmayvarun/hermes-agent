@@ -1,0 +1,5 @@
+name: aion-provider
+kind: model-provider
+version: 1.0.0
+description: Aion Labs — OpenAI-compatible free tier
+author: Hermes Agent

@@ -508,7 +508,11 @@ def get_model_capabilities(provider: str, model: str) -> Optional[ModelCapabilit
     )
 
 
-def list_provider_models(provider: str) -> List[str]:
+def list_provider_models(
+    provider: str,
+    *,
+    min_params_b: float | None = None,
+) -> List[str]:
     """Return all model IDs for a provider from models.dev.
 
     Returns an empty list if the provider is unknown or has no data.
@@ -522,6 +526,7 @@ def list_provider_models(provider: str) -> List[str]:
     return [
         mid for mid in models.keys()
         if not _should_hide_from_provider_catalog(provider, mid)
+        and _model_meets_agent_floor(mid, min_params_b=min_params_b)
     ]
 
 
@@ -572,7 +577,33 @@ def _should_hide_from_provider_catalog(provider: str, model_id: str) -> bool:
     return False
 
 
-def list_agentic_models(provider: str) -> List[str]:
+def _model_meets_agent_floor(
+    model_id: str,
+    min_params_b: float | None = None,
+) -> bool:
+    """Return True when a model is large enough for Hermes agent use.
+
+    ``min_params_b`` lets task-specific callers lower or raise the floor while
+    keeping the default agent-wide floor unchanged.
+
+    The floor is fail-closed: unknown parameter counts are treated as too
+    small so new undersized models do not leak into the picker unnoticed.
+    """
+    try:
+        from hermes_cli.fallback_config import MIN_ALLOWED_PARAMS_B, estimate_model_params_b
+    except Exception:
+        return False
+    if min_params_b is None:
+        min_params_b = MIN_ALLOWED_PARAMS_B
+    size_b = estimate_model_params_b(model_id)
+    return size_b is not None and size_b >= float(min_params_b)
+
+
+def list_agentic_models(
+    provider: str,
+    *,
+    min_params_b: float | None = None,
+) -> List[str]:
     """Return model IDs suitable for agentic use from models.dev.
 
     Filters for tool_call=True and excludes noise (TTS, embedding,
@@ -592,6 +623,8 @@ def list_agentic_models(provider: str) -> List[str]:
         if not entry.get("tool_call", False):
             continue
         if _NOISE_PATTERNS.search(mid):
+            continue
+        if not _model_meets_agent_floor(mid, min_params_b=min_params_b):
             continue
         result.append(mid)
     return result

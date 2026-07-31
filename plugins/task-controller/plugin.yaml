@@ -1,0 +1,8 @@
+name: task-controller
+version: 2.0.0
+description: "Universal Task Controller — multi-tool budgets, capability auto-dispatch (LocateFile), Task schema inject, and hard stops for research/filesystem/coding."
+author: NousResearch
+hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call

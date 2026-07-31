@@ -1,0 +1,81 @@
+=== launch start 20260729_002053 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260729_002053.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_002053_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260729_002053_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=207 elapsed=1.82s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 285, 'macapptree': 0} elapsed=1.82s"
+[012][OK][step 0] observation | nodes=207
+[observe_complete step=0] nodes=207 elapsed=1.86s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:31:02.
+Auxiliary: marking openrouter unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:31:02.
+Auxiliary perception: fallback candidate openrouter failed (Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1785283200000'}, 'provider_name': None}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+[013][OK][step 0] world_patch | screen='call' retention=1.0
+[014][OK][step 0] step | message="dismissing dialogs=['Papaji']"
+[015][OK][step 0] step | message='after preclear dialog' detail='0.6s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=252 elapsed=1.10s
+[018][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 335, 'macapptree': 0} elapsed=1.10s"
+[019][OK][step 0] observation | nodes=252
+[observe_complete step=0] nodes=252 elapsed=1.10s
+[020][OK][step 0] world_patch | screen='dialog' action='preclear_dialog'
+[021][OK][step 0] step | message="attempt 1: leaving open='' toward chat list"
+[022][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[023][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[024][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=252 elapsed=1.35s
+[025][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 335, 'macapptree': 0} elapsed=1.35s"
+[026][OK][step 0] observation | nodes=252
+[observe_complete step=0] nodes=252 elapsed=1.35s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:31:21.
+Auxiliary: marking ovhcloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:31:23.
+Auxiliary perception: fallback candidate ovhcloud failed (Error code: 429 - {'message': 'API rate limit exceeded', 'request_id': '3e81fb77e5404f35f5e60428b9a62613'}) — trying next fallback
+Auxiliary: marking ollama-remote unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:31:53.
+Auxiliary perception: fallback candidate ollama-remote failed (Request timed out.) — trying next fallback
+Auxiliary Nous client unavailable: no Nous authentication found (run: hermes auth).
+Auxiliary: marking nous unhealthy for 60s (payment / credit error). Subsequent auxiliary calls will skip it until 00:22:53.
+Auxiliary: marking api-key unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:31:53.
+Auxiliary perception: fallback candidate api-key failed (Error code: 429 - {'id': 'a4260ac8-7769-4010-ac35-71fa3c0f0bf8', 'message': "You are using a Trial key, which is limited to 1000 API calls / month. You can continue to use the Trial key for free or upgrade to a Production key with higher rate limits at 'https://dashboard.cohere.com/api-keys'. Contact us on 'https://discord.gg/XW44jPfYJu' or email us at support@cohere.com with any questions"}) — trying next fallback
+Auxiliary perception: payment error on api-key and no fallback available (tried: ollama-remote (unhealthy), openrouter (unhealthy), nous (unhealthy), local/custom)
+Auxiliary perception: payment error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[027][OK][step 0] world_patch | screen='dialog' action='preclear_list'
+[028][OK][step 0] step | message="attempt 2: leaving open='Papaji' toward chat list"
+[029][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[030][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[031][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=252 elapsed=1.00s
+[032][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 335, 'macapptree': 0} elapsed=1.00s"
+[033][OK][step 0] observation | nodes=252
+[observe_complete step=0] nodes=252 elapsed=1.01s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 00:31:57.
+Auxiliary perception: payment error on auto and no fallback available (tried: ollama-remote (unhealthy), openrouter (unhealthy), nous (unhealthy), local/custom, api-key (unhealthy))
+Auxiliary perception: payment error on auto and all fallbacks exhausted (fallback_chain + main agent model). Raising original error.
+[034][OK][step 0] world_patch | screen='dialog' action='preclear_list'
+[035][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[036][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[037][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[038][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=252 elapsed=1.38s
+[039][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 335, 'macapptree': 0} elapsed=1.38s"
+[040][OK][step 0] observation | nodes=252
+[observe_complete step=0] nodes=252 elapsed=1.38s

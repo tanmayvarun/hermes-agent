@@ -48,6 +48,25 @@ class CLICommandsMixin:
     ``HermesCLI`` via the MRO.
     """
 
+    def _effective_fallback_chain(self):
+        """Return the normalized ordered fallback chain for the current CLI state."""
+        try:
+            from hermes_cli.config import load_config
+            from hermes_cli.fallback_config import get_fallback_chain
+
+            chain = get_fallback_chain(load_config())
+            if chain:
+                return chain
+        except Exception:
+            pass
+
+        fb = getattr(self, "_fallback_model", None)
+        if isinstance(fb, list):
+            return [entry for entry in fb if isinstance(entry, dict)]
+        if isinstance(fb, dict) and fb.get("provider") and fb.get("model"):
+            return [fb]
+        return []
+
     def _handle_rollback_command(self, command: str):
         """Handle /rollback — list, diff, or restore filesystem checkpoints.
 
@@ -1681,7 +1700,7 @@ class CLICommandsMixin:
                     provider_require_parameters=self._provider_require_params,
                     provider_data_collection=self._provider_data_collection,
                     openrouter_min_coding_score=self._openrouter_min_coding_score,
-                    fallback_model=self._fallback_model,
+                    fallback_model=self._effective_fallback_chain(),
                 )
                 # Silence raw spinner; route thinking through TUI widget when no foreground agent is active.
                 bg_agent._print_fn = lambda *_a, **_kw: None
@@ -2292,7 +2311,7 @@ class CLICommandsMixin:
         _cprint(f"  ✓ Added subgoal {idx}: {text}")
 
     def _handle_skin_command(self, cmd: str):
-        """Handle /skin [name] — show or change the display skin."""
+        """Handle /skin [name] — show or change branding skin (not contrast)."""
         from cli import _ACCENT, save_config_value
         try:
             from hermes_cli.skin_engine import list_skins, set_active_skin, get_active_skin_name
@@ -2306,7 +2325,7 @@ class CLICommandsMixin:
             current = get_active_skin_name()
             skins = list_skins()
             print(f"\n  Current skin: {current}")
-            print("  Available skins:")
+            print("  Available skins (branding only — contrast is /theme light|dark):")
             for s in skins:
                 marker = " ●" if s["name"] == current else "  "
                 source = f" ({s['source']})" if s["source"] == "user" else ""
@@ -2330,9 +2349,48 @@ class CLICommandsMixin:
             print(f"  Skin set to: {new_skin} (saved)")
         else:
             print(f"  Skin set to: {new_skin}")
-        print("  Note: banner colors will update on next session start.")
+        print("  Note: banner branding updates on next session; contrast uses /theme.")
         if self._apply_tui_skin_style():
-            print("  Prompt + TUI colors updated.")
+            print("  Prompt + TUI branding updated.")
+
+    def _handle_theme_command(self, cmd: str):
+        """Handle /theme [light|dark|auto] — set contrast mode only."""
+        from cli import _ACCENT, save_config_value
+        import cli as _cli_mod
+
+        try:
+            from hermes_cli.display_mode import (
+                active_mode_name,
+                get_theme_override,
+                set_theme_override,
+            )
+        except ImportError:
+            print("Display mode not available.")
+            return
+
+        parts = cmd.strip().split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            override = get_theme_override()
+            active = active_mode_name()
+            print(f"\n  Theme override: {override}")
+            print(f"  Active mode:    {active}")
+            print("\n  Usage: /theme light | dark | auto\n")
+            return
+
+        new_theme = parts[1].strip().lower()
+        if new_theme not in ("light", "dark", "auto"):
+            print("  Usage: /theme light | dark | auto")
+            return
+
+        set_theme_override(new_theme)
+        _cli_mod._LIGHT_MODE_CACHE = None
+        _ACCENT.reset()
+        if save_config_value("display.theme", new_theme):
+            print(f"  Theme set to: {new_theme} (saved) — active: {active_mode_name()}")
+        else:
+            print(f"  Theme set to: {new_theme} — active: {active_mode_name()}")
+        if self._apply_tui_skin_style():
+            print("  TUI colors updated.")
 
     def _compose_in_editor(self, initial_text: str = "") -> str:
         """Open ``$VISUAL``/``$EDITOR`` on a temp markdown file and return the

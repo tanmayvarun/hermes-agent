@@ -8,9 +8,11 @@ import {
   $currentModel,
   $currentProvider,
   getCurrentModelSource,
+  getRememberedComposerDefaultContract,
   setCurrentModel,
   setCurrentModelSource,
-  setCurrentProvider
+  setCurrentProvider,
+  setRememberedComposerDefault
 } from '@/store/session'
 import type * as SessionStates from '@/store/session-states'
 
@@ -18,6 +20,9 @@ import { useModelControls } from './use-model-controls'
 
 const setGlobalModel = vi.fn()
 const notifyError = vi.fn()
+const { storage } = vi.hoisted(() => ({
+  storage: new Map<string, string>()
+}))
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -58,6 +63,38 @@ vi.mock('@/store/notifications', () => ({
   notifyError: (...args: Parameters<typeof notifyError>) => notifyError(...args)
 }))
 
+vi.mock('@/lib/storage', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/storage')>()
+
+  return {
+    ...actual,
+    persistBoolean: (key: string, value: boolean) => {
+      storage.set(key, String(value))
+    },
+    persistString: (key: string, value: null | string) => {
+      if (value === null) {
+        storage.delete(key)
+      } else {
+        storage.set(key, value)
+      }
+    },
+    readKey: (key: string) => storage.get(key) ?? null,
+    storedBoolean: (key: string, fallback: boolean) => {
+      const value = storage.get(key)
+
+      return value === undefined ? fallback : value === 'true'
+    },
+    storedString: (key: string) => storage.get(key) ?? null,
+    writeKey: (key: string, value: null | string) => {
+      if (value === null) {
+        storage.delete(key)
+      } else {
+        storage.set(key, value)
+      }
+    }
+  }
+})
+
 type Controls = ReturnType<typeof useModelControls>
 
 function Harness({
@@ -79,19 +116,23 @@ function Harness({
 
 describe('useModelControls', () => {
   beforeEach(() => {
+    storage.clear()
     $activeSessionId.set(null)
     setCurrentModel('')
     setCurrentModelSource('')
     setCurrentProvider('')
+    setRememberedComposerDefault('', '')
   })
 
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    storage.clear()
     $activeSessionId.set(null)
     setCurrentModel('')
     setCurrentModelSource('')
     setCurrentProvider('')
+    setRememberedComposerDefault('', '')
   })
 
   it('applies the global model when there is no active runtime session', async () => {
@@ -267,6 +308,74 @@ describe('useModelControls', () => {
 
     expect($currentModel.get()).toBe('openrouter/glm-4.7')
     expect(getCurrentModelSource()).toBe('manual')
+  })
+
+  it('reseeds a sticky default-derived pick when the backend default changes', async () => {
+    setCurrentModel('mistral-large')
+    setCurrentProvider('mistral')
+    setCurrentModelSource('manual')
+    setRememberedComposerDefault('mistral', 'mistral-large')
+    vi.mocked(getGlobalModelInfo).mockResolvedValue({ model: 'qwen2.5:32b', provider: 'ollama' })
+
+    const { result } = renderHook(() =>
+      useModelControls({
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await result.current.refreshCurrentModel()
+
+    expect($currentModel.get()).toBe('qwen2.5:32b')
+    expect($currentProvider.get()).toBe('ollama')
+    expect(getCurrentModelSource()).toBe('default')
+  })
+
+  it('keeps a genuinely manual pick even when the backend default changes', async () => {
+    setCurrentModel('claude-sonnet-4.6')
+    setCurrentProvider('anthropic')
+    setCurrentModelSource('manual')
+    setRememberedComposerDefault('mistral', 'mistral-large')
+    vi.mocked(getGlobalModelInfo).mockResolvedValue({ model: 'qwen2.5:32b', provider: 'ollama' })
+
+    const { result } = renderHook(() =>
+      useModelControls({
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await result.current.refreshCurrentModel()
+
+    expect($currentModel.get()).toBe('claude-sonnet-4.6')
+    expect($currentProvider.get()).toBe('anthropic')
+    expect(getCurrentModelSource()).toBe('manual')
+  })
+
+  it('reseeds a sticky default-derived pick when the backend contract changes even if the strings stay the same', async () => {
+    setCurrentModel('mistral-large')
+    setCurrentProvider('mistral')
+    setCurrentModelSource('manual')
+    setRememberedComposerDefault('mistral', 'mistral-large', 'old-contract')
+    vi.mocked(getGlobalModelInfo).mockResolvedValue({
+      contract_id: 'new-contract',
+      model: 'mistral-large',
+      provider: 'mistral'
+    })
+
+    const { result } = renderHook(() =>
+      useModelControls({
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await result.current.refreshCurrentModel()
+
+    expect($currentModel.get()).toBe('mistral-large')
+    expect($currentProvider.get()).toBe('mistral')
+    expect(getCurrentModelSource()).toBe('default')
+    expect(getRememberedComposerDefaultContract()).toBe('new-contract')
   })
 
   it('does not let a stale forced profile refresh overwrite a newer picker choice', async () => {

@@ -135,31 +135,59 @@ def test_mixed_kinds_replay_through_correct_channels():
     assert warns == ["warn-1"]
 
 
-def test_pending_fallback_notice_emitted_once_on_success():
-    """On successful recovery the one-shot fallback notice is surfaced even
-    though the noisy retry buffer is dropped."""
+def test_pending_fallback_notice_quiet_by_default():
+    """Successful fallback is logged/cleared but not forced to CLI status."""
     agent = _make_bare_agent()
+    agent.verbose = False
     emitted = []
+    vprints = []
     agent._emit_status = lambda msg: emitted.append(msg)
+    agent._vprint = lambda msg, force=False, **kw: vprints.append((msg, force))
 
-    # Simulate try_activate_fallback: buffer the noisy switch line AND record
-    # the durable one-shot notice.
     agent._buffer_status("🔄 Primary model failed — switching to fallback: m2 via p2")
     agent._pending_fallback_notice = "🔄 Switched to fallback model: m1 via p1 → m2 via p2"
 
-    # Success path order: emit pending notice, then drop the buffer.
     agent._emit_pending_fallback_notice()
     agent._clear_status_buffer()
 
-    # The durable notice was shown exactly once; the buffered retry noise was
-    # silently dropped.
-    assert emitted == ["🔄 Switched to fallback model: m1 via p1 → m2 via p2"]
-    assert agent._retry_status_buffer == []
-    # Notice is cleared so it cannot re-emit on a later turn.
+    # Quiet by default — no forced lifecycle status spam.
+    assert emitted == []
     assert agent._pending_fallback_notice is None
+    # Non-forced vprint may still record the line for verbose drivers.
+    assert any(
+        "Switched to fallback model" in msg and force is False
+        for msg, force in vprints
+    )
 
     # A second success path with no new fallback emits nothing.
     agent._emit_pending_fallback_notice()
+    assert emitted == []
+
+
+def test_pending_fallback_notice_shown_when_env_set(monkeypatch):
+    """HERMES_SHOW_FALLBACK_NOTICE=1 restores the visible one-shot notice."""
+    monkeypatch.setenv("HERMES_SHOW_FALLBACK_NOTICE", "1")
+    agent = _make_bare_agent()
+    agent.verbose = False
+    emitted = []
+    agent._emit_status = lambda msg: emitted.append(msg)
+
+    agent._pending_fallback_notice = "🔄 Switched to fallback model: m1 via p1 → m2 via p2"
+    agent._emit_pending_fallback_notice()
+
+    assert emitted == ["🔄 Switched to fallback model: m1 via p1 → m2 via p2"]
+    assert agent._pending_fallback_notice is None
+
+
+def test_pending_fallback_notice_shown_when_verbose():
+    agent = _make_bare_agent()
+    agent.verbose = True
+    emitted = []
+    agent._emit_status = lambda msg: emitted.append(msg)
+
+    agent._pending_fallback_notice = "🔄 Switched to fallback model: m1 via p1 → m2 via p2"
+    agent._emit_pending_fallback_notice()
+
     assert emitted == ["🔄 Switched to fallback model: m1 via p1 → m2 via p2"]
 
 
@@ -195,9 +223,10 @@ def test_flush_discards_pending_fallback_notice():
     assert emitted == []
 
 
-def test_pending_fallback_notice_survives_emit_callback_error():
+def test_pending_fallback_notice_survives_emit_callback_error(monkeypatch):
     """A failing status callback must not leave the notice set for a stale
     re-emit, and must not raise."""
+    monkeypatch.setenv("HERMES_SHOW_FALLBACK_NOTICE", "1")
     agent = _make_bare_agent()
     seen = []
 

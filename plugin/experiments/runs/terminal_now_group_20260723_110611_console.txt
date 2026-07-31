@@ -1,0 +1,10 @@
+=== host=/Applications/Codex.app/Contents/Resources/codex pid=31656 TIMESTAMP=20260723_110611 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== contact: now group ===
+AXIsProcessTrusted(initial)= False
+prompted, trusted_now= False
+
+>>> Enable Terminal (or iTerm) in System Settings → Privacy & Security → Accessibility
+>>> Waiting up to 120s for AXIsProcessTrusted() == True …
+AXIsProcessTrusted= False — timed out
+EXIT_CODE=42

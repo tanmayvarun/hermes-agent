@@ -1,0 +1,107 @@
+"""Transition-aware controller primitives."""
+
+from plugin.agent.transition.post_perceive import (
+    assess_post_action_perception,
+    feature_get,
+    profile_for,
+    settled_empty_search_results,
+)
+from plugin.agent.transition.attribution import (
+    EffectKind,
+    FailureDomain,
+    HypothesisLayers,
+    TransitionAssessment,
+    attribute_transition,
+    should_advance_reference_hypothesis,
+)
+from plugin.agent.transition.belief_state import (
+    Belief,
+    BeliefStatus,
+    BeliefStore,
+    BeliefUpdate,
+    Experiment,
+    ExperimentKind,
+    Expectation,
+    GoalCondition,
+    Hypothesis,
+    Uncertainty,
+)
+from plugin.agent.transition.context import (
+    affordance_delta,
+    detect_goal_affordances,
+    update_interaction_context,
+)
+from plugin.agent.transition.confirmation import (
+    TransitionConfirmation,
+    apply_transition_confirmation,
+    confirm_transition_with_llm,
+)
+from plugin.agent.transition.evaluator import TransitionEvaluator, assess_progress
+from plugin.agent.transition.experience import StateExperience, action_experience_key
+from plugin.agent.transition.monitor import TransitionMonitor, compare_fingerprints, world_fingerprint
+from plugin.agent.transition.types import (
+    ActionTarget,
+    ActionPrediction,
+    AffordanceDelta,
+    BranchPolicy,
+    BranchStrategy,
+    FrontierAction,
+    ExplorationBranch,
+    InteractionContext,
+    Observability,
+    ProgressAssessment,
+    SearchNode,
+    TransitionAttempt,
+    TransitionOutcome,
+    TransitionResult,
+)
+
+__all__ = [
+    "ActionTarget",
+    "ActionPrediction",
+    "AffordanceDelta",
+    "BranchPolicy",
+    "BranchStrategy",
+    "FrontierAction",
+    "EffectKind",
+    "Belief",
+    "BeliefStatus",
+    "BeliefStore",
+    "BeliefUpdate",
+    "ExplorationBranch",
+    "FailureDomain",
+    "Experiment",
+    "ExperimentKind",
+    "Expectation",
+    "GoalCondition",
+    "HypothesisLayers",
+    "Hypothesis",
+    "InteractionContext",
+    "Observability",
+    "ProgressAssessment",
+    "SearchNode",
+    "StateExperience",
+    "Uncertainty",
+    "TransitionAssessment",
+    "TransitionConfirmation",
+    "TransitionAttempt",
+    "TransitionEvaluator",
+    "TransitionMonitor",
+    "TransitionOutcome",
+    "TransitionResult",
+    "apply_transition_confirmation",
+    "action_experience_key",
+    "affordance_delta",
+    "assess_post_action_perception",
+    "assess_progress",
+    "attribute_transition",
+    "compare_fingerprints",
+    "detect_goal_affordances",
+    "feature_get",
+    "confirm_transition_with_llm",
+    "profile_for",
+    "settled_empty_search_results",
+    "should_advance_reference_hypothesis",
+    "update_interaction_context",
+    "world_fingerprint",
+]

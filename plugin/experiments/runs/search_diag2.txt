@@ -1,0 +1,26 @@
+found textfield ph='Search' value=''
+pos type=<core-foundation class AXValueRef at 0x20c270eb0> repr=<AXValue 0x600003c070c0> {value = x:-1.000000 y:1084.000000 type = kAXValueCGPointType}
+size type=<core-foundation class AXValueRef at 0x20c270eb0> repr=<AXValue 0x600003c1d0e0> {value = w:354.000000 h:24.000000 type = kAXValueCGSizeType}
+AXValueGetType(pos)=1
+AXValueGetType(size)=2
+byref fail byref() argument must be a ctypes instance, not 'CoreFoundation.CGPoint'
+set AXFocused
+AXPress
+textfield value after type='' focused=False
+HIT AXStaticText title='Pallavi' desc='Search' ph='' value='Pallavi' focused=True
+HIT AXButton title='message, Mujhe yeh emotional aur relationship dynamic samjh nhi aati aur na yeh tareeka pyar ka . Better hai I will stay away till the timing i sort this dynamics. Mai unhe nhi badal sakti but mai khud k liye peace choose karti hu. Jitna handle ho utna hi baat hona chahiye., 21Julyat6:38\u202fPM, Received from Pallavi' desc='Pallavi' ph='' value='message, Mujhe yeh emotional aur relationship dynamic samjh nhi aati aur na yeh tareeka pyar ka . Better hai I will stay away till the timing i sort this dynamics. Mai unhe nhi badal sakti but mai khud k liye peace choose karti hu. Jitna handle ho utna hi baat hona chahiye., 21Julyat6:38\u202fPM, Received from Pallavi' focused=False
+HIT AXButton title='Swytchd Tousif created this group, 11September2025at2:14\u202fPM' desc='Pallavi Ather Gen3' ph='' value='You created this group. Tap to add members., 26March2024at9:53\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 12July2025at9:36\u202fPM' desc='Pallavi<>Pravin intro' ph='' value='Swytchd Tousif created this group, 11September2025at2:14\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 1April2025at4:18\u202fPM' desc='Project management Pallavi' ph='' value='You created this group. Tap to add members., 6November2023at2:28\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 26March2024at9:53\u202fPM' desc='Pallavi <> Shrenik intro' ph='' value='You created this group. Tap to add members., 10December2023at1:08\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 26March2024at6:43\u202fPM' desc='Dinesh<>Pallavi intro' ph='' value='You created this group. Tap to add members., 26March2024at6:43\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 26February2024at2:19\u202fPM' desc='Gyanendra<>Pallavi Intro' ph='' value='You created this group. Tap to add members., 12July2025at9:36\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 17February2024at11:15\u202fAM' desc='Ankit<>Pallavi' ph='' value='You created this group. Tap to add members., 27October2023at12:49\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 10December2023at1:08\u202fPM' desc='Mohit<>Pallavi' ph='' value='You created this group. Tap to add members., 5December2023at6:03\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 5December2023at6:03\u202fPM' desc='Sharad<>Pallavi' ph='' value='You created this group. Tap to add members., 26February2024at2:19\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 5December2023at6:01\u202fPM' desc='Ujjawal<>Pallavi' ph='' value='You created this group. Tap to add members., 1April2025at4:18\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 6November2023at2:28\u202fPM' desc='Pallavi<>Kavita' ph='' value='You created this group. Tap to add members., 23October2023at12:59\u202fPM' focused=False
+HIT AXButton title='You created this group. Tap to add members., 27October2023at12:49\u202fPM' desc='Pallavi<>Sugandha' ph='' value='You created this group. Tap to add members., 5December2023at6:01\u202fPM' focused=False
+HIT AXTextField title='' desc='' ph='Search' value='' focused=False
+after AXValue set='TESTSET'
+DONE

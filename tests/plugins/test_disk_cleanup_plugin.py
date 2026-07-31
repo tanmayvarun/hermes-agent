@@ -14,6 +14,7 @@ Covers the bundled plugin at ``plugins/disk-cleanup/``:
 
 import importlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -413,6 +414,33 @@ class TestTrackForgetQuick:
 
         assert not (_isolate_env / "scratch").exists()
 
+    def test_quick_host_temp_sweeps_agent_artifacts(self, _isolate_env, monkeypatch):
+        dg = _load_lib()
+        host_root = _isolate_env / "hosttmp"
+        host_root.mkdir()
+
+        launch_log = host_root / "hermes_forward_zarooratwala_launch_20260727_114718.txt"
+        launch_log.write_text("launch")
+
+        stale_dir = host_root / "codex-browser-use"
+        stale_dir.mkdir()
+        nested = stale_dir / "cache.bin"
+        nested.write_text("x" * 32)
+        old_ts = launch_log.stat().st_mtime - (3 * 86400)
+        os.utime(stale_dir, (old_ts, old_ts))
+
+        keep_file = host_root / "keep.me"
+        keep_file.write_text("safe")
+
+        monkeypatch.setattr(dg, "_resolve_host_temp_roots", lambda: [host_root])
+
+        summary = dg.quick_host_temp()
+        assert summary["deleted"] >= 2
+        assert summary["freed"] > 0
+        assert not launch_log.exists()
+        assert not stale_dir.exists()
+        assert keep_file.exists()
+
 
 class TestStatus:
     def test_empty_status(self, _isolate_env):
@@ -446,6 +474,46 @@ class TestDryRun:
         auto, prompt = dg.dry_run()
         # test → auto, other → neither (doesn't hit any rule)
         assert any(i["path"] == str(test_f) for i in auto)
+
+
+class TestCleanupAnalysis:
+    def test_analyze_low_risk_cleanup_targets_reports_candidates(
+        self, _isolate_env, monkeypatch
+    ):
+        dg = _load_lib()
+        temp_root = _isolate_env / "tmp-root"
+        temp_root.mkdir()
+        stale_dir = temp_root / "codex-browser-use"
+        stale_dir.mkdir()
+        (stale_dir / "cache.bin").write_text("x" * 32)
+        old_ts = stale_dir.stat().st_mtime - (3 * 86400)
+        os.utime(stale_dir, (old_ts, old_ts))
+
+        tracked_file = _isolate_env / "test_analyze.py"
+        tracked_file.write_text("x")
+        dg.track(str(tracked_file), "test", silent=True)
+
+        host_cache_root = _isolate_env / "host-cache"
+        cache_child = host_cache_root / "DerivedData" / "App"
+        cache_child.mkdir(parents=True)
+        (cache_child / "cache.db").write_text("x" * 64)
+
+        monkeypatch.setattr(dg, "_resolve_host_temp_roots", lambda: [temp_root])
+        monkeypatch.setattr(dg, "_HOST_CACHE_ROOTS", [host_cache_root])
+        monkeypatch.setattr(dg, "_safe_cache_path", lambda _p: True)
+
+        analysis = dg.analyze_low_risk_cleanup_targets(
+            reason="storage pressure",
+            evidence=["storage full"],
+        )
+
+        assert analysis.low_risk_count >= 3
+        assert analysis.total_size > 0
+        rendered = dg.format_cleanup_analysis(analysis)
+        assert "Low-risk cleanup analysis" in rendered
+        assert "tracked" in rendered
+        assert "host_cache" in rendered
+        assert "host_temp" in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -577,6 +645,28 @@ class TestSlashCommand:
         pi = _load_plugin_init()
         out = pi._handle_slash("quick")
         assert "Cleaned 0 files" in out
+
+    def test_analyze(self, _isolate_env, monkeypatch):
+        pi = _load_plugin_init()
+
+        class FakeAnalysis:
+            def to_dict(self):
+                return {
+                    "reason": "storage pressure",
+                    "evidence": ["storage full"],
+                    "candidates": [],
+                    "total_size": 0,
+                    "total_size_human": "0.0 B",
+                    "low_risk_count": 0,
+                    "low_risk_human": "0.0 B",
+                    "sources": {},
+                    "notes": ["analysis-only"],
+                }
+
+        monkeypatch.setattr(pi.dg, "analyze_low_risk_cleanup_targets", lambda **_: FakeAnalysis())
+        out = pi._handle_slash("analyze")
+        assert "Low-risk cleanup analysis" in out
+        assert "analysis-only" in out
 
 
 # ---------------------------------------------------------------------------

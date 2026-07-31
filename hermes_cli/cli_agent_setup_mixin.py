@@ -19,6 +19,26 @@ import sys
 from rich.markup import escape as _escape
 
 
+def _effective_fallback_chain(cli) -> list[dict]:
+    """Return the normalized ordered fallback chain for the current CLI state."""
+    try:
+        from hermes_cli.config import load_config
+        from hermes_cli.fallback_config import get_fallback_chain
+
+        chain = get_fallback_chain(load_config())
+        if chain:
+            return chain
+    except Exception:
+        pass
+
+    fb = getattr(cli, "_fallback_model", None)
+    if isinstance(fb, list):
+        return [entry for entry in fb if isinstance(entry, dict)]
+    if isinstance(fb, dict) and fb.get("provider") and fb.get("model"):
+        return [fb]
+    return []
+
+
 class CLIAgentSetupMixin:
     """Agent construction + session-resume display methods for ``HermesCLI``."""
 
@@ -50,7 +70,7 @@ class CLIAgentSetupMixin:
         if runtime is None and _primary_exc is not None:
             from hermes_cli.auth import AuthError
             if isinstance(_primary_exc, AuthError):
-                _fb_chain = self._fallback_model if isinstance(self._fallback_model, list) else []
+                _fb_chain = _effective_fallback_chain(self)
                 for _fb in _fb_chain:
                     _fb_provider = (_fb.get("provider") or "").strip().lower()
                     _fb_model = (_fb.get("model") or "").strip()
@@ -383,8 +403,7 @@ class CLIAgentSetupMixin:
                 session_db=self._session_db,
                 clarify_callback=self._clarify_callback,
                 reasoning_callback=self._current_reasoning_callback(),
-
-                fallback_model=self._fallback_model,
+                fallback_model=_effective_fallback_chain(self),
                 thinking_callback=self._on_thinking,
                 checkpoints_enabled=self.checkpoints_enabled,
                 checkpoint_max_snapshots=self.checkpoint_max_snapshots,

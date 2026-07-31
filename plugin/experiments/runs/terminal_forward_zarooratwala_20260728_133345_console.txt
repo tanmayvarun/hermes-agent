@@ -1,0 +1,302 @@
+=== launch start 20260728_133345 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260728_133345.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260728_133345_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260728_133345_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via /Applications'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[009][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=204 elapsed=1.78s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 282, 'macapptree': 0} elapsed=1.78s"
+[012][OK][step 0] observation | nodes=204
+[observe_complete step=0] nodes=204 elapsed=1.80s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:43:53.
+Auxiliary: marking openrouter unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:43:54.
+Auxiliary perception: fallback candidate openrouter failed (Error code: 429 - {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1785283200000'}, 'provider_name': None}}, 'user_id': 'user_3Gm0ZBFuwCCHzsfylHZzo72z0hw'}) — trying next fallback
+Auxiliary: marking ovhcloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:43:55.
+Auxiliary perception: fallback candidate ovhcloud failed (Error code: 429 - {'message': 'API rate limit exceeded', 'request_id': '307da06e3277de42b32a9a7bf6f07e66'}) — trying next fallback
+[013][OK][step 0] world_patch | screen='call' retention=1.0
+[014][OK][step 0] step | message="dismissing dialogs=['14/146']"
+[015][OK][step 0] step | message='after preclear dialog' detail='0.6s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[016][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=242 elapsed=1.05s
+[018][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 325, 'macapptree': 0} elapsed=1.05s"
+[019][OK][step 0] observation | nodes=242
+[observe_complete step=0] nodes=242 elapsed=1.05s
+[020][OK][step 0] world_patch | screen='dialog' action='preclear_dialog'
+[021][OK][step 0] step | message="attempt 1: leaving open='WhatsApp for Mac' toward chat list"
+[022][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[023][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[024][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=242 elapsed=1.25s
+[025][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 325, 'macapptree': 0} elapsed=1.25s"
+[026][OK][step 0] observation | nodes=242
+[observe_complete step=0] nodes=242 elapsed=1.25s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:44:10.
+[027][OK][step 0] world_patch | screen='dialog' action='preclear_list'
+[028][OK][step 0] step | message="attempt 2: leaving open='Messages in chat with 14/146' toward chat list"
+[029][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=True
+[030][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[031][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=242 elapsed=0.70s
+[032][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 325, 'macapptree': 0} elapsed=0.70s"
+[033][OK][step 0] observation | nodes=242
+[observe_complete step=0] nodes=242 elapsed=0.70s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:44:17.
+[034][OK][step 0] world_patch | screen='dialog' action='preclear_list'
+[035][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[036][OK][step 0] loop_budget
+[observe_begin step=0] app=WhatsApp screenshot=True
+[037][OK][step 0] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+[038][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=242 elapsed=0.83s
+[039][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 325, 'macapptree': 0} elapsed=0.83s"
+[040][OK][step 0] observation | nodes=242
+[observe_complete step=0] nodes=242 elapsed=0.83s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:44:24.
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:44:31.
+[041][OK][step 1] observation | nodes=242
+[042][OK][step 1] forward_task
+[043][OK][step 1] world_patch | screen='dialog' retention=1.0
+[044][OK][step 1] fusion_conflicts
+[045][OK][step 1] goal_status
+[046][OK][step 1] decision_engine
+[047][OK][step 1] planner_decision
+[048][OK][step 1] execution | message='typed \'Kulvinder\' into search field label=\'Search\' AXValue=\'Kulvinder\' open=\'Cmd+F search shortcut\' evidence="AXStaticText title=\'Kulvinder\' desc=\'Search\'" attempts=[\'open=Cmd+F search shortcut\', \'paste=True\'] submit=False' backend='ax'
+[049][OK][step 1] step | message='transition settle' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[050][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[051][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=254 elapsed=0.72s
+[052][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 352, 'macapptree': 0} elapsed=0.72s"
+[053][OK][step 1] observation | nodes=254
+[observe_complete step=1] nodes=254 elapsed=0.72s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:44:53.
+[054][OK][step 1] step | message='transition poll' detail='0.3s'
+[055][OK][step 1] perception_retry
+[056][OK][step 1] step | message='perception retry (fusion_agreement_low)' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[057][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[058][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=254 elapsed=0.95s
+[059][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 352, 'macapptree': 0} elapsed=0.95s"
+[060][OK][step 1] observation | nodes=254
+[observe_complete step=1] nodes=254 elapsed=0.95s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:45:02.
+[061][OK][step 1] perception_retry
+[062][OK][step 1] step | message='perception retry (fusion_agreement_low)' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[063][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[064][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=243 elapsed=1.01s
+[065][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 327, 'macapptree': 0} elapsed=1.01s"
+[066][OK][step 1] observation | nodes=243
+[observe_complete step=1] nodes=243 elapsed=1.01s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:45:11.
+[067][FAIL][step 1] perception_unsettled
+[068][OK][step 1] post_observation
+[069][OK][step 1] post_world_patch
+[070][FAIL][step 1] transition_eval
+[071][OK][step 1] transition_attribution
+[072][FAIL][step 1] verification
+[observe_begin step=1] app=WhatsApp screenshot=True
+[073][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[074][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=243 elapsed=0.85s
+[075][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 327, 'macapptree': 0} elapsed=0.85s"
+[076][OK][step 1] observation | nodes=243
+[observe_complete step=1] nodes=243 elapsed=0.85s
+[077][OK][step 1] post_transition_richer_reobserve
+[078][FAIL][step 1] forward_predicate_rollback | expected='SearchQueryEquals(Kulvinder)'
+[observe_begin step=1] app=WhatsApp screenshot=True
+[079][OK][step 1] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+[080][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=243 elapsed=0.69s
+[081][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 327, 'macapptree': 0} elapsed=0.69s"
+[082][OK][step 1] observation | nodes=243
+[observe_complete step=1] nodes=243 elapsed=0.69s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:45:18.
+[083][OK][step 2] observation | nodes=243
+[084][OK][step 2] forward_task
+[085][OK][step 2] world_patch | screen='dialog' retention=0.9529411764705882
+[086][OK][step 2] fusion_conflicts
+[087][OK][step 2] goal_status
+[088][OK][step 2] decision_engine
+[089][OK][step 2] planner_decision
+[090][OK][step 2] execution | message='pressed Escape' backend='ax'
+[091][OK][step 2] step | message='transition settle' detail='0.6s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[092][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[093][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=2] nodes=243 elapsed=0.90s
+[094][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 327, 'macapptree': 0} elapsed=0.90s"
+[095][OK][step 2] observation | nodes=243
+[observe_complete step=2] nodes=243 elapsed=0.90s
+[096][OK][step 2] step | message='transition poll' detail='0.3s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[097][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[098][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=2] nodes=204 elapsed=0.47s
+[099][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 261, 'macapptree': 0} elapsed=0.47s"
+[100][OK][step 2] observation | nodes=204
+[observe_complete step=2] nodes=204 elapsed=0.47s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:45:38.
+[101][OK][step 2] step | message='transition poll' detail='0.3s'
+[102][OK][step 2] perception_retry
+[103][OK][step 2] step | message='perception retry (fusion_agreement_low)' detail='1.2s'
+[observe_begin step=2] app=WhatsApp screenshot=True
+[104][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[105][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=2] nodes=204 elapsed=1.08s
+[106][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 261, 'macapptree': 0} elapsed=1.08s"
+[107][OK][step 2] observation | nodes=204
+[observe_complete step=2] nodes=204 elapsed=1.08s
+[108][FAIL][step 2] perception_unsettled
+[109][OK][step 2] post_observation
+[110][OK][step 2] post_world_patch
+[111][OK][step 2] transition_eval
+[112][OK][step 2] transition_attribution
+[113][OK][step 2] verification
+[114][FAIL][step 2] transition_confirmation
+[115][OK][step 2] branch_explore
+[observe_begin step=2] app=WhatsApp screenshot=True
+[116][OK][step 2] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+[117][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=2] nodes=204 elapsed=0.48s
+[118][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 261, 'macapptree': 0} elapsed=0.48s"
+[119][OK][step 2] observation | nodes=204
+[observe_complete step=2] nodes=204 elapsed=0.48s
+[120][OK][step 3] observation | nodes=204
+[121][OK][step 3] forward_task
+[122][OK][step 3] world_patch | screen='menu' retention=0.8
+[123][OK][step 3] goal_status
+[124][OK][step 3] decision_engine
+[125][OK][step 3] planner_decision
+[126][OK][step 3] execution | message='pressed Escape' backend='ax'
+[127][OK][step 3] step | message='transition settle' detail='0.6s'
+[observe_begin step=3] app=WhatsApp screenshot=True
+[128][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[129][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=3] nodes=227 elapsed=0.72s
+[130][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 311, 'macapptree': 0} elapsed=0.72s"
+[131][OK][step 3] observation | nodes=227
+[observe_complete step=3] nodes=227 elapsed=0.72s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:46:03.
+[132][OK][step 3] step | message='transition poll' detail='0.3s'
+[133][OK][step 3] perception_retry
+[134][OK][step 3] step | message='perception retry (fusion_agreement_low)' detail='1.2s'
+[observe_begin step=3] app=WhatsApp screenshot=True
+[135][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[136][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=3] nodes=227 elapsed=0.83s
+[137][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 311, 'macapptree': 0} elapsed=0.83s"
+[138][OK][step 3] observation | nodes=227
+[observe_complete step=3] nodes=227 elapsed=0.83s
+[139][FAIL][step 3] perception_unsettled
+[140][OK][step 3] post_observation
+[141][OK][step 3] post_world_patch
+[142][FAIL][step 3] transition_eval
+[143][OK][step 3] transition_attribution
+[144][FAIL][step 3] verification
+[observe_begin step=3] app=WhatsApp screenshot=True
+[145][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[146][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=3] nodes=227 elapsed=0.56s
+[147][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 311, 'macapptree': 0} elapsed=0.56s"
+[148][OK][step 3] observation | nodes=227
+[observe_complete step=3] nodes=227 elapsed=0.56s
+[149][OK][step 3] post_transition_richer_reobserve
+[150][FAIL][step 3] forward_predicate_rollback | expected='NoUnexpectedDialog'
+[observe_begin step=3] app=WhatsApp screenshot=True
+[151][OK][step 3] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+[152][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=3] nodes=227 elapsed=0.56s
+[153][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 311, 'macapptree': 0} elapsed=0.56s"
+[154][OK][step 3] observation | nodes=227
+[observe_complete step=3] nodes=227 elapsed=0.56s
+[155][OK][step 4] observation | nodes=227
+[156][OK][step 4] forward_task
+[157][OK][step 4] world_patch | screen='dialog' retention=0.8901960784313725
+[158][OK][step 4] fusion_conflicts
+[159][OK][step 4] goal_status
+[160][OK][step 4] decision_engine
+[161][OK][step 4] planner_decision
+[162][OK][step 3] click_target | semantic='Search'
+[163][OK][step 4] execution | message='open Search via Cmd+F search shortcut' backend='ax'
+[164][OK][step 4] step | message='transition settle' detail='0.6s'
+[observe_begin step=4] app=WhatsApp screenshot=True
+[165][OK][step 4] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+[166][OK][step 4] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=4] nodes=236 elapsed=0.88s
+[167][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 329, 'macapptree': 0} elapsed=0.88s"
+[168][OK][step 4] observation | nodes=236
+[observe_complete step=4] nodes=236 elapsed=0.88s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:46:25.
+[169][OK][step 4] step | message='transition poll' detail='0.3s'
+[170][OK][step 4] perception_retry
+[171][OK][step 4] step | message='perception retry (fusion_agreement_low)' detail='1.2s'
+[observe_begin step=4] app=WhatsApp screenshot=True
+[172][OK][step 4] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+[173][OK][step 4] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=4] nodes=236 elapsed=0.82s
+[174][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 329, 'macapptree': 0} elapsed=0.82s"
+[175][OK][step 4] observation | nodes=236
+[observe_complete step=4] nodes=236 elapsed=0.82s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:46:39.
+[176][FAIL][step 4] perception_unsettled
+[177][OK][step 4] post_observation
+[178][OK][step 4] post_world_patch
+[179][FAIL][step 4] transition_eval
+[180][OK][step 4] transition_attribution
+[181][FAIL][step 4] verification
+[observe_begin step=4] app=WhatsApp screenshot=True
+[182][OK][step 4] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+[183][OK][step 4] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=4] nodes=236 elapsed=0.67s
+[184][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 329, 'macapptree': 0} elapsed=0.67s"
+[185][OK][step 4] observation | nodes=236
+[observe_complete step=4] nodes=236 elapsed=0.67s
+[186][OK][step 4] post_transition_richer_reobserve
+[187][FAIL][step 4] forward_predicate_rollback | expected='SearchInputFocused'
+[observe_begin step=4] app=WhatsApp screenshot=True
+[188][OK][step 4] step | message='app=WhatsApp screenshot=True'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+[189][OK][step 4] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=4] nodes=236 elapsed=0.62s
+[190][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.7" detail="{'pyobjc_ax': 329, 'macapptree': 0} elapsed=0.62s"
+[191][OK][step 4] observation | nodes=236
+[observe_complete step=4] nodes=236 elapsed=0.62s
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:46:50.
+Auxiliary: marking ollama-cloud unhealthy for 600s (payment / credit error). Subsequent auxiliary calls will skip it until 13:46:57.

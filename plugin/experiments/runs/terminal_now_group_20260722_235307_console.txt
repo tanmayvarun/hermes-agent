@@ -1,0 +1,224 @@
+=== host=-zsh pid=57359 TIMESTAMP=20260722_235307 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== contact: now group ===
+AXIsProcessTrusted(initial)= True
+AXIsProcessTrusted= True — continuing
+=== starting call-pallavi --live --contact 'now group' ===
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/main.py", line 83, in <module>
+    main(app_bundle, output_accessibility_file, output_screenshot_file, max_depth)
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/main.py", line 34, in main
+    window_element = get_main_window(windows, max_depth)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/lib/python3.12/site-packages/macapptree/main.py", line 17, in get_main_window
+    main_window = max([(window, len(window.recursive_children())) for window in ui_windows], key=lambda x: x[1])[0]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: max() iterable argument is empty
+Screen scaling factor: 2.0
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+Screen scaling factor: 2.0
+Parsing regular window structure
+[001][OK] run_start | goal='Call now group on WhatsApp'
+[002][OK][step 0] step | message='checking Terminal Accessibility + macapptree/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[008][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[009][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[010][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 356, 'macapptree': 94}"
+[011][OK][step 0] observation | nodes=356
+[012][OK][step 0] world_patch | screen='call' retention=1.0
+[013][OK][step 0] step | message='closed-loop goal=Call now group on WhatsApp' detail='DecisionEngine after every observation (policy prior + value)'
+[014][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[015][OK][step 0] observation | nodes=341
+[016][OK][step 1] observation | nodes=341
+[017][OK][step 1] world_patch | screen='call' retention=0.949438202247191
+[018][OK][step 1] goal_status
+[019][OK][step 1] decision_engine
+[020][OK][step 1] planner_decision
+[021][OK][step 1] execution | message='typed \'now group\' into search field label=\'Search\' AXValue=\'now group\' open=\'clicked Search center=(255.5, 107.0)\' evidence="AXStaticText title=\'now group\' desc=\'Search\'" submit=False' backend='ax'
+[022][OK][step 1] step | message='UI settle after action' detail='1.7999999999999998s'
+[023][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[024][OK][step 1] observation | nodes=341
+[025][OK][step 1] post_observation | nodes=341
+[026][OK][step 1] post_world_patch | screen='call' retention=0.9498607242339833
+[027][OK][step 1] verification
+[028][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[029][OK][step 1] observation | nodes=341
+[030][OK][step 2] observation | nodes=341
+[031][OK][step 2] world_patch | screen='call' retention=0.9498607242339833
+[032][OK][step 2] goal_status
+[033][OK][step 2] decision_engine
+[034][OK][step 2] planner_decision
+[035][OK][step 2] step | message='wait / re-perceive' detail='1.2s'
+[036][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[037][OK][step 2] observation | nodes=341
+[038][OK][step 3] observation | nodes=341
+[039][OK][step 3] world_patch | screen='call' retention=0.9498607242339833
+[040][OK][step 3] goal_status
+[041][OK][step 3] decision_engine
+[042][OK][step 3] planner_decision
+[043][OK][step 3] step | message='wait / re-perceive' detail='1.2s'
+[044][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[045][OK][step 3] observation | nodes=341
+[046][OK][step 4] observation | nodes=341
+[047][OK][step 4] world_patch | screen='call' retention=0.9498607242339833
+[048][OK][step 4] goal_status
+[049][OK][step 4] decision_engine
+[050][OK][step 4] planner_decision
+[051][OK][step 4] step | message='wait / re-perceive' detail='1.2s'
+[052][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[053][OK][step 4] observation | nodes=341
+[054][OK][step 5] observation | nodes=341
+[055][OK][step 5] world_patch | screen='call' retention=0.9498607242339833
+[056][OK][step 5] goal_status
+[057][OK][step 5] decision_engine
+[058][OK][step 5] planner_decision
+[059][OK][step 5] execution | message='typed \'now group\' into search field label=\'Search\' AXValue=\'now group\' open=\'clicked Search center=(255.5, 107.0)\' evidence="AXStaticText title=\'now group\' desc=\'Search\'" submit=False' backend='ax'
+[060][OK][step 5] step | message='UI settle after action' detail='1.7999999999999998s'
+[061][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[062][OK][step 5] observation | nodes=341
+[063][OK][step 5] post_observation | nodes=341
+[064][OK][step 5] post_world_patch | screen='call' retention=0.9498607242339833
+[065][OK][step 5] verification
+[066][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[067][OK][step 5] observation | nodes=341
+[068][OK][step 6] observation | nodes=341
+[069][OK][step 6] world_patch | screen='call' retention=0.9498607242339833
+[070][OK][step 6] goal_status
+[071][OK][step 6] decision_engine
+[072][OK][step 6] planner_decision
+[073][OK][step 6] step | message='wait / re-perceive' detail='1.2s'
+[074][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[075][OK][step 6] observation | nodes=341
+[076][OK][step 7] observation | nodes=341
+[077][OK][step 7] world_patch | screen='call' retention=0.9498607242339833
+[078][OK][step 7] goal_status
+[079][OK][step 7] decision_engine
+[080][OK][step 7] planner_decision
+[081][OK][step 7] step | message='wait / re-perceive' detail='1.2s'
+[082][OK][step 7] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[083][OK][step 7] observation | nodes=341
+[084][OK][step 8] observation | nodes=341
+[085][OK][step 8] world_patch | screen='call' retention=0.9498607242339833
+[086][OK][step 8] goal_status
+[087][OK][step 8] decision_engine
+[088][OK][step 8] planner_decision
+[089][OK][step 8] step | message='wait / re-perceive' detail='1.2s'
+[090][OK][step 8] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[091][OK][step 8] observation | nodes=341
+[092][OK][step 9] observation | nodes=341
+[093][OK][step 9] world_patch | screen='call' retention=0.9498607242339833
+[094][OK][step 9] goal_status
+[095][OK][step 9] decision_engine
+[096][OK][step 9] planner_decision
+[097][OK][step 9] execution | message='typed \'now group\' into search field label=\'Search\' AXValue=\'now group\' open=\'clicked Search center=(255.5, 107.0)\' evidence="AXStaticText title=\'now group\' desc=\'Search\'" submit=False' backend='ax'
+[098][OK][step 9] step | message='UI settle after action' detail='1.7999999999999998s'
+[099][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[100][OK][step 9] observation | nodes=341
+[101][OK][step 9] post_observation | nodes=341
+[102][OK][step 9] post_world_patch | screen='call' retention=0.9498607242339833
+[103][OK][step 9] verification
+[104][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[105][OK][step 9] observation | nodes=341
+[106][OK][step 10] observation | nodes=341
+[107][OK][step 10] world_patch | screen='call' retention=0.9498607242339833
+[108][OK][step 10] goal_status
+[109][OK][step 10] decision_engine
+[110][OK][step 10] planner_decision
+[111][OK][step 10] step | message='wait / re-perceive' detail='1.2s'
+[112][OK][step 10] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[113][OK][step 10] observation | nodes=341
+[114][OK][step 11] observation | nodes=341
+[115][OK][step 11] world_patch | screen='call' retention=0.9498607242339833
+[116][OK][step 11] goal_status
+[117][OK][step 11] decision_engine
+[118][OK][step 11] planner_decision
+[119][OK][step 11] step | message='wait / re-perceive' detail='1.2s'
+[120][OK][step 11] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[121][OK][step 11] observation | nodes=341
+[122][OK][step 12] observation | nodes=341
+[123][OK][step 12] world_patch | screen='call' retention=0.9498607242339833
+[124][OK][step 12] goal_status
+[125][OK][step 12] decision_engine
+[126][OK][step 12] planner_decision
+[127][OK][step 12] step | message='wait / re-perceive' detail='1.2s'
+Failed to extract app accessibility for net.whatsapp.WhatsApp. Error: None
+[128][OK][step 12] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 341, 'macapptree': 0}"
+[129][OK][step 12] observation | nodes=341
+[130][OK][step 13] observation | nodes=341
+[131][OK][step 13] world_patch | screen='call' retention=0.9498607242339833
+[132][OK][step 13] goal_status
+[133][OK][step 13] decision_engine
+[134][OK][step 13] planner_decision
+[135][OK][step 13] execution | message='typed \'now group\' into search field label=\'Search\' AXValue=\'now group\' open=\'clicked Search center=(255.5, 107.0)\' evidence="AXStaticText title=\'now group\' desc=\'Search\'" submit=False' backend='ax'
+[136][OK][step 13] step | message='UI settle after action' detail='1.7999999999999998s'
+[137][OK][step 13] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[138][OK][step 13] observation | nodes=341
+[139][OK][step 13] post_observation | nodes=341
+[140][OK][step 13] post_world_patch | screen='call' retention=0.9498607242339833
+[141][OK][step 13] verification
+[142][OK][step 13] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[143][OK][step 13] observation | nodes=341
+[144][OK][step 14] observation | nodes=341
+[145][OK][step 14] world_patch | screen='call' retention=0.9498607242339833
+[146][OK][step 14] goal_status
+[147][OK][step 14] decision_engine
+[148][OK][step 14] planner_decision
+[149][OK][step 14] step | message='wait / re-perceive' detail='1.2s'
+[150][OK][step 14] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=0.0" detail="{'pyobjc_ax': 341, 'macapptree': 79}"
+[151][OK][step 14] observation | nodes=341
+[152][OK][step 15] observation | nodes=341
+[153][OK][step 15] world_patch | screen='call' retention=0.9498607242339833
+[154][OK][step 15] goal_status
+[155][OK][step 15] decision_engine
+[156][OK][step 15] planner_decision
+[157][OK][step 15] step | message='wait / re-perceive' detail='1.2s'
+[158][OK] world_summary
+[159][FAIL] check | message='fail' expected="closed-loop call ringing for 'now group'"
+[160][OK] check | message='pass' expected='>=1 planner call per decision cycle'
+[161][FAIL] run_end | detail="closed_loop ok=False reason='Maximum iterations reached' iterations=15 planner_invocations=15 ringing=True"
+
+=== DONE ok=False live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md
+EXIT_CODE=1

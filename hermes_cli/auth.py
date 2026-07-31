@@ -225,6 +225,22 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         api_key_env_vars=("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
         base_url_env_var="COPILOT_API_BASE_URL",
     ),
+    "cohere": ProviderConfig(
+        id="cohere",
+        name="Cohere",
+        auth_type="api_key",
+        inference_base_url="https://api.cohere.ai/compatibility/v1",
+        api_key_env_vars=("COHERE_API_KEY",),
+        base_url_env_var="COHERE_BASE_URL",
+    ),
+    "cloudflare-workers-ai": ProviderConfig(
+        id="cloudflare-workers-ai",
+        name="Cloudflare Workers AI",
+        auth_type="api_key",
+        inference_base_url="https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+        api_key_env_vars=("CLOUDFLARE_API_TOKEN", "CF_API_TOKEN"),
+        base_url_env_var="CLOUDFLARE_BASE_URL",
+    ),
     "copilot-acp": ProviderConfig(
         id="copilot-acp",
         name="GitHub Copilot ACP",
@@ -582,6 +598,16 @@ def _resolve_api_key_provider_secret(
         except Exception:
             pass
         return "", ""
+
+    if provider_id == "ollama-cloud":
+        # Ollama Cloud is launched from the live Terminal wrapper in this repo,
+        # which explicitly sources the workspace-local .env before starting the
+        # agent. Prefer the active process env so the live run uses the same
+        # credential the shell already exported, then fall back to the managed
+        # Hermes .env if the process env is blank.
+        shell_key = (os.environ.get("OLLAMA_API_KEY", "") or "").strip()
+        if has_usable_secret(shell_key):
+            return shell_key, "OLLAMA_API_KEY"
 
     from hermes_cli.config import get_env_value_prefer_dotenv
     for env_var in pconfig.api_key_env_vars:
@@ -1772,6 +1798,8 @@ def resolve_provider(
         "github": "copilot", "github-copilot": "copilot",
         "github-models": "copilot", "github-model": "copilot",
         "github-copilot-acp": "copilot-acp", "copilot-acp-agent": "copilot-acp",
+        "cf-workers": "cloudflare-workers-ai", "workers-ai": "cloudflare-workers-ai",
+        "cloudflare-workers": "cloudflare-workers-ai", "cloudflare-workers-ai": "cloudflare-workers-ai",
         "opencode": "opencode-zen", "zen": "opencode-zen",
         "qwen-portal": "qwen-oauth", "qwen-cli": "qwen-oauth", "qwen-oauth": "qwen-oauth",
         "hf": "huggingface", "hugging-face": "huggingface", "huggingface-hub": "huggingface",
@@ -1875,6 +1903,14 @@ def resolve_provider(
     for pid, pconfig in PROVIDER_REGISTRY.items():
         if pconfig.auth_type != "api_key":
             continue
+        if pid == "cloudflare-workers-ai":
+            has_account = bool(
+                os.getenv("CLOUDFLARE_BASE_URL", "").strip()
+                or os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+                or os.getenv("CF_ACCOUNT_ID", "").strip()
+            )
+            if not has_account:
+                continue
         # GitHub tokens are commonly present for repo/tool access but should not
         # hijack inference auto-selection unless the user explicitly chooses
         # Copilot/GitHub Models as the provider. LM Studio is a local server
@@ -6542,6 +6578,26 @@ def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
         api_key = LMSTUDIO_NOAUTH_PLACEHOLDER
         key_source = key_source or "default"
 
+    # Provider profiles that allow anonymous / no-registration access
+    # (e.g. LLM7 free gateway). Same SDK constraint as LM Studio — a
+    # non-empty api_key string is required even when the upstream ignores it.
+    # OVHcloud-style anonymous endpoints that reject dummy Bearers use
+    # OMIT_AUTH_API_KEY so create_openai_client strips Authorization.
+    if not api_key:
+        try:
+            from providers import get_provider_profile
+            from providers.base import OMIT_AUTH_API_KEY
+
+            _profile = get_provider_profile(provider_id)
+            if _profile is not None and getattr(_profile, "allows_no_api_key", False):
+                if getattr(_profile, "omit_auth_header", False):
+                    api_key = OMIT_AUTH_API_KEY
+                else:
+                    api_key = "no-key-required"
+                key_source = key_source or "default"
+        except Exception:
+            pass
+
     env_url = ""
     if pconfig.base_url_env_var:
         env_url = os.getenv(pconfig.base_url_env_var, "").strip()
@@ -6570,6 +6626,20 @@ def resolve_api_key_provider_credentials(provider_id: str) -> Dict[str, Any]:
                     base_url = resolved
         except Exception as exc:
             logger.debug("Copilot base URL resolution fell back to default: %s", exc)
+    elif provider_id == "cloudflare-workers-ai":
+        account_id = (
+            os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+            or os.getenv("CF_ACCOUNT_ID", "").strip()
+        )
+        if env_url:
+            base_url = env_url.rstrip("/")
+        elif account_id:
+            base_url = (
+                "https://api.cloudflare.com/client/v4/accounts/"
+                f"{account_id}/ai/v1"
+            )
+        else:
+            base_url = pconfig.inference_base_url
     elif env_url:
         base_url = env_url.rstrip("/")
     else:

@@ -1,0 +1,5 @@
+name: ollama-remote-provider
+kind: model-provider
+version: 1.0.0
+description: Remote Ollama server with anonymous OpenAI-compatible access
+author: Hermes

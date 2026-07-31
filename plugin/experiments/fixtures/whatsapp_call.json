@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "app_name": "WhatsApp",
+    "window_name": "Pallavi",
+    "bundle_id": "net.whatsapp.WhatsApp",
+    "screen": "call",
+    "coverage": 1.0
+  },
+  "tree": {
+    "id": "wa-call",
+    "name": "Pallavi",
+    "role": "AXWindow",
+    "children": [
+      {
+        "id": "call-status",
+        "name": "Calling Pallavi",
+        "role": "AXStaticText",
+        "bbox": [200, 200, 200, 30],
+        "children": []
+      },
+      {
+        "id": "end-call",
+        "name": "End call",
+        "role": "AXButton",
+        "bbox": [280, 400, 80, 40],
+        "enabled": true,
+        "children": []
+      },
+      {
+        "id": "voice-call",
+        "name": "Voice call",
+        "role": "AXStaticText",
+        "bbox": [200, 160, 120, 24],
+        "children": []
+      }
+    ]
+  }
+}

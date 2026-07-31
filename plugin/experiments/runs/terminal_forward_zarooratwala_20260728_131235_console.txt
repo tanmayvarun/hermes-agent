@@ -1,0 +1,13 @@
+=== launch start 20260728_131235 ===
+log_path=plugin/experiments/runs/forward_zarooratwala_live_20260728_131235.jsonl
+console_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260728_131235_console.txt
+status_path=plugin/experiments/runs/terminal_forward_zarooratwala_20260728_131235_status.txt
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][FAIL][step 0] step | message='_LSOpenURLsWithCompletionHandler() failed for the application /Applications/WhatsApp.app with error -600.; _LSOpenURLsWithCompletionHandler() failed with error -600.'
+[008][FAIL] run_end | detail='failed to launch WhatsApp: _LSOpenURLsWithCompletionHandler() failed for the application /Applications/WhatsApp.app with error -600.; _LSOpenURLsWithCompletionHandler() failed with error -600.'
+OK=False LOG=plugin/experiments/runs/forward_zarooratwala_live_20260728_131235.jsonl

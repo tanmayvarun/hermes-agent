@@ -1,0 +1,2391 @@
+"""Closed-loop goal controller — transition-aware observe → act → observe → evaluate."""
+
+from __future__ import annotations
+
+import re
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Protocol
+
+from plugin.agent.action import Action
+from plugin.agent.apps.registry import get_overlay
+from plugin.agent.decision import DecisionEngine, get_decision_engine
+from plugin.agent.goal import Goal, GoalStatus, evaluate_goal
+from plugin.agent.policy.events import log_policy_event
+from plugin.agent.runtime.state import RuntimeState
+from plugin.agent.trajectory_memory import TrajectoryStepRecord, get_trajectory_memory
+from plugin.agent.task_binding import ForwardTaskState
+from plugin.agent.perception_cycle import (
+    PerceptionSnapshot,
+    apply_observation,
+    build_view_features,
+    ensure_settled_perception,
+    refresh_perception,
+)
+from plugin.agent.transition import (
+    ExplorationBranch,
+    FailureDomain,
+    TransitionEvaluator,
+    TransitionMonitor,
+    TransitionOutcome,
+    apply_transition_confirmation,
+    confirm_transition_with_llm,
+    should_advance_reference_hypothesis,
+    update_interaction_context,
+    world_fingerprint,
+)
+from plugin.agent.runtime.recovery import maybe_cleanup_for_storage_pressure
+from plugin.agent.transition.post_perceive import (
+    feature_get,
+    settled_empty_search_results,
+)
+from plugin.agent.transition.types import TransitionSummary
+from plugin.agent.whatsapp_view import entities_matching
+from plugin.executor.ghost import ExecResult
+from plugin.experiments.logger import EventLogger
+from plugin.perception.observation import Observation
+
+# Backward alias
+PlanStep = Action
+
+
+@dataclass
+class GoalResult:
+    ok: bool
+    reason: str
+    evidence: Dict[str, Any] = field(default_factory=dict)
+    iterations: int = 0
+    planner_invocations: int = 0
+
+    @classmethod
+    def success(cls, evidence: Optional[Dict[str, Any]] = None, **kwargs: Any) -> "GoalResult":
+        return cls(ok=True, reason="goal succeeded", evidence=evidence or {}, **kwargs)
+
+    @classmethod
+    def failure(cls, reason: str, evidence: Optional[Dict[str, Any]] = None, **kwargs: Any) -> "GoalResult":
+        return cls(ok=False, reason=reason, evidence=evidence or {}, **kwargs)
+
+
+class ActionExecutor(Protocol):
+    def execute(self, step: Action) -> ExecResult: ...
+
+
+ObserveFn = Callable[[], Observation]
+WaitFn = Callable[[float, str], None]
+
+WORLDVIEW_LOW = 0.55
+_DEFAULT_GOAL_RUN_TIMEOUT_SECONDS = 900.0
+
+
+def resolve_step_budget(
+    *,
+    max_iterations: int,
+    max_stepcount: Optional[int] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Resolve the effective closed-loop step budget.
+
+    ``max_iterations`` remains the hard outer ceiling. ``max_stepcount`` is a
+    soft hint from leaf runners / configs, not a semantic truth about the
+    agent. We still clamp it to the caller ceiling so safety bounds remain
+    intact, but the runtime should treat it as a tunable budget, not a design
+    primitive.
+    """
+    ceiling = max(1, int(max_iterations or 1))
+    candidate: Optional[int]
+
+    if max_stepcount is not None:
+        candidate = max_stepcount
+    else:
+        candidate = None
+        cfg = config if isinstance(config, dict) else {}
+        agent_cfg = cfg.get("agent") or {}
+        if isinstance(agent_cfg, dict):
+            raw = agent_cfg.get("max_stepcount")
+            if raw is not None:
+                try:
+                    candidate = int(raw)
+                except (TypeError, ValueError):
+                    candidate = None
+
+    if candidate is None or candidate <= 0:
+        return ceiling
+    return max(1, min(ceiling, int(candidate)))
+
+
+def resolve_goal_run_timeout_seconds(
+    *,
+    goal_kind: str = "",
+    config: Optional[Dict[str, Any]] = None,
+) -> float:
+    """Resolve the soft wall-clock timeout for a full goal run.
+
+    The controller should not wait indefinitely just because the loop is
+    still active. This budget caps the *real elapsed time* spent on one goal
+    trajectory, while still allowing the per-step and per-provider budgets to
+    handle smaller waits.
+    """
+    cfg = config if isinstance(config, dict) else {}
+    agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
+    raw = None
+    if isinstance(agent_cfg, dict):
+        raw = agent_cfg.get("goal_run_timeout_seconds")
+    if raw is None:
+        try:
+            from hermes_cli.config import load_config_readonly
+
+            loaded = load_config_readonly() or {}
+            agent_cfg = loaded.get("agent") if isinstance(loaded.get("agent"), dict) else {}
+            if isinstance(agent_cfg, dict):
+                raw = agent_cfg.get("goal_run_timeout_seconds")
+        except Exception:
+            raw = None
+    if raw is None:
+        raw = _DEFAULT_GOAL_RUN_TIMEOUT_SECONDS
+        if str(goal_kind or "").strip().lower() in {
+            "whatsapp_forward_message",
+            "whatsapp_voice_call",
+            "whatsapp_read_message",
+        }:
+            raw = 600.0
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        timeout = _DEFAULT_GOAL_RUN_TIMEOUT_SECONDS
+    if timeout <= 0:
+        return float("inf")
+    return max(5.0, timeout)
+
+
+def resolve_goal_no_progress_timeout_seconds(
+    *,
+    goal_kind: str = "",
+    config: Optional[Dict[str, Any]] = None,
+) -> float:
+    """Resolve the soft no-progress watchdog for a full goal run.
+
+    This budget is about *meaningful advancement*, not idle time. The loop can
+    keep going, but the logs should make it obvious when the run has been
+    alive without progress long enough to justify backtracking pressure.
+    """
+    cfg = config if isinstance(config, dict) else {}
+    agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
+    raw = None
+    if isinstance(agent_cfg, dict):
+        raw = agent_cfg.get("goal_no_progress_timeout_seconds")
+    if raw is None:
+        try:
+            from hermes_cli.config import load_config_readonly
+
+            loaded = load_config_readonly() or {}
+            agent_cfg = loaded.get("agent") if isinstance(loaded.get("agent"), dict) else {}
+            if isinstance(agent_cfg, dict):
+                raw = agent_cfg.get("goal_no_progress_timeout_seconds")
+        except Exception:
+            raw = None
+    if raw is None:
+        raw = 45.0
+        if str(goal_kind or "").strip().lower() in {
+            "whatsapp_forward_message",
+            "whatsapp_voice_call",
+            "whatsapp_read_message",
+        }:
+            raw = 30.0
+    try:
+        timeout = float(raw)
+    except (TypeError, ValueError):
+        timeout = 45.0
+    if timeout <= 0:
+        return float("inf")
+    return max(5.0, timeout)
+
+
+def parse_typed_query_evidence(message: str, expected: str = "") -> str:
+    msg = message or ""
+    m = re.search(r"AXValue=['\"]([^'\"]+)['\"]", msg)
+    if m:
+        return m.group(1).strip()
+    m = re.search(
+        r"title=['\"]([^'\"]+)['\"]\s+desc=['\"]Search(?: or start[^'\"]*)?['\"]",
+        msg,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"typed\s+['\"]([^'\"]+)['\"]", msg, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    exp = (expected or "").strip()
+    if exp and exp.lower() in msg.lower():
+        return exp
+    return ""
+
+
+def _worldview(runtime: RuntimeState) -> float:
+    from plugin.agent.perception_cycle import _worldview as _wv
+
+    return _wv(runtime)
+
+
+def _view_dict(runtime: RuntimeState, goal: Goal) -> Dict[str, Any]:
+    view, _, _ = build_view_features(runtime, goal)
+    return view
+
+
+def _feature_dict(runtime: RuntimeState, goal: Goal, worldview_score: float = 1.0) -> Dict[str, Any]:
+    _, feats, _ = build_view_features(runtime, goal, worldview=worldview_score)
+    return feats
+
+
+def _log_cycle(
+    log: Optional[EventLogger],
+    *,
+    iteration: int,
+    phase: str,
+    payload: Dict[str, Any],
+    status: str = "ok",
+) -> None:
+    if log is None:
+        return
+    log.log(phase, payload, status=status, step=iteration)
+
+
+def _perception_log_fn(log: Optional[EventLogger], iteration: int):
+    def _fn(*, phase: str, payload: Dict[str, Any], status: str = "ok", iteration: int = 0) -> None:
+        _log_cycle(log, iteration=iteration, phase=phase, payload=payload, status=status)
+
+    return _fn
+
+
+def _maybe_richer_reobserve_after_transition(
+    runtime: RuntimeState,
+    goal: Goal,
+    *,
+    observe: ObserveFn,
+    decision: Action,
+    attempt: Any,
+    after_view: Dict[str, Any],
+    after_features: Dict[str, Any],
+    post_wv: float,
+    log: Optional[EventLogger],
+    iteration: int,
+) -> tuple[Dict[str, Any], Dict[str, Any], float, bool]:
+    """Use the richer screenshot/OCR path after failed non-observe transitions."""
+    if decision.action_family == "observe":
+        return after_view, after_features, post_wv, False
+    if attempt.outcome not in {
+        TransitionOutcome.NO_EFFECT.value,
+        TransitionOutcome.REGRESSION.value,
+        TransitionOutcome.UNCERTAIN.value,
+    }:
+        return after_view, after_features, post_wv, False
+
+    try:
+        snap = refresh_perception(
+            runtime,
+            goal,
+            observe=observe,
+            action_label=f"post_transition_richer_{decision.action_family or 'default'}",
+            target_entity_id=runtime.execution_state.last_target_id,
+        )
+        if log is not None:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="post_transition_richer_reobserve",
+                payload={
+                    "action_family": decision.action_family,
+                    "outcome": attempt.outcome,
+                    "screenshot": bool(snap.observation and snap.observation.screenshot_path),
+                    "view": {
+                        "screen": snap.view.get("screen"),
+                        "open_conversation": snap.view.get("open_conversation"),
+                        "search_query": snap.view.get("search_query"),
+                        "forward_phase": snap.features.get("extras", {}).get("forward_phase"),
+                    },
+                },
+                status="ok",
+            )
+        return snap.view, snap.features, snap.worldview, True
+    except Exception as exc:
+        from agent.auxiliary_client import LLMProviderExhaustedError
+
+        if isinstance(exc, LLMProviderExhaustedError):
+            raise
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="post_transition_richer_reobserve",
+            payload={"action_family": decision.action_family, "outcome": attempt.outcome, "error": str(exc)},
+            status="fail",
+        )
+        return after_view, after_features, post_wv, False
+
+
+def _maybe_learn_success(runtime: RuntimeState, goal: Goal, goal_status: GoalStatus) -> None:
+    try:
+        from plugin.agent.resolver import get_resolution_memory
+
+        resolved = (
+            str((goal_status.evidence or {}).get("open_conversation") or "").strip()
+            or str(getattr(runtime.execution_state, "last_resolved_contact", "") or "").strip()
+            or (goal.contact or "")
+        )
+        if goal.contact and resolved:
+            get_resolution_memory().record(
+                goal.contact,
+                resolved,
+                succeeded=True,
+                source="goal_success",
+            )
+    except Exception:
+        pass
+
+
+def _post_view_mentions_contact(post_view: Dict[str, Any], goal: Goal) -> bool:
+    contact = (goal.contact or "").strip().lower()
+    if not contact:
+        return False
+    blobs: List[str] = []
+    for key in ("open_conversation", "search_query", "window_name", "screen"):
+        val = str(post_view.get(key) or "").strip()
+        if val:
+            blobs.append(val)
+    visible = post_view.get("visible_contacts") or []
+    if isinstance(visible, list):
+        blobs.extend(str(v) for v in visible if str(v).strip())
+    messages = post_view.get("conversation_messages") or []
+    if isinstance(messages, list):
+        for msg in messages[:8]:
+            if isinstance(msg, dict):
+                blobs.append(str(msg.get("text") or msg.get("label") or msg.get("description") or ""))
+            else:
+                blobs.append(str(msg))
+    return any(contact in blob.lower() for blob in blobs if blob)
+
+
+def _raw_observation_mentions_ringing(obs: Optional[Observation]) -> bool:
+    if obs is None:
+        return False
+    blobs: list[str] = []
+    for node in obs.nodes or []:
+        text = " ".join(
+            str(part or "").strip()
+            for part in (
+                getattr(node, "name", ""),
+                getattr(node, "description", ""),
+                getattr(node, "value", "") if getattr(node, "value", None) is not None else "",
+            )
+            if str(part or "").strip()
+        ).strip()
+        if text:
+            blobs.append(text.lower())
+    has_calling = any(
+        any(token in blob for token in ("calling", "ringing", "ongoing call", "call in progress"))
+        for blob in blobs
+    )
+    has_end_call = any("end call" in blob or "decline" in blob for blob in blobs)
+    return bool(has_calling and has_end_call)
+
+
+def _maybe_advance_reference_hypothesis(
+    runtime: RuntimeState,
+    goal: Goal,
+    *,
+    attribution: Dict[str, Any],
+    after_view: Dict[str, Any],
+    after_features: Dict[str, Any],
+    log,
+    iteration: int,
+) -> bool:
+    """Advance search text only when attribution implicates the reference layer."""
+    from plugin.agent.transition.attribution import TransitionAssessment, LayerBeliefDeltas
+
+    layers = runtime.execution_state.hypothesis_layers
+    ref = goal.ensure_reference() if goal.contact else None
+    n_hyps = len((ref.search_hypotheses if ref else None) or []) or 1
+    hyp_i = int(runtime.execution_state.search_hypothesis_index or 0)
+
+    # Rebuild assessment object for the gate
+    beliefs = attribution.get("affected_beliefs") or {}
+    assessment = TransitionAssessment(
+        action_family=str(attribution.get("action_family") or ""),
+        outcome=str(attribution.get("outcome") or ""),
+        effect_kind=str(attribution.get("effect_kind") or ""),
+        likely_failure_domain=str(attribution.get("likely_failure_domain") or ""),
+        affected_beliefs=LayerBeliefDeltas(
+            reference_resolution=float(beliefs.get("reference_resolution") or 0),
+            entity_resolution=float(beliefs.get("entity_resolution") or 0),
+            target_actionability=float(beliefs.get("target_actionability") or 0),
+            actuator_reliability=float(beliefs.get("actuator_reliability") or 0),
+            perception_reliability=float(beliefs.get("perception_reliability") or 0),
+        ),
+        evidence=dict(attribution.get("evidence") or {}),
+        notes=list(attribution.get("notes") or []),
+    )
+    if not should_advance_reference_hypothesis(
+        assessment=assessment,
+        layers=layers,
+        goal=goal,
+        after_view=after_view,
+        after_features=after_features,
+        hyp_index=hyp_i,
+        n_hypotheses=n_hyps,
+    ):
+        return False
+    if runtime.execution_state.advance_search_hypothesis(n_hyps):
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="search_hypothesis_advance",
+            payload={
+                "index": runtime.execution_state.search_hypothesis_index,
+                "active": goal.search_text(runtime.execution_state.search_hypothesis_index),
+                "hypotheses": list((ref.search_hypotheses if ref else None) or []),
+                "trigger": "reference_evidence",
+                "attribution": attribution,
+            },
+            status="ok",
+        )
+        return True
+    return False
+
+
+def _maybe_advance_search_hypothesis(
+    runtime: RuntimeState,
+    goal: Goal,
+    *,
+    decision: Action,
+    after_view: Dict[str, Any],
+    after_features: Dict[str, Any],
+    log,
+    iteration: int,
+    perception_settled: bool = False,
+) -> bool:
+    """Advance spelling only after settled empty judgment — never on incomplete perception."""
+    # Never advance on the type_query that just opened a promising surface
+    if decision.action_family == "type_query":
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="search_hypothesis_advance_blocked",
+            payload={"reason": "not_on_type_query_transition", "action_family": decision.action_family},
+            status="ok",
+        )
+        return False
+
+    ok_empty, reason = settled_empty_search_results(
+        view=after_view,
+        features=after_features,
+        perception_settled=perception_settled,
+    )
+    if not ok_empty:
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="search_hypothesis_advance_blocked",
+            payload={
+                "reason": reason,
+                "action_family": decision.action_family,
+                "resolution_policy": feature_get(after_features, "resolution_policy"),
+                "result_surface_visible": feature_get(after_features, "result_surface_visible"),
+                "contact_candidates_n": len(feature_get(after_features, "contact_candidates") or []),
+            },
+            status="ok",
+        )
+        return False
+
+    if not after_features.get("query_matches_goal"):
+        return False
+    if str(after_view.get("search_query") or "").strip() == "":
+        return False
+
+    ref = goal.ensure_reference() if goal.contact else None
+    n_hyps = len((ref.search_hypotheses if ref else None) or []) or 1
+    hyp_i = int(runtime.execution_state.search_hypothesis_index or 0)
+    if hyp_i >= n_hyps - 1:
+        return False
+
+    if not runtime.execution_state.advance_search_hypothesis(n_hyps):
+        return False
+
+    _log_cycle(
+        log,
+        iteration=iteration,
+        phase="search_hypothesis_advance",
+        payload={
+            "index": runtime.execution_state.search_hypothesis_index,
+            "active": goal.search_text(runtime.execution_state.search_hypothesis_index),
+            "hypotheses": list((ref.search_hypotheses if ref else None) or []),
+            "trigger": "empty_search_result_set",
+            "decision": decision.__dict__,
+            "after_features": {
+                "query_matches_goal": after_features.get("query_matches_goal"),
+                "resolution_policy": feature_get(after_features, "resolution_policy"),
+                "resolution_confidence": feature_get(after_features, "resolution_confidence"),
+                "screen_bucket": after_features.get("screen_bucket"),
+                "result_surface_visible": feature_get(after_features, "result_surface_visible"),
+            },
+        },
+        status="ok",
+    )
+    return True
+
+
+def _apply_actuation_suppression(runtime: RuntimeState, action: Action, attribution: Dict[str, Any]) -> None:
+    """Suppress the specific action key when actuation is implicated — not the query."""
+    domain = str(attribution.get("likely_failure_domain") or "")
+    effect = str(attribution.get("effect_kind") or "")
+    if domain != FailureDomain.ACTUATION.value and effect not in {
+        "missing_geometry",
+        "actuator_failed",
+        "no_transition",
+        "not_attempted",
+    }:
+        return
+    key = runtime.execution_state.action_key(action)
+    # Longer suppress for missing geometry / actuator fail
+    ttl = 4 if effect in {"missing_geometry", "actuator_failed"} else 3
+    runtime.execution_state.prohibited_actions[key] = max(
+        runtime.execution_state.prohibited_actions.get(key, 0), ttl
+    )
+
+
+def _frontier_backtrack_hint(branch: ExplorationBranch, *, fallback: str = "observe") -> str:
+    """Pick the next frontier family from live branch evidence."""
+    best = branch.best_non_observe_frontier(only_untried=True) or branch.best_non_observe_frontier()
+    if best is None:
+        best = branch.best_frontier(only_untried=True) or branch.best_frontier()
+    if best is None:
+        return fallback
+    fam = str(best.action_family or "").strip()
+    if not fam:
+        return fallback
+    if fam == "observe":
+        return fallback
+    return fam
+
+
+def _merge_affordance_hints(existing: List[str], additions: List[str]) -> List[str]:
+    merged: List[str] = []
+    seen = set()
+    for item in list(existing) + list(additions):
+        key = str(item or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(str(item).strip())
+    return merged
+
+
+def _record_trajectory_run(
+    *,
+    goal: Goal,
+    steps: list[TrajectoryStepRecord],
+    success: bool,
+    reason: str,
+    evidence: Optional[Dict[str, Any]] = None,
+) -> None:
+    if not steps:
+        return
+    try:
+        get_trajectory_memory().record_run(
+            goal=goal,
+            steps=steps,
+            success=success,
+            reason=reason,
+            evidence=evidence or {},
+        )
+    except Exception:
+        pass
+
+
+def _transition_summary_from_attempt(attempt: Any, *, after_features: Any = None, decision: Optional[Action] = None) -> TransitionSummary:
+    assessment = attempt.assessment if isinstance(getattr(attempt, "assessment", None), dict) else {}
+    attribution = attempt.attribution if isinstance(getattr(attempt, "attribution", None), dict) else {}
+    return TransitionSummary(
+        outcome=str(getattr(attempt, "outcome", "") or ""),
+        progress_delta=float(getattr(attempt, "progress_delta", 0.0) or 0.0),
+        change_score=float(getattr(attempt, "change_score", 0.0) or 0.0),
+        prediction=dict(getattr(attempt, "prediction", None) or {}),
+        prediction_error=dict(getattr(attempt, "prediction_error", None) or {}),
+        goal_progress=str(assessment.get("goal_progress") or ""),
+        meaningful_change=bool(assessment.get("meaningful_change", False)),
+        state_understood=bool(assessment.get("state_understood", True)),
+        context_preserved=bool(assessment.get("context_preserved", True)),
+        branch_reversible=bool(assessment.get("branch_reversible", True)),
+        newly_relevant_affordances=list(assessment.get("newly_relevant_affordances") or []),
+        contradiction_evidence=list(assessment.get("contradiction_evidence") or []),
+        notes=list(assessment.get("notes") or getattr(attempt, "reasons", []) or []),
+        risk=float(assessment.get("irreversible_risk_delta") or 0.0),
+        effect_kind=str(getattr(attempt, "effect_kind", "") or ""),
+        failure_domain=str(attribution.get("likely_failure_domain") or ""),
+        action_family=str(getattr(attempt, "action_family", "") or getattr(decision, "action_family", "") or ""),
+        selected_capability_id=str(assessment.get("selected_capability_id") or feature_get(after_features, "selected_capability_id") or ""),
+        selected_capability_type=str(assessment.get("selected_capability_type") or feature_get(after_features, "selected_capability_type") or ""),
+    )
+
+
+def run_goal_closed_loop(
+    runtime: RuntimeState,
+    goal: Goal,
+    *,
+    observe: ObserveFn,
+    execute: ActionExecutor,
+    log: Optional[EventLogger] = None,
+    max_iterations: int = 15,
+    max_stepcount: Optional[int] = None,
+    settle_s: float = 1.0,
+    wait_fn: Optional[WaitFn] = None,
+    retention_floor: float = 0.35,
+    engine: Optional[DecisionEngine] = None,
+) -> GoalResult:
+    """
+    Trajectory-aware closed loop:
+
+    observe → update belief + interaction context → if goal done: success
+    → affordances → experience filter → choose one action
+    → execute → TransitionMonitor → re-observe → evaluate outcome
+    → on PROMISING_UNRESOLVED: bounded branch exploration (not immediate regression)
+    → suppress / continue / backtrack only after clear contradiction or budget
+    """
+
+    eng = engine or get_decision_engine()
+    if settle_s <= 0.05:
+        monitor_timeout = 0.35
+        monitor_poll = 0.05
+    else:
+        monitor_timeout = max(1.2, settle_s * 1.5)
+        monitor_poll = 0.3
+    monitor = TransitionMonitor(timeout_s=monitor_timeout, poll_s=monitor_poll)
+    evaluator = TransitionEvaluator()
+    experience = runtime.execution_state.state_experience
+    trajectory_steps: list[TrajectoryStepRecord] = []
+    raw_call_ring_seen = {"seen": False}
+    step_budget = resolve_step_budget(
+        max_iterations=max_iterations,
+        max_stepcount=max_stepcount,
+    )
+    goal_run_timeout_s = resolve_goal_run_timeout_seconds(goal_kind=goal.kind)
+    goal_no_progress_timeout_s = resolve_goal_no_progress_timeout_seconds(goal_kind=goal.kind)
+    goal_run_started_at = time.monotonic()
+    goal_last_progress_at = goal_run_started_at
+
+    _log_cycle(
+        log,
+        iteration=0,
+        phase="loop_budget",
+        payload={
+            "max_iterations": max_iterations,
+            "max_stepcount": max_stepcount,
+            "max_stepcount_hint": max_stepcount,
+                "budget_semantics": "soft_hint",
+                "resolved_step_budget": step_budget,
+                "goal_run_timeout_s": goal_run_timeout_s,
+                "goal_run_timeout_semantics": "soft_hint",
+                "goal_no_progress_timeout_s": goal_no_progress_timeout_s,
+                "goal_no_progress_timeout_semantics": "soft_hint",
+            },
+        )
+
+    def _wait(seconds: float, reason: str) -> None:
+        if wait_fn:
+            wait_fn(seconds, reason)
+        else:
+            time.sleep(seconds)
+
+    def _goal_run_elapsed_s() -> float:
+        try:
+            return max(0.0, float(time.monotonic() - goal_run_started_at))
+        except Exception:
+            return 0.0
+
+    def _goal_run_budget_exceeded() -> bool:
+        if goal_run_timeout_s == float("inf"):
+            return False
+        return _goal_run_elapsed_s() >= float(goal_run_timeout_s)
+
+    def _goal_progress_elapsed_s() -> float:
+        try:
+            return max(0.0, float(time.monotonic() - goal_last_progress_at))
+        except Exception:
+            return 0.0
+
+    def _goal_no_progress_budget_exceeded() -> bool:
+        if goal_no_progress_timeout_s == float("inf"):
+            return False
+        return _goal_progress_elapsed_s() >= float(goal_no_progress_timeout_s)
+
+    def _finish_success(
+        evidence: Optional[Dict[str, Any]],
+        *,
+        iterations: int,
+    ) -> GoalResult:
+        result = GoalResult.success(
+            evidence or {},
+            iterations=iterations,
+            planner_invocations=runtime.execution_state.planner_invocations,
+        )
+        _record_trajectory_run(
+            goal=goal,
+            steps=trajectory_steps,
+            success=True,
+            reason=result.reason,
+            evidence=result.evidence,
+        )
+        return result
+
+    def _finish_failure(
+        reason: str,
+        evidence: Optional[Dict[str, Any]],
+        *,
+        iterations: int,
+    ) -> GoalResult:
+        result = GoalResult.failure(
+            reason,
+            evidence or {},
+            iterations=iterations,
+            planner_invocations=runtime.execution_state.planner_invocations,
+        )
+        _record_trajectory_run(
+            goal=goal,
+            steps=trajectory_steps,
+            success=False,
+            reason=result.reason,
+            evidence=result.evidence,
+        )
+        return result
+
+    for iteration in range(1, step_budget + 1):
+        if _goal_run_budget_exceeded():
+            elapsed = _goal_run_elapsed_s()
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="goal_run_budget_exceeded",
+                payload={
+                    "elapsed_s": round(elapsed, 3),
+                    "goal_run_timeout_s": goal_run_timeout_s,
+                    "step_budget": step_budget,
+                    "reason": "wall_clock_budget_exhausted",
+                },
+                status="fail",
+            )
+            return _finish_failure(
+                "goal wall-clock budget reached",
+                {"elapsed_s": round(elapsed, 3), "goal_run_timeout_s": goal_run_timeout_s},
+                iterations=iteration - 1,
+            )
+        progress_elapsed = _goal_progress_elapsed_s()
+        no_progress_budget_exceeded = _goal_no_progress_budget_exceeded()
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="progress_clock",
+            payload={
+                "elapsed_s": round(_goal_run_elapsed_s(), 3),
+                "elapsed_since_progress_s": round(progress_elapsed, 3),
+                "goal_no_progress_timeout_s": goal_no_progress_timeout_s,
+                "step_budget_remaining": max(0, step_budget - iteration + 1),
+                "soft_watchdog": True,
+                "no_progress_budget_exceeded": no_progress_budget_exceeded,
+            },
+            status="warn" if no_progress_budget_exceeded else "ok",
+        )
+        if no_progress_budget_exceeded:
+            runtime.execution_state.world_exploration_needed = True
+            if not experience.pending_backtrack_family:
+                experience.pending_backtrack_family = "observe"
+        runtime.execution_state.tick_search_query_hint()
+        snap_pre = refresh_perception(
+            runtime,
+            goal,
+            observe=observe,
+            action_label=runtime.execution_state.last_action or "observe",
+            log_fn=_perception_log_fn(log, iteration),
+            iteration=iteration,
+        )
+        observation = snap_pre.observation
+        patch = snap_pre.patch
+        wv = snap_pre.worldview
+        view = snap_pre.view
+        feats_pre = snap_pre.features
+        assert observation is not None and patch is not None
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="observation",
+            payload={
+                "app": observation.app_name,
+                "nodes": len(observation.nodes),
+                "source": observation.source,
+                "phase": "pre_decide",
+                "fusion": (observation.meta or {}).get("fusion"),
+                "world_id": runtime.execution_state.world_id,
+            },
+        )
+        state_sig = str(view.get("world_signature") or view.get("screen") or runtime.execution_state.world_id)
+        runtime.execution_state.note_world_signature(state_sig, None)
+        experience.visit(state_sig)
+        update_interaction_context(
+            runtime.execution_state.interaction_context,
+            goal=goal,
+            view=view,
+            features=feats_pre,
+            world_id=runtime.execution_state.world_id,
+        )
+
+        storage_cleanup = maybe_cleanup_for_storage_pressure(
+            runtime,
+            view=view,
+            features=feats_pre,
+            observation_texts=[
+                getattr(node, "name", "") or getattr(node, "description", "")
+                for node in (observation.nodes or [])
+            ],
+            execution_message=str((runtime.execution_state.last_result or {}).get("message") or ""),
+            reason_hint=str(goal.description or goal.kind),
+        )
+        if storage_cleanup is not None:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="storage_cleanup",
+                payload=storage_cleanup.to_dict(),
+                status="ok",
+            )
+            _wait(max(settle_s, 0.4), "storage pressure cleanup")
+            continue
+
+        # Forward: suppress identical Observe before decide
+        if goal.kind == "whatsapp_forward_message":
+            _apply_forward_observe_stagnation(
+                runtime,
+                state_sig=state_sig,
+                entity_count=len(observation.nodes),
+                features=feats_pre,
+            )
+            ft = None
+            if feats_pre is not None:
+                if hasattr(feats_pre, "extras") and isinstance(feats_pre.extras, dict):
+                    ft = feats_pre.extras.get("forward_task")
+                    phase = feats_pre.extras.get("forward_phase")
+                elif isinstance(feats_pre, dict):
+                    ft = (feats_pre.get("extras") or {}).get("forward_task")
+                    phase = (feats_pre.get("extras") or {}).get("forward_phase")
+                else:
+                    phase = None
+            else:
+                phase = None
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="forward_task",
+                payload={
+                    "forward_task": ft,
+                    "forward_phase": phase,
+                    "suppress_observe": runtime.execution_state.suppress_observe,
+                    "identical_observe_streak": runtime.execution_state.identical_observe_streak,
+                },
+            )
+
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="world_patch",
+            payload={
+                "screen": patch.screen_label,
+                "retention": patch.retention,
+                "whatsapp_screen": view.get("screen"),
+                "search_query": view.get("search_query"),
+                "visible_contacts": (view.get("visible_contacts") or [])[:10],
+                "open_conversation": view.get("open_conversation"),
+                "call_state": view.get("call_state"),
+                "worldview_score": patch.worldview_score,
+                "search_query_hint": runtime.execution_state.peek_search_query_hint(),
+                "phase": "pre_decide",
+                "needs_reobserve": bool(getattr(patch, "needs_reobserve", False)),
+                "fusion_conflicts": list(getattr(patch, "conflicts", None) or [])[:8],
+                "belief_updates": list(getattr(patch, "belief_updates", None) or [])[:8],
+                "world_id": runtime.execution_state.world_id,
+                "interaction_context": runtime.execution_state.interaction_context.to_dict(),
+                "exploration_branch": runtime.execution_state.exploration_branch.to_dict(),
+            },
+        )
+
+        if getattr(patch, "conflicts", None):
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="fusion_conflicts",
+                payload={
+                    "conflicts": list(patch.conflicts)[:16],
+                    "needs_reobserve": bool(patch.needs_reobserve),
+                    "agreement": (patch.fusion or {}).get("agreement"),
+                },
+                status="ok",
+            )
+
+        if patch.retention < retention_floor and runtime.execution_state.iteration > 0:
+            _wait(settle_s, "identity retention collapse — re-observe")
+            snap = refresh_perception(
+                runtime,
+                goal,
+                observe=observe,
+                action_label="reobserve_low_retention",
+                log_fn=_perception_log_fn(log, iteration),
+                iteration=iteration,
+            )
+            patch = snap.patch or patch
+            runtime.execution_state.bump_world_id(significant=True)
+            wv = snap.worldview
+            view = snap.view
+            observation = snap.observation or observation
+            state_sig = str(view.get("world_signature") or view.get("screen") or "")
+
+        # Low worldview / fusion conflict → re-perceive (skip thrash when hyps remain)
+        ref = goal.ensure_reference() if goal.contact else None
+        n_hyps = len((ref.search_hypotheses if ref else None) or [goal.contact]) or 1
+        hyp_i = int(getattr(runtime.execution_state, "search_hypothesis_index", 0) or 0)
+        hyps_left = hyp_i < n_hyps - 1
+        needs_reobs = bool(getattr(patch, "needs_reobserve", False)) or bool(
+            (patch.worldview_score or {}).get("needs_reobserve")
+        )
+        if (wv < WORLDVIEW_LOW or needs_reobs) and not hyps_left:
+            node_n = len(observation.nodes)
+            mean_b = float((patch.worldview_score or {}).get("mean_belief") or 0)
+            skip = (not needs_reobs) and node_n >= 80 and mean_b >= 0.7 and wv >= 0.45
+            if not skip:
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="worldview_low",
+                    payload={
+                        "worldview_score": patch.worldview_score,
+                        "threshold": WORLDVIEW_LOW,
+                        "needs_reobserve": needs_reobs,
+                    },
+                    status="fail" if wv < WORLDVIEW_LOW else "ok",
+                )
+                _wait(max(settle_s, 0.4), "low worldview / fusion conflict — re-observe")
+                snap = refresh_perception(
+                    runtime,
+                    goal,
+                    observe=observe,
+                    action_label="reobserve_low_worldview",
+                    log_fn=_perception_log_fn(log, iteration),
+                    iteration=iteration,
+                )
+                patch = snap.patch or patch
+                runtime.execution_state.bump_world_id(significant=True)
+                wv = snap.worldview
+                view = snap.view
+                observation = snap.observation or observation
+                state_sig = str(view.get("world_signature") or view.get("screen") or "")
+
+        # Goal check BEFORE acting — overrides iteration budget when satisfied
+        goal_status: GoalStatus = evaluate_goal(goal, runtime.world_model)
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="goal_status",
+            payload={
+                "succeeded": goal_status.succeeded,
+                "impossible": goal_status.impossible,
+                "reason": goal_status.reason,
+                "evidence": goal_status.evidence,
+            },
+            status="ok" if not goal_status.impossible else "fail",
+        )
+        if goal_status.succeeded:
+            _maybe_learn_success(runtime, goal, goal_status)
+            return _finish_success(goal_status.evidence, iterations=iteration)
+        if goal_status.impossible:
+            return _finish_failure(goal_status.reason, goal_status.evidence, iterations=iteration)
+
+        if runtime.execution_state.oscillating():
+            return _finish_failure(
+                "action/state oscillation detected",
+                {"recent": list(runtime.execution_state.recent_action_state_pairs)},
+                iterations=iteration,
+            )
+
+        before_world_id = runtime.execution_state.world_id
+        before_fp = world_fingerprint(runtime.world_model, view)
+        before_view = dict(view)
+        before_feats = _feature_dict(runtime, goal, wv)
+
+        decision = eng.decide(
+            goal,
+            runtime.world_model,
+            runtime.execution_state,
+            worldview_score=wv,
+            state_signature=state_sig,
+            state_experience=experience,
+        )
+        overlay = get_overlay(goal.app, runtime.world_model)
+        feats = overlay.features(runtime.world_model, goal, worldview_score=wv)
+
+        # Low resolution confidence: observe to refine; ask only after attempts
+        policy = str(feats.extras.get("resolution_policy") or "")
+        if (
+            feats.extras.get("needs_confirmation")
+            and feats.query_matches_goal
+            and policy == "ask"
+        ):
+            amb_count = int(getattr(runtime.execution_state, "ambiguous_observe_count", 0) or 0) + 1
+            runtime.execution_state.ambiguous_observe_count = amb_count  # type: ignore[attr-defined]
+            cands = feats.extras.get("contact_candidates") or []
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="contact_low_confidence",
+                payload={
+                    "candidates": cands,
+                    "contact": goal.contact,
+                    "count": amb_count,
+                    "confidence": feats.extras.get("resolution_confidence"),
+                    "policy": policy,
+                },
+                status="fail" if amb_count >= 3 else "ok",
+            )
+            if amb_count >= 3:
+                return _finish_failure(
+                    f"low confidence for {goal.contact!r} — confirm exact name",
+                    {
+                        "candidates": cands,
+                        "needs_confirmation": True,
+                        "resolution_confidence": feats.extras.get("resolution_confidence"),
+                        "app_view": view,
+                    },
+                    iterations=iteration,
+                )
+        elif policy == "auto":
+            runtime.execution_state.ambiguous_observe_count = 0  # type: ignore[attr-defined]
+
+        trace = eng.last_trace
+        selector_timeout_s = 0.0
+        selector_timeout_source = ""
+        if trace is not None and isinstance(trace.selector, dict):
+            try:
+                selector_timeout_s = float(trace.selector.get("timeout_s") or 0.0)
+            except Exception:
+                selector_timeout_s = 0.0
+            selector_timeout_source = str(trace.selector.get("timeout_source") or "")
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="decision_budget",
+            payload={
+                "step_budget": step_budget,
+                "step_budget_remaining": max(0, step_budget - iteration + 1),
+                "settle_s": settle_s,
+                "monitor_timeout_s": monitor_timeout,
+                "monitor_poll_s": monitor_poll,
+                "selector_timeout_s": selector_timeout_s,
+                "selector_timeout_source": selector_timeout_source,
+                "decision_budget_semantics": "soft_hint",
+            },
+        )
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="decision_engine",
+            payload={
+                "planner_invocations": runtime.execution_state.planner_invocations,
+                "decision": None if decision is None else decision.__dict__,
+                "trace": None if trace is None else {
+                    "features": trace.features,
+                    "candidates": trace.candidates,
+                    "chosen": trace.chosen,
+                },
+                "app_view": view,
+                "worldview_score": runtime.world_model.last_worldview_score,
+                "world_id": before_world_id,
+                "state_signature": state_sig,
+            },
+            status="ok" if decision is not None else "fail",
+        )
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="planner_decision",
+            payload={
+                "planner_invocations": runtime.execution_state.planner_invocations,
+                "decision": None if decision is None else decision.__dict__,
+                "whatsapp_view": view,
+            },
+            status="ok" if decision is not None else "fail",
+        )
+
+        if decision is None:
+            return _finish_failure(
+                "DecisionEngine produced no valid action",
+                view,
+                iterations=iteration,
+            )
+
+        # Bind action to current world version
+        decision.observed_in_world = before_world_id
+        runtime.execution_state.active_action_world_id = before_world_id
+        runtime.execution_state.last_target_id = decision.target_entity_id
+
+        log_policy_event(
+            {
+                "goal_kind": goal.kind,
+                "bucket_key": feats.bucket_key(goal.kind),
+                "feature_hash": feats.feature_hash(goal.kind),
+                "action_family": decision.action_family,
+                "action": decision.action,
+                "target": decision.semantic_target,
+                "success_delta": 0.0,
+                "phase": "decide",
+                "score": decision.score,
+            }
+        )
+
+        if decision.action.lower() == "observe":
+            runtime.execution_state.record(decision, {"ok": True, "backend": "noop", "message": "observe"})
+            if runtime.execution_state.world_exploration_needed:
+                runtime.execution_state.world_explore_observe_count = (
+                    int(runtime.execution_state.world_explore_observe_count or 0) + 1
+                )
+            if goal.kind == "whatsapp_forward_message":
+                _note_forward_observe(runtime, state_sig)
+            _wait(settle_s, decision.rationale or "observe settle")
+            continue
+
+        # Non-observe clears observe streak
+        runtime.execution_state.identical_observe_streak = 0
+        runtime.execution_state.suppress_observe = False
+        if goal.kind == "whatsapp_forward_message":
+            hints = runtime.world_model.overlay_hints
+            if hints is None:
+                runtime.world_model.overlay_hints = {}
+                hints = runtime.world_model.overlay_hints
+            ft = dict(hints.get("forward_task") or {})
+            ft["suppress_observe"] = False
+            hints["forward_task"] = ft
+
+        # Refuse stale world binding (should not happen mid-cycle, but guard executors)
+        if decision.observed_in_world and decision.observed_in_world != runtime.execution_state.world_id:
+            pred = decision.prediction if isinstance(decision.prediction, dict) else {}
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="stale_action_target",
+                payload={
+                    "action_world": decision.observed_in_world,
+                    "current_world": runtime.execution_state.world_id,
+                    "action": decision.__dict__,
+                },
+                status="fail",
+            )
+            experience.record_outcome(
+                state_sig,
+                decision,
+                TransitionOutcome.NO_EFFECT,
+                progress_delta=0.0,
+                predicted_outcome=str(pred.get("predicted_outcome") or ""),
+                predicted_progress=float(pred.get("expected_progress") or 0.0),
+                predicted_affordances=list(pred.get("expected_affordances") or []),
+            )
+            continue
+
+        execution = execute.execute(decision)
+        runtime.execution_state.record(decision, execution.__dict__)
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="execution",
+            payload={**execution.__dict__, "plan_step": decision.__dict__, "world_id": before_world_id},
+            status="ok" if execution.ok else "fail",
+        )
+
+        if goal.kind == "whatsapp_forward_message" and execution.ok:
+            _bind_forward_after_execution(runtime, decision)
+
+        if not execution.ok:
+            runtime.execution_state.record_failure(execution.message)
+            pred = decision.prediction if isinstance(decision.prediction, dict) else {}
+            experience.record_outcome(
+                state_sig,
+                decision,
+                TransitionOutcome.NO_EFFECT,
+                progress_delta=-0.2,
+                predicted_outcome=str(pred.get("predicted_outcome") or ""),
+                predicted_progress=float(pred.get("expected_progress") or 0.0),
+                predicted_affordances=list(pred.get("expected_affordances") or []),
+            )
+            # Attribute execute-fail to actuation — never advance reference
+            from plugin.agent.transition.attribution import attribute_transition
+
+            attrib = attribute_transition(
+                action=decision,
+                outcome=TransitionOutcome.NO_EFFECT.value,
+                execution=execution.__dict__,
+                before_view=before_view,
+                after_view=before_view,
+                before_features=before_feats,
+                after_features=before_feats,
+                goal=goal,
+            )
+            runtime.execution_state.hypothesis_layers.apply(attrib)
+            runtime.execution_state.last_attribution = attrib.to_dict()
+            _apply_actuation_suppression(runtime, decision, attrib.to_dict())
+            runtime.execution_state.world_exploration_needed = True
+            experience.pending_backtrack_family = "observe"
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="transition_attribution",
+                payload=attrib.to_dict(),
+                status="fail",
+            )
+            log_policy_event(
+                {
+                    "goal_kind": goal.kind,
+                    "bucket_key": feats.bucket_key(goal.kind),
+                    "action_family": decision.action_family,
+                    "success_delta": -0.5,
+                    "phase": "execute_fail",
+                    "failure_domain": attrib.likely_failure_domain,
+                    "effect_kind": attrib.effect_kind,
+                }
+            )
+            continue
+
+        if decision.action_family == "open_contact" and decision.semantic_target:
+            runtime.execution_state.last_resolved_contact = decision.semantic_target  # type: ignore[attr-defined]
+
+        if decision.action_family == "start_call" and execution.ok:
+            hints = runtime.world_model.overlay_hints
+            hints["start_call_count"] = int(hints.get("start_call_count") or 0) + 1
+
+        if decision.action_family == "end_call":
+            msg = (execution.message or "").lower()
+            noop = (not execution.ok) or (
+                "center=none" in msg and "hangup" not in msg and "escape" not in msg and "axpress" not in msg
+            )
+            if noop or not execution.ok:
+                streak = int(getattr(runtime.execution_state, "end_call_fail_streak", 0) or 0) + 1
+                runtime.execution_state.end_call_fail_streak = streak
+                runtime.world_model.overlay_hints["end_call_fail_streak"] = streak
+            else:
+                runtime.execution_state.end_call_fail_streak = 0
+                runtime.world_model.overlay_hints["end_call_fail_streak"] = 0
+
+        if decision.action.lower() == "type":
+            evidence_q = parse_typed_query_evidence(execution.message, decision.text or goal.contact)
+            if evidence_q:
+                runtime.execution_state.set_search_query_hint(evidence_q, ttl=4)
+                runtime.world_model.overlay_hints["search_query"] = evidence_q
+            try:
+                from plugin.perception.interpreters.execution import ExecutionInterpreter
+                from plugin.perception.fusion.engine import get_fusion_engine
+
+                hyps = ExecutionInterpreter().interpret_feedback(
+                    action="type",
+                    text=evidence_q or (decision.text or ""),
+                    ok=True,
+                    message=execution.message or "",
+                )
+                if hyps:
+                    frame = get_fusion_engine().fuse_hypotheses(
+                        hyps,
+                        app=runtime.world_model.active_app or goal.app,
+                        sources=["execution"],
+                    )
+                    runtime.world_model.overlay_hints["execution_frame"] = frame.report.to_dict()
+            except Exception:
+                pass
+
+        def _ingest_obs(obs: Observation) -> Any:
+            # TransitionMonitor observes separately; fuse/update via shared cycle.
+            if decision.action_family == "start_call" and _raw_observation_mentions_ringing(obs):
+                raw_call_ring_seen["seen"] = True
+            apply_observation(
+                runtime,
+                goal,
+                obs,
+                action_label=decision.action.lower(),
+                target_entity_id=runtime.execution_state.last_target_id,
+                log_fn=_perception_log_fn(log, iteration),
+                iteration=iteration,
+            )
+            return runtime.world_model
+
+        def _view_from_world(_wm: Any) -> Dict[str, Any]:
+            return _view_dict(runtime, goal)
+
+        transition, _after_wm, post_view = monitor.wait_for_change_or_stability(
+            before_fp=before_fp,
+            observe=observe,
+            ingest=_ingest_obs,
+            view_fn=_view_from_world,
+            wait_fn=wait_fn,
+            min_settle_s=max(settle_s * 0.5, 0.4) if decision.action.lower() != "type" else max(settle_s, 0.8),
+        )
+
+        if transition.changed and transition.change_score >= 0.2:
+            runtime.execution_state.bump_world_id(significant=True)
+            runtime.execution_state.last_target_id = None
+
+        after_world_id = runtime.execution_state.world_id
+        post_wv = _worldview(runtime)
+        after_feats = _feature_dict(runtime, goal, post_wv)
+
+        # Reusable observe→fuse→update cycle with settlement retries
+        initial_snap = PerceptionSnapshot(
+            observation=None,
+            patch=runtime.patches[-1] if runtime.patches else None,
+            view=dict(post_view),
+            features=after_feats,
+            worldview=post_wv,
+            action_label=f"post_{decision.action_family}",
+        )
+        settled_snap = ensure_settled_perception(
+            runtime,
+            goal,
+            observe=observe,
+            action_family=decision.action_family,
+            wait_fn=_wait,
+            settle_s=settle_s,
+            initial=initial_snap,
+            log_fn=_perception_log_fn(log, iteration),
+            iteration=iteration,
+            search_query_hint=runtime.execution_state.peek_search_query_hint(),
+        )
+        post_view = settled_snap.view
+        after_feats = settled_snap.features
+        post_wv = settled_snap.worldview
+        after_world_id = runtime.execution_state.world_id
+        perception_settled = bool(settled_snap.settled)
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="post_transition_settled_view",
+            payload={
+                "action_family": decision.action_family,
+                "screen": post_view.get("screen"),
+                "call_state": post_view.get("call_state"),
+                "open_conversation": post_view.get("open_conversation"),
+                "search_query": post_view.get("search_query"),
+                "visible_contacts": (post_view.get("visible_contacts") or [])[:10],
+                "perception_settled": perception_settled,
+            },
+            status="ok",
+        )
+
+        if runtime.execution_state.search_refinement_pending:
+            active_hypothesis = goal.search_text(runtime.execution_state.search_hypothesis_index)
+            search_query = str(feature_get(after_feats, "search_query") or "").strip()
+            if search_query and active_hypothesis and search_query.lower() == active_hypothesis.lower():
+                runtime.execution_state.search_refinement_pending = False
+            elif feature_get(after_feats, "result_surface_visible"):
+                runtime.execution_state.search_refinement_pending = False
+        after_state_sig = str(
+            post_view.get("world_signature") or post_view.get("screen") or after_world_id
+        )
+        runtime.execution_state.note_world_signature(after_state_sig, decision)
+
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="post_observation",
+            payload={
+                "transition": transition.to_dict(),
+                "world_id": after_world_id,
+            },
+        )
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="post_world_patch",
+            payload={
+                "whatsapp_screen": post_view.get("screen"),
+                "search_query": post_view.get("search_query"),
+                "visible_contacts": (post_view.get("visible_contacts") or [])[:10],
+                "open_conversation": post_view.get("open_conversation"),
+                "call_state": post_view.get("call_state"),
+                "worldview_score": runtime.world_model.last_worldview_score,
+                "entities_matching_contact": entities_matching(
+                    runtime.world_model, goal.contact, limit=12
+                ),
+                "search_query_hint": runtime.execution_state.peek_search_query_hint(),
+                "world_id": after_world_id,
+                "transition_change_score": transition.change_score,
+                "interaction_context": runtime.execution_state.interaction_context.to_dict(),
+            },
+        )
+
+        # Evaluate against pre-action latent context (object permanence), then refresh
+        pre_action_ctx = runtime.execution_state.interaction_context
+        attempt = evaluator.evaluate(
+            goal=goal,
+            before_world=runtime.world_model,
+            after_world=runtime.world_model,
+            action=decision,
+            before_view=before_view,
+            after_view=post_view,
+            before_features=before_feats,
+            after_features=after_feats,
+            transition=transition,
+            before_world_id=before_world_id,
+            after_world_id=after_world_id,
+            execution=execution.__dict__,
+            interaction_context=pre_action_ctx,
+        )
+        update_interaction_context(
+            runtime.execution_state.interaction_context,
+            goal=goal,
+            view=post_view,
+            features=after_feats,
+            world_id=after_world_id,
+        )
+        runtime.execution_state.last_transition = attempt.to_dict()
+        attrib_dict = attempt.attribution or {}
+        runtime.execution_state.last_attribution = attrib_dict
+        attempt_progress_delta = float(getattr(attempt, "progress_delta", 0.0) or 0.0)
+        belief_updates_raw = attrib_dict.get("belief_updates") or []
+        if belief_updates_raw:
+            from plugin.agent.transition.belief_state import BeliefUpdate
+
+            runtime.execution_state.record_belief_updates(
+                [
+                    BeliefUpdate.from_dict(item) if isinstance(item, dict) else item
+                    for item in belief_updates_raw
+                    if item is not None
+                ]
+            )
+        from plugin.agent.transition.belief_state import Experiment, Expectation, Hypothesis, Uncertainty
+
+        effect_kind = str(attrib_dict.get("effect_kind") or attempt.effect_kind or "")
+        action_family = str(attrib_dict.get("action_family") or decision.action_family or "")
+        target_label = str(decision.semantic_target or attrib_dict.get("semantic_target") or "")
+        if effect_kind in {"transition_not_perceived", "missing_geometry"}:
+            uncertainty = Uncertainty(
+                question="Is perception stale or incomplete for the current post-action world?",
+                importance=0.9,
+                blocking_goal_predicates=["world_transition_confirmed"],
+                candidate_values=["perception_stale", "perception_complete", "actuation_failed"],
+                confidence_gap=0.45,
+                staleness=1.0,
+            )
+            hypotheses = [
+                Hypothesis(
+                    explanation="The action succeeded but the current frame is not yet settled.",
+                    confidence=0.42,
+                    causal_assumptions=["sensor settlement lag"],
+                    predicted_observations=["settled frame reveals the expected affordance"],
+                    discriminating_experiments=["reobserve", "wait_then_observe"],
+                ),
+                Hypothesis(
+                    explanation="The action did not land on the intended target.",
+                    confidence=0.33,
+                    causal_assumptions=["actuator miss or missing geometry"],
+                    predicted_observations=["no target-specific affordance appears"],
+                    discriminating_experiments=["inspect target geometry"],
+                ),
+            ]
+            experiment = Experiment(
+                capability="Observe",
+                target=None,
+                kind="observational",
+                beliefs_tested=["perception_reliable", "world_transition_observed"],
+                beliefs_changed=["perception_reliable"],
+                expected_goal_progress=0.08,
+                expected_information_gain=0.55,
+                risk=0.02,
+                cost=0.08,
+                reversible=True,
+                preconditions=["post_action_settled"],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+            expectation = Expectation(
+                predicted_world_changes=["settled frame clarifies the current surface"],
+                predicted_non_changes=["intent should remain unchanged"],
+                expected_affordances=["reobserve"],
+                timing_ms=800,
+                contradiction_conditions=["world changes again before settle"],
+                sensor_requirements=["pyobjc_ax", "vision"],
+                side_effects=[],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+        elif effect_kind in {"actuator_failed", "no_transition", "not_attempted"}:
+            uncertainty = Uncertainty(
+                question="Did the actuator reach the intended target and make a world change?",
+                importance=0.85,
+                blocking_goal_predicates=["action_landings"],
+                candidate_values=["actuator_failed", "target_misgrounded", "world_unchanged"],
+                confidence_gap=0.4,
+                staleness=0.4,
+            )
+            hypotheses = [
+                Hypothesis(
+                    explanation="The target was not grounded to a valid actuator.",
+                    confidence=0.38,
+                    causal_assumptions=["grounding mismatch"],
+                    predicted_observations=["target-specific affordance remains absent"],
+                    discriminating_experiments=["inspect target geometry"],
+                ),
+                Hypothesis(
+                    explanation="The intended action is valid but the actuator failed transiently.",
+                    confidence=0.34,
+                    causal_assumptions=["transient actuator issue"],
+                    predicted_observations=["same action may succeed after settle or alternate route"],
+                    discriminating_experiments=["retry on same surface after settle"],
+                ),
+            ]
+            experiment = Experiment(
+                capability=decision.capability_type or action_family or "unknown",
+                target=target_label or None,
+                kind="mixed" if action_family in {"open_contact", "select_content"} else "interventional",
+                beliefs_tested=["actuator_reliable", "target_actionability"],
+                beliefs_changed=["actuator_reliable"],
+                expected_goal_progress=max(0.0, float(attempt_progress_delta or decision.value_delta or 0.0)),
+                expected_information_gain=0.32,
+                risk=max(0.02, float(abs(attempt_progress_delta)) * 0.4),
+                cost=0.12,
+                reversible=bool(getattr(decision, "reversible", True)),
+                preconditions=["grounded_target"],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+            expectation = Expectation(
+                predicted_world_changes=["target affordance or destination picker should appear"],
+                predicted_non_changes=["reference intent should not change"],
+                expected_affordances=["act_on_target"],
+                timing_ms=1200,
+                contradiction_conditions=["same world repeats without new affordances"],
+                sensor_requirements=["pyobjc_ax"],
+                side_effects=[],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+        elif effect_kind == "promising_unresolved":
+            uncertainty = Uncertainty(
+                question="Which local affordance best advances the current promising branch?",
+                importance=0.72,
+                blocking_goal_predicates=["branch_progress"],
+                candidate_values=["forward_picker", "destination_picker", "source_object_selected"],
+                confidence_gap=0.28,
+                staleness=0.2,
+            )
+            hypotheses = [
+                Hypothesis(
+                    explanation="The branch is locally promising and should be continued rather than reset.",
+                    confidence=0.55,
+                    causal_assumptions=["new affordances indicate progress"],
+                    predicted_observations=["one of the new affordances becomes actionable"],
+                    discriminating_experiments=["continue branch locally"],
+                )
+            ]
+            experiment = Experiment(
+                capability=decision.capability_type or action_family or "observe",
+                target=target_label or None,
+                kind="mixed",
+                beliefs_tested=["branch_promising", "goal_progressing"],
+                beliefs_changed=["branch_promising"],
+                expected_goal_progress=max(0.05, float(attempt_progress_delta or decision.value_delta or 0.0)),
+                expected_information_gain=0.24,
+                risk=max(0.01, float(abs(attempt_progress_delta)) * 0.25),
+                cost=0.10,
+                reversible=bool(getattr(decision, "reversible", True)),
+                preconditions=["branch_active"],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+            expectation = Expectation(
+                predicted_world_changes=["new local affordance should remain available"],
+                predicted_non_changes=["do not re-enter global search unless branch fails"],
+                expected_affordances=["local_branch_action"],
+                timing_ms=900,
+                contradiction_conditions=["branch collapses back to the prior world"],
+                sensor_requirements=["pyobjc_ax", "vision"],
+                side_effects=[],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+        else:
+            uncertainty = Uncertainty(
+                question="What belief should change next to advance the goal?",
+                importance=0.5,
+                blocking_goal_predicates=["next_step"],
+                candidate_values=["progress", "verification", "search"],
+                confidence_gap=0.2,
+                staleness=0.1,
+            )
+            hypotheses = [
+                Hypothesis(
+                    explanation="The current world state is stable enough to continue.",
+                    confidence=0.5,
+                    causal_assumptions=["no strong contradiction"],
+                    predicted_observations=["next planned action remains available"],
+                    discriminating_experiments=["continue current procedure"],
+                )
+            ]
+            experiment = Experiment(
+                capability=decision.capability_type or action_family or "observe",
+                target=target_label or None,
+                kind="observational" if action_family == "observe" else "mixed",
+                beliefs_tested=["goal_progressing"],
+                beliefs_changed=["goal_progressing"],
+                expected_goal_progress=max(0.0, float(attempt_progress_delta)),
+                expected_information_gain=0.18,
+                risk=0.05,
+                cost=0.05,
+                reversible=bool(getattr(decision, "reversible", True)),
+                preconditions=[],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+            expectation = Expectation(
+                predicted_world_changes=["goal path should remain consistent"],
+                predicted_non_changes=["no new contradiction should appear"],
+                expected_affordances=["continue"],
+                timing_ms=1000,
+                contradiction_conditions=["world becomes inconsistent"],
+                sensor_requirements=["pyobjc_ax"],
+                side_effects=[],
+                provenance={"effect_kind": effect_kind, "action_family": action_family},
+            )
+
+        runtime.execution_state.set_active_uncertainty(uncertainty)
+        runtime.execution_state.set_active_hypotheses(hypotheses)
+        runtime.execution_state.set_active_experiment(experiment)
+        runtime.execution_state.belief_store.expectations[experiment.capability.lower()] = expectation
+        transition_summary = _transition_summary_from_attempt(
+            attempt,
+            after_features=after_feats,
+            decision=decision,
+        )
+        runtime.execution_state.last_transition_summary = transition_summary.to_dict()
+        if getattr(eng, "last_trace", None) is not None:
+            eng.last_trace.transition_summary = transition_summary
+        # Apply layer belief updates from causal attribution
+        if attrib_dict:
+            from plugin.agent.transition.attribution import (
+                TransitionAssessment,
+                LayerBeliefDeltas,
+            )
+            from plugin.agent.transition.belief_state import BeliefUpdate
+
+            beliefs = attrib_dict.get("affected_beliefs") or {}
+            ta = TransitionAssessment(
+                action_family=str(attrib_dict.get("action_family") or ""),
+                outcome=str(attrib_dict.get("outcome") or attempt.outcome),
+                effect_kind=str(attrib_dict.get("effect_kind") or attempt.effect_kind),
+                likely_failure_domain=str(attrib_dict.get("likely_failure_domain") or ""),
+                affected_beliefs=LayerBeliefDeltas(
+                    reference_resolution=float(beliefs.get("reference_resolution") or 0),
+                    entity_resolution=float(beliefs.get("entity_resolution") or 0),
+                    target_actionability=float(beliefs.get("target_actionability") or 0),
+                    actuator_reliability=float(beliefs.get("actuator_reliability") or 0),
+                    perception_reliability=float(beliefs.get("perception_reliability") or 0),
+                ),
+                belief_updates=[
+                    BeliefUpdate.from_dict(item) if isinstance(item, dict) else item
+                    for item in (attrib_dict.get("belief_updates") or [])
+                    if item is not None
+                ],
+                evidence=dict(attrib_dict.get("evidence") or {}),
+                notes=list(attrib_dict.get("notes") or []),
+            )
+            runtime.execution_state.hypothesis_layers.apply(ta)
+
+        # Sync entity confidence from resolution when available
+        conf = float(after_feats.get("resolution_confidence") or 0)
+        if conf > 0:
+            runtime.execution_state.hypothesis_layers.entity_confidence = max(
+                runtime.execution_state.hypothesis_layers.entity_confidence, conf
+            )
+
+        _FORWARD = {
+            TransitionOutcome.PROGRESS.value,
+            TransitionOutcome.PROMISING_UNRESOLVED.value,
+            TransitionOutcome.GOAL_SATISFIED.value,
+        }
+
+        # Compat: keep last_verification shape for older log consumers
+        runtime.execution_state.record_verification(
+            {
+                "passed": attempt.outcome in _FORWARD,
+                "reason": attempt.outcome,
+                "expected_predicate": "TransitionEvaluator",
+                "evidence": attempt.to_dict(),
+                "executor_ok": execution.ok,
+                "effect_kind": attempt.effect_kind,
+                "failure_domain": attrib_dict.get("likely_failure_domain"),
+            }
+        )
+        experience.record_outcome(
+            state_sig,
+            decision,
+            TransitionOutcome(attempt.outcome),
+            progress_delta=attempt_progress_delta,
+            predicted_outcome=str((attempt.prediction or {}).get("predicted_outcome") or ""),
+            predicted_progress=float((attempt.prediction or {}).get("expected_progress") or 0.0),
+            predicted_affordances=list((attempt.prediction or {}).get("expected_affordances") or []),
+        )
+
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="transition_eval",
+            payload={
+                "attempt": attempt.to_dict(),
+                "summary": transition_summary.to_dict(),
+            },
+            status="ok"
+            if attempt.outcome in _FORWARD
+            else "fail"
+            if attempt.outcome
+            in {TransitionOutcome.NO_EFFECT.value, TransitionOutcome.REGRESSION.value}
+            else "ok",
+        )
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="transition_attribution",
+            payload={
+                **attrib_dict,
+                "transition_summary": transition_summary.to_dict(),
+                "hypothesis_layers": runtime.execution_state.hypothesis_layers.to_dict(),
+                "interaction_context": runtime.execution_state.interaction_context.to_dict(),
+                "exploration_branch": runtime.execution_state.exploration_branch.to_dict(),
+            },
+            status="ok",
+        )
+        # Compat log kind
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="verification",
+            payload={
+                "passed": attempt.outcome in _FORWARD,
+                "reason": attempt.outcome,
+                "expected_predicate": "TransitionEvaluator",
+                "evidence": attempt.to_dict(),
+                "executor_ok": execution.ok,
+                "transition_summary": transition_summary.to_dict(),
+            },
+            status="ok" if attempt.outcome in _FORWARD else "fail",
+        )
+        trajectory_steps.append(
+            TrajectoryStepRecord(
+                step_index=iteration,
+                state_signature=str(post_view.get("world_signature") or after_world_id),
+                state_bucket=str(feats.bucket_key(goal.kind)),
+                family_bucket=str(feats.bucket_key(goal.family_key())),
+                action=decision.action,
+                action_family=decision.action_family,
+                next_state_signature=str(post_view.get("world_signature") or after_world_id),
+                next_state_bucket=str(after_feats.bucket_key(goal.kind))
+                if hasattr(after_feats, "bucket_key")
+                else str(feature_get(after_feats, "screen_bucket") or feature_get(after_feats, "wa_screen") or "unknown"),
+                semantic_target=decision.semantic_target,
+                outcome=attempt.outcome,
+                progress_delta=attempt_progress_delta,
+                surface=str(runtime.execution_state.interaction_context.active_surface or ""),
+                reversible=bool(getattr(decision, "reversible", True)),
+                score=float(decision.score or 0.0),
+            )
+        )
+
+        post_view, after_feats, post_wv, richer_reobserve = _maybe_richer_reobserve_after_transition(
+            runtime,
+            goal,
+            observe=observe,
+            decision=decision,
+            attempt=attempt,
+            after_view=post_view,
+            after_features=after_feats,
+            post_wv=post_wv,
+            log=log,
+            iteration=iteration,
+        )
+        if richer_reobserve:
+            after_world_id = runtime.execution_state.world_id
+            runtime.execution_state.note_world_signature(
+                str(post_view.get("world_signature") or post_view.get("screen") or after_world_id),
+                decision,
+            )
+
+        post_call_state = str(post_view.get("call_state") or after_feats.get("call_state") or "").strip().lower()
+        if (
+            goal.kind == "whatsapp_voice_call"
+            and post_call_state == "ringing"
+        ):
+            try:
+                from plugin.agent.apps.whatsapp import _call_mentions_contact
+
+                overlay = get_overlay(goal.app, runtime.world_model)
+                view_obj = overlay.raw_view(runtime.world_model) if hasattr(overlay, "raw_view") else overlay._view(runtime.world_model)
+                if not _call_mentions_contact(view_obj, runtime.world_model, goal.contact):
+                    pass
+                else:
+                    runtime.execution_state.world_exploration_needed = False
+                    runtime.execution_state.exploration_branch = ExplorationBranch()
+                    if decision.capability_id:
+                        runtime.execution_state.capability_memory.record_success(
+                            goal_kind=goal.kind,
+                            capability_id=decision.capability_id,
+                            entity_id=after_world_id,
+                            world_id=after_world_id,
+                            outcome=TransitionOutcome.GOAL_SATISFIED.value,
+                        )
+                    return _finish_success(post_view or attempt.to_dict(), iterations=iteration)
+            except Exception:
+                pass
+
+        if goal.kind == "whatsapp_forward_message":
+            _forward_predicate_gate_after_transition(
+                runtime,
+                decision=decision,
+                attempt_outcome=attempt.outcome,
+                after_feats=after_feats,
+                log=log,
+                iteration=iteration,
+            )
+
+        transition_confirmation = confirm_transition_with_llm(
+            goal,
+            runtime.world_model,
+            post_view,
+            after_feats,
+            decision,
+            attempt,
+            runtime.execution_state.interaction_context,
+        )
+        if transition_confirmation is not None:
+            apply_transition_confirmation(
+                runtime,
+                goal=goal,
+                action=decision,
+                attempt=attempt,
+                confirmation=transition_confirmation,
+                after_view=post_view,
+                after_features=after_feats,
+                world_id=after_world_id,
+            )
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="transition_confirmation",
+                payload=transition_confirmation.to_dict(),
+                status="ok" if transition_confirmation.confirmed else "fail",
+            )
+
+        delta = attempt_progress_delta
+        log_policy_event(
+            {
+                "goal_kind": goal.kind,
+                "bucket_key": feats.bucket_key(goal.kind),
+                "action_family": decision.action_family,
+                "success_delta": delta,
+                "phase": "transition",
+                "outcome": attempt.outcome,
+                "effect_kind": attempt.effect_kind,
+                "failure_domain": attrib_dict.get("likely_failure_domain"),
+                "change_score": float(getattr(attempt, "change_score", 0.0) or 0.0),
+            }
+        )
+
+        # Goal satisfied after transition — override max iterations
+        post_goal = evaluate_goal(goal, runtime.world_model)
+        if (
+            not post_goal.succeeded
+            and goal.kind == "whatsapp_voice_call"
+            and str(settled_snap.view.get("call_state") or "").strip().lower() == "ringing"
+        ):
+            if not goal.require_contact_in_call or _post_view_mentions_contact(settled_snap.view, goal):
+                post_goal = GoalStatus(
+                    succeeded=True,
+                    reason="call ringing",
+                    evidence=dict(settled_snap.view),
+                )
+        if (
+            not post_goal.succeeded
+            and goal.kind == "whatsapp_voice_call"
+            and raw_call_ring_seen["seen"]
+        ):
+            if not goal.require_contact_in_call or _post_view_mentions_contact(settled_snap.view, goal):
+                post_goal = GoalStatus(
+                    succeeded=True,
+                    reason="raw observation ringing",
+                    evidence={
+                        **dict(settled_snap.view),
+                        "raw_call_ring_seen": True,
+                    },
+                )
+        if (
+            not post_goal.succeeded
+            and goal.kind == "whatsapp_voice_call"
+            and _raw_observation_mentions_ringing(settled_snap.observation)
+        ):
+            if not goal.require_contact_in_call or _post_view_mentions_contact(settled_snap.view, goal):
+                post_goal = GoalStatus(
+                    succeeded=True,
+                    reason="raw observation ringing",
+                    evidence={
+                        **dict(settled_snap.view),
+                        "raw_observation": {
+                            "app": settled_snap.observation.app_name if settled_snap.observation else "",
+                            "window": settled_snap.observation.window_name if settled_snap.observation else "",
+                            "source": settled_snap.observation.source if settled_snap.observation else "",
+                        },
+                    },
+                )
+        if post_goal.succeeded or attempt.outcome == TransitionOutcome.GOAL_SATISFIED.value:
+            goal_last_progress_at = time.monotonic()
+            runtime.execution_state.world_exploration_needed = False
+            runtime.execution_state.exploration_branch = ExplorationBranch()
+            if decision.capability_id:
+                runtime.execution_state.capability_memory.record_success(
+                    goal_kind=goal.kind,
+                    capability_id=decision.capability_id,
+                    entity_id=decision.target_entity_id,
+                    world_id=after_world_id,
+                    outcome=attempt.outcome,
+            )
+            _maybe_learn_success(runtime, goal, post_goal if post_goal.succeeded else goal_status)
+            return _finish_success(post_goal.evidence or attempt.to_dict(), iterations=iteration)
+
+        if attempt.outcome == TransitionOutcome.PROMISING_UNRESOLVED.value:
+            goal_last_progress_at = time.monotonic()
+            # Enter / continue bounded local branch — do NOT thrash observe or revise intent
+            assessment = attempt.assessment or {}
+            surface = str(runtime.execution_state.interaction_context.active_surface or "")
+            branch = runtime.execution_state.exploration_branch
+            revealed_affordances = _merge_affordance_hints(
+                list(assessment.get("newly_relevant_affordances") or []),
+                list(assessment.get("new_capabilities") or []),
+            )
+            if not branch.active:
+                branch = ExplorationBranch(
+                    origin_state=state_sig,
+                    entry_action=attempt.action_key,
+                    current_state=str(post_view.get("world_signature") or after_world_id),
+                    active_surface=surface,
+                    last_surface=surface,
+                    depth=1,
+                    reversible=bool(assessment.get("branch_reversible", True)),
+                    active=True,
+                    newly_relevant_affordances=list(revealed_affordances),
+                )
+            elif branch.active_surface == "search_results" and branch.depth == 0:
+                branch.depth = 1
+                branch.note_step(
+                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    surface=surface,
+                    newly_relevant_affordances=list(revealed_affordances),
+                )
+            else:
+                branch.depth += 1
+                branch.note_step(
+                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    surface=surface,
+                    newly_relevant_affordances=list(revealed_affordances),
+                )
+            if revealed_affordances:
+                ctx = runtime.execution_state.interaction_context
+                if ctx is not None:
+                    ctx.latent_affordances = _merge_affordance_hints(
+                        list(getattr(ctx, "latent_affordances", []) or []),
+                        revealed_affordances,
+                    )
+                if not branch.strategy.branch_hypothesis:
+                    branch.strategy.branch_hypothesis = "reveal surfaced latent actions"
+                if not experience.pending_backtrack_family:
+                    branch_hint = _frontier_backtrack_hint(branch, fallback="")
+                    if branch_hint:
+                        experience.pending_backtrack_family = branch_hint
+            branch.contradiction_count = max(branch.contradiction_count, len(assessment.get("contradiction_evidence") or []))
+            runtime.execution_state.exploration_branch = branch
+            runtime.execution_state.world_exploration_needed = False
+            runtime.execution_state.world_explore_observe_count = 0
+            experience.pending_backtrack_family = (
+                experience.pending_backtrack_family or _frontier_backtrack_hint(branch, fallback="")
+            )
+            if decision.action_family == "open_contact":
+                runtime.execution_state.open_contact_fail_streak = 0
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="branch_explore",
+                payload=branch.to_dict(),
+                status="ok",
+            )
+            # Never advance search hyp on promising entry — explore results first
+            if decision.action_family == "type_query":
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="search_hypothesis_advance_blocked",
+                    payload={
+                        "reason": "promising_branch",
+                        "perception_settled": perception_settled,
+                        "resolution_policy": feature_get(after_feats, "resolution_policy"),
+                    },
+                    status="ok",
+                )
+            if branch.budget_exhausted():
+                # Exhausted patience → soft backtrack without marking entry as regression
+                runtime.execution_state.record_failure("branch_budget_exhausted")
+                # Only now consider spelling refine if results truly empty after settlement.
+                _maybe_advance_search_hypothesis(
+                    runtime,
+                    goal,
+                    decision=Action(
+                        action="Observe",
+                        action_family="observe",
+                        rationale="branch budget — check settled empty",
+                    ),
+                    after_view=post_view,
+                    after_features=after_feats,
+                    log=log,
+                    iteration=iteration,
+                    perception_settled=perception_settled,
+                )
+                experience.pending_backtrack_family = _frontier_backtrack_hint(branch)
+                runtime.execution_state.exploration_branch = ExplorationBranch()
+            continue
+
+        if attempt.outcome == TransitionOutcome.PROGRESS.value:
+            goal_last_progress_at = time.monotonic()
+            if decision.action_family == "open_contact":
+                runtime.execution_state.open_contact_fail_streak = 0
+            if decision.action_family == "type_query":
+                runtime.execution_state.type_query_fail_streak = 0
+            if decision.capability_id:
+                runtime.execution_state.capability_memory.record_success(
+                    goal_kind=goal.kind,
+                    capability_id=decision.capability_id,
+                    entity_id=decision.target_entity_id,
+                    world_id=after_world_id,
+                    outcome=attempt.outcome,
+                )
+            # Progress within world → intent still fixed; never revise reference here
+            runtime.execution_state.world_exploration_needed = False
+            runtime.execution_state.world_explore_observe_count = 0
+            experience.pending_backtrack_family = ""
+            # Clear branch on clear progress past the overlay
+            if runtime.execution_state.exploration_branch.active:
+                runtime.execution_state.exploration_branch.depth += 1
+                runtime.execution_state.exploration_branch.note_step(
+                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    surface=str(runtime.execution_state.interaction_context.active_surface or ""),
+                    newly_relevant_affordances=list(
+                        (attempt.assessment or {}).get("newly_relevant_affordances") or []
+                    ),
+                )
+            continue
+
+        if attempt.outcome == TransitionOutcome.NO_EFFECT.value:
+            runtime.execution_state.record_failure(
+                f"no_effect:{decision.action_family}:{attempt.effect_kind}"
+            )
+            _apply_actuation_suppression(runtime, decision, attrib_dict)
+            if decision.action_family == "type_query":
+                runtime.execution_state.type_query_fail_streak += 1
+                key = runtime.execution_state.action_key(decision)
+                runtime.execution_state.prohibited_actions[key] = max(
+                    runtime.execution_state.prohibited_actions.get(key, 0), 2
+                )
+            elif decision.action_family == "open_search":
+                runtime.execution_state.search_refinement_pending = True
+            branch = runtime.execution_state.exploration_branch
+            if decision.action_family == "observe" and perception_settled:
+                if _maybe_advance_search_hypothesis(
+                    runtime,
+                    goal,
+                    decision=decision,
+                    after_view=post_view,
+                    after_features=after_feats,
+                    log=log,
+                    iteration=iteration,
+                    perception_settled=perception_settled,
+                ):
+                    runtime.execution_state.world_exploration_needed = False
+                    experience.pending_backtrack_family = ""
+                    continue
+            if branch.active:
+                if decision.action_family == "observe":
+                    branch.observe_count += 1
+                else:
+                    branch.no_effect_count += 1
+                branch.note_step(
+                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    surface=str(runtime.execution_state.interaction_context.active_surface or ""),
+                    newly_relevant_affordances=[],
+                )
+                runtime.execution_state.exploration_branch = branch
+                if branch.budget_exhausted():
+                    experience.pending_backtrack_family = _frontier_backtrack_hint(branch)
+                    runtime.execution_state.exploration_branch = ExplorationBranch()
+                    runtime.execution_state.world_exploration_needed = True
+                else:
+                    # Stay on branch: try alternate local affordance, not global re-search
+                    runtime.execution_state.world_exploration_needed = False
+                    experience.pending_backtrack_family = _frontier_backtrack_hint(branch)
+            else:
+                domain = str(attrib_dict.get("likely_failure_domain") or "")
+                if domain in {
+                    FailureDomain.ACTUATION.value,
+                    FailureDomain.PERCEPTION.value,
+                    FailureDomain.UNKNOWN.value,
+                }:
+                    runtime.execution_state.world_exploration_needed = True
+                    if decision.action_family != "scroll_content":
+                        experience.pending_backtrack_family = "observe"
+            _maybe_advance_reference_hypothesis(
+                runtime,
+                goal,
+                attribution=attrib_dict,
+                after_view=post_view,
+                after_features=after_feats,
+                log=log,
+                iteration=iteration,
+            )
+            continue
+
+        if attempt.outcome == TransitionOutcome.REGRESSION.value:
+            runtime.execution_state.record_failure(f"regression:{decision.action_family}")
+            key = runtime.execution_state.action_key(decision)
+            runtime.execution_state.prohibited_actions[key] = max(
+                runtime.execution_state.prohibited_actions.get(key, 0), 4
+            )
+            branch = runtime.execution_state.exploration_branch
+            if branch.active:
+                branch.contradiction_count += 1
+            runtime.execution_state.exploration_branch = ExplorationBranch()
+            runtime.execution_state.world_exploration_needed = True
+            experience.pending_backtrack_family = _frontier_backtrack_hint(branch)
+            _maybe_advance_reference_hypothesis(
+                runtime,
+                goal,
+                attribution=attrib_dict,
+                after_view=post_view,
+                after_features=after_feats,
+                log=log,
+                iteration=iteration,
+            )
+            continue
+
+        # UNCERTAIN — gather more info next cycle; do not mutate reference
+        if runtime.execution_state.exploration_branch.active:
+            # Epistemic patience inside a promising branch
+            if decision.action_family == "observe":
+                runtime.execution_state.exploration_branch.observe_count += 1
+            runtime.execution_state.exploration_branch.note_step(
+                state_signature=str(post_view.get("world_signature") or after_world_id),
+                surface=str(runtime.execution_state.interaction_context.active_surface or ""),
+                newly_relevant_affordances=list(
+                    (attempt.assessment or {}).get("newly_relevant_affordances") or []
+                ),
+            )
+            experience.pending_backtrack_family = ""
+            runtime.execution_state.world_exploration_needed = False
+        elif str(attrib_dict.get("likely_failure_domain") or "") == FailureDomain.PERCEPTION.value:
+            runtime.execution_state.world_exploration_needed = True
+            experience.pending_backtrack_family = "observe"
+        continue
+
+    # Budget exhausted — still succeed if world already satisfies goal
+    final_status = evaluate_goal(goal, runtime.world_model)
+    if final_status.succeeded:
+        _maybe_learn_success(runtime, goal, final_status)
+        return _finish_success(final_status.evidence, iterations=step_budget)
+
+    return _finish_failure(
+        "Maximum step count reached",
+        {
+            **_view_dict(runtime, goal),
+            "budget": {
+                "max_iterations": max_iterations,
+                "max_stepcount": max_stepcount,
+                "resolved_step_budget": step_budget,
+            },
+        },
+        iterations=step_budget,
+    )
+
+
+def _forward_hints(runtime: RuntimeState) -> Dict[str, Any]:
+    hints = runtime.world_model.overlay_hints
+    if hints is None:
+        runtime.world_model.overlay_hints = {}
+        hints = runtime.world_model.overlay_hints
+    return hints
+
+
+def _apply_forward_observe_stagnation(
+    runtime: RuntimeState,
+    *,
+    state_sig: str,
+    entity_count: int,
+    features: Any,
+) -> None:
+    """If Observe repeated on an unchanged world, suppress further Observe."""
+    hints = _forward_hints(runtime)
+    extras = getattr(features, "extras", None)
+    if extras is None and isinstance(features, dict):
+        extras = features.setdefault("extras", {})
+        if not isinstance(extras, dict):
+            features["extras"] = {}
+            extras = features["extras"]
+    if extras is None:
+        extras = {}
+        if hasattr(features, "extras"):
+            features.extras = extras
+
+    ft = dict(hints.get("forward_task") or extras.get("forward_task") or {})
+    preds = ft.get("predicates") or {}
+    phase = str(ft.get("derived_phase") or extras.get("forward_phase") or "")
+    bindings = ft.get("bindings") or {}
+    source_object = bindings.get("source_object") if isinstance(bindings, dict) else {}
+    source_status = str((source_object or {}).get("status") or "unresolved")
+    unresolved_source_object = phase in {"FIND_LINK", "OPEN_FORWARD"} and source_status in {
+        "unresolved",
+        "ambiguous",
+        "provisional",
+    }
+    if phase == "PICK_DEST" and not preds.get("destination_picker_visible"):
+        state = ForwardTaskState.from_dict(ft)
+        state.consistency_rollback()
+        state.derive_phase(leftover=False)
+        ft = state.to_dict()
+        extras["forward_phase"] = state.derived_phase
+        extras["forward_task"] = ft
+        runtime.execution_state.world_exploration_needed = True
+        runtime.execution_state.suppress_observe = False
+
+    if unresolved_source_object:
+        runtime.execution_state.suppress_observe = False
+        ft["suppress_observe"] = False
+        extras["suppress_observe"] = False
+        extras["world_exploration_needed"] = True
+        runtime.execution_state.world_exploration_needed = True
+    elif runtime.execution_state.suppress_observe or int(
+        runtime.execution_state.identical_observe_streak or 0
+    ) >= 2:
+        runtime.execution_state.suppress_observe = True
+        ft["suppress_observe"] = True
+        ft["binding_repair"] = True
+        extras["suppress_observe"] = True
+        extras["world_exploration_needed"] = True
+        runtime.execution_state.world_exploration_needed = True
+    else:
+        ft["suppress_observe"] = False
+        extras["suppress_observe"] = False
+    hints["forward_task"] = ft
+    extras["forward_task"] = ft
+    _ = (state_sig, entity_count)
+
+
+def _note_forward_observe(runtime: RuntimeState, state_sig: str) -> None:
+    last = runtime.execution_state.last_observe_signature or ""
+    if last == state_sig and runtime.execution_state.last_action == "observe":
+        runtime.execution_state.identical_observe_streak = (
+            int(runtime.execution_state.identical_observe_streak or 0) + 1
+        )
+    else:
+        runtime.execution_state.identical_observe_streak = 1
+    runtime.execution_state.last_observe_signature = state_sig
+    if runtime.execution_state.identical_observe_streak >= 2:
+        runtime.execution_state.suppress_observe = True
+        hints = _forward_hints(runtime)
+        ft = dict(hints.get("forward_task") or {})
+        ft["suppress_observe"] = True
+        ft["binding_repair"] = True
+        hints["forward_task"] = ft
+
+
+def _bind_forward_after_execution(runtime: RuntimeState, decision: Action) -> None:
+    hints = _forward_hints(runtime)
+    fam = (decision.action_family or "").lower()
+    if fam == "select_content" and decision.target_entity_id is not None:
+        selected_id = int(decision.target_entity_id)
+        hints["source_object_entity_id"] = selected_id
+        ft = dict(hints.get("forward_task") or {})
+        state = ForwardTaskState.from_dict(ft)
+        source_binding = state.binding("source_object")
+        source_binding.resolved_entity_id = selected_id
+        source_binding.status = "provisional"
+        source_binding.confidence = max(source_binding.confidence, 0.7)
+        source_binding.evidence = [f"latently_selected entity_id={selected_id}"]
+        state.predicates.source_object_visible = True
+        state.predicates.source_object_selected = True
+        state.derive_phase(leftover=False)
+        hints["forward_task"] = state.to_dict()
+    if fam == "forward_message":
+        hints["forward_commit_started"] = True
+
+
+def _forward_predicate_gate_after_transition(
+    runtime: RuntimeState,
+    *,
+    decision: Action,
+    attempt_outcome: str,
+    after_feats: Any,
+    log: Optional[EventLogger],
+    iteration: int,
+) -> None:
+    """Do not keep unsupported phase beliefs after failed transitions."""
+    hints = _forward_hints(runtime)
+    ft = dict(hints.get("forward_task") or {})
+    state = ForwardTaskState.from_dict(ft)
+    expected = (decision.expected_predicate or "").strip()
+    if (
+        attempt_outcome == TransitionOutcome.NO_EFFECT.value
+        and (
+            decision.action_family == "scroll_content"
+            or (decision.action or "").lower() == "scroll"
+            or "scroll" in (decision.rationale or "").lower()
+        )
+    ):
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="forward_predicate_scroll_no_effect",
+            payload={
+                "expected": expected,
+                "outcome": attempt_outcome,
+                "forward_task": ft,
+                "after_phase": feature_get(after_feats, "forward_phase"),
+            },
+            status="ok",
+        )
+        return
+    failed = attempt_outcome in {
+        TransitionOutcome.NO_EFFECT.value,
+        TransitionOutcome.REGRESSION.value,
+    }
+    if failed:
+        if "SourceObjectSelected" in expected or decision.action_family == "select_content":
+            hints.pop("source_object_entity_id", None)
+            state.predicates.source_object_selected = False
+            state.do_not_advance("source_object_selected", "select_content transition failed")
+            obj = state.binding("source_object")
+            if obj.status == "confirmed":
+                obj.status = "provisional"
+        if "DestinationPickerVisible" in expected or decision.action_family == "forward_message":
+            state.predicates.destination_picker_visible = False
+            state.predicates.forward_surface_open = False
+            state.do_not_advance("destination_picker_visible", "forward chrome transition failed")
+        state.consistency_rollback()
+        state.derive_phase(leftover=False)
+        ft = state.to_dict()
+        hints["forward_task"] = ft
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="forward_predicate_rollback",
+            payload={
+                "expected": expected,
+                "outcome": attempt_outcome,
+                "forward_task": ft,
+                "after_phase": feature_get(after_feats, "forward_phase"),
+            },
+            status="fail",
+        )
+    else:
+        aft = feature_get(after_feats, "forward_task")
+        if isinstance(aft, dict):
+            hints["forward_task"] = aft

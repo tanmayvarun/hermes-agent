@@ -32,7 +32,8 @@ Use `imsg` to read and send iMessage/SMS via macOS Messages.app.
 
 ## When NOT to Use
 
-- Telegram/Discord/Slack/WhatsApp messages → use the appropriate gateway channel
+- Telegram/Discord/Slack messages → use the appropriate gateway channel
+- **WhatsApp voice/video call on the Mac app** → use the WhatsApp call flow / tool `plugin_call_whatsapp` (Plugin GUI), not `imsg`
 - Group chat management (adding/removing members) → not supported
 - Bulk/mass messaging → always confirm with user first
 

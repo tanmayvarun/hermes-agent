@@ -1,0 +1,14 @@
+[001][OK] run_start | goal='Call Pallavi on WhatsApp'
+[002][OK][step 0] step | message='checking macapptree + ghost/ax'
+[003][OK][step 0] check | message='pass' expected=True
+[004][FAIL][step 0] check | message='fail' expected=True
+[005][OK][step 0] check | message='pass' expected=True
+[006][WARN][step 0] step | message='Ghost not found — using PyObjC AX Press/type'
+[007][OK][step 0] step | message='launched via open -a' detail='open -a WhatsApp'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.5s'
+[009][FAIL][step 0] step | message="[Errno 2] No such file or directory: 'python'"
+[010][FAIL] run_end | detail="initial live observe failed (Accessibility?): [Errno 2] No such file or directory: 'python'"
+
+=== DONE ok=False live=True ===
+JSONL: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.jsonl
+Summary: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/experiments/runs/call_pallavi_live.md

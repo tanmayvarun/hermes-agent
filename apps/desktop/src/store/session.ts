@@ -20,6 +20,9 @@ const WORKSPACE_CWD_KEY = 'hermes.desktop.workspace-cwd'
 const COMPOSER_MODEL_KEY = 'hermes.desktop.composer.model'
 const COMPOSER_PROVIDER_KEY = 'hermes.desktop.composer.provider'
 const COMPOSER_MODEL_SOURCE_KEY = 'hermes.desktop.composer.model-source'
+const COMPOSER_DEFAULT_MODEL_KEY = 'hermes.desktop.composer.default-model'
+const COMPOSER_DEFAULT_PROVIDER_KEY = 'hermes.desktop.composer.default-provider'
+const COMPOSER_DEFAULT_CONTRACT_KEY = 'hermes.desktop.composer.default-contract'
 const COMPOSER_EFFORT_KEY = 'hermes.desktop.composer.reasoning-effort'
 const COMPOSER_FAST_KEY = 'hermes.desktop.composer.fast'
 
@@ -294,6 +297,7 @@ export const $currentProvider = atom(storedString(COMPOSER_PROVIDER_KEY) ?? '')
 export const $currentReasoningEffort = atom(storedString(COMPOSER_EFFORT_KEY) ?? '')
 export const $currentServiceTier = atom('')
 export const $currentFastMode = atom(storedBoolean(COMPOSER_FAST_KEY, false))
+export const $showAttribution = atom(false)
 // Effective approval-bypass state mirrored from the gateway (session.info).
 // Persistence lives in the backend config (approvals.mode), so this is a plain
 // reflection of the truth the gateway reports rather than its own store.
@@ -365,6 +369,18 @@ export const setCurrentProvider = (next: Updater<string>) => {
   persistString(COMPOSER_PROVIDER_KEY, $currentProvider.get() || null)
 }
 
+export const getRememberedComposerDefaultModel = (): string => storedString(COMPOSER_DEFAULT_MODEL_KEY) ?? ''
+
+export const getRememberedComposerDefaultProvider = (): string => storedString(COMPOSER_DEFAULT_PROVIDER_KEY) ?? ''
+
+export const getRememberedComposerDefaultContract = (): string => storedString(COMPOSER_DEFAULT_CONTRACT_KEY) ?? ''
+
+export const setRememberedComposerDefault = (provider: string, model: string, contractId = ''): void => {
+  persistString(COMPOSER_DEFAULT_PROVIDER_KEY, provider.trim() || null)
+  persistString(COMPOSER_DEFAULT_MODEL_KEY, model.trim() || null)
+  persistString(COMPOSER_DEFAULT_CONTRACT_KEY, contractId.trim() || null)
+}
+
 export const getCurrentModelSource = (): ComposerModelSource => {
   const source = storedString(COMPOSER_MODEL_SOURCE_KEY)
 
@@ -400,6 +416,7 @@ export const setCurrentReasoningEffort = (next: Updater<string>) => {
 }
 
 export const setCurrentServiceTier = (next: Updater<string>) => updateAtom($currentServiceTier, next)
+export const setShowAttribution = (next: Updater<boolean>) => updateAtom($showAttribution, next)
 
 export const setCurrentFastMode = (next: Updater<boolean>) => {
   updateAtom($currentFastMode, next)

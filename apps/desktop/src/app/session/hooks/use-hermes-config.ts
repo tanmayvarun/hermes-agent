@@ -13,6 +13,7 @@ import {
   setCurrentPersonality,
   setCurrentReasoningEffort,
   setCurrentServiceTier,
+  setShowAttribution,
   setIntroPersonality
 } from '@/store/session'
 import { applyAutoSpeakFromConfig } from '@/store/voice-prefs'
@@ -95,6 +96,7 @@ export function useHermesConfig({ activeSessionIdRef, refreshProjectBranch }: He
 
         const reasoning = normalizeConfigEffort(config.agent?.reasoning_effort)
         const tier = (config.agent?.service_tier ?? '').trim()
+        const showAttribution = config.display?.show_attribution === true
 
         const shouldSeedComposer =
           !activeSessionIdRef.current &&
@@ -107,6 +109,7 @@ export function useHermesConfig({ activeSessionIdRef, refreshProjectBranch }: He
         }
 
         setCurrentServiceTier(prev => (activeSessionIdRef.current ? prev : tier))
+        setShowAttribution(showAttribution)
 
         setVoiceMaxRecordingSeconds(recordingLimit(config.voice?.max_recording_seconds))
         setSttEnabled(config.stt?.enabled !== false)

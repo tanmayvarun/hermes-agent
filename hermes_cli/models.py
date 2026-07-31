@@ -39,6 +39,8 @@ def _urlopen_model_catalog_request(req: urllib.request.Request, *, timeout: floa
 # Fallback OpenRouter snapshot used when the live catalog is unavailable.
 # (model_id, display description shown in menus)
 OPENROUTER_MODELS: list[tuple[str, str]] = [
+    # OpenRouter priority default
+    ("openai/gpt-oss-120b",                 "default"),
     # Anthropic
     ("anthropic/claude-fable-5",               ""),
     ("anthropic/claude-opus-4.8",              ""),
@@ -1307,6 +1309,19 @@ _PROVIDER_ALIASES = {
     "ollama_cloud": "ollama-cloud",
 }
 
+# Auto-extend aliases from provider profile plugins so ``normalize_provider()``
+# and ``provider:model`` parsing honour ``ProviderProfile.aliases`` without
+# editing this dict for every new plugin (mirrors CANONICAL_PROVIDERS inject).
+try:
+    from providers import list_providers as _list_providers_for_aliases
+    for _pp in _list_providers_for_aliases():
+        for _alias in _pp.aliases or ():
+            _alias_key = str(_alias or "").strip().lower()
+            if _alias_key and _alias_key not in _PROVIDER_ALIASES:
+                _PROVIDER_ALIASES[_alias_key] = _pp.name
+except Exception:
+    pass
+
 
 # In-repo fallback for the model Hermes silently lands on when the user never
 # picked one (GUI onboarding confirm card, empty ``model.default``,
@@ -1314,13 +1329,17 @@ _PROVIDER_ALIASES = {
 # remote model catalog: the manifest labels exactly one entry per provider
 # with ``"default": true`` (see get_default_model_from_cache in
 # model_catalog.py), so maintainers can rotate the default without shipping a
-# release. This constant is the offline/fresh-install fallback and MUST match
-# the labeled entry in website/static/api/model-catalog.json. Deliberately a
-# capable low-cost model rather than the curated lists' entry [0]: aggregator
-# lists are ordered most-capable-first, so [0] is the priciest Anthropic
-# flagship (claude-fable-5 / opus) — silently billing the most expensive model
-# for traffic the user never opted into.
-PREFERRED_SILENT_DEFAULT_MODEL = "z-ai/glm-5.2"
+# release. These provider-specific fallbacks are the offline/fresh-install
+# defaults and MUST match the labeled entry in website/static/api/model-catalog.json.
+# Deliberately a capable OpenRouter default rather than the curated lists' entry [0]:
+# aggregator lists are ordered most-capable-first, so [0] is the priciest
+# Anthropic flagship (claude-fable-5 / opus) — silently billing the most
+# expensive model for traffic the user never opted into.
+PREFERRED_SILENT_DEFAULT_MODELS: dict[str, str] = {
+    "openrouter": "openai/gpt-oss-120b",
+    "nous": "z-ai/glm-5.2",
+}
+PREFERRED_SILENT_DEFAULT_MODEL = PREFERRED_SILENT_DEFAULT_MODELS["openrouter"]
 
 
 def get_preferred_silent_default_model(provider: str = "openrouter") -> str:
@@ -1328,7 +1347,8 @@ def get_preferred_silent_default_model(provider: str = "openrouter") -> str:
 
     Reads the ``"default": true`` label from the cached remote catalog
     (never hits the network — safe on hot resolution paths), falling back to
-    :data:`PREFERRED_SILENT_DEFAULT_MODEL` when no cached manifest exists or
+    the provider-specific offline fallback in
+    :data:`PREFERRED_SILENT_DEFAULT_MODELS` when no cached manifest exists or
     the provider block carries no label.
     """
     try:
@@ -1338,7 +1358,7 @@ def get_preferred_silent_default_model(provider: str = "openrouter") -> str:
             return labeled
     except Exception:
         pass
-    return PREFERRED_SILENT_DEFAULT_MODEL
+    return PREFERRED_SILENT_DEFAULT_MODELS.get(provider, PREFERRED_SILENT_DEFAULT_MODEL)
 
 
 def pick_silent_default_model(model_ids: list[str], provider: str = "openrouter") -> str:
@@ -1484,23 +1504,31 @@ def fetch_openrouter_models(
         live_by_id[mid] = item
 
     curated: list[tuple[str, str]] = []
+    seen: set[str] = set()
     silent_default = get_preferred_silent_default_model("openrouter")
     for preferred_id in preferred_ids:
         live_item = live_by_id.get(preferred_id)
-        if live_item is None:
+        desc = "default" if preferred_id == silent_default else ""
+        if live_item is not None:
+            # Hide models that don't advertise tool-calling support — hermes-agent
+            # requires it and surfacing them leads to immediate runtime failures
+            # when the user selects them. Ported from Kilo-Org/kilocode#9068.
+            if not _openrouter_model_supports_tools(live_item):
+                continue
+            if preferred_id != silent_default:
+                desc = "free" if _openrouter_model_is_free(live_item.get("pricing")) else ""
+        curated.append((preferred_id, desc))
+        seen.add(preferred_id)
+
+    # Append live-only tool-capable models after the curated front-of-list
+    # snapshot so the selector still learns about new OpenRouter models
+    # without losing the repository's explicit priority order.
+    for mid, live_item in live_by_id.items():
+        if mid in seen:
             continue
-        # Hide models that don't advertise tool-calling support — hermes-agent
-        # requires it and surfacing them leads to immediate runtime failures
-        # when the user selects them. Ported from Kilo-Org/kilocode#9068.
         if not _openrouter_model_supports_tools(live_item):
             continue
-        if preferred_id == silent_default:
-            # Keep the silent-default badge through the live refresh so the
-            # picker shows which model Hermes lands on when none is selected.
-            desc = "default"
-        else:
-            desc = "free" if _openrouter_model_is_free(live_item.get("pricing")) else ""
-        curated.append((preferred_id, desc))
+        curated.append((mid, "free" if _openrouter_model_is_free(live_item.get("pricing")) else ""))
 
     if not curated:
         return list(_openrouter_catalog_cache or fallback)
@@ -2379,7 +2407,12 @@ _MODELS_DEV_PREFERRED: frozenset[str] = frozenset({
 })
 
 
-def _merge_with_models_dev(provider: str, curated: list[str]) -> list[str]:
+def _merge_with_models_dev(
+    provider: str,
+    curated: list[str],
+    *,
+    min_params_b: float | None = None,
+) -> list[str]:
     """Merge curated list with fresh models.dev entries for a preferred provider.
 
     Returns models.dev entries first (in models.dev order), then any
@@ -2391,7 +2424,7 @@ def _merge_with_models_dev(provider: str, curated: list[str]) -> list[str]:
     """
     try:
         from agent.models_dev import list_agentic_models
-        mdev = list_agentic_models(provider)
+        mdev = list_agentic_models(provider, min_params_b=min_params_b)
     except Exception:
         mdev = []
 
@@ -2416,7 +2449,12 @@ def _merge_with_models_dev(provider: str, curated: list[str]) -> list[str]:
     return merged
 
 
-def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) -> list[str]:
+def provider_model_ids(
+    provider: Optional[str],
+    *,
+    force_refresh: bool = False,
+    min_params_b: float | None = None,
+) -> list[str]:
     """Return the best known model catalog for a provider.
 
     Tries live API endpoints for providers that support them (Codex, Nous),
@@ -2659,7 +2697,11 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
 
     curated_static = list(_PROVIDER_MODELS.get(normalized, []))
     if normalized in _MODELS_DEV_PREFERRED:
-        return _merge_with_models_dev(normalized, curated_static)
+        return _merge_with_models_dev(
+            normalized,
+            curated_static,
+            min_params_b=min_params_b,
+        )
     return curated_static
 
 
@@ -2792,6 +2834,7 @@ def cached_provider_model_ids(
     *,
     force_refresh: bool = False,
     ttl_seconds: int = _PROVIDER_MODELS_CACHE_TTL,
+    min_params_b: float | None = None,
 ) -> list[str]:
     """Disk-cached wrapper around :func:`provider_model_ids`.
 
@@ -2804,7 +2847,10 @@ def cached_provider_model_ids(
 
     cache = _load_provider_models_cache()
     fp = _credential_fingerprint(normalized)
-    entry = cache.get(normalized)
+    cache_key = normalized
+    if min_params_b is not None:
+        cache_key = f"{normalized}|min:{float(min_params_b):g}"
+    entry = cache.get(cache_key)
     now = time.time()
 
     if (
@@ -2818,9 +2864,13 @@ def cached_provider_model_ids(
         return list(entry["models"])
 
     # Cache miss / stale / forced refresh — call the live path.
-    live = provider_model_ids(normalized, force_refresh=force_refresh)
+    live = provider_model_ids(
+        normalized,
+        force_refresh=force_refresh,
+        min_params_b=min_params_b,
+    )
     if live:
-        cache[normalized] = {
+        cache[cache_key] = {
             "fp": fp,
             "at": now,
             "models": list(live),

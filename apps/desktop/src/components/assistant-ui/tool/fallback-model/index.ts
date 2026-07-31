@@ -947,8 +947,9 @@ function toolSubtitle(
 
   if (toolName === 'web_search') {
     const query = firstStringField(argsRecord, ['search_term', 'query']) || contextValue(argsRecord)
+    const source = firstStringField(resultRecord, ['provider_label', 'provider'])
 
-    return query ? `Query: ${query}` : 'Queried web sources'
+    return [query && `Query: ${query}`, source && `Source: ${source}`].filter(Boolean).join(' · ') || 'Queried web sources'
   }
 
   if (toolName === 'terminal' || toolName === 'execute_code') {

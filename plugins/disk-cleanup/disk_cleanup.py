@@ -23,7 +23,11 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import shutil
+import stat
+import tempfile
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,6 +40,14 @@ except Exception:  # pragma: no cover — plugin may load before constants resol
     def get_hermes_home() -> Path:  # type: ignore[no-redef]
         val = (os.environ.get("HERMES_HOME") or "").strip()
         return Path(val).resolve() if val else (Path.home() / ".hermes").resolve()
+
+
+# ``pytest`` loads this module via ``exec_module`` without registering it in
+# ``sys.modules`` first.  ``dataclasses`` expects the defining module to be
+# present when resolving annotations, so we provide a self-registration stub
+# early in import time.
+if __name__ not in sys.modules:
+    sys.modules[__name__] = sys.modules.get(__name__) or type(sys)(__name__)
 
 
 logger = logging.getLogger(__name__)
@@ -155,6 +167,28 @@ _EMPTY_DIR_SWEEP_PRUNE_DIRS = frozenset({
     "site-packages", "__pycache__",
 })
 
+_HOST_TEMP_FILE_PREFIXES = (
+    "hermes_",
+    "hermes-",
+    "terminal_forward_",
+    "forward_",
+)
+_HOST_TEMP_DIR_PREFIXES = (
+    "codex-browser-use",
+    "com.openai.sky.CUAService",
+    "sandbox-proxy-http-",
+    "powerlog",
+    "hermes-",
+    "hermes_",
+)
+
+_HOST_CACHE_ROOTS = (
+    Path.home() / "Library" / "Caches",
+    Path.home() / "Library" / "Developer" / "Xcode" / "DerivedData",
+    Path.home() / "Library" / "Developer" / "Xcode" / "Archives",
+    Path.home() / "Library" / "Developer" / "CoreSimulator" / "Caches",
+)
+
 
 # Paths under $HERMES_HOME that must NEVER be deleted by quick(),
 # regardless of what the stored category says.  This is a defense-in-depth
@@ -194,6 +228,488 @@ def fmt_size(n: float) -> str:
             return f"{n:.1f} {unit}"
         n /= 1024
     return f"{n:.1f} PB"
+
+
+@dataclass
+class CleanupCandidate:
+    """A single low-risk cleanup target discovered during analysis."""
+
+    path: str
+    source: str
+    category: str
+    size: int
+    age_days: float
+    risk: str
+    reason: str
+    eligible_now: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["size_human"] = fmt_size(float(self.size))
+        d["age_days"] = round(float(self.age_days), 2)
+        return d
+
+
+@dataclass
+class CleanupAnalysis:
+    """Summary of low-risk reclaimable locations."""
+
+    reason: str
+    evidence: List[str]
+    candidates: List[CleanupCandidate]
+    total_size: int
+    low_risk_count: int
+    low_risk_human: str
+    sources: Dict[str, int]
+    notes: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "reason": self.reason,
+            "evidence": list(self.evidence),
+            "candidates": [c.to_dict() for c in self.candidates],
+            "total_size": self.total_size,
+            "total_size_human": fmt_size(float(self.total_size)),
+            "low_risk_count": self.low_risk_count,
+            "low_risk_human": self.low_risk_human,
+            "sources": dict(self.sources),
+            "notes": list(self.notes),
+        }
+
+
+def _path_age_days(path: Path) -> float:
+    try:
+        return max(
+            0.0,
+            (datetime.now(timezone.utc) - datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)).total_seconds()
+            / 86400.0,
+        )
+    except OSError:
+        return 0.0
+
+
+def _resolve_host_temp_roots() -> List[Path]:
+    roots: List[Path] = []
+    seen = set()
+    for raw in (Path(tempfile.gettempdir()), Path("/private/tmp")):
+        try:
+            resolved = raw.resolve()
+        except OSError:
+            continue
+        key = str(resolved)
+        if key in seen or not resolved.exists():
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return roots
+
+
+def _safe_host_temp_file(path: Path) -> bool:
+    name = path.name.lower()
+    return any(name.startswith(prefix.lower()) for prefix in _HOST_TEMP_FILE_PREFIXES)
+
+
+def _safe_host_temp_dir(path: Path) -> bool:
+    name = path.name.lower()
+    return any(name.startswith(prefix.lower()) for prefix in _HOST_TEMP_DIR_PREFIXES)
+
+
+def _dir_size(path: Path) -> int:
+    total = 0
+    stack = [path]
+    while stack:
+        current = stack.pop()
+        try:
+            if current.is_symlink():
+                continue
+            if current.is_file():
+                total += current.stat().st_size
+            elif current.is_dir():
+                for child in current.iterdir():
+                    stack.append(child)
+        except OSError:
+            continue
+    return total
+
+
+def _cleanup_host_temp_roots() -> Dict[str, Any]:
+    """Sweep obvious low-value temp/cache artifacts outside HERMES_HOME.
+
+    This is deliberately narrower than a global /tmp wipe: we only delete
+    artifacts with known disposable prefixes, plus stale directories that
+    match those prefixes. The goal is to reclaim space from agent/session
+    leftovers without touching arbitrary user data.
+    """
+    deleted = 0
+    empty_dirs = 0
+    freed = 0
+    errors: List[str] = []
+
+    for root in _resolve_host_temp_roots():
+        try:
+            children = list(root.iterdir())
+        except OSError:
+            continue
+
+        for child in children:
+            try:
+                if child.is_symlink():
+                    continue
+                st = child.lstat()
+                age_days = _path_age_days(child)
+                is_socket = stat.S_ISSOCK(st.st_mode)
+
+                if child.is_dir():
+                    if _safe_host_temp_dir(child) and age_days >= 1.0:
+                        try:
+                            size_before = _dir_size(child)
+                            shutil.rmtree(child)
+                            deleted += 1
+                            freed += size_before
+                            _log(f"DELETED: {child} (host temp dir, {fmt_size(size_before)})")
+                        except OSError as e:
+                            errors.append(f"{child}: {e}")
+                            _log(f"ERROR deleting host temp dir {child}: {e}")
+                        continue
+                    if not any(child.iterdir()):
+                        try:
+                            child.rmdir()
+                            empty_dirs += 1
+                            _log(f"DELETED: {child} (empty host temp dir)")
+                        except OSError:
+                            pass
+                    continue
+
+                if is_socket:
+                    # Never blindly remove live sockets.
+                    continue
+                if _safe_host_temp_file(child):
+                    try:
+                        size = st.st_size
+                        child.unlink()
+                        deleted += 1
+                        freed += size
+                        _log(f"DELETED: {child} (host temp file, {fmt_size(size)})")
+                    except OSError as e:
+                        errors.append(f"{child}: {e}")
+                        _log(f"ERROR deleting host temp file {child}: {e}")
+            except OSError as e:
+                errors.append(f"{child}: {e}")
+                _log(f"ERROR sweeping host temp child {child}: {e}")
+
+    _log(
+        f"HOST_TEMP_SUMMARY: {deleted} files, {empty_dirs} dirs, {fmt_size(freed)}"
+    )
+    return {
+        "deleted": deleted,
+        "empty_dirs": empty_dirs,
+        "freed": freed,
+        "errors": errors,
+    }
+
+
+def _safe_cache_path(path: Path) -> bool:
+    """Return True for low-value cache paths we can clear generically."""
+    if not path.exists():
+        return False
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    home = Path.home().resolve()
+    try:
+        resolved.relative_to(home / "Library" / "Caches")
+        return True
+    except ValueError:
+        pass
+    try:
+        resolved.relative_to(home / "Library" / "Developer" / "Xcode" / "DerivedData")
+        return True
+    except ValueError:
+        pass
+    try:
+        resolved.relative_to(home / "Library" / "Developer" / "Xcode" / "Archives")
+        return True
+    except ValueError:
+        pass
+    try:
+        resolved.relative_to(home / "Library" / "Developer" / "CoreSimulator" / "Caches")
+        return True
+    except ValueError:
+        pass
+    return False
+
+
+def _cleanup_host_cache_roots() -> Dict[str, Any]:
+    """Sweep recreatable cache roots that often trigger storage pressure."""
+    deleted = 0
+    empty_dirs = 0
+    freed = 0
+    errors: List[str] = []
+
+    for root in _HOST_CACHE_ROOTS:
+        if not root.exists():
+            continue
+        try:
+            children = list(root.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                if child.is_symlink():
+                    continue
+                if child.is_dir():
+                    if _safe_cache_path(child):
+                        try:
+                            size_before = _dir_size(child)
+                            shutil.rmtree(child)
+                            deleted += 1
+                            freed += size_before
+                            _log(f"DELETED: {child} (host cache dir, {fmt_size(size_before)})")
+                        except OSError as e:
+                            errors.append(f"{child}: {e}")
+                            _log(f"ERROR deleting host cache dir {child}: {e}")
+                        continue
+                    if not any(child.iterdir()):
+                        try:
+                            child.rmdir()
+                            empty_dirs += 1
+                            _log(f"DELETED: {child} (empty host cache dir)")
+                        except OSError:
+                            pass
+                    continue
+                if child.is_file():
+                    try:
+                        size = child.stat().st_size
+                        child.unlink()
+                        deleted += 1
+                        freed += size
+                        _log(f"DELETED: {child} (host cache file, {fmt_size(size)})")
+                    except OSError as e:
+                        errors.append(f"{child}: {e}")
+                        _log(f"ERROR deleting host cache file {child}: {e}")
+            except OSError as e:
+                errors.append(f"{child}: {e}")
+                _log(f"ERROR sweeping host cache child {child}: {e}")
+
+    _log(
+        f"HOST_CACHE_SUMMARY: {deleted} files, {empty_dirs} dirs, {fmt_size(freed)}"
+    )
+    return {
+        "deleted": deleted,
+        "empty_dirs": empty_dirs,
+        "freed": freed,
+        "errors": errors,
+    }
+
+
+def _analysis_candidate(
+    *,
+    path: Path,
+    source: str,
+    category: str,
+    size: int,
+    age_days: float,
+    reason: str,
+    eligible_now: bool = True,
+) -> CleanupCandidate:
+    return CleanupCandidate(
+        path=str(path),
+        source=source,
+        category=category,
+        size=int(max(0, size)),
+        age_days=float(max(0.0, age_days)),
+        risk="low" if eligible_now else "review",
+        reason=reason,
+        eligible_now=eligible_now,
+    )
+
+
+def analyze_low_risk_cleanup_targets(*, reason: str = "", evidence: Optional[List[str]] = None) -> CleanupAnalysis:
+    """Return a generic summary of low-risk reclaimable space.
+
+    This is intentionally analysis-only: it never deletes anything. The
+    goal is to surface the small set of disposable areas that are safe to
+    consider first when the agent sees storage pressure.
+    """
+    evidence_list = list(evidence or [])
+    now = datetime.now(timezone.utc)
+    candidates: List[CleanupCandidate] = []
+    sources: Dict[str, int] = {}
+    notes: List[str] = []
+
+    def add(candidate: CleanupCandidate) -> None:
+        candidates.append(candidate)
+        sources[candidate.source] = sources.get(candidate.source, 0) + 1
+
+    # 1) Tracked disposable files under HERMES_HOME.
+    tracked = load_tracked()
+    for item in tracked:
+        try:
+            p = Path(item["path"])
+        except Exception:
+            continue
+        if not p.exists():
+            continue
+        cat = str(item.get("category") or "other")
+        if cat not in {"test", "temp", "cron-output"}:
+            continue
+        if cat == "cron-output":
+            re_cat = guess_category(p)
+            if re_cat != "cron-output":
+                continue
+        try:
+            age_days = max(
+                0.0,
+                (now - datetime.fromisoformat(item["timestamp"])).total_seconds() / 86400.0,
+            )
+        except Exception:
+            age_days = 0.0
+        add(
+            _analysis_candidate(
+                path=p,
+                source="tracked",
+                category=cat,
+                size=int(item.get("size") or (p.stat().st_size if p.is_file() else 0)),
+                age_days=age_days,
+                reason="tracked disposable file",
+            )
+        )
+
+    # 2) Host temp/session leftovers.
+    for root in _resolve_host_temp_roots():
+        try:
+            children = list(root.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                if child.is_symlink():
+                    continue
+                st = child.lstat()
+                age_days = _path_age_days(child)
+                if child.is_dir():
+                    if _safe_host_temp_dir(child) and age_days >= 1.0:
+                        add(
+                            _analysis_candidate(
+                                path=child,
+                                source="host_temp",
+                                category="temp",
+                                size=_dir_size(child),
+                                age_days=age_days,
+                                reason="stale disposable temp directory",
+                            )
+                        )
+                    elif not any(child.iterdir()):
+                        add(
+                            _analysis_candidate(
+                                path=child,
+                                source="host_temp",
+                                category="empty-dir",
+                                size=0,
+                                age_days=age_days,
+                                reason="empty temp directory",
+                            )
+                        )
+                    continue
+                if stat.S_ISSOCK(st.st_mode):
+                    continue
+                if _safe_host_temp_file(child):
+                    add(
+                        _analysis_candidate(
+                            path=child,
+                            source="host_temp",
+                            category="temp",
+                            size=st.st_size,
+                            age_days=age_days,
+                            reason="known disposable temp file",
+                        )
+                    )
+            except OSError:
+                continue
+
+    # 3) Recreatable host caches, including Xcode and simulator caches.
+    for root in _HOST_CACHE_ROOTS:
+        if not root.exists():
+            continue
+        try:
+            children = list(root.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                if child.is_symlink():
+                    continue
+                if child.is_dir() and _safe_cache_path(child):
+                    add(
+                        _analysis_candidate(
+                            path=child,
+                            source="host_cache",
+                            category="cache",
+                            size=_dir_size(child),
+                            age_days=_path_age_days(child),
+                            reason="recreatable cache directory",
+                        )
+                    )
+                    continue
+                if child.is_file():
+                    add(
+                        _analysis_candidate(
+                            path=child,
+                            source="host_cache",
+                            category="cache",
+                            size=child.stat().st_size,
+                            age_days=_path_age_days(child),
+                            reason="recreatable cache file",
+                        )
+                    )
+            except OSError:
+                continue
+
+    candidates.sort(key=lambda c: (c.size, c.age_days), reverse=True)
+    total_size = sum(c.size for c in candidates)
+    low_risk_count = len([c for c in candidates if c.eligible_now and c.risk == "low"])
+    if not notes:
+        notes.append("analysis-only: no paths were deleted")
+    notes.append("candidate ordering favors larger reclaimable space first")
+    if any(c.source == "tracked" for c in candidates):
+        notes.append("tracked disposables are revalidated before acting")
+
+    return CleanupAnalysis(
+        reason=reason,
+        evidence=evidence_list,
+        candidates=candidates,
+        total_size=total_size,
+        low_risk_count=low_risk_count,
+        low_risk_human=fmt_size(float(total_size)),
+        sources=sources,
+        notes=notes,
+    )
+
+
+def format_cleanup_analysis(analysis: CleanupAnalysis) -> str:
+    """Human-readable view of low-risk cleanup candidates."""
+    data = analysis.to_dict()
+    lines = [
+        "Low-risk cleanup analysis:",
+        f"  candidates   : {data['low_risk_count']}",
+        f"  total size   : {data['low_risk_human']}",
+        f"  sources      : {data['sources'] or {}}",
+    ]
+    if data["evidence"]:
+        lines.append(f"  evidence     : {', '.join(data['evidence'])}")
+    if data["notes"]:
+        lines.append("  notes:")
+        for note in data["notes"]:
+            lines.append(f"    - {note}")
+    if data["candidates"]:
+        lines.append("  top candidates:")
+        for candidate in data["candidates"][:10]:
+            lines.append(
+                f"    - [{candidate['source']}/{candidate['category']}] "
+                f"{candidate['size_human']} {candidate['path']}"
+            )
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +933,18 @@ def quick() -> Dict[str, Any]:
         "empty_dirs": empty_removed,
         "freed": freed,
         "errors": errors,
+    }
+
+
+def quick_host_temp() -> Dict[str, Any]:
+    """Sweep safe low-value temp/cache artifacts outside HERMES_HOME."""
+    temp_summary = _cleanup_host_temp_roots()
+    cache_summary = _cleanup_host_cache_roots()
+    return {
+        "deleted": int(temp_summary.get("deleted", 0) or 0) + int(cache_summary.get("deleted", 0) or 0),
+        "empty_dirs": int(temp_summary.get("empty_dirs", 0) or 0) + int(cache_summary.get("empty_dirs", 0) or 0),
+        "freed": int(temp_summary.get("freed", 0) or 0) + int(cache_summary.get("freed", 0) or 0),
+        "errors": list(temp_summary.get("errors") or []) + list(cache_summary.get("errors") or []),
     }
 
 

@@ -1903,6 +1903,35 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
         )
         if keepalive_http is not None:
             client_kwargs["http_client"] = keepalive_http
+
+    # Anonymous providers that reject dummy Bearer tokens (OVHcloud free
+    # tier): strip Authorization so the request is truly unauthenticated.
+    try:
+        from providers.base import OMIT_AUTH_API_KEY
+
+        if client_kwargs.get("api_key") == OMIT_AUTH_API_KEY:
+            import httpx as _httpx
+
+            http_client = client_kwargs.get("http_client")
+            if http_client is None:
+                http_client = agent._build_keepalive_http_client(
+                    client_kwargs.get("base_url", ""), verify=httpx_verify,
+                )
+            if http_client is None:
+                http_client = _httpx.Client(verify=httpx_verify)
+
+            def _strip_authorization(request: Any) -> None:
+                request.headers.pop("Authorization", None)
+
+            hooks = getattr(http_client, "event_hooks", None)
+            if isinstance(hooks, dict):
+                hooks.setdefault("request", []).append(_strip_authorization)
+            client_kwargs["http_client"] = http_client
+            # SDK still needs a non-empty string; the hook removes the header.
+            client_kwargs["api_key"] = "omit-auth"
+    except Exception:
+        pass
+
     # Delegate all rate-limit / 5xx retry to hermes's outer conversation loop,
     # which honors Retry-After and applies adaptive/jittered backoff. The OpenAI
     # SDK default (max_retries=2) uses its own 1-2s backoff that ignores

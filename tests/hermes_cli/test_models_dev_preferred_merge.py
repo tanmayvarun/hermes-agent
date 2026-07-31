@@ -80,6 +80,22 @@ class TestProviderModelIdsPreferred:
         assert "mimo-v2-pro" in out
         assert "kimi-k2.6" in out
 
+    def test_opencode_go_can_request_a_lower_task_floor(self):
+        """Task-specific callers must be able to lower the models.dev floor."""
+        seen = {}
+
+        def fake_list_agentic_models(provider, min_params_b=None):
+            seen["provider"] = provider
+            seen["min_params_b"] = min_params_b
+            return ["mimo-v2.5-pro", "mimo-v2.5"]
+
+        with patch("agent.models_dev.list_agentic_models", side_effect=fake_list_agentic_models):
+            out = provider_model_ids("opencode-go", min_params_b=14)
+
+        assert seen == {"provider": "opencode-go", "min_params_b": 14}
+        assert "mimo-v2.5-pro" in out
+        assert "mimo-v2.5" in out
+
     def test_opencode_go_offline_falls_back_to_curated(self):
         """Offline models.dev → curated-only list, no crash."""
         with patch("agent.models_dev.list_agentic_models", return_value=[]):

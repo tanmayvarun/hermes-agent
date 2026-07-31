@@ -35,7 +35,7 @@ os.environ.setdefault("HERMES_HOME", os.path.join(os.path.expanduser("~"), ".her
 
 from hermes_cli.models import (  # noqa: E402
     OPENROUTER_MODELS,
-    PREFERRED_SILENT_DEFAULT_MODEL,
+    PREFERRED_SILENT_DEFAULT_MODELS,
     _PROVIDER_MODELS,
 )
 
@@ -45,7 +45,7 @@ CATALOG_VERSION = 1
 
 def _openrouter_entry(mid: str, desc: str) -> dict:
     entry: dict = {"id": mid, "description": desc}
-    if mid == PREFERRED_SILENT_DEFAULT_MODEL:
+    if mid == PREFERRED_SILENT_DEFAULT_MODELS["openrouter"]:
         entry["description"] = desc or "default"
         entry["default"] = True
     return entry
@@ -53,7 +53,7 @@ def _openrouter_entry(mid: str, desc: str) -> dict:
 
 def _nous_entry(mid: str) -> dict:
     entry: dict = {"id": mid}
-    if mid == PREFERRED_SILENT_DEFAULT_MODEL:
+    if mid == PREFERRED_SILENT_DEFAULT_MODELS["nous"]:
         entry["default"] = True
     return entry
 

@@ -19,6 +19,7 @@ Other modules import from this file.  No parallel registries.
 
 from __future__ import annotations
 
+import os
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,6 +27,17 @@ from typing import Any, Dict, List, Optional, Tuple
 from utils import base_url_host_matches, base_url_hostname
 
 logger = logging.getLogger(__name__)
+
+
+def _ollama_cloud_only_mode() -> bool:
+    """Return True when Hermes should expose only Ollama Cloud routes.
+
+    The switch is driven by the shared auxiliary provider policy so the
+    launcher can opt the whole app into a single-provider mode without
+    rewriting every selection call-site.
+    """
+    policy = str(os.getenv("HERMES_AUXILIARY_PROVIDER_POLICY", "") or "").strip().lower()
+    return policy == "ollama-only"
 
 
 # -- Hermes overlay ----------------------------------------------------------
@@ -751,6 +763,10 @@ def resolve_provider_full(
     """
     canonical = normalize_provider(name)
     raw = name.strip().lower()
+
+    if _ollama_cloud_only_mode():
+        if canonical != "ollama-cloud" and raw != "ollama-cloud":
+            return None
 
     # 0. User-defined config providers win over the built-in alias table.
     #    A user who declares ``providers.<name>`` in config.yaml has stated

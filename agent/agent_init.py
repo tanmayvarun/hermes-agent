@@ -38,6 +38,7 @@ from agent.model_metadata import (
     fetch_model_metadata,
     is_local_endpoint,
     query_ollama_num_ctx,
+    warm_ollama_model_keepalive,
 )
 from agent.process_bootstrap import _install_safe_stdio
 from agent.subdirectory_hints import SubdirectoryHintTracker
@@ -57,6 +58,7 @@ from utils import base_url_host_matches, is_truthy_value
 # ``logger = logging.getLogger(__name__)``, which resolves to "run_agent"
 # from inside that module.)
 logger = logging.getLogger("run_agent")
+_provider_startup_prewarm_done = threading.Event()
 
 
 def _ra():
@@ -178,6 +180,186 @@ def _record_codex_gpt55_autoraise_notice(autoraise: Dict[str, Any]) -> None:
         )
     except (OSError, KeyError, TypeError, ValueError):
         pass
+
+
+def _startup_provider_prewarm_min_successes() -> int:
+    """Minimum number of providers that must answer during startup."""
+    raw = os.environ.get("HERMES_PROVIDER_STARTUP_MIN_SUCCESS", "").strip()
+    if not raw:
+        return 3
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 3
+
+
+def _prewarm_provider_apis_at_startup(
+    *,
+    current_provider: str = "",
+    current_base_url: str = "",
+    user_providers: Dict[str, Any] | None = None,
+    custom_providers: list | None = None,
+) -> dict[str, Any]:
+    """Pre-warm provider APIs and fail fast if too few respond.
+
+    The warm path reuses the existing authenticated-provider inventory so we
+    only touch providers the runtime can actually reach. Success means the
+    provider returned at least one model id from the warm probe.
+    """
+    if _provider_startup_prewarm_done.is_set():
+        return {
+            "status": "skipped",
+            "successes": [],
+            "failures": [],
+            "min_successes": _startup_provider_prewarm_min_successes(),
+        }
+
+    min_successes = _startup_provider_prewarm_min_successes()
+    if min_successes <= 0:
+        _provider_startup_prewarm_done.set()
+        return {"status": "disabled", "successes": [], "failures": [], "min_successes": min_successes}
+
+    try:
+        from hermes_cli.model_switch import list_authenticated_providers
+        from hermes_cli.models import cached_provider_model_ids
+    except Exception as exc:
+        raise RuntimeError(f"Provider startup prewarm unavailable: {exc}") from exc
+
+    try:
+        rows = list_authenticated_providers(
+            current_provider=current_provider or "",
+            current_base_url=current_base_url or "",
+            user_providers=user_providers or {},
+            custom_providers=custom_providers or [],
+            max_models=1,
+            refresh=True,
+            probe_custom_providers=True,
+            probe_current_custom_provider=True,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Provider startup prewarm failed to enumerate providers: {exc}") from exc
+
+    successes: list[str] = []
+    failures: list[str] = []
+    inventory_by_provider: dict[str, list[str]] = {}
+    seen: set[str] = set()
+
+    for row in rows:
+        slug = str(row.get("slug") or "").strip().lower()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        try:
+            models = cached_provider_model_ids(slug, force_refresh=True)
+            if models:
+                successes.append(slug)
+                inventory_by_provider[slug] = list(models)
+            else:
+                failures.append(slug)
+        except Exception:
+            failures.append(slug)
+
+        if len(successes) >= min_successes:
+            _provider_startup_prewarm_done.set()
+            summary = (
+                f"Provider startup prewarm ready: {len(successes)}/{min_successes} "
+                f"providers answered ({', '.join(successes)})"
+            )
+            logger.info(
+                "Provider startup prewarm ok: %d/%d providers answered (%s)",
+                len(successes),
+                min_successes,
+                ", ".join(successes),
+            )
+            print(summary, file=sys.stderr)
+            if failures:
+                logger.debug(
+                    "Provider startup prewarm failures: %s",
+                    ", ".join(failures),
+                )
+            return {
+                "status": "ok",
+                "successes": successes,
+                "failures": failures,
+                "min_successes": min_successes,
+                "inventory_by_provider": inventory_by_provider,
+            }
+
+    message = (
+        f"Provider startup prewarm only found {len(successes)} working provider(s); "
+        f"need at least {min_successes} before proceeding."
+    )
+    logger.warning(
+        "%s successes=%s failures=%s",
+        message,
+        ", ".join(successes) or "-",
+        ", ".join(failures) or "-",
+    )
+    print(
+        f"Provider startup prewarm blocked: {len(successes)}/{min_successes} "
+        f"providers answered (successes={', '.join(successes) or '-'}; "
+        f"failures={', '.join(failures) or '-'})",
+        file=sys.stderr,
+    )
+    raise RuntimeError(message)
+
+
+def _prewarm_runtime_model_inventory_at_startup(
+    *,
+    current_provider: str = "",
+    current_base_url: str = "",
+    current_model: str = "",
+    user_providers: Dict[str, Any] | None = None,
+    custom_providers: list | None = None,
+) -> dict[str, Any]:
+    """Populate the runtime's available-model cache and warm the active model.
+
+    This is the LLM-layer startup touchpoint: it gives the runtime a concrete
+    view of which providers/models are actually reachable right now and, for
+    Ollama-backed sessions, keeps the selected model resident with
+    ``keep_alive=-1`` so the first real turn does not pay a cold load.
+    """
+    result = _prewarm_provider_apis_at_startup(
+        current_provider=current_provider,
+        current_base_url=current_base_url,
+        user_providers=user_providers,
+        custom_providers=custom_providers,
+    )
+
+    inventory_by_provider = dict(result.get("inventory_by_provider") or {})
+
+    try:
+        current_slug = str(current_provider or "").strip().lower()
+        current_inventory = inventory_by_provider.get(current_slug)
+        if not current_inventory:
+            from hermes_cli.models import cached_provider_model_ids
+            current_inventory = cached_provider_model_ids(
+                current_slug,
+                force_refresh=True,
+            )
+        if current_inventory:
+            result["current_provider_models"] = list(current_inventory)
+    except Exception:
+        pass
+
+    try:
+        result["ollama_warmed"] = False
+        if str(current_model or "").strip() and str(current_base_url or "").strip():
+            try:
+                warm_timeout = float(get_provider_request_timeout() or 5.0)
+            except (TypeError, ValueError):
+                warm_timeout = 5.0
+            warmed = warm_ollama_model_keepalive(
+                current_model,
+                current_base_url,
+                keep_alive=-1,
+                timeout=max(warm_timeout, 5.0),
+            )
+            result["ollama_warmed"] = warmed
+    except Exception as exc:
+        logger.debug("Runtime model warmup failed: %s", exc)
+
+    return result
 
 
 def _normalized_custom_base_url(value: Any) -> str:
@@ -1216,6 +1398,16 @@ def init_agent(
         disabled_toolsets=disabled_toolsets,
         quiet_mode=agent.quiet_mode,
     )
+
+    # Proactive vision adaptation: strip vision tools from the schema when
+    # the main model/provider cannot accept them (avoids LLM7-style 400s
+    # and the scary "Server rejected image content" warning).
+    try:
+        from agent.vision_capability import apply_vision_tool_adaptation
+
+        apply_vision_tool_adaptation(agent, quiet=True)
+    except Exception:
+        logger.debug("vision tool adaptation failed", exc_info=True)
     
     # Show tool configuration and store valid tool names for validation
     agent.valid_tool_names = set()
@@ -1761,6 +1953,31 @@ def init_agent(
     # compression model context-length detection needs the same list).
     agent._custom_providers = _custom_providers
     _merge_custom_provider_extra_body(agent, _custom_providers)
+
+    # Startup gate: warm provider APIs and stop early when the environment
+    # does not have enough working providers to support resilient fallback.
+    #
+    # Pytest-driven construction is exempt so unit tests can exercise the
+    # fallback logic directly without needing live provider fanout at init
+    # time; the startup prewarm itself is still covered by dedicated tests
+    # that call the helper explicitly.
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        runtime_inventory = _prewarm_runtime_model_inventory_at_startup(
+            current_provider=agent.provider or "",
+            current_base_url=agent.base_url or "",
+            current_model=agent.model or "",
+            user_providers=_agent_cfg.get("providers") if isinstance(_agent_cfg, dict) else {},
+            custom_providers=_custom_providers,
+        )
+        agent._available_models_by_provider = runtime_inventory.get("inventory_by_provider", {})
+        agent._available_models = list(
+            dict.fromkeys(
+                model
+                for models in agent._available_models_by_provider.values()
+                for model in (models or [])
+            )
+        )
+        agent._runtime_model_inventory = runtime_inventory
 
     # Check custom_providers per-model context_length
     if _config_context_length is None and _custom_providers:

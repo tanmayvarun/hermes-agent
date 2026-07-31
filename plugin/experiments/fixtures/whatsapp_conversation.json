@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "app_name": "WhatsApp",
+    "window_name": "WhatsApp",
+    "bundle_id": "net.whatsapp.WhatsApp",
+    "screen": "conversation",
+    "coverage": 1.0
+  },
+  "tree": {
+    "id": "wa-root",
+    "name": "WhatsApp",
+    "role": "AXWindow",
+    "description": null,
+    "children": [
+      {
+        "id": "chats-label",
+        "name": "Chats",
+        "role": "AXStaticText",
+        "bbox": [20, 20, 80, 24],
+        "children": []
+      },
+      {
+        "id": "search-btn",
+        "name": "Search",
+        "role": "AXButton",
+        "bbox": [400, 20, 60, 28],
+        "enabled": true,
+        "children": []
+      },
+      {
+        "id": "chat-list",
+        "name": "Chat list",
+        "role": "AXList",
+        "bbox": [20, 60, 280, 500],
+        "children": [
+          {
+            "id": "row-alice",
+            "name": "Alice",
+            "role": "AXStaticText",
+            "bbox": [24, 70, 200, 40],
+            "children": []
+          },
+          {
+            "id": "row-pallavi",
+            "name": "Pallavi",
+            "role": "AXStaticText",
+            "bbox": [24, 120, 200, 40],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}

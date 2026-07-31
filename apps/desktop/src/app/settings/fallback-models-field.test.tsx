@@ -99,7 +99,7 @@ describe('FallbackModelsField', () => {
   it('shows an empty-state hint when there are no fallbacks', async () => {
     await renderField([])
 
-    expect(screen.getByText(/No fallback models/)).toBeTruthy()
+    expect(screen.getByText(/No ordered model providers/)).toBeTruthy()
     expect(screen.queryAllByLabelText('Remove')).toHaveLength(0)
   })
 

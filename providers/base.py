@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 # Sentinel for "omit temperature entirely" (Kimi: server manages it)
 OMIT_TEMPERATURE = object()
 
+# Sentinel api_key for anonymous OpenAI-compatible endpoints that reject any
+# non-empty Bearer token (e.g. OVHcloud free anonymous tier). create_openai_client
+# strips the Authorization header when this value is used.
+OMIT_AUTH_API_KEY = "__hermes_omit_auth__"
+
 
 def _profile_user_agent() -> str:
     """Return a ``hermes-cli/<version>`` UA string, with a stable fallback.
@@ -55,6 +60,15 @@ class ProviderProfile:
     models_url: str = ""  # explicit models endpoint; falls back to {base_url}/models
     auth_type: str = "api_key"   # api_key|oauth_device_code|oauth_external|copilot|aws_sdk
     supports_health_check: bool = True  # False → doctor skips /models probe for this provider
+    # When True, resolve_api_key_provider_credentials() substitutes a
+    # non-empty placeholder if no API key is configured — for gateways that
+    # allow anonymous / no-registration access (e.g. LLM7 free tier). The
+    # OpenAI SDK still needs a non-empty api_key string.
+    allows_no_api_key: bool = False
+    # When True (with allows_no_api_key), Hermes omits the Authorization
+    # header entirely. Needed for endpoints that accept anonymous calls but
+    # 403 on any dummy Bearer token (OVHcloud anonymous tier).
+    omit_auth_header: bool = False
 
     # ── Vision support ────────────────────────────────────────
     # True when the provider's API accepts image content inside
@@ -71,6 +85,14 @@ class ProviderProfile:
     # multimodal user messages but reject list-type tool content
     # (e.g. Xiaomi MiMo, which returns 400 "text is not set").
     supports_vision_tool_messages: bool = True
+
+    # When True, Hermes fails closed on unknown vision capability: if
+    # models.dev / overrides cannot confirm the active model supports
+    # vision, vision-related tools are stripped from the tools schema at
+    # agent init. Needed for gateways (e.g. LLM7) that 400 the whole
+    # request when vision tools appear in the tools array for text-only
+    # models — even with no image content in messages.
+    strict_vision_tool_schema: bool = False
 
     # ── Model catalog ─────────────────────────────────────────
     # fallback_models: curated list shown in /model picker when live fetch fails.
@@ -212,7 +234,11 @@ class ProviderProfile:
         from hermes_cli.urllib_security import open_credentialed_url
 
         req = urllib.request.Request(url)
-        if api_key:
+        # Anonymous omit-auth providers must not send a Bearer token — some
+        # gateways (OVHcloud) 403 on any non-empty Authorization header.
+        from providers.base import OMIT_AUTH_API_KEY
+
+        if api_key and api_key != OMIT_AUTH_API_KEY:
             req.add_header("Authorization", f"Bearer {api_key}")
         req.add_header("Accept", "application/json")
         # Some providers (e.g. OpenCode Zen) sit behind a WAF that blocks

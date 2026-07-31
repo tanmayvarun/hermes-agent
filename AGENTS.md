@@ -81,6 +81,64 @@ conservative at the waist.
   data must relate (invariants), not freeze a current value (model lists,
   config version literals, enumeration counts). See "Don't write
   change-detector tests."
+- **No heuristic actuator ranking.** For agent decisions that choose among
+  possible actuators, generate candidates from the world model, then let the
+  model choose. Do not add hand-tuned score ladders, CTA bias tables, or
+  per-surface "smart" ordering rules in the agent loop. If a compatibility
+  fallback exists, keep it isolated and remove it when the model-backed path is
+  available.
+- **Procedure primitives come before surface-specific playbooks.** If a task
+  family needs convergent execution, represent it as a declarative procedure
+  that the agent can auto-select from the prompt and then bind to the current
+  goal. Keep the procedure core generic, keep leaf overlays thin, and let the
+  procedure emit ordered subgoals rather than hardcoded click paths.
+- **The active procedure stage is a first-class core signal.** Candidate
+  generation, selector prompts, and reversible / irreversible gating should all
+  read the live stage snapshot from the generic procedure substrate instead of
+  inferring it independently in app-specific code.
+- **App-specific views are semantic overlays, not planners.** It is fine to
+  keep a thin per-app lens such as `WhatsAppWorldView` when the generic world
+  model cannot express the app's own semantics cleanly. That lens must derive
+  from generic entities, regions, pragmatic roles, and capabilities, and it
+  must stay narrow: do not move actuator ranking, task policy, or app-specific
+  micro-heuristics into the view layer. The same rule applies to content
+  discovery: extract visible objects, then let the generic core resolve which
+  object best satisfies the goal.
+- **UI surfaces are hooks over the same work loop.** The CLI, TUI, desktop app,
+  and Terminal-launched runners may render different chrome, but they must not
+  fork task semantics or invent separate notions of progress. Run-relative
+  clocks, no-progress watchdogs, and work-loop telemetry belong in the shared
+  controller/logger path; the UI's per-turn timer is presentation-only.
+- **Learn interface transitions generically.** The core control loop should
+  learn from `state -> action -> next state` trajectories across related
+  goals. Exact-goal memory is allowed, but it must not be the only signal; the
+  controller should also reuse family-level transition memory so a successful
+  path in one near-neighbor goal can inform another without hardcoded flows.
+- **Prefer belief-first control over action-first suppression.** Action
+  history is useful, but it is not the center of intelligence. The runtime
+  should model hypotheses, expected observations, and experiment choice so the
+  controller can ask "what uncertainty should I reduce?" before it asks
+  "what action should I try?"
+- **Prefer the best free reasoning source the user could manually reach.**
+  When a human can access a high-quality reasoning surface on their computer,
+  Hermes should be able to reach it too, subject to explicit auth, policy, and
+  approval constraints. That includes self-hosted models, free API tiers, and
+  browser-backed chat providers when they are the highest-quality available
+  option for the task.
+- **OCR belongs in the generic perception stack, not app views.** Use OCR as a
+  reusable visibility dimension when AX or text fusion is incomplete. Engine
+  choice may adapt from task shape and observed success rates, but the policy
+  stays generic and lives with perception, not in a per-app overlay.
+- **Screen parsers and action-prior models belong in the generic core.**
+  OmniParser-style screen parsers, UI-TARS / ShowUI / OS-Atlas grounding
+  priors, and hosted computer-use APIs are separate model families. Keep them
+  behind generic registries and adapters; do not teach overlays how to call a
+  specific model or hardcode a model's output into app policy.
+- **Train perception before actuation on hard apps.** For surfaces like
+  WhatsApp, prefer a staged ladder: read/summarize messages first, then
+  identify message content and source chat structure, then backtrack/scroll,
+  then forward or other irreversible actions. Contact rows and profile cards
+  are gateways, not proof that the source content has been found.
 - **E2E validation, not just green unit mocks.** For anything touching
   resolution chains, config propagation, security boundaries, remote
   backends, or file/network I/O, exercise the real path with real imports
@@ -123,6 +181,19 @@ conservative at the waist.
   without E2E proof, and plugins that touch core files.** Plugins live in their
   own directory and work within the ABCs/hooks we provide; if a plugin needs
   more, widen the generic plugin surface, don't special-case it in core.
+- **Irreversible actuators need a confidence gate.** Actions that leave an
+  external footprint - for example placing a call or sending a message - must
+  be controlled by a configurable confidence threshold in `config.yaml`
+  (default `0.7`). Reversible actions may still run below that threshold.
+  When the candidate set contains an irreversible actuator, route the
+  selection through the dedicated high-risk reasoning task so the cloud model
+  can weigh footprint risk before execution.
+- **Browser-backed relays are allowed when they are the best available path.**
+  If the direct API/model route is unavailable, rate-limited, or lower quality
+  than a manually accessible chat surface the user already owns, Hermes may
+  escalate to a logged-in browser relay. That relay must still surface auth and
+  consent CTAs, run in a managed worker/session, and preserve the same
+  fallback/accountability contract as every other provider.
 - **Third-party products / other people's projects integrated into the core
   tree.** Observability backends, vendor SaaS integrations, analytics dashboards,
   and similar "someone else's product" plugins do NOT land under `plugins/` in
@@ -834,6 +905,11 @@ The general PluginManager records `kind: model-provider` manifests but does
 NOT import them (would double-instantiate `ProviderProfile`). Plugins
 without an explicit `kind:` get auto-coerced via a source-text heuristic
 (`register_provider` + `ProviderProfile` in `__init__.py`).
+
+Storage-pressure recovery is a shared runtime behavior, not a task-specific
+hack: when perception or tool output says the active app is out of space,
+prefer the bundled cleanup path (`disk-cleanup quick` plus environment
+cleanup) and re-observe before retrying the original goal.
 
 Full authoring guide: `website/docs/developer-guide/model-provider-plugin.md`.
 

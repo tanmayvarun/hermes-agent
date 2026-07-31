@@ -1,0 +1,406 @@
+=== host=-zsh pid=43358 TIMESTAMP=20260725_104419 ===
+=== which python: /Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/.venv/bin/python ===
+=== prompt: find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi ===
+AXIsProcessTrusted= True — continuing
+=== starting forward-message live ===
+[001][OK] whatsapp_forward_message | goal='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi'
+[002][OK][step 0] step | message='checking Terminal Accessibility'
+[003][OK][step 0] check | message='pass' expected=True
+[004][OK][step 0] check | message='pass' expected=True
+[005][FAIL][step 0] check | message='fail' expected=True
+[006][OK][step 0] check | message='pass' expected=True
+[007][OK][step 0] step | message='launched via open -a'
+[008][OK][step 0] step | message='WhatsApp startup settle' detail='2.0s'
+[observe_begin step=0] app=WhatsApp screenshot=False
+[009][OK][step 0] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[010][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=233 elapsed=2.50s
+[011][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.50s"
+[012][OK][step 0] observation | nodes=233
+[observe_complete step=0] nodes=233 elapsed=2.51s
+[013][OK][step 0] world_patch | screen='conversation' retention=1.0
+[014][OK][step 0] step | message="leaving open='jai jaganatha' toward chat list"
+[015][OK][step 0] step | message='after preclear list' detail='0.8s'
+[observe_begin step=0] app=WhatsApp screenshot=False
+[016][OK][step 0] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[017][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=233 elapsed=3.17s
+[018][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=3.17s"
+[019][OK][step 0] observation | nodes=233
+[observe_complete step=0] nodes=233 elapsed=3.17s
+[020][OK][step 0] world_patch | screen='conversation' action='preclear_list'
+[021][OK][step 0] step | message='closed-loop goal=find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi' detail='whatsapp_forward_message'
+[observe_begin step=0] app=WhatsApp screenshot=False
+[022][OK][step 0] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=0] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[023][OK][step 0] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=0] nodes=233 elapsed=2.20s
+[024][OK][step 0] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 255, 'macapptree': 63} elapsed=2.20s"
+[025][OK][step 0] observation | nodes=233
+[observe_complete step=0] nodes=233 elapsed=2.20s
+[026][OK][step 1] observation | nodes=233
+[027][OK][step 1] forward_task
+[028][OK][step 1] world_patch | screen='conversation' retention=1.0
+[029][OK][step 1] fusion_conflicts
+[030][OK][step 1] goal_status
+[031][OK][step 1] decision_engine
+[032][OK][step 1] planner_decision
+[033][OK][step 1] step | message='wait / re-perceive' detail='1.2s'
+[observe_begin step=1] app=WhatsApp screenshot=False
+[034][OK][step 1] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=1] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[035][OK][step 1] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=1] nodes=233 elapsed=2.25s
+[036][OK][step 1] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 255, 'macapptree': 63} elapsed=2.25s"
+[037][OK][step 1] observation | nodes=233
+[observe_complete step=1] nodes=233 elapsed=2.25s
+[038][OK][step 2] observation | nodes=233
+[039][OK][step 2] forward_task
+[040][OK][step 2] world_patch | screen='conversation' retention=1.0
+[041][OK][step 2] fusion_conflicts
+[042][OK][step 2] goal_status
+[043][OK][step 2] decision_engine
+[044][OK][step 2] planner_decision
+[045][OK][step 2] step | message='wait / re-perceive' detail='1.2s'
+[observe_begin step=2] app=WhatsApp screenshot=False
+[046][OK][step 2] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=2] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[047][OK][step 2] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=2] nodes=233 elapsed=2.84s
+[048][OK][step 2] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.84s"
+[049][OK][step 2] observation | nodes=233
+[observe_complete step=2] nodes=233 elapsed=2.84s
+[050][OK][step 3] observation | nodes=233
+[051][OK][step 3] forward_task
+[052][OK][step 3] world_patch | screen='conversation' retention=1.0
+[053][OK][step 3] fusion_conflicts
+[054][OK][step 3] goal_status
+[055][OK][step 3] decision_engine
+[056][OK][step 3] planner_decision
+[057][OK][step 3] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=3] app=WhatsApp screenshot=False
+[058][OK][step 3] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=3] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[059][OK][step 3] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=3] nodes=233 elapsed=2.55s
+[060][OK][step 3] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.55s"
+[061][OK][step 3] observation | nodes=233
+[observe_complete step=3] nodes=233 elapsed=2.56s
+[062][OK][step 4] observation | nodes=233
+[063][OK][step 4] forward_task
+[064][OK][step 4] world_patch | screen='conversation' retention=1.0
+[065][OK][step 4] fusion_conflicts
+[066][OK][step 4] goal_status
+[067][OK][step 4] decision_engine
+[068][OK][step 4] planner_decision
+[069][OK][step 4] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=4] app=WhatsApp screenshot=False
+[070][OK][step 4] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=4] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[071][OK][step 4] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=4] nodes=233 elapsed=2.44s
+[072][OK][step 4] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.44s"
+[073][OK][step 4] observation | nodes=233
+[observe_complete step=4] nodes=233 elapsed=2.44s
+[074][OK][step 5] observation | nodes=233
+[075][OK][step 5] forward_task
+[076][OK][step 5] world_patch | screen='conversation' retention=1.0
+[077][OK][step 5] fusion_conflicts
+[078][OK][step 5] goal_status
+[079][OK][step 5] decision_engine
+[080][OK][step 5] planner_decision
+[081][OK][step 5] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=5] app=WhatsApp screenshot=False
+[082][OK][step 5] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=5] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[083][OK][step 5] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=5] nodes=233 elapsed=2.46s
+[084][OK][step 5] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.46s"
+[085][OK][step 5] observation | nodes=233
+[observe_complete step=5] nodes=233 elapsed=2.47s
+[086][OK][step 6] observation | nodes=233
+[087][OK][step 6] forward_task
+[088][OK][step 6] world_patch | screen='conversation' retention=1.0
+[089][OK][step 6] fusion_conflicts
+[090][OK][step 6] goal_status
+[091][OK][step 6] decision_engine
+[092][OK][step 6] planner_decision
+[093][OK][step 6] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=6] app=WhatsApp screenshot=False
+[094][OK][step 6] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=6] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[095][OK][step 6] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=6] nodes=233 elapsed=2.50s
+[096][OK][step 6] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.50s"
+[097][OK][step 6] observation | nodes=233
+[observe_complete step=6] nodes=233 elapsed=2.51s
+[098][OK][step 7] observation | nodes=233
+[099][OK][step 7] forward_task
+[100][OK][step 7] world_patch | screen='conversation' retention=1.0
+[101][OK][step 7] fusion_conflicts
+[102][OK][step 7] goal_status
+[103][OK][step 7] decision_engine
+[104][OK][step 7] planner_decision
+[105][OK][step 7] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=7] app=WhatsApp screenshot=False
+[106][OK][step 7] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=7] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[107][OK][step 7] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=7] nodes=233 elapsed=2.46s
+[108][OK][step 7] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.46s"
+[109][OK][step 7] observation | nodes=233
+[observe_complete step=7] nodes=233 elapsed=2.47s
+[110][OK][step 8] observation | nodes=233
+[111][OK][step 8] forward_task
+[112][OK][step 8] world_patch | screen='conversation' retention=1.0
+[113][OK][step 8] fusion_conflicts
+[114][OK][step 8] goal_status
+[115][OK][step 8] decision_engine
+[116][OK][step 8] planner_decision
+[117][OK][step 8] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=8] app=WhatsApp screenshot=False
+[118][OK][step 8] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=8] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[119][OK][step 8] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=8] nodes=233 elapsed=2.64s
+[120][OK][step 8] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.64s"
+[121][OK][step 8] observation | nodes=233
+[observe_complete step=8] nodes=233 elapsed=2.64s
+[122][OK][step 9] observation | nodes=233
+[123][OK][step 9] forward_task
+[124][OK][step 9] world_patch | screen='conversation' retention=1.0
+[125][OK][step 9] fusion_conflicts
+[126][OK][step 9] goal_status
+[127][OK][step 9] decision_engine
+[128][OK][step 9] planner_decision
+[129][OK][step 9] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=9] app=WhatsApp screenshot=False
+[130][OK][step 9] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=9] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[131][OK][step 9] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=9] nodes=233 elapsed=2.49s
+[132][OK][step 9] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.49s"
+[133][OK][step 9] observation | nodes=233
+[observe_complete step=9] nodes=233 elapsed=2.49s
+[134][OK][step 10] observation | nodes=233
+[135][OK][step 10] forward_task
+[136][OK][step 10] world_patch | screen='conversation' retention=1.0
+[137][OK][step 10] fusion_conflicts
+[138][OK][step 10] goal_status
+[139][OK][step 10] decision_engine
+[140][OK][step 10] planner_decision
+[141][OK][step 10] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=10] app=WhatsApp screenshot=False
+[142][OK][step 10] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=10] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[143][OK][step 10] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=10] nodes=233 elapsed=2.55s
+[144][OK][step 10] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.55s"
+[145][OK][step 10] observation | nodes=233
+[observe_complete step=10] nodes=233 elapsed=2.55s
+[146][OK][step 11] observation | nodes=233
+[147][OK][step 11] forward_task
+[148][OK][step 11] world_patch | screen='conversation' retention=1.0
+[149][OK][step 11] fusion_conflicts
+[150][OK][step 11] goal_status
+[151][OK][step 11] decision_engine
+[152][OK][step 11] planner_decision
+[153][OK][step 11] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=11] app=WhatsApp screenshot=False
+[154][OK][step 11] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=11] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[155][OK][step 11] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=11] nodes=233 elapsed=2.53s
+[156][OK][step 11] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.53s"
+[157][OK][step 11] observation | nodes=233
+[observe_complete step=11] nodes=233 elapsed=2.53s
+[158][OK][step 12] observation | nodes=233
+[159][OK][step 12] forward_task
+[160][OK][step 12] world_patch | screen='conversation' retention=1.0
+[161][OK][step 12] fusion_conflicts
+[162][OK][step 12] goal_status
+[163][OK][step 12] decision_engine
+[164][OK][step 12] planner_decision
+[165][OK][step 12] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=12] app=WhatsApp screenshot=False
+[166][OK][step 12] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=12] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[167][OK][step 12] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=12] nodes=233 elapsed=2.55s
+[168][OK][step 12] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.55s"
+[169][OK][step 12] observation | nodes=233
+[observe_complete step=12] nodes=233 elapsed=2.55s
+[170][OK][step 13] observation | nodes=233
+[171][OK][step 13] forward_task
+[172][OK][step 13] world_patch | screen='conversation' retention=1.0
+[173][OK][step 13] fusion_conflicts
+[174][OK][step 13] goal_status
+[175][OK][step 13] decision_engine
+[176][OK][step 13] planner_decision
+[177][OK][step 13] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=13] app=WhatsApp screenshot=False
+[178][OK][step 13] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=13] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[179][OK][step 13] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=13] nodes=233 elapsed=2.52s
+[180][OK][step 13] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.52s"
+[181][OK][step 13] observation | nodes=233
+[observe_complete step=13] nodes=233 elapsed=2.52s
+[182][OK][step 14] observation | nodes=233
+[183][OK][step 14] forward_task
+[184][OK][step 14] world_patch | screen='conversation' retention=1.0
+[185][OK][step 14] fusion_conflicts
+[186][OK][step 14] goal_status
+[187][OK][step 14] decision_engine
+[188][OK][step 14] planner_decision
+[189][OK][step 14] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=14] app=WhatsApp screenshot=False
+[190][OK][step 14] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=14] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[191][OK][step 14] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=14] nodes=233 elapsed=2.48s
+[192][OK][step 14] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.48s"
+[193][OK][step 14] observation | nodes=233
+[observe_complete step=14] nodes=233 elapsed=2.48s
+[194][OK][step 15] observation | nodes=233
+[195][OK][step 15] forward_task
+[196][OK][step 15] world_patch | screen='conversation' retention=1.0
+[197][OK][step 15] fusion_conflicts
+[198][OK][step 15] goal_status
+[199][OK][step 15] decision_engine
+[200][OK][step 15] planner_decision
+[201][OK][step 15] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=15] app=WhatsApp screenshot=False
+[202][OK][step 15] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=15] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[203][OK][step 15] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=15] nodes=233 elapsed=2.56s
+[204][OK][step 15] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.56s"
+[205][OK][step 15] observation | nodes=233
+[observe_complete step=15] nodes=233 elapsed=2.56s
+[206][OK][step 16] observation | nodes=233
+[207][OK][step 16] forward_task
+[208][OK][step 16] world_patch | screen='conversation' retention=1.0
+[209][OK][step 16] fusion_conflicts
+[210][OK][step 16] goal_status
+[211][OK][step 16] decision_engine
+[212][OK][step 16] planner_decision
+[213][OK][step 16] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=16] app=WhatsApp screenshot=False
+[214][OK][step 16] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=16] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[215][OK][step 16] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=16] nodes=233 elapsed=2.60s
+[216][OK][step 16] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.60s"
+[217][OK][step 16] observation | nodes=233
+[observe_complete step=16] nodes=233 elapsed=2.60s
+[218][OK][step 17] observation | nodes=233
+[219][OK][step 17] forward_task
+[220][OK][step 17] world_patch | screen='conversation' retention=1.0
+[221][OK][step 17] fusion_conflicts
+[222][OK][step 17] goal_status
+[223][OK][step 17] decision_engine
+[224][OK][step 17] planner_decision
+[225][OK][step 17] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=17] app=WhatsApp screenshot=False
+[226][OK][step 17] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=17] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[227][OK][step 17] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=17] nodes=233 elapsed=2.56s
+[228][OK][step 17] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.56s"
+[229][OK][step 17] observation | nodes=233
+[observe_complete step=17] nodes=233 elapsed=2.56s
+[230][OK][step 18] observation | nodes=233
+[231][OK][step 18] forward_task
+[232][OK][step 18] world_patch | screen='conversation' retention=1.0
+[233][OK][step 18] fusion_conflicts
+[234][OK][step 18] goal_status
+[235][OK][step 18] decision_engine
+[236][OK][step 18] planner_decision
+[237][OK][step 18] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=18] app=WhatsApp screenshot=False
+[238][OK][step 18] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=18] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[239][OK][step 18] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=18] nodes=233 elapsed=2.88s
+[240][OK][step 18] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.88s"
+[241][OK][step 18] observation | nodes=233
+[observe_complete step=18] nodes=233 elapsed=2.89s
+[242][OK][step 19] observation | nodes=233
+[243][OK][step 19] forward_task
+[244][OK][step 19] world_patch | screen='conversation' retention=1.0
+[245][OK][step 19] fusion_conflicts
+[246][OK][step 19] goal_status
+[247][OK][step 19] decision_engine
+[248][OK][step 19] planner_decision
+[249][OK][step 19] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[observe_begin step=19] app=WhatsApp screenshot=False
+[250][OK][step 19] step | message='app=WhatsApp screenshot=False'
+[observe_try_fused step=19] prefer_source=pyobjc_ax secondary=True
+Screen scaling factor: 2.0
+Parsing regular window structure
+[251][OK][step 19] step | message='prefer_source=pyobjc_ax secondary=True'
+[observe_done_fused step=19] nodes=233 elapsed=2.49s
+[252][OK][step 19] step | message="sources=['pyobjc_ax', 'macapptree'] agreement=1.0" detail="{'pyobjc_ax': 318, 'macapptree': 63} elapsed=2.49s"
+[253][OK][step 19] observation | nodes=233
+[observe_complete step=19] nodes=233 elapsed=2.49s
+[254][OK][step 20] observation | nodes=233
+[255][OK][step 20] forward_task
+[256][OK][step 20] world_patch | screen='conversation' retention=1.0
+[257][OK][step 20] fusion_conflicts
+[258][OK][step 20] goal_status
+[259][OK][step 20] decision_engine
+[260][OK][step 20] planner_decision
+[261][OK][step 20] step | message='low confidence (0.0) preferred=None among: ' detail='1.2s'
+[262][OK] world_summary
+[263][FAIL] check | message='fail' expected="forward 'zarooratwala' from 'Kulvinder' to 'Pallavi'"
+[264][FAIL] run_end | detail="closed_loop ok=False reason='Maximum iterations reached' iterations=20"
+
+=== DONE ok=False live=True ===
+JSONL: plugin/experiments/runs/forward_zarooratwala_live.jsonl
+Summary: plugin/experiments/runs/forward_zarooratwala_live.md
+EXIT_CODE=1
