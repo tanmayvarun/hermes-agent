@@ -40,6 +40,7 @@ from plugin.agent.transition.post_perceive import (
     settled_empty_search_results,
 )
 from plugin.agent.transition.types import TransitionSummary
+from plugin.worldmodel.entities.normalize import _clean_label
 from plugin.agent.whatsapp_view import entities_matching
 from plugin.executor.ghost import ExecResult
 from plugin.experiments.logger import EventLogger
@@ -566,6 +567,23 @@ def _frontier_backtrack_hint(branch: ExplorationBranch, *, fallback: str = "obse
     return fam
 
 
+def _invalidate_stale_frontier(
+    runtime: RuntimeState,
+    *,
+    reason: str,
+    fallback: str = "observe",
+) -> str:
+    """Invalidate a stale frontier and force the controller to replan."""
+    branch = runtime.execution_state.exploration_branch
+    hint = _frontier_backtrack_hint(branch, fallback=fallback)
+    branch.invalidate_frontier(reason=reason)
+    runtime.execution_state.exploration_branch = branch
+    runtime.execution_state.world_exploration_needed = True
+    runtime.execution_state.state_experience.pending_backtrack_family = hint or fallback
+    runtime.execution_state.record_failure(reason)
+    return hint or fallback
+
+
 def _merge_affordance_hints(existing: List[str], additions: List[str]) -> List[str]:
     merged: List[str] = []
     seen = set()
@@ -576,6 +594,112 @@ def _merge_affordance_hints(existing: List[str], additions: List[str]) -> List[s
         seen.add(key)
         merged.append(str(item).strip())
     return merged
+
+
+def _semantic_state_signature(*, view: Dict[str, Any], features: Any = None, world_id: str = "") -> str:
+    """Compact semantic key for experience/branching.
+
+    Raw world signatures are too brittle for branch memory. We preserve the
+    visible screen and the active cognitive slice so materially different
+    surfaces do not collapse into the same state.
+    """
+    surface_state = feature_get(features, "surface_state") or view.get("surface_state") or {}
+    if not isinstance(surface_state, dict):
+        surface_state = {}
+    active_subgraph = feature_get(features, "active_cognitive_subgraph") or feature_get(
+        features, "active_subgraph"
+    ) or {}
+    if not isinstance(active_subgraph, dict):
+        active_subgraph = {}
+
+    def _norm_text(value: Any) -> str:
+        return _clean_label(str(value or "")).lower().strip()
+
+    def _list_preview(raw: Any, *, limit: int = 6) -> str:
+        if not isinstance(raw, list):
+            return ""
+        out: List[str] = []
+        for item in raw[:limit]:
+            text = _norm_text(item)
+            if text:
+                out.append(text)
+        return ",".join(out)
+
+    active_entities = _list_preview(active_subgraph.get("active_entity_ids") or [])
+    focus_regions = _list_preview(active_subgraph.get("focus_region_ids") or [])
+    excluded_regions = _list_preview(active_subgraph.get("excluded_region_ids") or [])
+    main_surface = _norm_text(
+        view.get("screen")
+        or view.get("active_surface")
+        or surface_state.get("main_surface")
+        or surface_state.get("sidebar_surface")
+    )
+    sidebar_surface = _norm_text(surface_state.get("sidebar_surface"))
+    detail_surface = _norm_text(surface_state.get("detail_surface"))
+    open_conversation = _norm_text(view.get("open_conversation"))
+    call_state = _norm_text(view.get("call_state"))
+    search_query = _norm_text(view.get("search_query"))
+    tokens = [
+        f"screen={main_surface or 'unknown'}",
+        f"sidebar={sidebar_surface or 'none'}",
+        f"detail={detail_surface or 'none'}",
+        f"surface={_norm_text(view.get('active_surface') or surface_state.get('main_surface')) or 'unknown'}",
+        f"open={open_conversation or 'none'}",
+        f"call={call_state or 'none'}",
+        f"search={search_query or 'none'}",
+    ]
+    if active_entities:
+        tokens.append(f"active_entities={active_entities}")
+    if focus_regions:
+        tokens.append(f"focus_regions={focus_regions}")
+    if excluded_regions:
+        tokens.append(f"excluded_regions={excluded_regions}")
+    if world_id:
+        tokens.append(f"world={world_id}")
+    return " | ".join(tokens)
+
+
+def _transition_diagnosis_from_attempt(
+    attempt: Any,
+    *,
+    after_features: Any = None,
+    after_view: Optional[Dict[str, Any]] = None,
+    decision: Optional[Action] = None,
+) -> Dict[str, Any]:
+    assessment = attempt.assessment if isinstance(getattr(attempt, "assessment", None), dict) else {}
+    attribution = attempt.attribution if isinstance(getattr(attempt, "attribution", None), dict) else {}
+    after_view = after_view or {}
+    prediction_error = dict(getattr(attempt, "prediction_error", None) or {})
+    next_move = "continue_branch"
+    if str(getattr(attempt, "outcome", "") or "") in {
+        TransitionOutcome.NO_EFFECT.value,
+        TransitionOutcome.UNCERTAIN.value,
+    }:
+        next_move = "try_sibling_or_reobserve"
+    elif str(getattr(attempt, "outcome", "") or "") == TransitionOutcome.REGRESSION.value:
+        next_move = "backtrack"
+    elif str(getattr(attempt, "outcome", "") or "") == TransitionOutcome.PROMISING_UNRESOLVED.value:
+        next_move = "stay_local_and_explore"
+
+    return {
+        "outcome": str(getattr(attempt, "outcome", "") or ""),
+        "action_family": str(getattr(attempt, "action_family", "") or getattr(decision, "action_family", "") or ""),
+        "semantic_target": str(getattr(decision, "semantic_target", "") or ""),
+        "effect_kind": str(getattr(attempt, "effect_kind", "") or ""),
+        "failure_domain": str(attribution.get("likely_failure_domain") or ""),
+        "goal_progress": str(assessment.get("goal_progress") or ""),
+        "state_understood": bool(assessment.get("state_understood", True)),
+        "context_preserved": bool(assessment.get("context_preserved", True)),
+        "meaningful_change": bool(assessment.get("meaningful_change", False)),
+        "confidence_delta": float(assessment.get("confidence_delta") or 0.0),
+        "prediction_error": prediction_error,
+        "newly_relevant_affordances": list(assessment.get("newly_relevant_affordances") or []),
+        "contradiction_evidence": list(assessment.get("contradiction_evidence") or []),
+        "surface": str(after_view.get("screen") or after_view.get("active_surface") or ""),
+        "surface_state": dict(feature_get(after_features, "surface_state") or {}),
+        "next_move": next_move,
+        "notes": list(assessment.get("notes") or getattr(attempt, "reasons", []) or [])[:8],
+    }
 
 
 def _record_trajectory_run(
@@ -609,6 +733,11 @@ def _transition_summary_from_attempt(attempt: Any, *, after_features: Any = None
         change_score=float(getattr(attempt, "change_score", 0.0) or 0.0),
         prediction=dict(getattr(attempt, "prediction", None) or {}),
         prediction_error=dict(getattr(attempt, "prediction_error", None) or {}),
+        diagnosis=_transition_diagnosis_from_attempt(
+            attempt,
+            after_features=after_features,
+            decision=decision,
+        ),
         goal_progress=str(assessment.get("goal_progress") or ""),
         meaningful_change=bool(assessment.get("meaningful_change", False)),
         state_understood=bool(assessment.get("state_understood", True)),
@@ -618,6 +747,7 @@ def _transition_summary_from_attempt(attempt: Any, *, after_features: Any = None
         contradiction_evidence=list(assessment.get("contradiction_evidence") or []),
         notes=list(assessment.get("notes") or getattr(attempt, "reasons", []) or []),
         risk=float(assessment.get("irreversible_risk_delta") or 0.0),
+        confidence_delta=float(assessment.get("confidence_delta") or 0.0),
         effect_kind=str(getattr(attempt, "effect_kind", "") or ""),
         failure_domain=str(attribution.get("likely_failure_domain") or ""),
         action_family=str(getattr(attempt, "action_family", "") or getattr(decision, "action_family", "") or ""),
@@ -793,9 +923,23 @@ def run_goal_closed_loop(
             status="warn" if no_progress_budget_exceeded else "ok",
         )
         if no_progress_budget_exceeded:
-            runtime.execution_state.world_exploration_needed = True
-            if not experience.pending_backtrack_family:
-                experience.pending_backtrack_family = "observe"
+            branch_hint = _invalidate_stale_frontier(
+                runtime,
+                reason="no_progress_watchdog",
+                fallback="observe",
+            )
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="no_progress_replan",
+                payload={
+                    "elapsed_since_progress_s": round(progress_elapsed, 3),
+                    "goal_no_progress_timeout_s": goal_no_progress_timeout_s,
+                    "branch_hint": branch_hint,
+                    "branch": runtime.execution_state.exploration_branch.to_dict(),
+                },
+                status="warn",
+            )
         runtime.execution_state.tick_search_query_hint()
         snap_pre = refresh_perception(
             runtime,
@@ -824,9 +968,14 @@ def run_goal_closed_loop(
                 "world_id": runtime.execution_state.world_id,
             },
         )
-        state_sig = str(view.get("world_signature") or view.get("screen") or runtime.execution_state.world_id)
+        state_sig = _semantic_state_signature(
+            view=view,
+            features=feats_pre,
+            world_id=runtime.execution_state.world_id,
+        )
         runtime.execution_state.note_world_signature(state_sig, None)
         experience.visit(state_sig)
+        semantic_repeat = runtime.execution_state.note_semantic_state(state_sig)
         update_interaction_context(
             runtime.execution_state.interaction_context,
             goal=goal,
@@ -834,6 +983,28 @@ def run_goal_closed_loop(
             features=feats_pre,
             world_id=runtime.execution_state.world_id,
         )
+
+        if semantic_repeat and (
+            runtime.execution_state.world_exploration_needed
+            or runtime.execution_state.exploration_branch.active
+        ):
+            branch_hint = _invalidate_stale_frontier(
+                runtime,
+                reason="semantic_repeat_replan",
+                fallback="observe",
+            )
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="semantic_repeat_replan",
+                payload={
+                    "semantic_repeat_count": runtime.execution_state.semantic_repeat_count,
+                    "state_signature": state_sig,
+                    "branch_hint": branch_hint,
+                    "branch": runtime.execution_state.exploration_branch.to_dict(),
+                },
+                status="warn",
+            )
 
         storage_cleanup = maybe_cleanup_for_storage_pressure(
             runtime,
@@ -941,7 +1112,7 @@ def run_goal_closed_loop(
             wv = snap.worldview
             view = snap.view
             observation = snap.observation or observation
-            state_sig = str(view.get("world_signature") or view.get("screen") or "")
+            state_sig = _semantic_state_signature(view=view, features=feats_pre, world_id=runtime.execution_state.world_id)
 
         # Low worldview / fusion conflict → re-perceive (skip thrash when hyps remain)
         ref = goal.ensure_reference() if goal.contact else None
@@ -981,7 +1152,7 @@ def run_goal_closed_loop(
                 wv = snap.worldview
                 view = snap.view
                 observation = snap.observation or observation
-                state_sig = str(view.get("world_signature") or view.get("screen") or "")
+                state_sig = _semantic_state_signature(view=view, features=feats_pre, world_id=runtime.execution_state.world_id)
 
         # Goal check BEFORE acting — overrides iteration budget when satisfied
         goal_status: GoalStatus = evaluate_goal(goal, runtime.world_model)
@@ -1384,8 +1555,10 @@ def run_goal_closed_loop(
                 runtime.execution_state.search_refinement_pending = False
             elif feature_get(after_feats, "result_surface_visible"):
                 runtime.execution_state.search_refinement_pending = False
-        after_state_sig = str(
-            post_view.get("world_signature") or post_view.get("screen") or after_world_id
+        after_state_sig = _semantic_state_signature(
+            view=post_view,
+            features=after_feats,
+            world_id=after_world_id,
         )
         runtime.execution_state.note_world_signature(after_state_sig, decision)
 
@@ -1752,6 +1925,17 @@ def run_goal_closed_loop(
             },
             status="ok",
         )
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="post_transition_diagnosis",
+            payload={
+                "diagnosis": transition_summary.diagnosis,
+                "summary": transition_summary.to_dict(),
+                "state_signature": after_state_sig,
+            },
+            status="ok",
+        )
         # Compat log kind
         _log_cycle(
             log,
@@ -1770,12 +1954,12 @@ def run_goal_closed_loop(
         trajectory_steps.append(
             TrajectoryStepRecord(
                 step_index=iteration,
-                state_signature=str(post_view.get("world_signature") or after_world_id),
+                state_signature=after_state_sig,
                 state_bucket=str(feats.bucket_key(goal.kind)),
                 family_bucket=str(feats.bucket_key(goal.family_key())),
                 action=decision.action,
                 action_family=decision.action_family,
-                next_state_signature=str(post_view.get("world_signature") or after_world_id),
+                next_state_signature=after_state_sig,
                 next_state_bucket=str(after_feats.bucket_key(goal.kind))
                 if hasattr(after_feats, "bucket_key")
                 else str(feature_get(after_feats, "screen_bucket") or feature_get(after_feats, "wa_screen") or "unknown"),
@@ -1802,8 +1986,13 @@ def run_goal_closed_loop(
         )
         if richer_reobserve:
             after_world_id = runtime.execution_state.world_id
+            after_state_sig = _semantic_state_signature(
+                view=post_view,
+                features=after_feats,
+                world_id=after_world_id,
+            )
             runtime.execution_state.note_world_signature(
-                str(post_view.get("world_signature") or post_view.get("screen") or after_world_id),
+                after_state_sig,
                 decision,
             )
 
@@ -1961,7 +2150,7 @@ def run_goal_closed_loop(
                 branch = ExplorationBranch(
                     origin_state=state_sig,
                     entry_action=attempt.action_key,
-                    current_state=str(post_view.get("world_signature") or after_world_id),
+                    current_state=after_state_sig,
                     active_surface=surface,
                     last_surface=surface,
                     depth=1,
@@ -1972,14 +2161,14 @@ def run_goal_closed_loop(
             elif branch.active_surface == "search_results" and branch.depth == 0:
                 branch.depth = 1
                 branch.note_step(
-                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    state_signature=after_state_sig,
                     surface=surface,
                     newly_relevant_affordances=list(revealed_affordances),
                 )
             else:
                 branch.depth += 1
                 branch.note_step(
-                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    state_signature=after_state_sig,
                     surface=surface,
                     newly_relevant_affordances=list(revealed_affordances),
                 )
@@ -2069,7 +2258,7 @@ def run_goal_closed_loop(
             if runtime.execution_state.exploration_branch.active:
                 runtime.execution_state.exploration_branch.depth += 1
                 runtime.execution_state.exploration_branch.note_step(
-                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    state_signature=after_state_sig,
                     surface=str(runtime.execution_state.interaction_context.active_surface or ""),
                     newly_relevant_affordances=list(
                         (attempt.assessment or {}).get("newly_relevant_affordances") or []
@@ -2111,7 +2300,7 @@ def run_goal_closed_loop(
                 else:
                     branch.no_effect_count += 1
                 branch.note_step(
-                    state_signature=str(post_view.get("world_signature") or after_world_id),
+                    state_signature=after_state_sig,
                     surface=str(runtime.execution_state.interaction_context.active_surface or ""),
                     newly_relevant_affordances=[],
                 )
@@ -2174,7 +2363,7 @@ def run_goal_closed_loop(
             if decision.action_family == "observe":
                 runtime.execution_state.exploration_branch.observe_count += 1
             runtime.execution_state.exploration_branch.note_step(
-                state_signature=str(post_view.get("world_signature") or after_world_id),
+                state_signature=after_state_sig,
                 surface=str(runtime.execution_state.interaction_context.active_surface or ""),
                 newly_relevant_affordances=list(
                     (attempt.assessment or {}).get("newly_relevant_affordances") or []

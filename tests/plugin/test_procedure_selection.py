@@ -3,6 +3,7 @@ from plugin.agent.features import StateFeatures
 from plugin.agent.goal import Goal
 from plugin.agent.procedure import current_procedure_stage, select_best_procedure
 from plugin.worldmodel.model import WorldModel
+import json
 
 
 def test_forward_goal_binds_forward_procedure_and_stage_hypotheses():
@@ -54,6 +55,32 @@ def test_selector_payload_includes_selected_procedure():
     assert "selected_procedure" in content
     assert "selected_procedure_stage" in content
     assert "whatsapp_forward_message" in content
+
+
+def test_selector_payload_preserves_active_cognitive_subgraph():
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Kulvinder",
+        target_contact="Pallavi",
+        link_query="zarooratwala",
+    )
+    features = StateFeatures(
+        extras={
+            "active_cognitive_subgraph": {
+                "phase": "conversation",
+                "focus_region_ids": ["timeline"],
+                "active_entity_ids": [10],
+                "excluded_region_ids": ["sidebar"],
+            }
+        }
+    )
+    payload = build_selector_messages(goal, WorldModel(), features, [])
+    content = payload[1]["content"]
+    parsed = json.loads(content)
+
+    assert "active_cognitive_subgraph" in content
+    assert parsed["world_view"]["active_cognitive_subgraph"]["phase"] == "conversation"
+    assert parsed["world_view"]["active_cognitive_subgraph"]["focus_region_ids"] == ["timeline"]
 
 
 def test_current_procedure_stage_tracks_predicates_and_progress():

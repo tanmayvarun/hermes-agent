@@ -24,6 +24,14 @@ from plugin.worldmodel.transitions.transition import (
 
 SOFT_DELETE_MISS_FRAMES = 3
 EXISTS_DROP_CONFIDENCE = 0.25
+_CHROME_ONLY_ROLES = {
+    "axapplication",
+    "axwindow",
+    "axmenubar",
+    "axmenubaritem",
+    "axmenu",
+    "axmenuitem",
+}
 
 
 @dataclass
@@ -44,6 +52,7 @@ class WorldPatch:
     interaction_graph: Optional[Dict[str, Any]] = None
     capability_graph: Optional[Dict[str, Any]] = None
     held_last_good_world: bool = False
+    active_subgraph: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -64,6 +73,8 @@ class WorldModel:
     last_scene_graph: Dict[str, Any] = field(default_factory=dict)
     last_interaction_graph: Dict[str, Any] = field(default_factory=dict)
     last_capability_graph: Dict[str, Any] = field(default_factory=dict)
+    last_active_subgraph: Dict[str, Any] = field(default_factory=dict)
+    last_surface_state: Dict[str, Any] = field(default_factory=dict)
     last_perception_synthesis: Dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
@@ -76,10 +87,35 @@ class WorldModel:
             return True
         if obs.degraded and node_n <= 2 and cov <= 0.15:
             return True
+        # A snapshot can look numerically healthy while still being semantically
+        # useless if it only exposes app chrome / menus and no content-bearing
+        # controls or rows. Treat those as degenerate so we preserve the last
+        # good world instead of overwriting it with a partial frame.
+        content_nodes = 0
+        chrome_only_nodes = 0
+        for node in obs.nodes or []:
+            role = str(getattr(node, "role", "") or "").strip().lower()
+            label = _clean_label(
+                str(getattr(node, "name", "") or getattr(node, "description", "") or getattr(node, "value", "") or "")
+            )
+            has_content = bool(label) or bool(getattr(node, "value", None))
+            if role in _CHROME_ONLY_ROLES:
+                chrome_only_nodes += 1
+                continue
+            if has_content:
+                content_nodes += 1
+        if node_n >= 4 and content_nodes == 0 and chrome_only_nodes >= max(1, node_n // 2):
+            return True
         return False
 
     def _should_hold_last_good_world(self, obs: Observation) -> bool:
         if not self.entities or self.current_screen is None:
+            return False
+        screen_label = _clean_label(str(getattr(self.current_screen, "label", "") or "")).lower()
+        screen_kind = _clean_label(str(getattr(self.current_screen, "kind", "") or "")).lower()
+        if not screen_label or screen_label.startswith("screen #"):
+            return False
+        if screen_kind in {"unknown", "menu_bar"}:
             return False
         if not self._obs_is_degenerate(obs):
             return False
@@ -121,6 +157,8 @@ class WorldModel:
             "nav_mermaid": self.navigation_graph.to_mermaid(),
             "worldview_score": self.last_worldview_score,
             "conflicts": self.last_conflicts[:16],
+            "active_subgraph": self.last_active_subgraph,
+            "surface_state": self.last_surface_state,
         }
 
     def ingest(
@@ -143,6 +181,7 @@ class WorldModel:
             )
             prev_score = dict(self.last_worldview_score or {})
             prev_score.setdefault("components", {})
+            prev_score["held_last_good_world"] = True
             if isinstance(prev_score.get("components"), dict):
                 prev_score["components"] = {
                     **(prev_score.get("components") or {}),
@@ -194,6 +233,7 @@ class WorldModel:
                 cap_graph = build_capability_graph(world_graph, list(self.entities.values()), goal=None)
                 patch.capability_graph = cap_graph.to_dict()
                 self.last_capability_graph = patch.capability_graph
+                patch.active_subgraph = dict(self.last_active_subgraph or {})
             except Exception as exc:  # noqa: BLE001 — perception must not fail ingest
                 patch.scene_graph = {
                     "error": str(exc),
@@ -212,6 +252,7 @@ class WorldModel:
                     "interaction_graph": patch.interaction_graph,
                 }
                 self.last_capability_graph = patch.capability_graph
+                patch.active_subgraph = dict(self.last_active_subgraph or {})
             return patch
 
         raw = entities_from_observation(obs)
@@ -393,6 +434,7 @@ class WorldModel:
             cap_graph = build_capability_graph(world_graph, list(self.entities.values()), goal=None)
             patch.capability_graph = cap_graph.to_dict()
             self.last_capability_graph = patch.capability_graph
+            patch.active_subgraph = dict(self.last_active_subgraph or {})
         except Exception as exc:  # noqa: BLE001 — perception must not fail ingest
             patch.scene_graph = {
                 "error": str(exc),
@@ -411,6 +453,7 @@ class WorldModel:
                 "interaction_graph": patch.interaction_graph,
             }
             self.last_capability_graph = patch.capability_graph
+            patch.active_subgraph = dict(self.last_active_subgraph or {})
 
         return patch
 

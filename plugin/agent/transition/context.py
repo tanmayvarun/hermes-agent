@@ -58,6 +58,41 @@ def _labels_from_view(view: Dict[str, Any]) -> List[str]:
     return [str(x) for x in raw + extra if x]
 
 
+def _surface_state_from_view(view: Dict[str, Any], affordances: Sequence[str]) -> Dict[str, str]:
+    screen = str(view.get("screen") or view.get("screen_kind") or view.get("wa_screen") or "").strip().lower()
+    active_surface = str(view.get("active_surface") or "").strip().lower()
+    base = str(view.get("app") or view.get("active_app") or view.get("window_name") or "").strip().lower()
+    if not base and screen:
+        base = "whatsapp_main_window"
+    sidebar = ""
+    main = ""
+    overlay = ""
+    if bool(view.get("blocking_overlay")) or screen == "dialog":
+        overlay = "dialog"
+    elif active_surface == "call_picker" or "open_call_menu" in affordances:
+        overlay = "call_picker"
+    elif active_surface == "menu":
+        overlay = "menu"
+    if screen in {"search", "search_results"} or bool(view.get("search_query")) or bool(view.get("search_focused")):
+        sidebar = "search_results" if bool(view.get("visible_contacts")) else "search"
+        main = "conversation" if bool(view.get("open_conversation")) else "search_results"
+    elif screen == "conversation" or bool(view.get("open_conversation")):
+        sidebar = "search_results" if bool(view.get("visible_contacts")) else "list"
+        main = "conversation"
+    elif screen == "list" or bool(view.get("visible_contacts")):
+        sidebar = "list"
+        main = "list"
+    else:
+        sidebar = "unknown"
+        main = "unknown"
+    return {
+        "base_surface": base or "unknown",
+        "sidebar_surface": sidebar or "unknown",
+        "main_surface": main or "unknown",
+        "overlay_surface": overlay,
+    }
+
+
 def detect_goal_affordances(goal: Goal, view: Dict[str, Any]) -> List[str]:
     """Return affordance ids currently visible for this goal."""
     specs = _GOAL_AFFORDANCES.get(goal.kind) or []
@@ -192,6 +227,7 @@ def update_interaction_context(
     conf = float(features.get("resolution_confidence") or ctx.target_confidence or 0)
     aff = detect_goal_affordances(goal, view)
     latent = detect_latent_affordances(view)
+    surface_state = _surface_state_from_view(view, aff)
     surface = infer_active_surface(view, aff)
     selected_label = _clean_label(str(features.get("selected_object_label") or ""))
     selected_conf = features.get("selected_object_confidence")
@@ -236,7 +272,8 @@ def update_interaction_context(
         )
 
     ctx.open_conversation = bel
-    ctx.active_surface = surface
+    ctx.active_surface = surface or surface_state.get("main_surface") or surface_state.get("sidebar_surface") or "unknown"
+    ctx.surface_state = surface_state
     if selected_label:
         observability = Observability.CONFIRMED_TRUE.value
         if selected_obs in {

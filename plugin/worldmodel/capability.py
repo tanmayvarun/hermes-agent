@@ -234,9 +234,30 @@ class CapabilityGraph:
         wanted = action_family_to_capability_type(action_family, semantic_target=semantic_target, text=text)
         if not wanted:
             return None
-        cands = [cap for cap in self.nodes.values() if cap.type == wanted and cap.visible]
+        cands = [
+            cap
+            for cap in self.nodes.values()
+            if cap.type == wanted
+            and cap.visible
+            and _capability_matches_action(
+                cap,
+                action_family=action_family,
+                semantic_target=semantic_target,
+                text=text,
+            )
+        ]
         if not cands:
-            cands = [cap for cap in self.nodes.values() if cap.type == wanted]
+            cands = [
+                cap
+                for cap in self.nodes.values()
+                if cap.type == wanted
+                and _capability_matches_action(
+                    cap,
+                    action_family=action_family,
+                    semantic_target=semantic_target,
+                    text=text,
+                )
+            ]
         if not cands:
             return None
         return max(cands, key=lambda c: (float(c.visible), float(c.confidence), -float(c.risk)))
@@ -280,6 +301,7 @@ def _label_based_capability_types(entity: Entity, region_kind: Optional[RegionKi
         infer_pragmatic_role_stage2(entity)
     role = get_pragmatic_role(entity)
     sem_type = _clean_label(str(entity_semantic_type(entity)[0] or "")).lower()
+    ax_role = _clean_label(getattr(entity, "role", "") or "").lower()
 
     label = _clean_label(entity.label or entity.semantic_role or "").lower()
     desc = _clean_label(str(entity.attributes.get("description") or entity.attributes.get("AXDescription") or "")).lower()
@@ -292,6 +314,11 @@ def _label_based_capability_types(entity: Entity, region_kind: Optional[RegionKi
         RegionKind.HEADER,
         RegionKind.TOOLBAR,
     }
+
+    # Global menu-bar chrome must never generate content capabilities. Those
+    # nodes are shell affordances, not WhatsApp conversation surfaces.
+    if entity.entity_type in {"menu", "menubar"} or ax_role in {"axmenuitem", "axmenubar", "axmenubaritem"}:
+        return list(dict.fromkeys(kinds))
 
     # Nav chrome never initiates calls / open conversation from tab labels
     if role == UiPragmaticRole.NAV_CHROME:
@@ -540,6 +567,171 @@ def _capability_rank(capability: Capability, goal: Any) -> Tuple[float, float, f
 
 def _goal_node_id(goal: Any) -> str:
     return f"goal:{str(getattr(goal, 'kind', goal) or 'unknown').strip().lower()}"
+
+
+def _capability_entity_blob(capability: Capability) -> str:
+    evidence = capability.evidence if isinstance(capability.evidence, dict) else {}
+    parts = [
+        str(capability.type or ""),
+        str(capability.predicted_transition or ""),
+        str(evidence.get("entity_label") or ""),
+        str(evidence.get("entity_type") or ""),
+        str(evidence.get("region_kind") or ""),
+    ]
+    return _clean_label(" ".join(parts)).lower()
+
+
+def _capability_matches_action(
+    capability: Capability,
+    *,
+    action_family: str,
+    semantic_target: str = "",
+    text: str = "",
+) -> bool:
+    fam = str(action_family or "").strip().lower()
+    target = _clean_label(semantic_target or "").lower()
+    blob = _capability_entity_blob(capability)
+    label = str((capability.evidence or {}).get("entity_label") or "").strip().lower()
+
+    if fam in {"type_query", "open_search"}:
+        if capability.type not in {"SearchConversation", "OpenSearch"}:
+            return False
+        if any(token in blob for token in ("settings", "call", "video", "voice", "status")):
+            return False
+        if target and target not in {"search", "search conversation", "search results"}:
+            return False
+        return any(token in blob for token in ("search", "query", "find", "look up", "start new chat")) or "search" in label
+
+    if fam == "open_contact":
+        if capability.type != "OpenConversation":
+            return False
+        if any(token in blob for token in ("settings", "call", "video", "voice", "menu", "more", "search")):
+            return False
+        return True
+
+    if fam == "select_content":
+        return capability.type in {"OpenConversation", "RevealHiddenActions", "ProbeSurface", "ForwardMessage"} and any(
+            token in blob for token in ("message", "timeline", "conversation", "chat", "row", "card", "link")
+        )
+
+    if fam in {"forward_message", "select_forward_target"}:
+        if capability.type != "ForwardMessage":
+            return False
+        return any(token in blob for token in ("forward", "message", "share", "picker", "dropdown")) or "forward" in label
+
+    if fam in {"probe_hover", "probe_context_menu", "probe_focus"}:
+        return capability.type in {"RevealHiddenActions", "ProbeSurface"} and any(
+            token in blob for token in ("message", "row", "card", "conversation", "timeline", "chat")
+        )
+
+    if fam == "start_call":
+        if capability.type not in {"InitiateVoiceCall", "InitiateVideoCall", "SelectParticipants", "RevealCommunicationOptions"}:
+            return False
+        if any(token in blob for token in ("voice", "audio", "video", "call", "participant", "people", "dropdown", "menu")):
+            return True
+        return "call" in label
+
+    if fam in {"dismiss", "end_call"}:
+        return capability.type == "DismissOverlay"
+
+    if fam == "observe":
+        return capability.type == "Observe"
+
+    if fam == "explore_chrome":
+        return capability.type == "OpenMenu" and not any(token in blob for token in ("search", "query"))
+
+    return True
+
+
+def _validate_grounded_entity(capability: Capability, entity: Entity) -> bool:
+    if entity is None or not entity.visible:
+        return False
+    label = _clean_label(entity.label or entity.semantic_role or "").lower()
+    desc = _clean_label(str(entity.attributes.get("description") or entity.attributes.get("AXDescription") or "")).lower()
+    blob = _clean_label(f"{entity.label} {entity.semantic_role} {entity.entity_type} {desc} {entity.role}").lower()
+
+    if capability.type in {"SearchConversation", "OpenSearch"}:
+        if "search" not in blob and "query" not in blob and "find" not in blob and "start new chat" not in blob:
+            return False
+        if any(token in blob for token in ("settings", "more options", "menu", "call", "video", "voice")):
+            return False
+        return entity.entity_type in {"textfield", "button", "static", "cell", "menu"}
+
+    if capability.type == "OpenConversation":
+        if any(token in blob for token in ("search", "settings", "call", "video", "voice", "more options")):
+            return False
+        return entity.entity_type in {"button", "static", "cell", "link"} or "chat" in blob or "conversation" in blob
+
+    if capability.type == "ForwardMessage":
+        if any(token in blob for token in ("search", "settings")):
+            return False
+        return "forward" in blob or "message" in blob or entity.entity_type in {"button", "menu", "static", "cell"}
+
+    if capability.type in {"RevealHiddenActions", "ProbeSurface"}:
+        return entity.entity_type in {"button", "static", "cell", "link"}
+
+    if capability.type in {"InitiateVoiceCall", "InitiateVideoCall", "SelectParticipants", "RevealCommunicationOptions"}:
+        return any(token in blob for token in ("voice", "video", "call", "participant", "people", "dropdown", "menu"))
+
+    return True
+
+
+def project_capability_graph(
+    graph: CapabilityGraph,
+    *,
+    active_entity_ids: Optional[Iterable[int]] = None,
+    focus_region_ids: Optional[Iterable[str]] = None,
+    goal: Any = None,
+) -> CapabilityGraph:
+    """Return a physically smaller graph for the currently active reasoning scope."""
+
+    active_entity_set = {int(eid) for eid in (active_entity_ids or [])}
+    focus_region_set = {str(rid).strip() for rid in (focus_region_ids or []) if str(rid).strip()}
+    goal_types = set(goal_capability_types(goal))
+    keep: set[str] = set()
+
+    for cap in graph.nodes.values():
+        if cap.capability_id in graph.goal_capability_ids:
+            keep.add(cap.capability_id)
+            continue
+        if cap.type in goal_types and cap.visible:
+            keep.add(cap.capability_id)
+            continue
+        if active_entity_set and any(eid in active_entity_set for eid in cap.provider_entities):
+            keep.add(cap.capability_id)
+            continue
+        if focus_region_set and any(rid in focus_region_set for rid in cap.provider_regions):
+            keep.add(cap.capability_id)
+            continue
+
+    for frontier in graph.frontier:
+        if frontier.capability_id in graph.nodes and frontier.type in goal_types:
+            keep.add(frontier.capability_id)
+
+    changed = True
+    while changed:
+        changed = False
+        for cap_id in list(keep):
+            cap = graph.nodes.get(cap_id)
+            if cap is None or not cap.parent_capability_id:
+                continue
+            if cap.parent_capability_id not in keep:
+                keep.add(cap.parent_capability_id)
+                changed = True
+        for edge in graph.edges:
+            if edge.target_id in keep and edge.source_id in graph.nodes and edge.source_id not in keep:
+                keep.add(edge.source_id)
+                changed = True
+
+    projected = CapabilityGraph(
+        nodes={cap_id: graph.nodes[cap_id] for cap_id in keep if cap_id in graph.nodes},
+        edges=[edge for edge in graph.edges if edge.source_id in keep and edge.target_id in keep],
+        frontier=[node for node in graph.frontier if node.capability_id in keep],
+        goal_kind=graph.goal_kind,
+        goal_capability_ids=[cap_id for cap_id in graph.goal_capability_ids if cap_id in keep],
+        interaction_graph=dict(graph.interaction_graph),
+    )
+    return projected
 
 
 def build_capability_graph(
@@ -851,13 +1043,40 @@ def grounded_action_for_capability(
     by_id = {e.id: e for e in entities if e.visible}
     for eid in capability.provider_entities:
         ent = by_id.get(eid)
-        if ent is not None:
+        if ent is not None and _validate_grounded_entity(capability, ent):
             return GroundedAction(
                 capability_id=capability.capability_id,
                 capability_type=capability.type,
                 entity_id=eid,
                 confidence=round(min(0.99, capability.confidence + 0.1), 4),
                 reason="provider_entity",
+                expected_transition=capability.predicted_transition,
+            )
+
+    # Fall back to the strongest visible entity that matches the capability
+    # shape when provider_entities are stale or missing. This keeps high-risk
+    # actions grounded on the current screen instead of dropping the target.
+    if capability.type in {"InitiateVoiceCall", "InitiateVideoCall", "SelectParticipants", "RevealCommunicationOptions"}:
+        matches = [
+            ent
+            for ent in entities
+            if ent.visible and _validate_grounded_entity(capability, ent)
+        ]
+        if matches:
+            best = max(
+                matches,
+                key=lambda ent: (
+                    float(ent.confidence or 0.0),
+                    1.0 if any(tok in _clean_label(ent.label or ent.semantic_role or "").lower() for tok in ("voice", "video", "call", "participant", "people", "dropdown", "menu")) else 0.0,
+                    -len(_clean_label(ent.label or ent.semantic_role or "")),
+                ),
+            )
+            return GroundedAction(
+                capability_id=capability.capability_id,
+                capability_type=capability.type,
+                entity_id=best.id,
+                confidence=round(max(0.25, capability.confidence - 0.02), 4),
+                reason="visible_match",
                 expected_transition=capability.predicted_transition,
             )
 
@@ -868,7 +1087,7 @@ def grounded_action_for_capability(
             if not ent.visible:
                 continue
             rids = set(region_ids_for_entity(graph, ent.id))
-            if rids & wanted_regions:
+            if rids & wanted_regions and _validate_grounded_entity(capability, ent):
                 return GroundedAction(
                     capability_id=capability.capability_id,
                     capability_type=capability.type,

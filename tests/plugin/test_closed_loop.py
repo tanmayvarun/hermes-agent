@@ -19,7 +19,7 @@ from plugin.agent.task_binding import ForwardTaskState
 from plugin.agent.transition.types import ContextualBelief, ExplorationBranch, InteractionContext
 from plugin.agent.whatsapp_view import WhatsAppWorldView
 from plugin.executor import ax_action
-from plugin.executor.ghost import ExecResult
+from plugin.executor.ghost import ExecResult, GhostExecutor
 from plugin.perception.observation import AxNode, Observation
 from plugin.worldmodel.entities.entity import Entity
 from plugin.worldmodel.model import WorldModel
@@ -1119,3 +1119,25 @@ def test_ax_type_refuses_label_only_search_surface(monkeypatch):
     assert not result.ok
     assert "editable field" in result.message.lower()
     assert calls == {"paste": 0, "cgevent": 0}
+
+
+def test_ghost_executor_normalizes_hover_action_name(monkeypatch):
+    calls = {"hover": 0}
+
+    monkeypatch.setattr("plugin.executor.ghost.ghost_available", lambda: False)
+    monkeypatch.setattr(ax_action, "ax_available", lambda: True)
+
+    def _hover(app: str, target: str, *, bounds=None):
+        calls["hover"] += 1
+        assert app == "WhatsApp"
+        assert target == "Zarooratwala"
+        return ExecResult(ok=True, backend="ax", message="hover ok", command=f"ax_hover {app} {target}")
+
+    monkeypatch.setattr(ax_action, "ax_hover", _hover)
+
+    executor = GhostExecutor(dry_run=False, app="WhatsApp")
+    result = executor._run(["ghost", "hover", "Zarooratwala"], action="Hover")
+
+    assert result.ok
+    assert result.backend == "ax"
+    assert calls["hover"] == 1

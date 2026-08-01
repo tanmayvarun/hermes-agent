@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Dict, List
 
 from plugin.perception.sources.base import PerceptionSource
@@ -11,10 +12,11 @@ from plugin.perception.sources.pyobjc_ax import PyObjcAxSource
 
 def default_sources(*, with_screenshot: bool = False, with_vision: bool = False) -> List[PerceptionSource]:
     out: List[PerceptionSource] = [PyObjcAxSource()]
-    try:
-        out.append(MacAppTreeSource(with_screenshot=with_screenshot))
-    except Exception:
-        pass
+    if str(os.getenv("HERMES_ENABLE_MACAPPTREE_SOURCE", "")).strip().lower() in {"1", "true", "yes", "on"}:
+        try:
+            out.append(MacAppTreeSource(with_screenshot=with_screenshot))
+        except Exception:
+            pass
     if with_vision or with_screenshot:
         try:
             from plugin.perception.sources.screen2ax import Screen2AxSource

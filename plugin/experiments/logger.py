@@ -138,6 +138,18 @@ class EventLogger:
         line = f"{prefix} {kind}"
         if bits:
             line += " | " + " ".join(bits[:8])
+        if kind == "perception_summary":
+            summary_text = str(rec.get("message") or rec.get("detail") or rec.get("text") or "").strip()
+            width = max(72, len(summary_text) + 8 if summary_text else 72)
+            header = "=" * width
+            footer = "-" * width
+            print(header, file=self.console)
+            print("==== PERCEPTION SUMMARY ====", file=self.console)
+            print(line, file=self.console)
+            if summary_text:
+                print(summary_text, file=self.console)
+            print(footer, file=self.console)
+            return
         print(line, file=self.console)
 
     def step(

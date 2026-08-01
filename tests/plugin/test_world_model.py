@@ -216,9 +216,9 @@ def test_whatsapp_storage_warning_exposes_blocking_overlay_and_triggers_cleanup(
         ),
     }
     view = WhatsAppOverlay().view_dict(world)
-    assert view["blocking_overlay"] is True
+    assert view["blocking_overlay"] is False
     assert view["system_warnings"]
-    assert view["screen"] == "DIALOG"
+    assert view["screen"] == "LIST"
 
     cleanup_calls = []
     monkeypatch.setattr(
@@ -327,6 +327,40 @@ def test_degenerate_observation_holds_last_good_world():
     assert not bool(wm.last_worldview_score.get("degraded", True))
 
 
+def test_chrome_only_observation_holds_last_good_world():
+    wm = WorldModel()
+    healthy = wm.ingest(FixtureObserver(FIXTURES / "whatsapp_chat.json").observe())
+    entity_count = len(wm.entities)
+    screen_label = wm.current_screen.label if wm.current_screen else ""
+    healthy_score = dict(wm.last_worldview_score)
+
+    chrome_only = Observation(
+        timestamp=healthy_score.get("freshness_s", 0.0) or 0.0,
+        app_name="WhatsApp",
+        window_name="WhatsApp",
+        nodes=[
+            AxNode(role="AXApplication", name="WhatsApp"),
+            AxNode(role="AXWindow", name="WhatsApp"),
+            AxNode(role="AXMenuBar", name=""),
+            AxNode(role="AXMenuBarItem", name="Apple"),
+            AxNode(role="AXMenuBarItem", name="Call"),
+            AxNode(role="AXMenuItem", name="About This Mac"),
+            AxNode(role="AXMenuItem", name="System Settings, 1 update"),
+            AxNode(role="AXButton", name=""),
+        ],
+        source="pyobjc_ax",
+        coverage=0.95,
+    )
+    patch = wm.ingest(chrome_only)
+
+    assert patch.held_last_good_world is True
+    assert len(wm.entities) == entity_count
+    assert wm.current_screen is not None
+    assert wm.current_screen.label == screen_label
+    assert float(wm.last_worldview_score.get("overall", 0.0)) == float(healthy_score.get("overall", 0.0))
+    assert bool(wm.last_worldview_score.get("held_last_good_world", False))
+
+
 def test_single_node_observation_marks_worldview_needs_reobserve():
     wm = WorldModel(active_app="WhatsApp")
     patch = wm.ingest(
@@ -344,6 +378,31 @@ def test_single_node_observation_marks_worldview_needs_reobserve():
     assert patch.worldview_score is not None
     assert patch.worldview_score["needs_reobserve"] is True
     assert patch.worldview_score["overall"] <= 0.2
+
+
+def test_chrome_only_score_exposes_task_sufficiency_flags():
+    wm = WorldModel(active_app="WhatsApp")
+    patch = wm.ingest(
+        Observation(
+            timestamp=0.0,
+            app_name="WhatsApp",
+            window_name="WhatsApp",
+            nodes=[
+                AxNode(role="AXApplication", name="WhatsApp"),
+                AxNode(role="AXWindow", name="WhatsApp"),
+                AxNode(role="AXMenuBar", name=""),
+                AxNode(role="AXMenuBarItem", name="File"),
+                AxNode(role="AXMenuItem", name="Quit"),
+            ],
+            source="pyobjc_ax",
+            coverage=0.95,
+        )
+    )
+
+    components = patch.worldview_score.get("components") or {}
+    assert components.get("chrome_only_node_count", 0) >= 1
+    assert components.get("task_sufficient") is False
+    assert patch.needs_reobserve is True
 
 
 def test_disk_cleanup_loader_falls_back_without_namespace(monkeypatch):

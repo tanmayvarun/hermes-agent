@@ -1667,8 +1667,12 @@ DEFAULT_CONFIG = {
             "download_timeout": 30,  # seconds — image HTTP download timeout; increase for slow connections
         },
         "perception": {
-            "provider": "ollama-remote",
-            "model": "qwen2.5:32b",
+            # Route perception through the central task router instead of
+            # pinning a legacy provider/model here. The router owns the
+            # active-model choice so screen-understanding can stay cloud-first
+            # without split-brain defaults in config.
+            "provider": "auto",
+            "model": "",
             "base_url": "",
             "api_key": "",
             "timeout": 45,         # seconds — screen-perception summaries should stay responsive

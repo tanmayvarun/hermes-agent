@@ -99,6 +99,47 @@ def test_init_session_attaches_background_review_callback(server, monkeypatch):
     }
 
 
+def test_init_session_attaches_perception_summary_callback(server, monkeypatch):
+    """After _init_session, agent.perception_summary_callback emits
+    'perception.summary' for the session's sid."""
+    monkeypatch.setattr(server, "_SlashWorker", lambda *a, **kw: object())
+    monkeypatch.setattr(server, "_wire_callbacks", lambda sid: None)
+    monkeypatch.setattr(server, "_notify_session_boundary", lambda *a, **kw: None)
+    monkeypatch.setattr(server, "_session_info", lambda agent, session=None: {"model": "m"})
+    monkeypatch.setattr(server, "_load_show_reasoning", lambda: False)
+    monkeypatch.setattr(server, "_load_tool_progress_mode", lambda: "all")
+
+    captured_emits: list = []
+    monkeypatch.setattr(
+        server,
+        "_emit",
+        lambda event, sid, payload=None: captured_emits.append((event, sid, payload)),
+    )
+
+    class FakeAgent:
+        model = "fake/model"
+        perception_summary_callback = None
+
+    agent = FakeAgent()
+    server._init_session("sid-perc", "session-key", agent, [], cols=80)
+
+    cb = getattr(agent, "perception_summary_callback", None)
+    assert callable(cb), (
+        "_init_session must attach a perception_summary_callback to the "
+        "agent so the perceptor summary is visible in the TUI."
+    )
+
+    captured_emits.clear()
+
+    cb("Perception summary[screen_understanding]: screen=conversation")
+
+    matched = [e for e in captured_emits if e[0] == "perception.summary"]
+    assert len(matched) == 1, captured_emits
+    event, sid, payload = matched[0]
+    assert sid == "sid-perc"
+    assert payload == {"text": "Perception summary[screen_understanding]: screen=conversation"}
+
+
 def test_review_summary_callback_survives_agent_without_attribute(server, monkeypatch):
     """If the agent is a bare object that doesn't allow attribute
     assignment (e.g. some stubbed test double), _init_session must not
@@ -164,4 +205,3 @@ def test_load_memory_notifications_normalization(server, monkeypatch, raw, expec
     display = {} if raw is None else {"memory_notifications": raw}
     monkeypatch.setattr(server, "_load_cfg", lambda: {"display": display})
     assert server._load_memory_notifications() == expected
-

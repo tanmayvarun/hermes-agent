@@ -1653,6 +1653,9 @@ def _start_agent_build(sid: str, session: dict) -> None:
                 agent.background_review_callback = lambda message, _sid=sid: _emit(
                     "review.summary", _sid, {"text": str(message)}
                 )
+                agent.perception_summary_callback = lambda message, _sid=sid: _emit(
+                    "perception.summary", _sid, {"text": str(message)}
+                )
                 agent.memory_notifications = _load_memory_notifications()
             except Exception:
                 pass
@@ -5207,6 +5210,9 @@ def _init_session(
     try:
         agent.background_review_callback = lambda message, _sid=sid: _emit(
             "review.summary", _sid, {"text": str(message)}
+        )
+        agent.perception_summary_callback = lambda message, _sid=sid: _emit(
+            "perception.summary", _sid, {"text": str(message)}
         )
         # Honor display.memory_notifications (off | on | verbose) like the
         # messaging gateway and CLI do — otherwise the review always behaved as

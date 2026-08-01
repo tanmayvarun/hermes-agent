@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from plugin.experiments.live_observe import format_raw_observation_trace
 from plugin.agent.perception_cycle import apply_observation
+from plugin.agent.reasoning_consultation import ReasoningConsultationResult
 from plugin.agent.goal import Goal
 from plugin.agent.runtime.state import RuntimeState
 from plugin.perception.fusion.fuse import observe_fused_frame
@@ -98,6 +103,39 @@ def test_observe_fused_frame_traces_each_source_bundle():
 
 
 def test_apply_observation_emits_raw_and_fused_trace():
+    def _fake_consult_reasoning(task, messages, **kwargs):
+        call_kwargs = kwargs.get("call_kwargs") or {}
+        payload = {
+            "screen_type": "conversation",
+            "active_surface": "conversation",
+            "likely_next_family": "open_contact",
+            "likely_next_target": "Kulvinder Ji",
+            "likely_next_text": "",
+            "confidence": 0.82,
+            "avoid_families": ["type_query"],
+            "supporting_evidence": ["stubbed perception for logging test"],
+            "contradictions": [],
+            "needs_followup_observe": False,
+        }
+        return ReasoningConsultationResult(
+            task=task,
+            messages=[dict(msg) for msg in messages],
+            raw_response=json.dumps(payload),
+            parsed=dict(payload),
+            confidence=float(payload["confidence"]),
+            abstained=False,
+            reason="stub",
+            timeout_s=float(call_kwargs.get("timeout") or 0.0),
+            max_tokens=int(call_kwargs.get("max_tokens") or 0),
+            provider=str(call_kwargs.get("provider") or ""),
+            model=str(call_kwargs.get("model") or ""),
+            base_url=str(call_kwargs.get("base_url") or ""),
+        )
+
+    import plugin.agent.perception_synthesis as perception_synthesis
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(perception_synthesis, "consult_reasoning", _fake_consult_reasoning)
     runtime = RuntimeState(active_task="test")
     runtime.world_model.active_app = "WhatsApp"
     goal = Goal(kind="whatsapp_forward_message", contact="Pallavi")
@@ -128,3 +166,72 @@ def test_apply_observation_emits_raw_and_fused_trace():
     assert "raw_trace" in raw_payload
     assert "zarooratwala link" in raw_payload["raw_trace"]
     assert fused_payload["action_label"] == "observe"
+    monkeypatch.undo()
+
+
+def test_apply_observation_emits_human_readable_perception_summary():
+    def _fake_consult_reasoning(task, messages, **kwargs):
+        call_kwargs = kwargs.get("call_kwargs") or {}
+        payload = {
+            "screen_type": "conversation",
+            "active_surface": "conversation",
+            "likely_next_family": "open_contact",
+            "likely_next_target": "Kulvinder Ji",
+            "likely_next_text": "",
+            "confidence": 0.82,
+            "avoid_families": ["type_query"],
+            "supporting_evidence": ["stubbed perception for logging test"],
+            "contradictions": [],
+            "needs_followup_observe": False,
+        }
+        return ReasoningConsultationResult(
+            task=task,
+            messages=[dict(msg) for msg in messages],
+            raw_response=json.dumps(payload),
+            parsed=dict(payload),
+            confidence=float(payload["confidence"]),
+            abstained=False,
+            reason="stub",
+            timeout_s=float(call_kwargs.get("timeout") or 0.0),
+            max_tokens=int(call_kwargs.get("max_tokens") or 0),
+            provider=str(call_kwargs.get("provider") or ""),
+            model=str(call_kwargs.get("model") or ""),
+            base_url=str(call_kwargs.get("base_url") or ""),
+        )
+
+    import plugin.agent.perception_synthesis as perception_synthesis
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(perception_synthesis, "consult_reasoning", _fake_consult_reasoning)
+    runtime = RuntimeState(active_task="test")
+    runtime.world_model.active_app = "WhatsApp"
+    goal = Goal(kind="whatsapp_forward_message", contact="Pallavi")
+    obs = Observation(
+        timestamp=0.0,
+        app_name="WhatsApp",
+        window_name="Kulvinder Ji",
+        source="pyobjc_ax",
+        coverage=1.0,
+        degraded=False,
+        nodes=[
+            AxNode(role="AXStaticText", name="message, zarooratwala link", description="", value=None),
+        ],
+    )
+    events: list[tuple[str, dict]] = []
+
+    def _log_fn(*, phase: str, payload: dict, status: str = "ok", iteration: int = 0) -> None:
+        events.append((phase, payload))
+
+    snap = apply_observation(runtime, goal, obs, action_label="observe", log_fn=_log_fn, iteration=4)
+
+    assert snap.observation is obs
+    phases = [phase for phase, _ in events]
+    assert "perception_summary" in phases
+    summary_payload = next(payload for phase, payload in events if phase == "perception_summary")
+    assert "message" in summary_payload
+    assert "detail" in summary_payload
+    assert "text" in summary_payload
+    assert "confidence" in summary_payload
+    assert "screen_type" in summary_payload
+    assert isinstance(summary_payload["text"], str)
+    monkeypatch.undo()

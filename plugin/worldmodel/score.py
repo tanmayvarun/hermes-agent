@@ -8,6 +8,37 @@ from typing import Any, Dict, List, Optional
 from plugin.perception.observation import Observation
 from plugin.worldmodel.model import WorldPatch
 
+_CHROME_ONLY_ROLES = {
+    "axapplication",
+    "axwindow",
+    "axmenubar",
+    "axmenubaritem",
+    "axmenu",
+    "axmenuitem",
+}
+
+
+def _node_text(node: Any) -> str:
+    parts = [
+        getattr(node, "name", ""),
+        getattr(node, "description", ""),
+        getattr(node, "value", ""),
+    ]
+    return " ".join(str(part or "").strip() for part in parts if str(part or "").strip()).strip()
+
+
+def _content_node_counts(obs: Observation) -> tuple[int, int]:
+    content = 0
+    chrome = 0
+    for node in obs.nodes or []:
+        role = str(getattr(node, "role", "") or "").strip().lower()
+        if role in _CHROME_ONLY_ROLES:
+            chrome += 1
+            continue
+        if _node_text(node):
+            content += 1
+    return content, chrome
+
 
 @dataclass
 class WorldViewScore:
@@ -83,10 +114,22 @@ def compute_worldview_score(
     if fusion_meta and fusion_meta.get("needs_reobserve"):
         needs = True
     node_count = len(obs.nodes)
+    app_content_node_count, chrome_only_node_count = _content_node_counts(obs)
+    task_sufficient = app_content_node_count >= 3 or bool(
+        any(
+            bool(getattr(node, "value", None))
+            or str(getattr(node, "name", "") or "").strip()
+            for node in obs.nodes or []
+            if str(getattr(node, "role", "") or "").strip().lower()
+            not in {"axapplication", "axwindow", "axmenubar", "axmenubaritem", "axmenu", "axmenuitem"}
+        )
+    )
+    if node_count >= 4 and not task_sufficient:
+        needs = True
     if node_count <= 1:
         needs = True
 
-    degraded = bool(obs.degraded) or cov < 0.5 or agree < 0.35 or mean_belief < 0.4 or needs
+    degraded = bool(obs.degraded) or cov < 0.5 or agree < 0.35 or mean_belief < 0.4 or needs or not task_sufficient
     # Belief-centric overall (no artificial agreement floors)
     overall = 0.25 * ret_n + 0.20 * cov + 0.20 * agree + 0.15 * sem + 0.20 * mean_belief
     if degraded:
@@ -98,6 +141,9 @@ def compute_worldview_score(
 
     components = {
         "node_count": node_count,
+        "app_content_node_count": app_content_node_count,
+        "chrome_only_node_count": chrome_only_node_count,
+        "task_sufficient": task_sufficient,
         "source": obs.source,
         "retention_raw": retention,
         "fusion": fusion_meta or {},

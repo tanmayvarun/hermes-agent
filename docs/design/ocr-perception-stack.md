@@ -6,6 +6,11 @@ When accessibility trees and semantic text reconstruction are not enough, the
 perception stack should be able to recover a stronger view of the screen from
 OCR without hardcoding app-specific logic.
 
+OCR is one sensor inside the broader learned perception stack described in
+[`docs/design/learned-perception-stack.md`](learned-perception-stack.md).
+It should improve the typed world representation, not become the world
+representation itself.
+
 ## Design
 
 - OCR is a generic perception capability.
@@ -18,6 +23,9 @@ OCR without hardcoding app-specific logic.
   incomplete.
 - OCR output should feed the generic world model and confidence system, not
   a per-app actuator policy.
+- OCR proposals should be staged with AX and screenshot evidence before the
+  semantic reconstruction layer runs, so the model can reason over merged
+  tokens instead of raw OCR strings alone.
 - For hard app flows, OCR is most useful after the agent has already seen a
   plausible surface and needs one more visibility channel to confirm or
   reject the current hypothesis.

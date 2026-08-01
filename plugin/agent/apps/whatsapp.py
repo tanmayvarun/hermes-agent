@@ -16,9 +16,11 @@ from plugin.agent.whatsapp_view import (
     resolve_contact_entity,
 )
 from plugin.agent.conversation_reasoning import rank_conversation_messages
+from plugin.perception.representation import build_perception_result, structured_perception_bridge
 from plugin.worldmodel.entities.entity import Entity
 from plugin.worldmodel.entities.normalize import _clean_label
 from plugin.worldmodel.model import WorldModel
+from plugin.worldmodel.scene.focus import attach_active_cognitive_subgraph
 
 _RESULT_CHROME = {
     "search",
@@ -110,7 +112,36 @@ def _search_result_rows(view: WhatsAppWorldView, goal: Goal, ref) -> List[str]:
 
 
 def _conversation_context_rows(view: WhatsAppWorldView) -> List[Dict[str, Any]]:
+    if not _conversation_surface_observed(view):
+        return []
     rows = list(getattr(view, "conversation_messages", None) or [])
+    if not rows:
+        clusters = list(getattr(view, "conversation_timeline", None) or [])
+        for cluster in clusters:
+            if not isinstance(cluster, dict):
+                continue
+            text = _clean_label(str(cluster.get("text") or ""))
+            urls = [str(u) for u in (cluster.get("urls") or []) if str(u).strip()]
+            if not text and not urls:
+                continue
+            ids = [
+                int(x)
+                for x in (cluster.get("entity_ids") or cluster.get("message_ids") or [])
+                if str(x).strip().isdigit()
+            ]
+            rows.append(
+                {
+                    "entity_id": ids[0] if ids else None,
+                    "text": text or " ".join(urls),
+                    "label": _clean_label(str(cluster.get("label") or "")),
+                    "description": _clean_label(str(cluster.get("description") or "")),
+                    "entity_type": "conversation_cluster",
+                    "role": "conversation_cluster",
+                    "y": cluster.get("top_y"),
+                    "x": cluster.get("x"),
+                    "entity_ids": ids,
+                }
+            )
     out: List[Dict[str, Any]] = []
     seen = set()
     for row in rows:
@@ -136,6 +167,59 @@ def _conversation_context_rows(view: WhatsAppWorldView) -> List[Dict[str, Any]]:
             }
         )
     return out
+
+
+def _conversation_timeline_rows(view: WhatsAppWorldView) -> List[Dict[str, Any]]:
+    if not _conversation_surface_observed(view):
+        return []
+    clusters = list(getattr(view, "conversation_timeline", None) or [])
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for cluster in clusters:
+        if not isinstance(cluster, dict):
+            continue
+        text = _clean_label(str(cluster.get("text") or ""))
+        urls = [str(u) for u in (cluster.get("urls") or []) if str(u).strip()]
+        if not text and not urls:
+            continue
+        key = (
+            text.lower(),
+            tuple(u.lower() for u in urls),
+            tuple(int(x) for x in (cluster.get("message_ids") or []) if str(x).strip().isdigit()),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {
+                "entity_id": (cluster.get("message_ids") or [None])[0],
+                "message_ids": list(cluster.get("message_ids") or []),
+                "entity_ids": list(cluster.get("entity_ids") or cluster.get("message_ids") or []),
+                "text": text,
+                "label": _clean_label(str(cluster.get("label") or "")),
+                "description": _clean_label(str(cluster.get("description") or "")),
+                "entity_type": "conversation_cluster",
+                "role": "conversation_cluster",
+                "urls": urls,
+                "row_count": cluster.get("row_count"),
+                "y": cluster.get("top_y"),
+                "x": cluster.get("x"),
+            }
+        )
+    return out
+
+
+def _conversation_surface_observed(view: WhatsAppWorldView) -> bool:
+    screen = str(getattr(view, "screen", "") or "").strip().upper()
+    open_c = _clean_label(getattr(view, "open_conversation", "") or "")
+    if not open_c:
+        return False
+    if screen not in {"LIST", "SEARCH", "SEARCH_RESULTS"}:
+        return True
+    # The sidebar can stay in SEARCH_RESULTS while the main pane already shows
+    # the active conversation. When that happens, the timeline rows are still
+    # usable and should not be dropped from forward binding.
+    return bool(getattr(view, "conversation_messages", None) or getattr(view, "conversation_timeline", None))
 
 
 def _looks_like_source_row_chrome(label: str) -> bool:
@@ -307,6 +391,8 @@ def build_forward_task_state(
     on_source = _on_named_conversation(open_c, source)
     on_dest = _on_named_conversation(open_c, dest)
     ents = list(world.entities.values())
+    observed_conversation = _conversation_surface_observed(view)
+    timeline_rows = _conversation_timeline_rows(view) if observed_conversation else []
 
     # --- source_conversation ---
     conv_b = state.binding("source_conversation")
@@ -329,10 +415,42 @@ def build_forward_task_state(
         "types": ["link", "message"],
         "container_binding": "source_conversation",
     }
-    hits = find_query_entities(ents, query, in_sidebar_fn=in_sidebar_band) if query else []
+    hits = []
+    timeline_hit_ids: List[int] = []
+    if observed_conversation and query and timeline_rows:
+        q_low = query.lower().strip()
+        compact_q = re.sub(r"[^a-z0-9]+", "", q_low)
+        for row in timeline_rows:
+            blob = " ".join(
+                [
+                    str(row.get("text") or ""),
+                    str(row.get("label") or ""),
+                    str(row.get("description") or ""),
+                    " ".join(str(u) for u in row.get("urls") or []),
+                ]
+            ).lower()
+            compact_blob = re.sub(r"[^a-z0-9]+", "", blob)
+            if q_low in blob or (compact_q and compact_q in compact_blob):
+                ids = [
+                    int(x)
+                    for x in (row.get("entity_ids") or row.get("message_ids") or [])
+                    if str(x).strip().isdigit()
+                ]
+                if not ids and row.get("entity_id") is not None and str(row.get("entity_id")).strip().isdigit():
+                    ids = [int(row.get("entity_id"))]
+                for eid in ids:
+                    if eid not in hits:
+                        hits.append(eid)
+                    if eid not in timeline_hit_ids:
+                        timeline_hit_ids.append(eid)
+    generic_hits = (
+        find_query_entities(ents, query, in_sidebar_fn=in_sidebar_band)
+        if (query and observed_conversation)
+        else []
+    )
     # Prefer message/link content over decorative/profile chrome.
-    hit_ids = []
-    for e in hits:
+    hit_ids = list(hits)
+    for e in generic_hits:
         if e.entity_type in {"window", "group", "scroll", "image", "photo"}:
             continue
         if get_pragmatic_role(e) == UiPragmaticRole.UNKNOWN:
@@ -356,9 +474,42 @@ def build_forward_task_state(
         if role == UiPragmaticRole.CTA and e.entity_type not in {"link", "message"}:
             continue
         hit_ids.append(int(e.id))
+    if hit_ids:
+        hit_ids = list(dict.fromkeys(hit_ids))
     obj_b.candidate_entity_ids = hit_ids[:12]
-    source_hits = find_query_entities(ents, source, in_sidebar_fn=in_sidebar_band) if source else []
+    source_hits = (
+        find_query_entities(ents, source, in_sidebar_fn=in_sidebar_band)
+        if (source and observed_conversation)
+        else []
+    )
     source_hit_ids: List[int] = []
+    source_timeline_hit_ids: List[int] = []
+    if observed_conversation and source and timeline_rows:
+        source_low = source.lower().strip()
+        source_compact = re.sub(r"[^a-z0-9]+", "", source_low)
+        for row in timeline_rows:
+            blob = " ".join(
+                [
+                    str(row.get("text") or ""),
+                    str(row.get("label") or ""),
+                    str(row.get("description") or ""),
+                    " ".join(str(u) for u in row.get("urls") or []),
+                ]
+            ).lower()
+            compact_blob = re.sub(r"[^a-z0-9]+", "", blob)
+            if source_low in blob or (source_compact and source_compact in compact_blob):
+                ids = [
+                    int(x)
+                    for x in (row.get("entity_ids") or row.get("message_ids") or [])
+                    if str(x).strip().isdigit()
+                ]
+                if not ids and row.get("entity_id") is not None and str(row.get("entity_id")).strip().isdigit():
+                    ids = [int(row.get("entity_id"))]
+                for eid in ids:
+                    if eid not in source_hit_ids:
+                        source_hit_ids.append(eid)
+                    if eid not in source_timeline_hit_ids:
+                        source_timeline_hit_ids.append(eid)
     for e in source_hits:
         if e.entity_type in {"window", "group", "scroll", "image", "photo"}:
             continue
@@ -373,7 +524,9 @@ def build_forward_task_state(
         }:
             continue
         source_hit_ids.append(int(e.id))
-    if not source_hit_ids and source:
+    if source_hit_ids:
+        source_hit_ids = list(dict.fromkeys(source_hit_ids))
+    if observed_conversation and not source_hit_ids and source:
         # Fallback: scan raw sidebar entities directly. Some AX trees expose
         # contact rows as static/button hybrids that the generic resolver
         # can miss until the header is corrected.
@@ -399,7 +552,7 @@ def build_forward_task_state(
     llm_ranked_ids: List[int] = []
     llm_ranked_text = ""
     conversation_relevance = (getattr(world, "overlay_hints", None) or {}).get("conversation_message_relevance")
-    if isinstance(conversation_relevance, dict):
+    if observed_conversation and isinstance(conversation_relevance, dict):
         raw_ranked = conversation_relevance.get("ranked_messages") or []
         if isinstance(raw_ranked, list):
             for item in raw_ranked:
@@ -452,13 +605,13 @@ def build_forward_task_state(
 
         if not on_source:
             obj_b.status = "provisional" if source_hit_ids else "unresolved"
-        obj_b.resolved_entity_id = source_hit_ids[0] if source_hit_ids else None
-        obj_b.confidence = 0.45 if source_hit_ids else 0.0
-        obj_b.evidence = (
-            [f"source conversation visible entity_id={source_hit_ids[0]}"]
-            if source_hit_ids
-            else ["source conversation not open"]
-        )
+            obj_b.resolved_entity_id = source_hit_ids[0] if source_hit_ids else None
+            obj_b.confidence = 0.45 if source_hit_ids else 0.0
+            obj_b.evidence = (
+                [f"source timeline match entity_id={source_hit_ids[0]}"]
+                if source_hit_ids
+                else ["source conversation not open"]
+            )
     elif len(hit_ids) == 0:
         if prior_selected and obj_b.resolved_entity_id is not None:
             obj_b.status = "confirmed"
@@ -481,7 +634,11 @@ def build_forward_task_state(
         obj_b.resolved_entity_id = hit_ids[0]
         obj_b.confidence = 0.85
         obj_b.status = "confirmed" if (selected_ok or prior_selected) else "provisional"
-        obj_b.evidence = [f"unique match entity_id={hit_ids[0]}"]
+        obj_b.evidence = [
+            f"source timeline match entity_id={hit_ids[0]}"
+            if hit_ids[0] in timeline_hit_ids
+            else f"unique match entity_id={hit_ids[0]}"
+        ]
         if llm_ranked_ids and hit_ids[0] in llm_ranked_ids:
             obj_b.evidence.insert(0, f"llm_ranked entity_id={hit_ids[0]}")
             if llm_ranked_text:
@@ -664,6 +821,7 @@ class WhatsAppOverlay:
         query_matches = bool(q) and any(
             q.lower() == h.lower() or contact_matches(q, h, min_score=0.55) for h in hyps if h
         )
+        timeline_rows = _conversation_timeline_rows(view)
 
         resolution = (
             _get_reference_resolver().resolve(
@@ -959,6 +1117,10 @@ class WhatsAppOverlay:
                 "conversation_context_text": [
                     row.get("text") for row in conversation_context_rows[:_conversation_context_window()]
                 ],
+                "conversation_timeline": timeline_rows[:_conversation_context_window()],
+                "conversation_timeline_text": [
+                    row.get("text") for row in timeline_rows[:_conversation_context_window()]
+                ],
                 "conversation_context_window": _conversation_context_window(),
                 "source_conversation_visible": source_conversation_visible,
                 "source_conversation_rows": source_contact_rows[:6],
@@ -1022,13 +1184,61 @@ class WhatsAppOverlay:
                 goal=goal,
                 capability_hints=self.capability_hints(goal),
             )
+            scene_graph = attach_active_cognitive_subgraph(
+                scene_graph,
+                list(world.entities.values()),
+                goal=goal,
+                view=view.to_dict() if hasattr(view, "to_dict") else dict(view or {}),
+                world_id=str(getattr(world.current_screen, "id", "") or getattr(world.current_screen, "signature", "") or ""),
+                cap_graph=cap_graph,
+            )
+            scene = scene_graph.to_dict()
             feats.extras["capability_graph"] = cap_graph.to_dict()
             feats.extras["goal_capability_types"] = goal_capability_types(goal)
             feats.extras["goal_capability_ids"] = list(cap_graph.goal_capability_ids)
             feats.extras["capability_frontier"] = [node.to_dict() for node in cap_graph.frontier]
             selected = cap_graph.select_for_goal(goal)
             feats.extras["selected_capability"] = "" if selected is None else selected.capability_id
+            feats.extras["active_cognitive_subgraph"] = (
+                None if scene_graph.active_subgraph is None else scene_graph.active_subgraph.to_dict()
+            )
+            feats.extras["surface_state"] = (
+                None if getattr(scene_graph, "surface_state", None) is None else scene_graph.surface_state.to_dict()
+            )
+            feats.extras["scene_attention_regions"] = (
+                [] if scene_graph.attention is None else list(scene_graph.attention.region_ids)
+            )
+            feats.extras["scene_attention_entity_ids"] = (
+                [] if scene_graph.attention is None else list(scene_graph.attention.entity_ids)
+            )
             world.last_capability_graph = cap_graph.to_dict()
+            world.last_active_subgraph = {} if scene_graph.active_subgraph is None else scene_graph.active_subgraph.to_dict()
+            world.last_surface_state = (
+                {} if getattr(scene_graph, "surface_state", None) is None else scene_graph.surface_state.to_dict()
+            )
+            world.last_scene_graph = scene
+        except Exception:
+            pass
+
+        try:
+            perception_result = build_perception_result(
+                world,
+                view.to_dict() if hasattr(view, "to_dict") else dict(view or {}),
+                feats,
+                goal=goal,
+            )
+            feats.extras["perception_result"] = perception_result.to_dict()
+            feats.extras["perception_narrative"] = perception_result.narrative
+            feats.extras["perception_summary"] = structured_perception_bridge(
+                perception_result.to_dict(),
+                features=feats,
+                world=world,
+            )
+            if world.last_perception_synthesis is None:
+                world.last_perception_synthesis = {}
+            if isinstance(world.last_perception_synthesis, dict):
+                world.last_perception_synthesis["structured_perception"] = perception_result.to_dict()
+                world.last_perception_synthesis["structured_perception_narrative"] = perception_result.narrative
         except Exception:
             pass
         return feats

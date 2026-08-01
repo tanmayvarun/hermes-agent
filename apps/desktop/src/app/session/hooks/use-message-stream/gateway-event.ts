@@ -60,6 +60,7 @@ const COMPACTION_RESUME_EVENT_TYPES = new Set([
   'reasoning.available',
   'moa.reference',
   'moa.aggregating',
+  'perception.summary',
   'tool.start',
   'tool.progress',
   'tool.generating',
@@ -740,6 +741,27 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
               ...state.messages,
               {
                 id: `review-summary-${Date.now()}`,
+                role: 'system',
+                parts: [textPart(text)],
+                timestamp: Math.floor(Date.now() / 1000)
+              }
+            ]
+          }))
+        }
+      } else if (event.type === 'perception.summary') {
+        // Human-readable perception summary from the perceptor. Keep it as a
+        // persistent transcript line so the user can debug what the agent
+        // thought the current screen meant at observation time.
+        const text = coerceGatewayText(payload?.text || payload?.message || payload?.detail).trim()
+
+        if (text && sessionId) {
+          flushQueuedDeltas(sessionId)
+          updateSessionState(sessionId, state => ({
+            ...state,
+            messages: [
+              ...state.messages,
+              {
+                id: `perception-summary-${Date.now()}`,
                 role: 'system',
                 parts: [textPart(text)],
                 timestamp: Math.floor(Date.now() / 1000)

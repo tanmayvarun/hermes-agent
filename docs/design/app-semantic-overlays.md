@@ -27,6 +27,40 @@ perception or action priors, but it must never own the model registry or the
 ranking policy. The core decides which screen parsers, grounding models, or
 computer-use priors to call.
 
+## Transformer-centric perception
+
+Perception should be transformer-centric at the representation layer, with
+deterministic systems surrounding it.
+
+The intended flow is:
+
+- raw sensors: AX, OCR, screenshots, DOM-like trees, and prior frame state
+- representation engine: learned latent understanding of the current screen
+- belief world model: persistent, task-aware world state
+- deterministic control: branch choice, action selection, risk gating, and
+  backtracking
+
+That means the core should use learned representation to answer:
+
+- what screen am I on?
+- what objects are present?
+- which surface is currently active?
+- which affordances are plausible?
+- what changed since the previous observation?
+
+The deterministic runtime should then answer:
+
+- what experiment should I try next?
+- what action is too risky without higher confidence?
+- when should I backtrack or re-observe?
+- how do I keep progress and object permanence consistent?
+
+This separation matters because heuristics are weak at building world
+representations, while transformers are strong at latent semantic inference.
+The runtime should therefore avoid turning perception into a hardcoded rules
+pile. It should let learned perception produce the richest stable state it can,
+then let the control loop operate on that state explicitly.
+
 Prompt-to-procedure selection also lives in the core. If a prompt needs a
 convergent execution shape, the generic procedure registry should attach that
 shape to the goal before the overlay contributes surface-specific hints.
@@ -60,6 +94,11 @@ The core perception stack should stay reusable across apps:
 - confidence calibration
 - risk / reversibility gating
 - world-model updates and recovery
+
+The detailed perception architecture is documented in
+[`docs/design/learned-perception-stack.md`](learned-perception-stack.md).
+That note is the canonical contract for typed surfaces, objects, relations,
+temporal object tracks, and staged learned reconstruction.
 
 The leaf layer may learn app-specific semantics over time:
 

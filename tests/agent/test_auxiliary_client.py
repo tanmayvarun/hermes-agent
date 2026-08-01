@@ -61,6 +61,33 @@ class _FakeAnthropicStream:
         return self._final_message
 
 
+def test_auxiliary_request_logging_redacts_secret_material(capsys, caplog):
+    from agent.auxiliary_client import _log_auxiliary_llm_request
+
+    with caplog.at_level(logging.INFO, logger="agent.auxiliary_client"):
+        _log_auxiliary_llm_request(
+            task="decision_high_risk",
+            provider="ollama-cloud",
+            base_url="https://ollama.com/v1",
+            api_key="sk-or-v1-secret-token",
+            kwargs={
+                "model": "gpt-oss:120b",
+                "messages": [{"role": "user", "content": "hello"}],
+                "headers": {"Authorization": "Bearer sk-or-v1-secret-token"},
+                "api_key": "sk-or-v1-secret-token",
+            },
+            timeout=5.0,
+        )
+
+    captured = capsys.readouterr().out
+    assert "sk-or-v1-secret-token" not in captured
+    assert "curl" not in captured
+    assert "api_key_present" in captured
+    assert "api_key_fingerprint" in captured
+    assert '"Authorization": "<redacted>"' in captured
+    assert any("Auxiliary request payload" in rec.message for rec in caplog.records)
+
+
 class TestAuxiliaryTaskConfigFallbackChain:
     def test_env_fallback_chain_parses_json_list(self, monkeypatch):
         monkeypatch.setenv(
@@ -5724,6 +5751,25 @@ class TestAuxUnhealthyCache:
         _mark_provider_unhealthy("ollama-remote")
         assert _is_provider_unhealthy("ollama-remote") is False
         assert _is_provider_unhealthy("openrouter") is False
+
+    def test_ollama_only_legacy_chain_excludes_openrouter(self, monkeypatch):
+        """Legacy auxiliary fallback must not reintroduce OpenRouter when the
+        runtime is pinned to Ollama-only mode."""
+        from agent.auxiliary_client import _get_provider_chain
+
+        monkeypatch.setenv("HERMES_AUXILIARY_PROVIDER_POLICY", "ollama-only")
+        monkeypatch.setattr(
+            "agent.auxiliary_client._select_ranked_provider_candidates",
+            lambda *args, **kwargs: [],
+        )
+        monkeypatch.setattr("agent.auxiliary_client._read_main_provider", lambda: "ollama-cloud")
+        monkeypatch.setattr("agent.auxiliary_client._read_main_model", lambda: "gpt-oss:120b")
+        monkeypatch.setattr("agent.auxiliary_client._try_ollama_remote", lambda model=None: (None, None))
+
+        chain = _get_provider_chain(task="perception")
+        labels = [label for label, _ in chain]
+        assert all("openrouter" not in label for label in labels)
+        assert labels == ["ollama-remote"]
 
     def test_resolve_auto_skips_unhealthy_step2(self):
         """_resolve_auto Step-2 chain skips unhealthy providers."""

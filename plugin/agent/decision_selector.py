@@ -23,7 +23,8 @@ from plugin.agent.features import StateFeatures
 from plugin.agent.goal import Goal
 from plugin.agent.reasoning_consultation import consult_reasoning
 from plugin.agent.transition.types import BranchStrategy
-from plugin.worldmodel.capability import CapabilityGraph
+from plugin.perception.representation import structured_perception_bridge
+from plugin.worldmodel.capability import CapabilityGraph, project_capability_graph
 from plugin.worldmodel.model import WorldModel
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,13 @@ def _json_safe(value: Any) -> Any:
 def _compact_world_view(world: WorldModel, features: StateFeatures) -> Dict[str, Any]:
     scene = getattr(world, "last_scene_graph", None) or {}
     attention = scene.get("attention") or {}
+    surface_state = scene.get("surface_state") or {}
+    active_subgraph = (
+        features.extras.get("active_cognitive_subgraph")
+        or scene.get("active_subgraph")
+        or getattr(world, "last_active_subgraph", None)
+        or {}
+    )
     visible_entities: List[Dict[str, Any]] = []
     for entity in list(world.entities.values())[:40]:
         if not getattr(entity, "visible", False):
@@ -75,9 +83,16 @@ def _compact_world_view(world: WorldModel, features: StateFeatures) -> Dict[str,
         "goal_progress": round(float(features.goal_progress or 0.0), 3),
         "worldview_score": round(float(features.worldview_score or 1.0), 3),
         "active_surface": str(features.extras.get("active_surface") or ""),
+        "surface_state": _json_safe(surface_state),
         "branch_active": bool(features.extras.get("branch_active")),
         "branch_depth": int(features.extras.get("branch_depth") or 0),
         "branch_affordances": list(features.extras.get("branch_affordances") or []),
+        "active_cognitive_subgraph": _json_safe(active_subgraph),
+        "focus_phase": str((active_subgraph or {}).get("phase") or features.extras.get("forward_phase") or ""),
+        "focus_region_ids": list((active_subgraph or {}).get("focus_region_ids") or []),
+        "active_entity_ids": list((active_subgraph or {}).get("active_entity_ids") or []),
+        "excluded_region_ids": list((active_subgraph or {}).get("excluded_region_ids") or []),
+        "grounded_capability_ids": list((active_subgraph or {}).get("grounded_capability_ids") or []),
         "result_surface_visible": bool(features.extras.get("result_surface_visible")),
         "search_query": str(features.extras.get("search_query") or ""),
         "selected_capability_id": str(features.extras.get("selected_capability_id") or ""),
@@ -114,7 +129,8 @@ def _compact_world_view(world: WorldModel, features: StateFeatures) -> Dict[str,
         "conversation_context_window": int(features.extras.get("conversation_context_window") or 0),
         "conversation_context_text": list(features.extras.get("conversation_context_text") or [])[:100],
         "conversation_message_relevance": _json_safe(features.extras.get("conversation_message_relevance") or {}),
-        "perception_summary": _json_safe(features.extras.get("perception_summary") or {}),
+        "perception_summary": _json_safe(structured_perception_bridge(features=features, world=world)),
+        "structured_perception": _json_safe(features.extras.get("perception_result") or {}),
         "perception_llm": _json_safe(features.extras.get("perception_llm") or {}),
         "visible_entities": visible_entities,
     }
@@ -138,6 +154,29 @@ def _candidate_payload(candidate: Action, *, candidate_id: str) -> Dict[str, Any
         "grounding_confidence": round(float(candidate.grounding_confidence or 0.0), 4),
         "reversible": getattr(candidate, "reversible", None),
     }
+
+
+def _projected_capability_payload(
+    cap_graph: Optional[CapabilityGraph],
+    *,
+    world: WorldModel,
+    features: StateFeatures,
+    goal: Goal,
+) -> Optional[Dict[str, Any]]:
+    if cap_graph is None:
+        return None
+    active_subgraph = (
+        features.extras.get("active_cognitive_subgraph")
+        or getattr(world, "last_active_subgraph", None)
+        or {}
+    )
+    projected = project_capability_graph(
+        cap_graph,
+        active_entity_ids=list((active_subgraph or {}).get("active_entity_ids") or []),
+        focus_region_ids=list((active_subgraph or {}).get("focus_region_ids") or []),
+        goal=goal,
+    )
+    return _json_safe(projected.to_dict())
 
 
 def _extract_text(response: Any) -> str:
@@ -267,16 +306,17 @@ def build_selector_messages(
             "procedure_id": goal.procedure_id,
             "procedure_score": round(float(goal.procedure_score or 0.0), 4),
         },
-        "perception_summary": _json_safe(features.extras.get("perception_summary") or {}),
+        "perception_summary": _json_safe(structured_perception_bridge(features=features, world=world)),
         "perception_llm": _json_safe(features.extras.get("perception_llm") or {}),
         "conversation_message_relevance": _json_safe(features.extras.get("conversation_message_relevance") or {}),
         "world_view": _compact_world_view(world, features),
-        "capability_graph": _json_safe(cap_graph.to_dict()) if cap_graph is not None else None,
+        "capability_graph": _projected_capability_payload(cap_graph, world=world, features=features, goal=goal),
         "frontier_hypotheses": list(frontier_summary or []),
         "action_prior_runs": list(action_prior_runs or []),
         "goal_hypotheses": list(features.extras.get("goal_hypotheses") or []),
         "selected_procedure": _json_safe(features.extras.get("selected_procedure") or {}),
         "selected_procedure_stage": _json_safe(features.extras.get("selected_procedure_stage") or {}),
+        "structured_perception": _json_safe(features.extras.get("perception_result") or {}),
         "risk_gate": {
             "irreversible_threshold": round(float(irreversible_threshold or 0.7), 3),
             "irreversible_actions_require_extra_confidence": True,
@@ -288,8 +328,12 @@ def build_selector_messages(
             "use the selected procedure and current procedure stage as the main "
             "trajectory contract, and then treat the model-prior proposals as a "
             "secondary hint, not a command. Use the "
-            "perception_summary as the screen-level interpretation when it is "
-            "present, and do not ignore it in favor of visually familiar controls. "
+            "structured_perception as the screen-level and temporal interpretation "
+            "when it is present, and do not ignore it in favor of visually familiar "
+            "controls. "
+            "Treat the active_cognitive_subgraph as the immediate reasoning scope: "
+            "prefer affordances, regions, entities, and capabilities inside that "
+            "focus slice; explicitly down-rank unrelated sidebar/list/header noise. "
             "pick the grounded candidate that best advances the most plausible "
             "hypothesis. Prefer the candidate whose capability, region, and visible "
             "context match the goal. Do not choose a visually familiar but goal-"
@@ -303,12 +347,14 @@ def build_selector_messages(
     return [
         {
             "role": "system",
-            "content": (
+        "content": (
             "You are a UI action selector. Your job is to pick one grounded "
             "actuator from the provided candidates. Return strict JSON with "
             "keys: choice_id, confidence, reason. choice_id must be one of the "
             "provided candidate ids or 'observe'. Use the frontier hypotheses "
-            "and the selected procedure stage when present. Use the frontier "
+            "and the selected procedure stage when present. Use the structured "
+            "perception contract and the active cognitive "
+            "subgraph as the immediate scope. Use the frontier "
             "hypotheses and the explicit goal hypotheses to compare plausible "
             "next steps; do not optimize for visually familiar controls alone."
         ),
@@ -357,6 +403,7 @@ def _branch_strategy_payload(
         "frontier_hypotheses": list(frontier_summary or []),
         "branch": _json_safe(branch or {}),
         "candidates": candidate_payloads,
+        "capability_graph": _projected_capability_payload(cap_graph, world=world, features=features, goal=goal),
         "instructions": (
             "You are a branch strategy planner. Given the current branch state, choose the "
             "best strategic search direction for the next few steps. Return strict JSON with "
@@ -519,16 +566,38 @@ def select_action_with_llm(
     frontier_summary: Optional[Sequence[Dict[str, Any]]] = None,
     action_prior_runs: Optional[Sequence[Dict[str, Any]]] = None,
     irreversible_threshold: float = 0.7,
+    grounding_threshold: float = 0.7,
     call_kwargs: Optional[Dict[str, Any]] = None,
 ) -> tuple[Optional[Action], Dict[str, Any]]:
     """Return a model-selected candidate, or ``(None, trace)`` on failure."""
     non_observe = [cand for cand in scored_candidates if cand.action_family != "observe"]
     if not non_observe:
         return None, {"reason": "not_ambiguous_enough"}
-    if len(non_observe) < 2 and not allow_single_candidate:
-        return None, {"reason": "not_ambiguous_enough"}
 
-    selected_pool = non_observe[:12]
+    grounded_non_observe = [
+        cand
+        for cand in non_observe
+        if (
+            cand.target_entity_id is not None
+            or float(getattr(cand, "grounding_confidence", 0.0) or 0.0) >= float(grounding_threshold or 0.0)
+        )
+    ]
+    if not grounded_non_observe:
+        return None, {
+            "reason": "grounding_recovery",
+            "grounded_candidates": 0,
+            "non_observe_candidates": len(non_observe),
+            "grounding_threshold": round(float(grounding_threshold or 0.0), 4),
+        }
+    if len(grounded_non_observe) < 2 and not allow_single_candidate:
+        return None, {
+            "reason": "grounding_recovery",
+            "grounded_candidates": len(grounded_non_observe),
+            "non_observe_candidates": len(non_observe),
+            "grounding_threshold": round(float(grounding_threshold or 0.0), 4),
+        }
+
+    selected_pool = grounded_non_observe[:12]
     options = [(f"c{i + 1}", cand) for i, cand in enumerate(selected_pool)]
     messages = build_selector_messages(
         goal,
@@ -600,6 +669,8 @@ def select_action_with_llm(
             "selected_candidate_id": None,
             "confidence": confidence,
             "allow_single_candidate": bool(allow_single_candidate),
+            "grounding_threshold": round(float(grounding_threshold or 0.0), 4),
+            "grounded_candidates": len(grounded_non_observe),
             "timeout_s": timeout_s,
             "timeout_source": timeout_source,
         }

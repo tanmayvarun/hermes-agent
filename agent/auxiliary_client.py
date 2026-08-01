@@ -256,30 +256,15 @@ def _log_auxiliary_llm_request(
         request_url = f"{base_url.rstrip('/')}/chat/completions"
     api_key_val = str(api_key or "")
     request_kwargs = _redact_request_value(kwargs)
-    raw_curl = ""
-    try:
-        payload_json = json.dumps(request_kwargs, ensure_ascii=False, sort_keys=True, default=str)
-        if request_url and api_key_val:
-            raw_curl = (
-                "curl -sS "
-                f"'{request_url}' "
-                "-H 'Content-Type: application/json' "
-                f"-H 'Authorization: Bearer {api_key_val}' "
-                f"-d '{payload_json}'"
-            )
-    except Exception:
-        raw_curl = ""
+    api_key_fingerprint = hashlib.sha1(api_key_val.encode("utf-8")).hexdigest()[:10] if api_key_val else ""
     payload = {
         "task": task or "call",
         "provider": provider or "auto",
         "request_url": request_url,
         "api_key_present": bool(api_key_val),
-        "api_key_len": len(api_key_val) if api_key_val else 0,
-        "api_key_raw": api_key_val,
-        "api_key_sha1": hashlib.sha1(api_key_val.encode("utf-8")).hexdigest()[:10] if api_key_val else "",
+        "api_key_fingerprint": api_key_fingerprint,
         "timeout_s": timeout,
         "request": request_kwargs,
-        "curl": raw_curl,
     }
     try:
         rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
@@ -3248,19 +3233,17 @@ def _get_provider_chain(task: Optional[str] = None, *, main_runtime: Optional[Di
         if hard_pin_ollama:
             legacy_steps.append(("ollama-remote", lambda: _try_ollama_remote(str(runtime.get("model") or _read_main_model() or ""))))
         else:
+            # Legacy auxiliary fallback is intentionally narrowed here.
+            # Ollama Cloud is the primary route for this runtime, and we do not
+            # want OpenRouter to re-enter via the historical catch-all chain.
             if task == "vision":
-                legacy_steps.append(("openrouter", lambda: _try_openrouter(model=str(runtime.get("model") or _read_main_model() or ""))))
                 legacy_steps.append(("nous", lambda: _try_nous(vision=True)))
-                legacy_steps.append(("custom", _try_custom_endpoint))
-                legacy_steps.append(("api-key", _resolve_api_key_provider))
-                legacy_steps.append(("ollama-remote", lambda: _try_ollama_remote(str(runtime.get("model") or _read_main_model() or ""))))
             else:
-                legacy_steps.append(("openrouter", lambda: _try_openrouter(model=str(runtime.get("model") or _read_main_model() or ""))))
                 legacy_steps.append(("nous", lambda: _try_nous()))
-                legacy_steps.append(("custom", _try_custom_endpoint))
-                legacy_steps.append(("api-key", _resolve_api_key_provider))
-                legacy_steps.append(("ollama-remote", lambda: _try_ollama_remote(str(runtime.get("model") or _read_main_model() or ""))))
-            if policy == "ollama-only":
+            legacy_steps.append(("custom", _try_custom_endpoint))
+            legacy_steps.append(("api-key", _resolve_api_key_provider))
+            legacy_steps.append(("ollama-remote", lambda: _try_ollama_remote(str(runtime.get("model") or _read_main_model() or ""))))
+            if policy == "ollama-only" or hard_pin_ollama:
                 legacy_steps = [step for step in legacy_steps if step[0] == "ollama-remote"]
 
         chain.extend(legacy_steps)

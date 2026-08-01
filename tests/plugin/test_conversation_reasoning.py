@@ -127,6 +127,91 @@ def test_rank_conversation_messages_ranks_context_and_caches(monkeypatch):
     assert calls["count"] == 1
 
 
+def test_rank_conversation_messages_skips_when_conversation_not_open(monkeypatch):
+    from agent import auxiliary_client
+
+    def fail_call_llm(**kwargs):  # noqa: ARG001
+        raise AssertionError("LLM should not run when the conversation pane is not observed")
+
+    monkeypatch.setattr(auxiliary_client, "call_llm", fail_call_llm)
+
+    wm = _world()
+    view = {
+        "screen": "LIST",
+        "open_conversation": "",
+        "search_query": "",
+        "conversation_context_window": 100,
+    }
+    rows = [
+        {
+            "entity_id": 10,
+            "text": "Shared link",
+            "label": "Shared link",
+            "description": "ZarooratWala – Fresh Groceries Delivered",
+            "role": "AXStaticText",
+            "entity_type": "static",
+        }
+    ]
+
+    assert rank_conversation_messages(_goal(), view, rows, world=wm, force=True) is None
+
+
+def test_rank_conversation_messages_accepts_search_results_when_conversation_is_open(monkeypatch):
+    from agent import auxiliary_client
+
+    calls = {"count": 0}
+
+    def fake_call_llm(**kwargs):
+        calls["count"] += 1
+        return _response(
+            {
+                "summary": "The visible conversation row is relevant.",
+                "confidence": 0.88,
+                "ranked_messages": [{"entity_id": 10, "score": 0.97, "reason": "source row"}],
+                "likely_source_message_ids": [10],
+                "likely_source_message_text": "Shared link",
+                "supporting_evidence": ["search sidebar is still open, but the chat pane is active"],
+                "contradictions": [],
+                "needs_followup_observe": False,
+            }
+        )
+
+    monkeypatch.setattr(auxiliary_client, "call_llm", fake_call_llm)
+
+    wm = _world()
+    view = {
+        "screen": "SEARCH_RESULTS",
+        "open_conversation": "Kulvinder Ji",
+        "search_query": "Kulvinder",
+        "conversation_context_window": 100,
+        "conversation_timeline": [
+            {
+                "entity_id": 10,
+                "text": "Shared link",
+                "label": "Shared link",
+                "description": "ZarooratWala – Fresh Groceries Delivered",
+                "role": "AXStaticText",
+                "entity_type": "static",
+            }
+        ],
+    }
+    rows = [
+        {
+            "entity_id": 10,
+            "text": "Shared link",
+            "label": "Shared link",
+            "description": "ZarooratWala – Fresh Groceries Delivered",
+            "role": "AXStaticText",
+            "entity_type": "static",
+        }
+    ]
+
+    result = rank_conversation_messages(_goal(), view, rows, world=wm, force=True)
+    assert result is not None
+    assert result.likely_source_message_ids == [10]
+    assert calls["count"] == 1
+
+
 def test_forward_binding_uses_llm_ranked_message_when_deterministic_match_is_absent(monkeypatch):
     from plugin.agent import task_binding
     from plugin.agent.apps import whatsapp as whatsapp_mod

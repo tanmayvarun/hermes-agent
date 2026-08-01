@@ -600,11 +600,18 @@ def _resolve_api_key_provider_secret(
         return "", ""
 
     if provider_id == "ollama-cloud":
-        # Ollama Cloud is launched from the live Terminal wrapper in this repo,
-        # which explicitly sources the workspace-local .env before starting the
-        # agent. Prefer the active process env so the live run uses the same
-        # credential the shell already exported, then fall back to the managed
-        # Hermes .env if the process env is blank.
+        # Ollama Cloud is launched from multiple surfaces (Terminal wrapper,
+        # UI app, CLI). Those surfaces can inherit stale shell exports, while
+        # the operator often updates the authoritative key in the managed
+        # Hermes .env file. Prefer the managed env file first so a deliberate
+        # key rotation is not shadowed by a stale process export. The shell
+        # remains a fallback only when the managed env file is blank.
+        from hermes_cli.config import get_env_value_prefer_dotenv
+
+        dotenv_key = (get_env_value_prefer_dotenv("OLLAMA_API_KEY") or "").strip()
+        if has_usable_secret(dotenv_key):
+            return dotenv_key, "OLLAMA_API_KEY"
+
         shell_key = (os.environ.get("OLLAMA_API_KEY", "") or "").strip()
         if has_usable_secret(shell_key):
             return shell_key, "OLLAMA_API_KEY"

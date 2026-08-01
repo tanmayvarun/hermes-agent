@@ -11,6 +11,8 @@ latency even when the provider/model stays fixed.
 - Keep the benchmark generic and data-driven.
 - Produce routing guidance, not just a leaderboard.
 - Make it easy to add new evals without changing the runner.
+- Measure prompt-shape quality separately from model quality.
+- Support atomic perception evals before full end-to-end task evals.
 
 ## Core Concepts
 
@@ -47,6 +49,9 @@ The built-in suite focuses on routing-relevant decisions:
 - irreversible-action gating
 - backtrack strategy
 - procedure stage selection
+- perception structure quality
+- temporal persistence / occlusion handling
+- capability precision
 
 ## Scoring
 
@@ -63,6 +68,15 @@ Per prompt shape:
 - target-selection accuracy on the same perception fixture
 - median latency
 - score deltas between compact, balanced, and rich prompt variants
+
+For perception-specific evals, also report:
+
+- object / surface detection recall
+- relation accuracy
+- capability precision
+- object identity persistence
+- transition classification accuracy
+- calibration error
 
 Per routing recommendation:
 
@@ -92,6 +106,8 @@ The report contains:
 4. Feed the resulting ranking into the model-selection policy for the agent.
 5. Run the perception prompt-shape benchmark before trimming the live prompt
    again; the balanced default should only move after it wins on the eval set.
+6. Add atomic perception cases whenever a live failure reveals a new
+   structure-level mistake.
 
 The perception path uses the `HERMES_PERCEPTION_PROMPT_SHAPE` knob with three
 supported variants:

@@ -207,6 +207,7 @@ class DiscoveryContext:
     visible_object_count: int = 0
     notes: List[str] = field(default_factory=list)
     use_llm: bool = True
+    active_subgraph: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -365,4 +366,3 @@ def content_objects_from_rows(
             )
         )
     return out
-

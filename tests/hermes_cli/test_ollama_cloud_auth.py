@@ -45,8 +45,8 @@ class TestOllamaCloudCredentials:
         assert runtime["api_key"] == "test-ollama-key-12345"
         assert runtime["provider"] == "custom"
 
-    def test_ollama_api_key_prefers_process_env_for_ollama_cloud(self, monkeypatch):
-        """Ollama Cloud should honor the live shell export before managed env."""
+    def test_ollama_api_key_prefers_managed_env_for_ollama_cloud(self, monkeypatch):
+        """Ollama Cloud should honor the managed env before a stale shell export."""
         monkeypatch.setenv("OLLAMA_API_KEY", "process-env-key")
         monkeypatch.setattr(
             "hermes_cli.config.get_env_value_prefer_dotenv",
@@ -56,7 +56,7 @@ class TestOllamaCloudCredentials:
         from hermes_cli.auth import resolve_api_key_provider_credentials
 
         creds = resolve_api_key_provider_credentials("ollama-cloud")
-        assert creds["api_key"] == "process-env-key"
+        assert creds["api_key"] == "dot-env-key"
         assert creds["source"] == "OLLAMA_API_KEY"
 
     def test_ollama_key_not_used_for_non_ollama_endpoint(self, monkeypatch):

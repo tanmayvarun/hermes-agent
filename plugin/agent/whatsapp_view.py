@@ -163,6 +163,11 @@ _SYSTEM_WARNING_PATTERNS = (
     r"\bno space left on device\b",
 )
 
+_URL_PATTERN = re.compile(
+    r"https?://[^\s<>()\"']+",
+    re.IGNORECASE,
+)
+
 
 def _attr(e: Entity, *keys: str) -> str:
     for k in keys:
@@ -170,6 +175,25 @@ def _attr(e: Entity, *keys: str) -> str:
         if v is not None and str(v).strip():
             return _clean_label(str(v))
     return ""
+
+
+def _extract_urls_from_text(*parts: str) -> List[str]:
+    urls: List[str] = []
+    seen = set()
+    for part in parts:
+        text = _clean_label(part or "")
+        if not text:
+            continue
+        for raw in _URL_PATTERN.findall(text):
+            cleaned = raw.rstrip(").,;:!?]")
+            if not cleaned:
+                continue
+            low = cleaned.lower()
+            if low in seen:
+                continue
+            seen.add(low)
+            urls.append(cleaned)
+    return urls
 
 
 def _is_search_mirror(e: Entity) -> bool:
@@ -441,7 +465,7 @@ def _looks_like_message_row(e: Entity, entities: List[Entity], *, scene_graph: O
             if e.id in ids:
                 region_kind = str(region.get("kind") or "").lower()
                 break
-    if region_kind in {"sidebar", "navigation", "header", "toolbar", "composer"}:
+    if region_kind and region_kind not in {"conversation", "timeline", "unknown"}:
         return False
     if get_pragmatic_role(e) == UiPragmaticRole.UNKNOWN:
         infer_pragmatic_role_stage2(e)
@@ -527,8 +551,185 @@ def conversation_message_rows_from_entities(
             }
         )
     if len(records) <= window:
+        if records:
+            return records
+        records = _fallback_message_rows_from_entities(entities, max_messages=max_messages)
+        if len(records) <= window:
+            return records
+    return records[-window:]
+
+
+def _fallback_message_rows_from_entities(
+    entities: List[Entity],
+    *,
+    max_messages: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Best-effort recovery when scene-region or role signals hide chat rows.
+
+    Some WhatsApp desktop surfaces expose real message content as static text or
+    link/button hybrids, but the surrounding scene graph can still tag those
+    nodes as sidebar/header chrome. When the strict row detector returns
+    nothing, fall back to message-shaped text so downstream reasoning still sees
+    the timeline instead of an empty prompt.
+    """
+    ents = [e for e in entities if getattr(e, "visible", False)]
+    if not ents:
+        return []
+    window = max_messages if max_messages is not None else _conversation_context_window()
+    window = max(1, min(500, int(window)))
+    records: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for e in sorted(
+        ents,
+        key=lambda ent: (
+            float((ent.bounds or (0, 0, 0, 0))[1]) if len(ent.bounds or ()) >= 2 else 0.0,
+            float((ent.bounds or (0, 0, 0, 0))[0]) if len(ent.bounds or ()) >= 1 else 0.0,
+            int(getattr(ent, "id", 0) or 0),
+        ),
+    ):
+        etype = (e.entity_type or "").lower()
+        if etype not in {"static", "link", "cell", "button", "unknown", "textfield"}:
+            continue
+        label = _clean_label(e.label or "")
+        desc = _attr(e, "description", "AXDescription")
+        value = _attr(e, "value", "AXValue")
+        text = _clean_label(" ".join(part for part in (label, desc, value) if part))
+        low = text.lower()
+        if not text or any(re.search(pat, low, re.I) for pat in _SYSTEM_WARNING_PATTERNS):
+            continue
+        if _is_search_mirror(e):
+            continue
+        if not any(
+            tok in low
+            for tok in (
+                "message",
+                "link",
+                "photo",
+                "video",
+                "reply",
+                "sent to",
+                "received from",
+                "http://",
+                "https://",
+                "your message",
+            )
+        ):
+            continue
+        key = (text.lower(), str(getattr(e, "id", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        b = e.bounds or (0, 0, 0, 0)
+        records.append(
+            {
+                "entity_id": int(getattr(e, "id", 0) or 0),
+                "label": label,
+                "description": desc,
+                "value": value,
+                "entity_type": e.entity_type,
+                "role": e.role,
+                "text": text,
+                "y": float(b[1]) if len(b) >= 2 else 0.0,
+                "x": float(b[0]) if len(b) >= 1 else 0.0,
+            }
+        )
+    if len(records) <= window:
         return records
     return records[-window:]
+
+
+def conversation_timeline_clusters_from_entities(
+    entities: List[Entity],
+    *,
+    max_messages: Optional[int] = None,
+    scene_graph: Optional[dict] = None,
+) -> List[Dict[str, Any]]:
+    """Group visible timeline rows into compact message clusters.
+
+    The raw message rows remain available for binding and diagnostics, but the
+    clustered timeline is the payload we want to hand to downstream reasoning:
+    it carries visible text and URLs without dragging in unrelated chrome.
+    """
+    rows = conversation_message_rows_from_entities(
+        entities,
+        max_messages=max_messages,
+        scene_graph=scene_graph,
+    )
+    if not rows:
+        rows = _fallback_message_rows_from_entities(entities, max_messages=max_messages)
+    if not rows:
+        return []
+
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: (
+            float(row.get("y") or 0.0),
+            float(row.get("x") or 0.0),
+            int(row.get("entity_id") or 0),
+        ),
+    )
+    clusters: List[Dict[str, Any]] = []
+    current: Dict[str, Any] = {}
+    gap_threshold = 84.0
+
+    def _flush_cluster() -> None:
+        nonlocal current
+        if not current:
+            return
+        texts = [str(x) for x in current.get("texts") or [] if str(x).strip()]
+        urls = list(dict.fromkeys([str(x) for x in current.get("urls") or [] if str(x).strip()]))
+        message_ids = [int(x) for x in current.get("message_ids") or [] if str(x).strip()]
+        joined_text = _clean_label(" ".join(texts))
+        clusters.append(
+            {
+                "message_ids": message_ids,
+                "entity_ids": list(message_ids),
+                "row_count": len(message_ids),
+                "texts": texts,
+                "text": joined_text,
+                "urls": urls,
+                "top_y": float(current.get("top_y") or 0.0),
+                "bottom_y": float(current.get("bottom_y") or 0.0),
+                "x": float(current.get("x") or 0.0),
+                "kind": "message_cluster",
+            }
+        )
+        current = {}
+
+    for row in sorted_rows:
+        row_y = float(row.get("y") or 0.0)
+        row_x = float(row.get("x") or 0.0)
+        row_text = _clean_label(row.get("text") or row.get("label") or row.get("description") or "")
+        row_urls = _extract_urls_from_text(
+            row.get("text") or "",
+            row.get("label") or "",
+            row.get("description") or "",
+            row.get("value") or "",
+        )
+        if not row_text and not row_urls:
+            continue
+        if current and row_y - float(current.get("bottom_y") or 0.0) > gap_threshold:
+            _flush_cluster()
+        if not current:
+            current = {
+                "message_ids": [],
+                "texts": [],
+                "urls": [],
+                "top_y": row_y,
+                "bottom_y": row_y,
+                "x": row_x,
+            }
+        current["message_ids"].append(int(row.get("entity_id") or 0))
+        if row_text:
+            current["texts"].append(row_text)
+        for url in row_urls:
+            if url.lower() not in {u.lower() for u in current["urls"]}:
+                current["urls"].append(url)
+        current["top_y"] = min(float(current.get("top_y") or row_y), row_y)
+        current["bottom_y"] = max(float(current.get("bottom_y") or row_y), row_y)
+        current["x"] = min(float(current.get("x") or row_x), row_x)
+    _flush_cluster()
+    return clusters
 
 
 def _name_match_score(candidate: str, needle: str) -> float:
@@ -629,6 +830,7 @@ class WhatsAppWorldView:
     window_name: str = ""
     visible_contacts: List[str] = field(default_factory=list)
     conversation_messages: List[Dict[str, Any]] = field(default_factory=list)
+    conversation_timeline: List[Dict[str, Any]] = field(default_factory=list)
     open_conversation: Optional[str] = None
     voice_call_available: bool = False
     call_state: Optional[str] = None  # ringing | idle | None
@@ -922,6 +1124,11 @@ class WhatsAppWorldView:
             max_messages=_conversation_context_window(),
             scene_graph=scene_graph,
         )
+        conversation_timeline = conversation_timeline_clusters_from_entities(
+            visible_entities,
+            max_messages=_conversation_context_window(),
+            scene_graph=scene_graph,
+        )
 
         seen = set()
         uniq: List[str] = []
@@ -953,6 +1160,7 @@ class WhatsAppWorldView:
             window_name=window_name,
             visible_contacts=uniq,
             conversation_messages=conversation_messages,
+            conversation_timeline=conversation_timeline,
             open_conversation=open_conversation,
             voice_call_available=voice_call_available,
             call_state=call_state,

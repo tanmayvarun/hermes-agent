@@ -12,7 +12,11 @@ from typing import Any, Callable, Dict, List, Optional
 
 from plugin.agent.apps.registry import get_overlay
 from plugin.agent.goal import Goal
-from plugin.agent.perception_synthesis import _perception_fail_hard, synthesize_perception
+from plugin.agent.perception_synthesis import (
+    _perception_fail_hard,
+    _format_perception_human_readable,
+    synthesize_perception,
+)
 from plugin.agent.procedure import current_procedure_stage
 from plugin.agent.runtime.state import RuntimeState
 from plugin.agent.transition.post_perceive import (
@@ -21,6 +25,7 @@ from plugin.agent.transition.post_perceive import (
     profile_for,
 )
 from plugin.perception.observation import Observation
+from plugin.perception.representation import build_perception_result, structured_perception_bridge
 from plugin.perception.sources.base import format_observation_raw_summary
 from plugin.worldmodel.model import WorldPatch
 
@@ -104,6 +109,8 @@ def _log_raw_observation(
         "coverage": observation.coverage,
         "degraded": observation.degraded,
         "screenshot": observation.screenshot_path,
+        "screenshot_available": bool(observation.screenshot_path),
+        "screenshot_error": (observation.meta or {}).get("screenshot_error"),
         "raw_trace": raw_summary,
     }
     if extra:
@@ -130,6 +137,8 @@ def build_view_features(
     goal: Goal,
     *,
     worldview: Optional[float] = None,
+    screenshot_path: Optional[str] = None,
+    log_fn: Optional[LogFn] = None,
 ) -> tuple[Dict[str, Any], Dict[str, Any], float]:
     """Update overlay view + StateFeatures from current world model (no new observe)."""
     proc = goal.ensure_procedure()
@@ -228,11 +237,17 @@ def build_view_features(
             pass
     extras = feats.setdefault("extras", {})
     if isinstance(extras, dict):
-        extras["observation_node_count"] = int(
-            ((runtime.world_model.last_worldview_score or {}).get("components") or {}).get("node_count")
-            or len(runtime.world_model.entities)
-            or 0
+        if screenshot_path:
+            extras["screenshot_path"] = screenshot_path
+        worldview_components = (
+            (runtime.world_model.last_worldview_score or {}).get("components") or {}
         )
+        extras["observation_node_count"] = int(
+            worldview_components.get("node_count") or len(runtime.world_model.entities) or 0
+        )
+        extras["app_content_node_count"] = int(worldview_components.get("app_content_node_count") or 0)
+        extras["chrome_only_node_count"] = int(worldview_components.get("chrome_only_node_count") or 0)
+        extras["task_sufficient"] = bool(worldview_components.get("task_sufficient", True))
         extras["observation_degenerate"] = bool(extras["observation_node_count"] <= 1)
         if held_last_good_world:
             extras["held_last_good_world"] = True
@@ -275,6 +290,10 @@ def build_view_features(
                 )
         extras["interaction_graph"] = getattr(runtime.world_model, "last_interaction_graph", {}) or {}
         extras["capability_graph"] = getattr(runtime.world_model, "last_capability_graph", {}) or {}
+        if runtime.world_model.last_worldview_score:
+            extras["worldview_score_components"] = dict(
+                (runtime.world_model.last_worldview_score or {}).get("components") or {}
+            )
         if scene:
             extras["world_graph"] = scene
             report = scene.get("report") or {}
@@ -297,6 +316,10 @@ def build_view_features(
             else:
                 node_keys = list((cap_graph.get("nodes") or {}).keys())
                 extras["selected_capability"] = node_keys[0] if node_keys else ""
+        if "screenshot_error" in (runtime.world_model.last_worldview_score or {}):
+            extras["screenshot_error"] = (runtime.world_model.last_worldview_score or {}).get(
+                "screenshot_error"
+            )
     try:
         perception = synthesize_perception(
             goal,
@@ -316,12 +339,54 @@ def build_view_features(
                     "likely_next_target": perception.likely_next_target,
                     "confidence": round(float(perception.confidence or 0.0), 4),
                 }
+            summary_text = _format_perception_human_readable(
+                perception,
+                task_name=str((feats.get("extras") or {}).get("perception_task") or ""),
+                target=(feats.get("extras") or {}).get("perception_llm", {}).get("selected_target")
+                if isinstance((feats.get("extras") or {}).get("perception_llm"), dict)
+                else None,
+                cache_hit=False,
+            )
+            if log_fn is not None:
+                log_fn(
+                    phase="perception_summary",
+                    payload={
+                        "message": summary_text,
+                        "detail": summary_text,
+                        "text": summary_text,
+                        "screen_type": perception.screen_type,
+                        "active_surface": perception.active_surface,
+                        "likely_next_family": perception.likely_next_family,
+                        "likely_next_target": perception.likely_next_target,
+                        "likely_next_text": perception.likely_next_text,
+                        "confidence": round(float(perception.confidence or 0.0), 4),
+                        "avoid_families": list(perception.avoid_families or []),
+                        "needs_followup_observe": bool(perception.needs_followup_observe),
+                    },
+                    status="ok",
+                    iteration=0,
+                )
+            summary_cb = getattr(runtime, "perception_summary_callback", None)
+            if callable(summary_cb) and summary_text:
+                try:
+                    summary_cb(summary_text)
+                except Exception:
+                    pass
     except Exception as exc:
         from agent.auxiliary_client import LLMProviderExhaustedError
 
         if isinstance(exc, LLMProviderExhaustedError) or _perception_fail_hard():
             raise
         pass
+    extras = feats.setdefault("extras", {})
+    if isinstance(extras, dict) and not extras.get("perception_result"):
+        try:
+            structured = build_perception_result(runtime.world_model, view, feats, goal=goal)
+            extras["perception_result"] = structured.to_dict()
+            extras["perception_narrative"] = structured.narrative
+            extras["perception_summary"] = structured_perception_bridge(structured.to_dict(), features=feats)
+        except Exception:
+            pass
     return view, feats, wv
 
 
@@ -358,9 +423,26 @@ def apply_observation(
         target_entity_id=target_entity_id,
     )
     runtime.patches.append(patch)
-    view, feats, wv = build_view_features(runtime, goal)
+    view, feats, wv = build_view_features(
+        runtime,
+        goal,
+        screenshot_path=obs.screenshot_path,
+        log_fn=log_fn,
+    )
+    if obs.meta and isinstance(obs.meta, dict):
+        extras = feats.setdefault("extras", {})
+        if isinstance(extras, dict):
+            if obs.meta.get("screenshot_error"):
+                extras["screenshot_error"] = obs.meta.get("screenshot_error")
     if log_fn is not None:
         extras = feats.get("extras") if isinstance(feats, dict) else {}
+        structured = (extras or {}).get("perception_result") if isinstance(extras, dict) else None
+        structured_summary = structured if isinstance(structured, dict) else {}
+        sensors = structured_summary.get("sensors") if isinstance(structured_summary.get("sensors"), list) else []
+        sensor_kinds = [str(sensor.get("kind") or "") for sensor in sensors if isinstance(sensor, dict)]
+        sensor_sources = [str(sensor.get("source") or "") for sensor in sensors if isinstance(sensor, dict)]
+        sensor_summaries = [str(sensor.get("summary") or "") for sensor in sensors if isinstance(sensor, dict)]
+        transition = structured_summary.get("transition") if isinstance(structured_summary.get("transition"), dict) else {}
         log_fn(
             phase="observation_fused",
             payload={
@@ -376,6 +458,17 @@ def apply_observation(
                 "fusion_conflicts": list(getattr(patch, "conflicts", None) or [])[:8],
                 "belief_updates": list(getattr(patch, "belief_updates", None) or [])[:8],
                 "observation_node_count": (extras or {}).get("observation_node_count"),
+                "app_content_node_count": (extras or {}).get("app_content_node_count"),
+                "chrome_only_node_count": (extras or {}).get("chrome_only_node_count"),
+                "task_sufficient": (extras or {}).get("task_sufficient"),
+                "screenshot_error": (extras or {}).get("screenshot_error"),
+                "perception_result_status": transition.get("status") or structured_summary.get("phase"),
+                "perception_primary_surface": structured_summary.get("primary_surface_id"),
+                "perception_active_object_ids": list(structured_summary.get("active_object_ids") or [])[:8],
+                "perception_active_relation_ids": list(structured_summary.get("active_relation_ids") or [])[:8],
+                "perception_sensor_kinds": sensor_kinds[:12],
+                "perception_sensor_sources": sensor_sources[:12],
+                "perception_sensor_summaries": sensor_summaries[:12],
             },
             status="ok",
             iteration=iteration,

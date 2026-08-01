@@ -18,6 +18,21 @@ describe('gateway event routing', () => {
     expect(gatewayEventRequiresSessionId('approval.request')).toBe(false)
   })
 
+  it('routes unscoped perception summaries to the active chat', () => {
+    const routed = resolveGatewayEventSessionId({
+      activeSessionId: 'session-a',
+      eventType: 'perception.summary',
+      explicitSessionId: '',
+      unscopedStreamSessionId: null
+    })
+
+    expect(routed).toEqual({
+      drop: false,
+      nextUnscopedStreamSessionId: null,
+      sessionId: 'session-a'
+    })
+  })
+
   it('allows global events to remain unscoped', () => {
     expect(gatewayEventRequiresSessionId('gateway.ready')).toBe(false)
     expect(gatewayEventRequiresSessionId('preview.restart.progress')).toBe(false)

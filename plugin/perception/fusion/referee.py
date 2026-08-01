@@ -100,8 +100,60 @@ class FusionReferee:
             data = json.loads(content)
             return self._coerce_decision(data)
         except Exception as exc:
-            logger.info("Fusion referee unavailable or invalid response; falling back to deterministic fusion: %s", exc)
-            return FusionRefereeDecision(action="accept", reason=str(exc), confidence=0.0)
+            logger.info("Fusion referee unavailable or invalid response; using deterministic safety policy: %s", exc)
+            return self._deterministic_safety_policy(payload, reason=str(exc))
+
+    @staticmethod
+    def _deterministic_safety_policy(payload: Dict[str, Any], *, reason: str = "") -> FusionRefereeDecision:
+        deterministic = payload.get("deterministic") if isinstance(payload, dict) else {}
+        sources = payload.get("sources") if isinstance(payload, dict) else []
+        try:
+            source_count = len(sources or [])
+        except Exception:
+            source_count = 0
+        try:
+            entity_count = int((deterministic or {}).get("entity_count") or 0)
+        except Exception:
+            entity_count = 0
+        try:
+            agreement = (deterministic or {}).get("agreement")
+            agreement_f = None if agreement is None else float(agreement)
+        except Exception:
+            agreement_f = None
+        if entity_count <= 0:
+            return FusionRefereeDecision(
+                action="reobserve",
+                reason=reason or "deterministic_empty_frame",
+                should_reobserve=True,
+                confidence=0.0,
+            )
+        if source_count <= 1:
+            return FusionRefereeDecision(
+                action="accept",
+                reason=reason or "single_source_safe",
+                should_reobserve=False,
+                confidence=0.5,
+            )
+        if agreement_f is not None and agreement_f < 0.5:
+            return FusionRefereeDecision(
+                action="reobserve",
+                reason=reason or "multi_source_disagreement",
+                should_reobserve=True,
+                confidence=0.2,
+            )
+        if int((deterministic or {}).get("conflict_count") or 0) > 0:
+            return FusionRefereeDecision(
+                action="reobserve",
+                reason=reason or "deterministic_conflicts",
+                should_reobserve=True,
+                confidence=0.3,
+            )
+        return FusionRefereeDecision(
+            action="accept",
+            reason=reason or "deterministic_safe_accept",
+            should_reobserve=False,
+            confidence=0.6,
+        )
 
     @staticmethod
     def _coerce_decision(data: Any) -> FusionRefereeDecision:

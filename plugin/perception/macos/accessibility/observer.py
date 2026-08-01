@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
@@ -12,6 +14,32 @@ from plugin.perception.macos.accessibility.tree_parse import observation_from_tr
 from plugin.perception.observation import Observation
 
 logger = logging.getLogger(__name__)
+
+
+def _capture_screen_screenshot(*, app_name: str = "WhatsApp") -> tuple[Optional[str], Optional[str]]:
+    """Capture the current screen to a temp PNG, or return an explicit error."""
+    fd, path = tempfile.mkstemp(suffix=".png", prefix=f"{app_name.lower().replace(' ', '_')}_obs_")
+    os.close(fd)
+    shot = Path(path)
+    try:
+        proc = subprocess.run(
+            ["screencapture", "-x", str(shot)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=12,
+        )
+        if shot.exists() and shot.stat().st_size > 0:
+            return str(shot), None
+        err = (proc.stderr or "").strip() or "screencapture produced an empty file"
+        raise RuntimeError(err)
+    except Exception as exc:  # noqa: BLE001 - capture must be best-effort
+        try:
+            shot.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return None, str(exc)
 
 
 class Observer(Protocol):
@@ -60,14 +88,23 @@ class MacAppTreeObserver:
         app_name = app or self._front_app_name()
         bundle = get_app_bundle(app_name)
         screenshot_path: Optional[str] = None
-        # Screenshot-backed OCR is now mandatory whenever macapptree is used.
+        screenshot_error: Optional[str] = None
+        tree = None
         if self.with_screenshot or True:
-            tree, im, _im_seg = get_tree_screenshot(bundle)
-            if im is not None:
-                fd, path = tempfile.mkstemp(suffix=".png", prefix="plugin_obs_")
-                os.close(fd)
-                im.save(path)
-                screenshot_path = path
+            try:
+                tree, im, _im_seg = get_tree_screenshot(bundle)
+                if im is not None:
+                    fd, path = tempfile.mkstemp(suffix=".png", prefix="plugin_obs_")
+                    os.close(fd)
+                    im.save(path)
+                    screenshot_path = path
+                else:
+                    screenshot_path, screenshot_error = _capture_screen_screenshot(app_name=app_name)
+            except Exception as exc:  # noqa: BLE001 - prefer a recoverable fallback
+                screenshot_error = str(exc)
+                screenshot_path, capture_error = _capture_screen_screenshot(app_name=app_name)
+                if not screenshot_path and capture_error:
+                    screenshot_error = f"{screenshot_error}; screenshot_fallback={capture_error}"
         else:
             tree = get_tree(bundle)
 
@@ -92,7 +129,12 @@ class MacAppTreeObserver:
             source="macapptree",
             coverage=1.0,
             degraded=False,
+            meta={"screenshot_error": screenshot_error} if screenshot_error else None,
         )
+        if screenshot_error and not obs.screenshot_path:
+            obs.degraded = True
+            obs.meta = dict(obs.meta or {})
+            obs.meta["screenshot_error"] = screenshot_error
         return obs
 
     @staticmethod
@@ -160,13 +202,18 @@ class PyObjCFallbackObserver:
             "children": [],
             "id": "pyobjc-fallback",
         }
+        screenshot_path, screenshot_error = _capture_screen_screenshot(app_name=app_name)
         return observation_from_tree(
             tree,
             app_name=app_name,
             source="pyobjc",
+            screenshot_path=screenshot_path,
             coverage=0.0,
             degraded=True,
-            meta={"note": "shallow PyObjC fallback — install macapptree for full trees"},
+            meta={
+                "note": "shallow PyObjC fallback — install macapptree for full trees",
+                **({"screenshot_error": screenshot_error} if screenshot_error else {}),
+            },
         )
 
 

@@ -65,27 +65,7 @@ def should_run_conversation_relevance(goal: Goal, rows: Sequence[Dict[str, Any]]
         return False
     kind = (goal.kind or "").strip().lower()
     if kind in {"whatsapp_forward_message", "whatsapp_read_message"}:
-        goal_terms = [
-            str(goal.link_query or "").strip().lower(),
-            str(goal.contact or "").strip().lower(),
-            str(goal.target_contact or "").strip().lower(),
-        ]
-        row_blobs = [
-            " ".join(
-                [
-                    str(row.get("text") or ""),
-                    str(row.get("label") or ""),
-                    str(row.get("description") or ""),
-                ]
-            ).lower()
-            for row in rows
-        ]
-        for term in goal_terms:
-            if not term:
-                continue
-            if any(term in blob for blob in row_blobs):
-                return False
-        return len(rows) >= 2
+        return True
     if "message" in kind or "forward" in kind:
         return True
     return len(rows) >= 3
@@ -167,6 +147,8 @@ def rank_conversation_messages(
     rows = [row for row in rows if isinstance(row, dict) and row.get("entity_id") is not None]
     if not rows:
         return None
+    if not _conversation_surface_observed(view, rows):
+        return None
     if not force and not should_run_conversation_relevance(goal, rows):
         return None
 
@@ -174,12 +156,15 @@ def rank_conversation_messages(
     query = build_content_query(goal)
     context = DiscoveryContext(
         source_app=str(goal.app or view.get("app") or "WhatsApp"),
-        container_id=str(view.get("open_conversation") or goal.contact or ""),
+        container_id=str(view.get("open_conversation") or ""),
         container_type="conversation",
         window_name=str(view.get("window_name") or ""),
         conversation_window=window,
         visible_object_count=len(rows),
         use_llm=True,
+        active_subgraph=dict(
+            getattr(world, "last_active_subgraph", None) or view.get("active_cognitive_subgraph") or {}
+        ),
     )
     resolution = resolve_content_rows(
         goal,
@@ -202,3 +187,15 @@ def rank_conversation_messages(
         }
     return result
 
+
+def _conversation_surface_observed(view: Dict[str, Any], rows: Sequence[Dict[str, Any]]) -> bool:
+    screen = str(view.get("screen") or view.get("screen_kind") or view.get("wa_screen") or "").strip().upper()
+    open_c = str(view.get("open_conversation") or "").strip()
+    if not open_c:
+        return False
+    if screen not in {"LIST", "SEARCH", "SEARCH_RESULTS"}:
+        return True
+    # WhatsApp often leaves the sidebar in SEARCH_RESULTS while the main pane
+    # is already the live conversation. In that state the row evidence is still
+    # usable and should be ranked instead of discarded.
+    return bool(rows) or bool(view.get("conversation_context_rows") or view.get("conversation_timeline") or view.get("conversation_messages"))

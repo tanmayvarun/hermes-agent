@@ -248,8 +248,9 @@ def test_fusion_engine_can_prefer_rich_source_when_deterministic_fusion_collapse
     frame = engine.fuse_bundles(bundles, app="WhatsApp")
     assert len(frame.entities) == 2
     assert frame.report.primary_source == "pyobjc_ax"
-    assert frame.report.meta["llm_referee"]["action"] == "prefer_source"
-    assert frame.report.meta["llm_referee"]["preferred_source_id"] == "pyobjc_ax"
+    assert frame.report.agreement is None
+    assert frame.report.meta["fusion_mode"] == "single_source"
+    assert "llm_referee" not in frame.report.meta
 
 
 def test_fusion_engine_preserves_non_empty_source_when_interpreter_returns_empty(monkeypatch):
@@ -277,3 +278,42 @@ def test_fusion_engine_preserves_non_empty_source_when_interpreter_returns_empty
     assert len(frame.entities) == 1
     assert frame.entities[0].sources == ["pyobjc_ax"]
     assert frame.entities[0].beliefs["fallback_source"].value == "pyobjc_ax"
+
+
+def test_fusion_engine_skips_referee_for_single_healthy_source(monkeypatch):
+    from plugin.perception.observation import AxNode, Observation
+    from plugin.perception.sources.base import ObservationBundle
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("fusion referee should not run for a single healthy source")
+
+    monkeypatch.setattr(FusionReferee, "decide", fail_if_called)
+
+    engine = FusionEngine()
+    healthy = ObservationBundle(
+        source_id="pyobjc_ax",
+        observation=Observation(
+            timestamp=0,
+            app_name="WhatsApp",
+            window_name="Main",
+            nodes=[AxNode(role="AXSearchField", name="Search", bbox=(10.0, 10.0, 120.0, 24.0))],
+            source="pyobjc_ax",
+            coverage=1.0,
+        ),
+        coverage_self=1.0,
+        degraded=False,
+    )
+    degraded = ObservationBundle(
+        source_id="macapptree",
+        observation=Observation(timestamp=0, app_name="WhatsApp", window_name="Main", nodes=[], source="macapptree", coverage=0.0, degraded=True),
+        coverage_self=0.0,
+        degraded=True,
+    )
+
+    frame = engine.fuse_bundles([healthy, degraded], app="WhatsApp")
+
+    assert frame.report.agreement is None
+    assert frame.report.meta["fusion_mode"] == "single_source"
+    assert frame.report.meta["healthy_source_count"] == 1
+    assert "macapptree" in frame.report.meta["ignored_sources"]
+    assert frame.entities

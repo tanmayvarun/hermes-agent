@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from plugin.perception.observation import AxNode, Bounds, Observation
 
@@ -30,6 +30,80 @@ def _parse_size_pos(node: Dict[str, Any]) -> Bounds:
         return (px, py, sw, sh)
     except (ValueError, TypeError):
         return (0.0, 0.0, 0.0, 0.0)
+
+
+def _node_signature(node: Dict[str, Any]) -> str:
+    role = str(node.get("role") or "").strip().lower()
+    name = " ".join(str(node.get("name") or node.get("title") or "").split()).strip().lower()
+    desc = " ".join(str(node.get("description") or "").split()).strip().lower()
+    value = " ".join(str(node.get("value") or "").split()).strip().lower()
+    bbox = node.get("bbox") or []
+    try:
+        bbox_sig = tuple(round(float(v), 1) for v in list(bbox)[:4])
+    except Exception:
+        bbox_sig = (0.0, 0.0, 0.0, 0.0)
+    return f"{role}|{name}|{desc}|{value}|{bbox_sig}"
+
+
+def _prune_tree(
+    node: Dict[str, Any],
+    *,
+    depth: int = 0,
+    max_depth: int = 20,
+    max_nodes: int = 1000,
+    visited: Optional[Set[str]] = None,
+    signature_counts: Optional[Dict[str, int]] = None,
+    total_nodes: Optional[List[int]] = None,
+    is_root: bool = False,
+) -> Optional[Dict[str, Any]]:
+    if visited is None:
+        visited = set()
+    if signature_counts is None:
+        signature_counts = {}
+    if total_nodes is None:
+        total_nodes = [0]
+    if not isinstance(node, dict):
+        return None
+    if depth > max_depth or total_nodes[0] >= max_nodes:
+        return None
+
+    role = str(node.get("role") or "").strip()
+    sig = _node_signature(node)
+    if sig in visited and not is_root:
+        return None
+    if role in {"AXMenuBar", "AXMenuBarItem"} and not is_root:
+        return None
+    count = signature_counts.get(sig, 0) + 1
+    signature_counts[sig] = count
+    if count > 3 and not is_root:
+        return None
+    if role == "AXApplication" and not is_root:
+        return None
+
+    children_raw = node.get("children") or []
+    children: List[Dict[str, Any]] = []
+    total_nodes[0] += 1
+    visited.add(sig)
+    for child in children_raw:
+        if total_nodes[0] >= max_nodes:
+            break
+        if not isinstance(child, dict):
+            continue
+        pruned = _prune_tree(
+            child,
+            depth=depth + 1,
+            max_depth=max_depth,
+            max_nodes=max_nodes,
+            visited=visited,
+            signature_counts=signature_counts,
+            total_nodes=total_nodes,
+        )
+        if pruned is not None:
+            children.append(pruned)
+
+    pruned_node = dict(node)
+    pruned_node["children"] = children
+    return pruned_node
 
 
 def parse_macapptree_node(raw: Dict[str, Any]) -> AxNode:
@@ -85,8 +159,17 @@ def observation_from_tree(
     coverage: Optional[float] = None,
     degraded: bool = False,
     meta: Optional[Dict[str, Any]] = None,
+    max_depth: int = 20,
+    max_nodes: int = 1000,
 ) -> Observation:
-    root = parse_macapptree_node(tree)
+    pruned = _prune_tree(
+        tree,
+        depth=0,
+        max_depth=max_depth,
+        max_nodes=max_nodes,
+        is_root=True,
+    )
+    root = parse_macapptree_node(pruned or tree)
     nodes = root.flatten()
     # Drop the synthetic root duplicate if it is only a container — keep all.
     win = window_name or root.name or ""

@@ -4,8 +4,17 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 from pathlib import Path
+import json
+from types import SimpleNamespace
 
-from plugin.agent.apps.whatsapp import WhatsAppOverlay, build_forward_task_state, _infer_forward_phase
+import pytest
+
+from plugin.agent.apps.whatsapp import (
+    WhatsAppOverlay,
+    build_forward_task_state,
+    _conversation_context_rows,
+    _infer_forward_phase,
+)
 from plugin.agent.decision import DecisionEngine
 from plugin.agent.goal import Goal
 from plugin.agent.policy.candidates import enumerate_candidates
@@ -20,6 +29,13 @@ from plugin.agent.whatsapp_view import WhatsAppWorldView, contact_names_from_ent
 from plugin.worldmodel.entities.entity import Entity
 from plugin.worldmodel.capability import Capability
 from plugin.worldmodel.model import WorldModel
+
+
+@pytest.fixture(autouse=True)
+def _disable_live_conversation_ranking(monkeypatch):
+    from plugin.agent.apps import whatsapp as whatsapp_mod
+
+    monkeypatch.setattr(whatsapp_mod, "rank_conversation_messages", lambda *args, **kwargs: None)
 
 
 def test_forward_runtime_binding_prefers_ollama_cloud_gpt_oss_default(monkeypatch):
@@ -47,7 +63,7 @@ def test_forward_runtime_binding_prefers_ollama_cloud_gpt_oss_default(monkeypatc
 
     assert seen == {
         "provider": "ollama-cloud",
-        "model": "gpt-oss:120b-cloud",
+        "model": "gpt-oss:120b",
         "base_url": "https://ollama.example.test/v1",
         "api_key": "",
         "api_mode": "",
@@ -57,8 +73,8 @@ def test_forward_runtime_binding_prefers_ollama_cloud_gpt_oss_default(monkeypatc
 
 def test_forward_launcher_pins_main_model_default():
     script = Path("plugin/experiments/runs/run_forward_zarooratwala.command").read_text()
-    assert 'HERMES_MODEL:=gpt-oss:120b-cloud' in script
-    assert 'HERMES_INFERENCE_MODEL:=gpt-oss:120b-cloud' in script
+    assert 'HERMES_MODEL:=gpt-oss:120b' in script
+    assert 'HERMES_INFERENCE_MODEL:=gpt-oss:120b' in script
     assert 'HERMES_AUXILIARY_PROVIDER_POLICY=ollama-only' in script
     assert 'HERMES_INFERENCE_PROVIDER:=ollama-cloud' in script
     assert 'HERMES_PERCEPTION_PROVIDER:=ollama-cloud' in script
@@ -110,6 +126,12 @@ def _goal() -> Goal:
     )
 
 
+def _response(payload: dict[str, object]):
+    message = SimpleNamespace(content=json.dumps(payload), tool_calls=[])
+    choice = SimpleNamespace(message=message, finish_reason="stop")
+    return SimpleNamespace(choices=[choice], usage=None, model="fake")
+
+
 def test_query_visible_without_selection_not_pick_dest():
     wm = _seed(
         [
@@ -128,6 +150,121 @@ def test_query_visible_without_selection_not_pick_dest():
     ft = build_forward_task_state(_goal(), wm, view, leftover=False)
     assert ft.predicates.destination_picker_visible is False
     assert ft.binding("source_object").candidate_entity_ids
+
+
+def test_conversation_context_rows_fall_back_to_timeline_clusters():
+    view = WhatsAppWorldView(
+        screen="CONVERSATION",
+        open_conversation="Kulvinder Ji",
+        conversation_messages=[],
+        conversation_timeline=[
+            {
+                "message_ids": [195],
+                "entity_ids": [195],
+                "text": "Your message, Link, https://www.zarooratwala.com/?utm_source=ig",
+                "label": "ZarooratWala – Fresh Groceries Delivered",
+                "description": "sidebar mislabel",
+                "urls": ["https://www.zarooratwala.com/?utm_source=ig"],
+                "top_y": 420.0,
+                "x": 920.0,
+            }
+        ],
+    )
+
+    rows = _conversation_context_rows(view)
+
+    assert rows
+    assert any("zarooratwala.com" in (row["text"] or "").lower() for row in rows)
+
+
+def test_conversation_context_rows_do_not_use_timeline_on_list_screen():
+    view = WhatsAppWorldView(
+        screen="LIST",
+        open_conversation="",
+        conversation_messages=[],
+        conversation_timeline=[
+            {
+                "message_ids": [195],
+                "entity_ids": [195],
+                "text": "Your message, Link, https://www.zarooratwala.com/?utm_source=ig",
+                "label": "ZarooratWala – Fresh Groceries Delivered",
+                "description": "sidebar mislabel",
+                "urls": ["https://www.zarooratwala.com/?utm_source=ig"],
+                "top_y": 420.0,
+                "x": 920.0,
+            }
+        ],
+    )
+
+    assert _conversation_context_rows(view) == []
+
+
+def test_forward_task_state_does_not_bind_source_object_without_observed_conversation():
+    wm = _seed(
+        [
+            _entity(1, label="Messages in chat with Kulvinder Ji", etype="static", bounds=(400, 20, 400, 30), actions=[]),
+            _entity(2, label="Check zaroortwala.com for details", etype="static", bounds=(900, 300, 300, 40), actions=[]),
+            _entity(3, label="Type a message", etype="textfield", bounds=(700, 900, 600, 40)),
+        ]
+    )
+    view = WhatsAppWorldView(
+        screen="LIST",
+        open_conversation="",
+        visible_contacts=["Kulvinder Ji"],
+        conversation_messages=[],
+        conversation_timeline=[
+            {
+                "message_ids": [2],
+                "entity_ids": [2],
+                "text": "Check zaroortwala.com for details",
+                "label": "Shared link",
+                "description": "ZarooratWala – Fresh Groceries Delivered",
+                "urls": ["https://www.zarooratwala.com/?utm_source=ig"],
+                "top_y": 300.0,
+                "x": 900.0,
+            }
+        ],
+    )
+    state = build_forward_task_state(_goal(), wm, view, leftover=False)
+
+    assert state.binding("source_object").candidate_entity_ids == []
+    assert state.binding("source_object").status == "unresolved"
+    assert state.predicates.source_object_visible is False
+    assert state.derived_phase == "OPEN_SOURCE"
+
+
+def test_forward_task_state_binds_source_object_on_search_results_when_conversation_is_open():
+    wm = _seed(
+        [
+            _entity(1, label="Messages in chat with Kulvinder Ji", etype="static", bounds=(400, 20, 400, 30), actions=[]),
+            _entity(2, label="Check zaroortwala.com for details", etype="static", bounds=(900, 300, 300, 40), actions=[]),
+            _entity(3, label="Type a message", etype="textfield", bounds=(700, 900, 600, 40)),
+        ]
+    )
+    view = WhatsAppWorldView(
+        screen="SEARCH_RESULTS",
+        open_conversation="Kulvinder Ji",
+        visible_contacts=["Kulvinder Ji"],
+        conversation_messages=[],
+        conversation_timeline=[
+            {
+                "message_ids": [2],
+                "entity_ids": [2],
+                "text": "Check zaroortwala.com for details",
+                "label": "Shared link",
+                "description": "ZarooratWala – Fresh Groceries Delivered",
+                "urls": ["https://www.zarooratwala.com/?utm_source=ig"],
+                "top_y": 300.0,
+                "x": 900.0,
+            }
+        ],
+    )
+    state = build_forward_task_state(_goal(), wm, view, leftover=False)
+
+    assert state.binding("source_object").candidate_entity_ids == [2]
+    assert state.binding("source_object").status in {"provisional", "confirmed"}
+    assert state.predicates.source_object_visible is True
+    assert state.derived_phase in {"FIND_LINK", "OPEN_SOURCE", "OPEN_FORWARD", "PICK_SOURCE"}
 
 
 def test_contact_card_label_noise_does_not_become_dialog():
@@ -354,6 +491,59 @@ def test_visible_source_conversation_row_beats_observe_in_open_source():
     assert (chosen.semantic_target or "").lower() == "kulvinder ji"
 
 
+def test_active_cognitive_subgraph_filters_out_off_scope_rows():
+    wm = _seed(
+        [
+            _entity(1, label="Kulvinder Ji", etype="static", bounds=(60, 160, 260, 56), description="Chat row"),
+            _entity(2, label="Noise Row", etype="static", bounds=(60, 220, 260, 56), description="Sidebar row"),
+            _entity(3, label="Search", etype="textfield", bounds=(40, 80, 200, 30)),
+        ]
+    )
+    overlay = WhatsAppOverlay()
+    feats = StateFeatures(
+        extras={
+            "forward_phase": "OPEN_SOURCE",
+            "source_conversation_rows": ["Kulvinder Ji", "Noise Row"],
+            "source_conversation_visible": True,
+            "active_cognitive_subgraph": {
+                "phase": "conversation",
+                "focus_region_ids": ["timeline"],
+                "active_entity_ids": [1],
+                "excluded_region_ids": ["sidebar"],
+            },
+        }
+    )
+    cands = enumerate_candidates(_goal(), wm, feats, overlay)
+    open_contacts = [a.semantic_target for a in cands if a.action_family == "open_contact"]
+
+    assert "Kulvinder Ji" in open_contacts
+    assert "Noise Row" not in open_contacts
+
+
+def test_forward_state_uses_clustered_timeline_before_generic_noise():
+    goal = _goal()
+    wm = _seed(
+        [
+            _entity(1, label="Kulvinder Ji", etype="static", bounds=(900, 20, 180, 34), actions=[]),
+            _entity(
+                2,
+                label="Zarooratwala – Fresh Groceries Delivered",
+                etype="link",
+                bounds=(920, 420, 360, 60),
+                description="https://www.zarooratwala.com/?utm_source=ig",
+            ),
+            _entity(3, label="Format", etype="menu", bounds=(18, 18, 110, 28), actions=["click"]),
+            _entity(4, label="Type a message", etype="textfield", bounds=(700, 900, 600, 40)),
+        ]
+    )
+    view = WhatsAppWorldView.from_world_model_raw(wm)
+    ft = build_forward_task_state(goal, wm, view, leftover=False)
+
+    assert ft.binding("source_object").resolved_entity_id == 2
+    assert ft.predicates.source_object_visible is True
+    assert ft.binding("source_object").evidence[0].startswith(("source timeline match", "unique match"))
+
+
 def test_conversation_message_row_does_not_promote_as_source_row():
     wm = _seed(
         [
@@ -495,6 +685,25 @@ def test_open_source_prefers_visible_source_row_over_search():
     assert predicted_value_delta(open_contact, feats, goal) > predicted_value_delta(open_search, feats, goal)
 
 
+def test_find_link_phase_still_prefers_open_contact_when_result_is_visible():
+    wm = _seed(
+        [
+            _entity(1, label="Kulvinder Ji", etype="static", bounds=(60, 160, 260, 56), description="Chat row"),
+            _entity(2, label="Search", etype="button", bounds=(40, 80, 120, 30)),
+            _entity(3, label="Type a message", etype="textfield", bounds=(700, 900, 600, 40)),
+        ]
+    )
+    overlay = WhatsAppOverlay()
+    goal = _goal()
+    feats = overlay.features(wm, goal)
+    feats.extras["forward_phase"] = "FIND_LINK"
+    feats.extras["result_surface_visible"] = True
+    feats.extras["query_matches_goal"] = True
+    open_contact = Action(action="Click", semantic_target="Kulvinder Ji", action_family="open_contact")
+    type_query = Action(action="Type", semantic_target="Search", text="Kulvinder", action_family="type_query")
+    assert predicted_value_delta(open_contact, feats, goal) > predicted_value_delta(type_query, feats, goal)
+
+
 def test_menu_overlay_emits_dismiss_escape_candidate():
     wm = _seed(
         [
@@ -547,7 +756,32 @@ def test_open_source_does_not_click_vague_named_entity_without_result_row():
     assert opens == [], "generic named entities should not trigger open_contact without a real result row"
 
 
-def test_query_matching_ignores_spacing_and_punctuation_noise():
+def test_query_matching_ignores_spacing_and_punctuation_noise(monkeypatch):
+    from agent import auxiliary_client
+
+    # Local stub keeps this unit test deterministic even though the production
+    # path now consults the LLM for conversation-ranking ambiguity.
+    def fake_call_llm(**kwargs):
+        return _response(
+            {
+                "summary": "The link preview row is the intended source object.",
+                "confidence": 0.95,
+                "selected_object_id": "10",
+                "ranked_objects": [
+                    {"object_id": "10", "score": 0.98, "reason": "contains the link preview"},
+                    {"object_id": "1", "score": 0.05, "reason": "header noise"},
+                ],
+                "selected_source_entity_ids": [10],
+                "selected_object_text": "z a r o o r a t - w a l a link preview",
+                "supporting_evidence": ["goal term matches the visible link preview"],
+                "contradictions": [],
+                "next_information_actions": [],
+                "needs_followup_observe": False,
+            }
+        )
+
+    monkeypatch.setattr(auxiliary_client, "call_llm", fake_call_llm)
+
     goal = Goal(
         kind="whatsapp_forward_message",
         contact="Kulvinder",
@@ -570,7 +804,32 @@ def test_query_matching_ignores_spacing_and_punctuation_noise():
     assert selects[0].target_entity_id == 10
 
 
-def test_query_matching_handles_typo_in_link_query():
+def test_query_matching_handles_typo_in_link_query(monkeypatch):
+    from plugin.agent.apps import whatsapp as whatsapp_mod
+    from agent import auxiliary_client
+
+    def fake_call_llm(**kwargs):
+        return _response(
+            {
+                "summary": "The link preview row is the intended source object.",
+                "confidence": 0.95,
+                "selected_object_id": "10",
+                "ranked_objects": [
+                    {"object_id": "10", "score": 0.98, "reason": "contains the share link preview"},
+                    {"object_id": "1", "score": 0.05, "reason": "header noise"},
+                ],
+                "selected_source_entity_ids": [10],
+                "selected_object_text": "ZarooratWala – Fresh Groceries Delivered",
+                "supporting_evidence": ["goal term matches the visible link preview"],
+                "contradictions": [],
+                "next_information_actions": [],
+                "needs_followup_observe": False,
+            }
+        )
+
+    monkeypatch.setattr(auxiliary_client, "call_llm", fake_call_llm)
+    monkeypatch.setattr(whatsapp_mod, "rank_conversation_messages", lambda *args, **kwargs: None)
+
     goal = Goal(
         kind="whatsapp_forward_message",
         contact="Kulvinder",
@@ -949,6 +1208,8 @@ def test_latent_source_selection_survives_temporary_occlusion():
 
 
 def test_decision_keeps_scroll_without_entity_grounding():
+    from plugin.agent.apps import whatsapp as whatsapp_mod
+
     wm = _seed(
         [
             _entity(1, label="Messages in chat with Kulvinder Ji", etype="static", bounds=(400, 20, 400, 30), actions=[]),
@@ -959,6 +1220,8 @@ def test_decision_keeps_scroll_without_entity_grounding():
         ]
     )
     overlay = WhatsAppOverlay()
+    original_rank = whatsapp_mod.rank_conversation_messages
+    whatsapp_mod.rank_conversation_messages = lambda *args, **kwargs: None
     feats = overlay.features(wm, _goal())
     feats.extras["capability_graph"] = {
         "nodes": {
@@ -980,6 +1243,7 @@ def test_decision_keeps_scroll_without_entity_grounding():
 
     wm.last_capability_graph = feats.extras["capability_graph"]
     decision = DecisionEngine().decide(_goal(), wm, ExecutionState())
+    whatsapp_mod.rank_conversation_messages = original_rank
     assert decision is not None
     assert decision.action_family in {"select_content", "scroll_content"}
     assert decision.action_family != "observe"
@@ -1021,6 +1285,44 @@ def test_llm_ranked_conversation_messages_surface_select_content():
     cands = enumerate_candidates(_goal(), wm, feats, overlay)
     assert any(a.action_family == "select_content" and a.target_entity_id == 10 for a in cands)
     assert any(a.action_family == "scroll_content" for a in cands)
+
+
+def test_forward_source_rows_fall_back_to_conversation_context_rows():
+    wm = _seed(
+        [
+            _entity(1, label="Messages in chat with Kulvinder Ji", etype="static", bounds=(400, 20, 400, 30), actions=[]),
+            _entity(10, label="Your message, Link, https://www.zarooratwala.com/abc", etype="static", bounds=(900, 380, 340, 56), actions=[]),
+            _entity(11, label="Thanks", etype="static", bounds=(920, 460, 220, 40), actions=[]),
+            _entity(12, label="Type a message", etype="textfield", bounds=(700, 900, 600, 40)),
+        ]
+    )
+    overlay = WhatsAppOverlay()
+    feats = overlay.features(wm, _goal())
+    feats.extras["forward_phase"] = "FIND_LINK"
+    feats.extras["forward_task"] = {
+        "bindings": {
+            "source_conversation": {"status": "confirmed"},
+            "source_object": {
+                "status": "unresolved",
+                "constraints": {"content_tokens": ["zarooratwala"], "types": ["link", "message"]},
+            },
+        },
+        "predicates": {"source_conversation_open": True},
+    }
+    feats.extras["source_conversation_rows"] = []
+    feats.extras["conversation_context_rows"] = [
+        "Your message, Link, https://www.zarooratwala.com/abc",
+        "Thanks",
+    ]
+    feats.extras["conversation_timeline_text"] = [
+        "Your message, Link, https://www.zarooratwala.com/abc",
+        "Thanks",
+    ]
+    feats.extras["conversation_open"] = True
+    cands = enumerate_candidates(_goal(), wm, feats, overlay)
+    selects = [a for a in cands if a.action_family == "select_content"]
+    assert selects
+    assert any(a.target_entity_id == 10 for a in selects)
 
 
 def test_consistency_rollback_pick_dest_without_picker():

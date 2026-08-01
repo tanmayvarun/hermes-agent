@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Callable
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from plugin.agent.action import Action, PlanStep
@@ -24,8 +25,10 @@ class ExecutionState:
     last_target_id: Optional[int] = None
     last_result: Optional[Dict[str, Any]] = None
     last_world_signature: Optional[str] = None
+    last_semantic_state_signature: Optional[str] = None
     repeated_action_count: int = 0
     unchanged_world_count: int = 0
+    semantic_repeat_count: int = 0
     planner_invocations: int = 0
     recent_action_state_pairs: Deque[Tuple[str, str]] = field(
         default_factory=lambda: deque(maxlen=8)
@@ -191,6 +194,26 @@ class ExecutionState:
                 self.prohibited_actions[key] = max(self.prohibited_actions.get(key, 0), 2)
         self.last_world_signature = signature
 
+    def note_semantic_state(self, signature: str, step: Optional[PlanStep] = None) -> bool:
+        """Track semantically repeated states so the controller can replan sooner."""
+        sig = " ".join((signature or "").strip().split())
+        if not sig:
+            return False
+        if sig == self.last_semantic_state_signature:
+            self.semantic_repeat_count += 1
+        else:
+            self.last_semantic_state_signature = sig
+            self.semantic_repeat_count = 1
+
+        if step is not None:
+            key = self.action_key(step)
+            pair = (key, sig)
+            if self.recent_action_state_pairs and self.recent_action_state_pairs[-1] == pair:
+                self.repeated_action_count += 1
+            elif key:
+                self.repeated_action_count = max(1, self.repeated_action_count)
+        return self.semantic_repeat_count >= 3
+
     def is_prohibited(self, step: PlanStep) -> bool:
         key = self.action_key(step)
         left = self.prohibited_actions.get(key, 0)
@@ -215,6 +238,10 @@ class ExecutionState:
         self.last_perception_stall_signature = ""
         self.perception_stall_count = 0
         self.perception_stall_reason = ""
+
+    def clear_semantic_repeat(self) -> None:
+        self.last_semantic_state_signature = None
+        self.semantic_repeat_count = 0
 
     def tick_prohibitions(self) -> None:
         dead = []
@@ -241,6 +268,7 @@ class RuntimeState:
     execution_state: ExecutionState = field(default_factory=ExecutionState)
     conversation: List[Dict[str, str]] = field(default_factory=list)
     patches: List[WorldPatch] = field(default_factory=list)
+    perception_summary_callback: Optional[Callable[[str], None]] = None
 
     def note_user(self, text: str) -> None:
         self.conversation.append({"role": "user", "content": text})

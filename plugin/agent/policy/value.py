@@ -5,6 +5,7 @@ from __future__ import annotations
 from plugin.agent.action import Action
 from plugin.agent.features import StateFeatures
 from plugin.agent.goal import Goal
+from plugin.perception.representation import structured_perception_bridge
 
 _DEFAULT_PERCEPTION_PROMOTION_THRESHOLD = 0.7
 
@@ -195,7 +196,7 @@ def predicted_value_delta(action: Action, features: StateFeatures, goal: Goal) -
     src_status = str((src_obj or {}).get("status") or "unresolved")
     dest = (goal.target_contact or "").strip().lower()
     picker = bool(preds.get("destination_picker_visible"))
-    perception_summary = features.extras.get("perception_summary") or {}
+    perception_summary = structured_perception_bridge(features=features)
     promoted_family = ""
     promoted_target = ""
     promoted_confidence = 0.0
@@ -314,6 +315,12 @@ def predicted_value_delta(action: Action, features: StateFeatures, goal: Goal) -
             if features.extras.get("latent_conversation_open") or features.extras.get("source_conversation_visible"):
                 return 0.82 + stage_bias
             return 0.7 + stage_bias
+        if (
+            phase in {"FIND_LINK", "OPEN_FORWARD"}
+            and features.extras.get("result_surface_visible")
+            and (target_is_goal or features.query_matches_goal or promoted_target == target or features.has_named_entity)
+        ):
+            return 0.88 + stage_bias
         if phase in {"FIND_LINK", "OPEN_FORWARD", "DONE"}:
             return -0.8 + stage_bias
         if phase == "OPEN_SOURCE" and target_is_goal:
@@ -457,7 +464,7 @@ def _forward_value_delta(
         features.extras.get("suppress_observe")
         or (isinstance(ft, dict) and ft.get("suppress_observe"))
     )
-    perception_summary = features.extras.get("perception_summary") or {}
+    perception_summary = structured_perception_bridge(features=features)
     promoted_family = ""
     promoted_target = ""
     promoted_confidence = 0.0
@@ -508,6 +515,24 @@ def _forward_value_delta(
 
     if phase in {"OPEN_SOURCE", "FIND_LINK", "OPEN_FORWARD"} and fam == "select_forward_target":
         return -0.95 + stage_bias
+
+    if fam == "open_contact" and phase in {"FIND_LINK", "OPEN_FORWARD"}:
+        if (
+            features.extras.get("result_surface_visible")
+            and (
+                target == source
+                or source in target
+                or target_is_goal
+                or features.query_matches_goal
+                or promoted_target == target
+            )
+        ):
+            return 0.96 + stage_bias
+        if features.extras.get("source_conversation_visible") or features.extras.get("latent_conversation_open"):
+            return 0.82 + stage_bias
+        if features.query_matches_goal or features.has_named_entity:
+            return 0.58 + stage_bias
+        return -0.55 + stage_bias
 
     if fam == "type_query":
         # Hard invariant: Search bar is for contacts (source/dest), NEVER for link_query
@@ -569,8 +594,6 @@ def _forward_value_delta(
             return 0.7 + stage_bias
         if phase == "PICK_DEST" and source and target == source:
             return -0.5 + stage_bias
-        if phase in {"FIND_LINK", "OPEN_FORWARD"}:
-            return -0.95 + stage_bias
         return None
     if fam == "end_call":
         return (0.9 if phase == "PRECLEAR" or features.leftover_call else -0.4) + stage_bias

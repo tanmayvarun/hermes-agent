@@ -22,9 +22,11 @@ from plugin.agent.policy.value import (
     value_of_features,
 )
 from plugin.agent.perception_synthesis import synthesize_perception
+from plugin.perception.representation import structured_perception_bridge
 from plugin.agent.procedure import current_procedure_stage
 from plugin.agent.transition.types import FrontierAction, TransitionSummary
 from plugin.agent.transition.types import ActionPrediction
+from plugin.worldmodel.entities.normalize import _clean_label
 from plugin.worldmodel.model import WorldModel
 
 if TYPE_CHECKING:
@@ -70,7 +72,41 @@ class DecisionEngine:
             "select_content",
             "forward_message",
             "select_forward_target",
+            "start_call",
         }
+
+    @staticmethod
+    def _grounding_matches_candidate(candidate: Action, entity: Any) -> bool:
+        if entity is None or not getattr(entity, "visible", False):
+            return False
+        fam = str(getattr(candidate, "action_family", "") or "").strip().lower()
+        target = _clean_label(getattr(candidate, "semantic_target", "") or "").lower()
+        text = _clean_label(getattr(candidate, "text", "") or "").lower()
+        label = _clean_label(
+            " ".join(
+                [
+                    getattr(entity, "label", "") or "",
+                    getattr(entity, "semantic_role", "") or "",
+                    getattr(entity, "role", "") or "",
+                    str((getattr(entity, "attributes", {}) or {}).get("description") or ""),
+                ]
+            )
+        ).lower()
+        if fam in {"type_query", "open_search"}:
+            if any(tok in label for tok in ("settings", "call", "video", "voice", "menu", "more")):
+                return False
+            return "search" in label or "query" in label or "find" in label or "start new chat" in label
+        if fam == "open_contact":
+            if any(tok in label for tok in ("search", "settings", "call", "video", "voice", "more options")):
+                return False
+            return bool(label) and not any(tok in label for tok in ("search", "settings", "more options"))
+        if fam in {"forward_message", "select_forward_target"}:
+            return "forward" in label or "message" in label or bool(target) or bool(text)
+        if fam == "select_content":
+            return any(tok in label for tok in ("message", "timeline", "chat", "row", "card", "link"))
+        if fam in {"probe_hover", "probe_context_menu", "probe_focus"}:
+            return any(tok in label for tok in ("message", "row", "card", "conversation", "timeline", "chat"))
+        return True
 
     @staticmethod
     def _candidate_requires_high_risk_reasoning(candidate: Action) -> bool:
@@ -408,7 +444,7 @@ class DecisionEngine:
         features: StateFeatures,
         candidates: List[Action],
     ) -> Optional[Action]:
-        summary = features.extras.get("perception_summary") or {}
+        summary = structured_perception_bridge(features=features, world=world)
         if not isinstance(summary, dict):
             return None
         family = str(summary.get("likely_next_family") or "").strip().lower()
@@ -584,6 +620,51 @@ class DecisionEngine:
         except Exception:
             return _DEFAULT_IRREVERSIBLE_ACTION_CONFIDENCE_THRESHOLD
 
+    def action_grounding_confidence_threshold(self) -> float:
+        try:
+            from hermes_cli.config import load_config_readonly
+
+            cfg = load_config_readonly() or {}
+            agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
+            raw = agent_cfg.get("action_grounding_confidence_threshold", 0.7)
+            return max(0.0, min(1.0, float(raw)))
+        except Exception:
+            return 0.7
+
+    @staticmethod
+    def _grounded_action_candidates(candidates: List[Action], *, grounding_threshold: float) -> List[Action]:
+        out: List[Action] = []
+        for cand in candidates:
+            if cand.action_family == "observe":
+                out.append(cand)
+                continue
+            grounding_confidence = float(getattr(cand, "grounding_confidence", 0.0) or 0.0)
+            if getattr(cand, "target_entity_id", None) is not None or grounding_confidence >= grounding_threshold:
+                out.append(cand)
+        return out
+
+    @staticmethod
+    def _best_grounded_non_observe_candidate(candidates: List[Action], *, grounding_threshold: float) -> Optional[Action]:
+        grounded = [
+            cand
+            for cand in candidates
+            if cand.action_family != "observe"
+            and (
+                getattr(cand, "target_entity_id", None) is not None
+                or float(getattr(cand, "grounding_confidence", 0.0) or 0.0) >= grounding_threshold
+            )
+        ]
+        if not grounded:
+            return None
+        return max(
+            grounded,
+            key=lambda cand: (
+                float(getattr(cand, "grounding_confidence", 0.0) or 0.0),
+                float(getattr(cand, "score", 0.0) or 0.0),
+                float(getattr(cand, "frontier_score", 0.0) or 0.0),
+            ),
+        )
+
     def decide(
         self,
         goal: Goal,
@@ -688,13 +769,15 @@ class DecisionEngine:
                 )
                 synth = synthesize_perception(goal, world, view, features, worldview=worldview_score)
                 if synth is not None:
-                    features.extras["perception_summary"] = {
+                    summary_bridge = structured_perception_bridge(features=features, world=world)
+                    summary_bridge.update({
                         "screen_type": synth.screen_type,
                         "active_surface": synth.active_surface,
                         "likely_next_family": synth.likely_next_family,
                         "likely_next_target": synth.likely_next_target,
                         "confidence": round(float(synth.confidence or 0.0), 4),
-                    }
+                    })
+                    features.extras["perception_summary"] = summary_bridge
                     # Generic perception-to-policy bridge: when the screen synthesizer
                     # identifies a dialog, promote that into the feature layer so
                     # candidate generation can surface a dismiss branch even if the
@@ -724,6 +807,24 @@ class DecisionEngine:
                 features.extras["capability_graph"] = cap_graph.to_dict()
         except Exception:
             cap_graph = None
+        active_subgraph = (
+            features.extras.get("active_cognitive_subgraph")
+            or getattr(world, "last_active_subgraph", None)
+            or {}
+        )
+        cap_graph_focus = cap_graph
+        if cap_graph is not None:
+            try:
+                from plugin.worldmodel.capability import project_capability_graph
+
+                cap_graph_focus = project_capability_graph(
+                    cap_graph,
+                    active_entity_ids=list((active_subgraph or {}).get("active_entity_ids") or []),
+                    focus_region_ids=list((active_subgraph or {}).get("focus_region_ids") or []),
+                    goal=goal,
+                )
+            except Exception:
+                cap_graph_focus = cap_graph
         # Sync hint for predicates
         if features.query_matches_goal and features.extras.get("search_query"):
             world.overlay_hints["search_query"] = str(features.extras["search_query"])
@@ -897,6 +998,48 @@ class DecisionEngine:
                 "target": perception_candidate.semantic_target,
                 "confidence": round(float(perception_candidate.evidence_score or 0.0), 4),
             }
+            if (
+                perception_candidate.action_family == "open_contact"
+                and float(perception_candidate.evidence_score or 0.0)
+                >= self._perception_promotion_threshold_for_family("open_contact")
+            ):
+                self.last_trace = DecisionTrace(
+                    features=features.to_dict(),
+                    candidates=[
+                        {
+                            "action": a.action,
+                            "target": a.semantic_target,
+                            "family": a.action_family,
+                            "capability_id": a.capability_id,
+                            "capability_type": a.capability_type,
+                            "score": round(a.score, 4),
+                            "prior": round(a.prior_score, 4),
+                            "value_delta": round(a.value_delta, 4),
+                            "evidence": round(a.evidence_score, 4),
+                            "frontier_label": a.frontier_label,
+                            "frontier_score": round(a.frontier_score, 4),
+                        }
+                        for a in candidates[:12]
+                    ],
+                    goal_status={
+                        "succeeded": False,
+                        "impossible": False,
+                        "reason": "perception_promotion_open_contact",
+                    },
+                    chosen={
+                        "action": perception_candidate.action,
+                        "target": perception_candidate.semantic_target,
+                        "text": perception_candidate.text,
+                        "family": perception_candidate.action_family,
+                        "capability_id": perception_candidate.capability_id,
+                        "capability_type": perception_candidate.capability_type,
+                        "target_entity_id": perception_candidate.target_entity_id,
+                        "score": round(perception_candidate.score, 4),
+                        "rationale": perception_candidate.rationale,
+                        "grounding_reason": perception_candidate.grounding_reason,
+                    },
+                )
+                return perception_candidate
 
         action_prior_runs = []
         try:
@@ -915,7 +1058,7 @@ class DecisionEngine:
                     world,
                     features,
                     candidates,
-                    cap_graph=cap_graph,
+                    cap_graph=cap_graph_focus,
                     caller=self.selector_caller,
                     frontier_summary=frontier_summary(goal, features, candidates),
                     branch=branch.to_dict() if branch is not None and hasattr(branch, "to_dict") else None,
@@ -1062,7 +1205,17 @@ class DecisionEngine:
             frontier_label_summary = frontier_summary(goal, features, selector_candidates)
             features.extras["frontier_hypotheses"] = frontier_label_summary
             high_risk_reasoning = self._needs_high_risk_reasoning(selector_candidates) or self._goal_requires_high_risk_reasoning(goal, selector_candidates)
-            use_selector = self.selector_enabled or self.selector_caller is not None
+            use_selector = self.selector_enabled or self.selector_caller is not None or high_risk_reasoning
+            grounding_threshold = self.action_grounding_confidence_threshold()
+            grounded_selector_candidates = self._grounded_action_candidates(
+                selector_candidates,
+                grounding_threshold=grounding_threshold,
+            )
+            grounded_non_observe_candidates = [
+                cand for cand in grounded_selector_candidates if cand.action_family != "observe"
+            ]
+            if not grounded_non_observe_candidates:
+                use_selector = False
 
             self.last_trace = DecisionTrace(
                 features=features.to_dict(),
@@ -1110,14 +1263,15 @@ class DecisionEngine:
                         goal,
                         world,
                         features,
-                        selector_candidates,
-                        cap_graph=cap_graph,
+                        grounded_selector_candidates,
+                        cap_graph=cap_graph_focus,
                         task=selector_task,
                         caller=self.selector_caller,
                         allow_single_candidate=allow_single_candidate,
                         frontier_summary=frontier_label_summary,
                         action_prior_runs=[run.to_dict() for run in action_prior_runs],
                         irreversible_threshold=self.irreversible_action_confidence_threshold(),
+                        grounding_threshold=grounding_threshold,
                         call_kwargs=self._high_risk_selector_call_kwargs() if high_risk_reasoning else None,
                     )
                 except Exception as exc:
@@ -1136,6 +1290,14 @@ class DecisionEngine:
             self.last_trace.selector_confidence = float((selector_trace or {}).get("confidence") or 0.0)
             grounding_reason = ""
             grounding_confidence = 0.0
+            if not grounded_non_observe_candidates:
+                selector_choice = observe_candidate
+                selector_trace = {
+                    **(selector_trace or {}),
+                    "reason": "grounding_recovery",
+                    "grounded_candidates": 0,
+                    "grounding_threshold": round(float(grounding_threshold or 0.0), 4),
+                }
             self._sync_branch_frontier(
                 branch=branch,
                 execution_state=execution_state,
@@ -1148,40 +1310,60 @@ class DecisionEngine:
                 branch_preferred_family=branch_preferred_family,
             )
 
-            if selector_choice is None:
-                if not use_selector:
-                    selector_choice = max(
-                        (cand for cand in selector_candidates if cand.action_family != "observe"),
-                        default=observe_candidate,
-                        key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
-                    )
-                    selector_trace = selector_trace or {"reason": "selector_disabled"}
-                else:
-                    reason = str((selector_trace or {}).get("reason") or "").strip().lower()
-                    selector_choice = max(
-                        (cand for cand in selector_candidates if cand.action_family != "observe"),
-                        default=observe_candidate,
-                        key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
-                    )
-                    fallback_reason = reason or str((selector_trace or {}).get("error") or "").strip().lower()
-                    selector_trace = {
-                        **(selector_trace or {}),
-                        "reason": "llm_no_choice_fallback",
-                        "fallback_reason": fallback_reason or "unknown",
-                        "fallback_action": getattr(selector_choice, "action", ""),
-                        "fallback_family": getattr(selector_choice, "action_family", ""),
-                    }
-            best = selector_choice
-            if best is not None and best.action_family == "observe":
-                best_non_observe = max(
-                    (cand for cand in selector_candidates if cand.action_family != "observe"),
-                    default=None,
+            if not grounded_non_observe_candidates:
+                selector_choice = observe_candidate
+                selector_trace = {
+                    **(selector_trace or {}),
+                    "reason": "grounding_recovery",
+                    "grounded_candidates": 0,
+                    "grounding_threshold": round(float(grounding_threshold or 0.0), 4),
+                }
+            elif selector_choice is None and not use_selector:
+                selector_choice = max(
+                    grounded_non_observe_candidates,
+                    default=observe_candidate,
                     key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
                 )
-                if best_non_observe is not None:
+                selector_trace = selector_trace or {"reason": "selector_disabled"}
+            elif selector_choice is None and use_selector:
+                reason = str((selector_trace or {}).get("reason") or "").strip().lower()
+                selector_choice = max(
+                    grounded_non_observe_candidates,
+                    default=observe_candidate,
+                    key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
+                )
+                fallback_reason = reason or str((selector_trace or {}).get("error") or "").strip().lower()
+                selector_trace = {
+                    **(selector_trace or {}),
+                    "reason": "llm_no_choice_fallback",
+                    "fallback_reason": fallback_reason or "unknown",
+                    "fallback_action": getattr(selector_choice, "action", ""),
+                    "fallback_family": getattr(selector_choice, "action_family", ""),
+                }
+
+            if selector_choice is None:
+                selector_choice = observe_candidate
+                selector_trace = selector_trace or {"reason": "grounding_recovery"}
+            best = selector_choice
+            if best is not None and best.action_family == "observe":
+                best_non_observe = self._best_grounded_non_observe_candidate(
+                    selector_candidates,
+                    grounding_threshold=grounding_threshold,
+                )
+                if best_non_observe is not None and best_non_observe.action_family in {"open_search", "type_query", "open_contact"}:
                     best = best_non_observe
-            if best is not None and best.action_family != "observe" and cap_graph is not None:
-                cap = cap_graph.capability_for_action(
+                else:
+                    best = observe_candidate or best
+            if best is not None and best.action_family != "observe":
+                if (
+                    getattr(best, "target_entity_id", None) is None
+                    and float(getattr(best, "grounding_confidence", 0.0) or 0.0) < grounding_threshold
+                ):
+                    best = observe_candidate or best
+                    grounding_reason = "grounding_recovery"
+                    grounding_confidence = 0.0
+            if best is not None and best.action_family != "observe" and cap_graph_focus is not None:
+                cap = cap_graph_focus.capability_for_action(
                     action_family=best.action_family,
                     semantic_target=best.semantic_target,
                     text=best.text,
@@ -1213,9 +1395,22 @@ class DecisionEngine:
                         best.capability_type = cap.type
                         best.reversible = bool(cap.reversibility)
                         if grounded is not None:
-                            best.target_entity_id = grounded.entity_id
-                            grounding_reason = grounded.reason
-                            grounding_confidence = grounded.confidence
+                            grounded_entity = (
+                                world.entities.get(int(grounded.entity_id))
+                                if grounded.entity_id is not None
+                                else None
+                            )
+                            if grounded_entity is not None and not self._grounding_matches_candidate(best, grounded_entity):
+                                grounded = None
+                                grounding_reason = "rejected_mismatched_grounding"
+                                grounding_confidence = 0.0
+                            else:
+                                best.target_entity_id = grounded.entity_id
+                                grounding_reason = grounded.reason
+                                grounding_confidence = grounded.confidence
+                        if grounded is None and self._requires_entity_grounding(best):
+                            best = observe_candidate or best
+                            grounding_reason = grounding_reason or "unresolved_grounding"
             if best is None:
                 return None
             if (
@@ -1487,7 +1682,7 @@ class DecisionEngine:
             chosen=None,
         )
         self.last_trace.branch_strategy = branch_strategy_trace
-        perception_summary = features.extras.get("perception_summary") or {}
+        perception_summary = structured_perception_bridge(features=features, world=world)
         if isinstance(perception_summary, dict):
             promoted_family = str(perception_summary.get("likely_next_family") or "").strip().lower()
             try:
@@ -1507,8 +1702,8 @@ class DecisionEngine:
                 if best_open_contact is not None and best_open_contact.score >= best_observe_score:
                     grounding_reason = ""
                     grounding_confidence = 0.0
-                    if cap_graph is not None:
-                        cap = cap_graph.capability_for_action(
+                    if cap_graph_focus is not None:
+                        cap = cap_graph_focus.capability_for_action(
                             action_family=best_open_contact.action_family,
                             semantic_target=best_open_contact.semantic_target,
                             text=best_open_contact.text,
@@ -1518,14 +1713,26 @@ class DecisionEngine:
                                 cap,
                                 entities=list(world.entities.values()),
                                 graph=scene_graph_obj if scene_graph_obj is not None else None,
-                            )
+                                )
                             best_open_contact.capability_id = cap.capability_id
                             best_open_contact.capability_type = cap.type
                             best_open_contact.reversible = bool(cap.reversibility)
                             if grounded is not None:
-                                best_open_contact.target_entity_id = grounded.entity_id
-                                grounding_reason = grounded.reason
-                                grounding_confidence = grounded.confidence
+                                grounded_entity = (
+                                    world.entities.get(int(grounded.entity_id))
+                                    if grounded.entity_id is not None
+                                    else None
+                                )
+                                if grounded_entity is not None and not self._grounding_matches_candidate(
+                                    best_open_contact,
+                                    grounded_entity,
+                                ):
+                                    grounding_reason = "rejected_mismatched_grounding"
+                                    grounding_confidence = 0.0
+                                else:
+                                    best_open_contact.target_entity_id = grounded.entity_id
+                                    grounding_reason = grounded.reason
+                                    grounding_confidence = grounded.confidence
                     best_open_contact.grounding_reason = grounding_reason
                     best_open_contact.grounding_confidence = grounding_confidence
                     self.last_trace.chosen = {
@@ -1553,9 +1760,14 @@ class DecisionEngine:
         features.extras["frontier_hypotheses"] = frontier_label_summary
         high_risk_reasoning = self._needs_high_risk_reasoning(scored) or self._goal_requires_high_risk_reasoning(goal, scored)
         allow_single_candidate = True
-        use_selector = self.selector_enabled or self.selector_caller is not None
+        use_selector = self.selector_enabled or self.selector_caller is not None or high_risk_reasoning
         strict_selector = self._strict_selector_mode()
         selector_unavailable = False
+        grounding_threshold = self.action_grounding_confidence_threshold()
+        grounded_scored_candidates = self._grounded_action_candidates(scored, grounding_threshold=grounding_threshold)
+        grounded_non_observe_scored = [cand for cand in grounded_scored_candidates if cand.action_family != "observe"]
+        if not grounded_non_observe_scored:
+            use_selector = False
         if use_selector:
             try:
                 selector_task = self.high_risk_selector_task if high_risk_reasoning else self.selector_task
@@ -1563,7 +1775,7 @@ class DecisionEngine:
                     goal,
                     world,
                     features,
-                    scored,
+                    grounded_scored_candidates,
                     cap_graph=cap_graph,
                     task=selector_task,
                     caller=self.selector_caller,
@@ -1571,6 +1783,7 @@ class DecisionEngine:
                     frontier_summary=frontier_label_summary,
                     action_prior_runs=[run.to_dict() for run in action_prior_runs] if action_prior_runs else None,
                     irreversible_threshold=self.irreversible_action_confidence_threshold(),
+                    grounding_threshold=grounding_threshold,
                     call_kwargs=self._high_risk_selector_call_kwargs() if high_risk_reasoning else None,
                 )
             except Exception as exc:
@@ -1578,19 +1791,32 @@ class DecisionEngine:
 
                 if isinstance(exc, LLMProviderExhaustedError):
                     selector_unavailable = True
-                    if self.selector_enabled or self.selector_caller is not None or strict_selector:
+                    reason = str(exc).strip().lower()
+                    if "not_ambiguous_enough" not in reason and (
+                        self.selector_enabled or self.selector_caller is not None or strict_selector
+                    ):
                         raise
                     selector_choice = None
-                    selector_trace = {"error": "selector_unavailable"}
+                    selector_trace = {
+                        "error": "selector_unavailable",
+                        "reason": "not_ambiguous_enough" if "not_ambiguous_enough" in reason else reason or "unknown",
+                    }
                 else:
                     selector_choice = None
                     selector_trace = {"error": "selector_failed"}
 
-        self.last_trace.selector = selector_trace
+            self.last_trace.selector = selector_trace
         if selector_choice is not None:
             best = selector_choice
             if selector_choice.action_family == "observe":
-                raise RuntimeError("LLM selector chose observe for a scored frontier")
+                best_non_observe = self._best_grounded_non_observe_candidate(
+                    scored,
+                    grounding_threshold=grounding_threshold,
+                )
+                if best_non_observe is not None and best_non_observe.action_family in {"open_search", "type_query", "open_contact"}:
+                    best = best_non_observe
+                else:
+                    best = observe_candidate or selector_choice
         else:
             if strict_selector and use_selector:
                 from agent.auxiliary_client import LLMProviderExhaustedError
@@ -1599,7 +1825,7 @@ class DecisionEngine:
                 if reason != "not_ambiguous_enough":
                     raise LLMProviderExhaustedError(f"strict selector mode: {reason}")
                 best = max(
-                    (cand for cand in scored if cand.action_family != "observe"),
+                    grounded_non_observe_scored,
                     default=observe_candidate,
                     key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
                 )
@@ -1613,14 +1839,14 @@ class DecisionEngine:
                 }
             if selector_unavailable and not self.selector_enabled and self.selector_caller is None:
                 best = max(
-                    (cand for cand in scored if cand.action_family != "observe"),
+                    grounded_non_observe_scored,
                     default=observe_candidate,
                     key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
                 )
             else:
                 reason = str((selector_trace or {}).get("reason") or "").strip().lower()
                 best = max(
-                    (cand for cand in scored if cand.action_family != "observe"),
+                    grounded_non_observe_scored,
                     default=observe_candidate,
                     key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
                 )
@@ -1640,12 +1866,20 @@ class DecisionEngine:
                 }
         if best is None:
             best = max(
-                (cand for cand in scored if cand.action_family != "observe"),
+                grounded_non_observe_scored,
                 default=observe_candidate,
                 key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
             )
+        if best is not None and best.action_family != "observe":
+            if (
+                getattr(best, "target_entity_id", None) is None
+                and float(getattr(best, "grounding_confidence", 0.0) or 0.0) < grounding_threshold
+            ):
+                best = observe_candidate or best
+                grounding_reason = "grounding_recovery"
+                grounding_confidence = 0.0
         if best is not None and best.action_family == "observe":
-            perception_summary = features.extras.get("perception_summary") or {}
+            perception_summary = structured_perception_bridge(features=features, world=world)
             promoted_family = ""
             promoted_confidence = 0.0
             if isinstance(perception_summary, dict):
@@ -1655,24 +1889,57 @@ class DecisionEngine:
                 except (TypeError, ValueError):
                     promoted_confidence = 0.0
             if promoted_family == "open_contact" and promoted_confidence >= self._perception_promotion_threshold_for_family("open_contact"):
-                best_non_observe = max(
-                    (cand for cand in scored if cand.action_family != "observe"),
+                best_open_contact = max(
+                    (cand for cand in scored if cand.action_family == "open_contact"),
                     default=None,
                     key=lambda cand: cand.score,
                 )
-                if best_non_observe is not None and best_non_observe.action_family == "open_contact" and best_non_observe.score >= best.score:
-                    best = best_non_observe
+                if best_open_contact is not None:
+                    best = best_open_contact
+        if best is not None and best.action_family == "observe":
+            perception_summary = structured_perception_bridge(features=features, world=world)
+            promoted_family = ""
+            promoted_confidence = 0.0
+            if isinstance(perception_summary, dict):
+                promoted_family = str(perception_summary.get("likely_next_family") or "").strip().lower()
+                try:
+                    promoted_confidence = max(0.0, min(1.0, float(perception_summary.get("confidence", 0.0) or 0.0)))
+                except (TypeError, ValueError):
+                    promoted_confidence = 0.0
+            if promoted_family == "open_contact" and promoted_confidence >= self._perception_promotion_threshold_for_family("open_contact"):
+                best_open_contact = max(
+                    (cand for cand in scored if cand.action_family == "open_contact"),
+                    default=None,
+                    key=lambda cand: cand.score,
+                )
+                if best_open_contact is not None and best_open_contact.action_family == "open_contact":
+                    best = best_open_contact
             if best.action_family == "observe":
                 best_non_observe = max(
-                    (cand for cand in scored if cand.action_family != "observe"),
+                    grounded_non_observe_scored,
                     default=None,
                     key=lambda cand: cand.score,
                 )
                 if best_non_observe is not None:
                     best = best_non_observe
+        if best is not None and best.action_family == "observe":
+            perception_summary = structured_perception_bridge(features=features, world=world)
+            promoted_family = str((perception_summary or {}).get("likely_next_family") or "").strip().lower()
+            try:
+                promoted_confidence = max(0.0, min(1.0, float((perception_summary or {}).get("confidence", 0.0) or 0.0)))
+            except (TypeError, ValueError):
+                promoted_confidence = 0.0
+            if promoted_family == "open_contact" and promoted_confidence >= self._perception_promotion_threshold_for_family("open_contact"):
+                best_open_contact = max(
+                    (cand for cand in scored if cand.action_family == "open_contact"),
+                    default=None,
+                    key=lambda cand: cand.score,
+                )
+                if best_open_contact is not None:
+                    best = best_open_contact
         # Reject clearly anti-world actions if anything better-ish exists
-        if cap_graph is not None and best.action_family != "observe":
-            cap = cap_graph.capability_for_action(
+        if cap_graph_focus is not None and best.action_family != "observe":
+            cap = cap_graph_focus.capability_for_action(
                 action_family=best.action_family,
                 semantic_target=best.semantic_target,
                 text=best.text,

@@ -75,7 +75,7 @@ class FusedEntity:
 @dataclass
 class FusionReport:
     sources: List[str] = field(default_factory=list)
-    agreement: float = 1.0
+    agreement: Optional[float] = 1.0
     conflicts: List[PropertyConflict] = field(default_factory=list)
     hypothesis_counts: Dict[str, int] = field(default_factory=dict)
     latencies_ms: Dict[str, float] = field(default_factory=dict)
@@ -87,7 +87,7 @@ class FusionReport:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "sources": self.sources,
-            "agreement": round(self.agreement, 4),
+            "agreement": None if self.agreement is None else round(self.agreement, 4),
             "conflicts": [c.to_dict() for c in self.conflicts[:32]],
             "hypothesis_counts": self.hypothesis_counts,
             "latencies_ms": self.latencies_ms,
@@ -156,7 +156,9 @@ class FusedFrame:
                     raw_id=str((fe.raw_refs or {}).get("raw_id") or fe.key),
                 )
             )
-        degraded = self.report.needs_reobserve or self.report.agreement < 0.4
+        degraded = self.report.needs_reobserve or (
+            self.report.agreement is not None and self.report.agreement < 0.4
+        )
         return Observation(
             timestamp=self.timestamp,
             app_name=self.app_name,
@@ -191,14 +193,29 @@ class FusionEngine:
         self.vision_interp = VisionInterpreter()
         self.referee = FusionReferee()
 
+    @staticmethod
+    def _bundle_is_healthy(bundle: ObservationBundle) -> bool:
+        obs = bundle.observation
+        node_count = len(obs.nodes or [])
+        coverage = float(obs.coverage if obs.coverage is not None else bundle.coverage_self or 0.0)
+        if bool(getattr(bundle, "degraded", False)) or bool(getattr(obs, "degraded", False)):
+            return False
+        if node_count == 0 and coverage <= 0.05:
+            return False
+        if coverage < 0.1 and node_count < 4:
+            return False
+        return True
+
     def fuse_bundles(self, bundles: List[ObservationBundle], *, app: str = "") -> FusedFrame:
         events = [ObservationEvent.from_bundle(b) for b in bundles]
         hyps: List[EntityHypothesis] = []
         hyp_counts: Dict[str, int] = {}
         latencies: Dict[str, float] = {}
         node_counts: Dict[str, int] = {}
+        healthy_bundles = [b for b in bundles if self._bundle_is_healthy(b)]
+        active_bundles = healthy_bundles if healthy_bundles else list(bundles)
 
-        for b in bundles:
+        for b in active_bundles:
             latencies[b.source_id] = b.latency_ms
             node_counts[b.source_id] = len(b.observation.nodes or [])
             sid = (b.source_id or "").lower()
@@ -214,11 +231,13 @@ class FusionEngine:
             app=app or next((b.observation.app_name for b in bundles if b.observation.app_name), ""),
             window=next((b.observation.window_name for b in bundles if b.observation.window_name), ""),
             screenshot=next((b.observation.screenshot_path for b in bundles if b.observation.screenshot_path), None),
-            sources=[b.source_id for b in bundles],
+            sources=[b.source_id for b in active_bundles],
             events=events,
             latencies_ms=latencies,
             node_counts=node_counts,
             hypothesis_counts=hyp_counts,
+            healthy_source_count=len(healthy_bundles),
+            ignored_sources=[b.source_id for b in bundles if b not in active_bundles],
         )
         frame = self._refine_with_llm_referee(
             frame,
@@ -236,7 +255,7 @@ class FusionEngine:
         # the agent adaptive under partial-fusion failures.
         if not frame.entities:
             fallback = self._fallback_source_preserving_frame(
-                bundles,
+                active_bundles,
                 app=app or next((b.observation.app_name for b in bundles if b.observation.app_name), ""),
                 window=next((b.observation.window_name for b in bundles if b.observation.window_name), ""),
                 screenshot=next((b.observation.screenshot_path for b in bundles if b.observation.screenshot_path), None),
@@ -261,6 +280,8 @@ class FusionEngine:
         latencies_ms: Optional[Dict[str, float]] = None,
         node_counts: Optional[Dict[str, int]] = None,
         hypothesis_counts: Optional[Dict[str, int]] = None,
+        healthy_source_count: Optional[int] = None,
+        ignored_sources: Optional[List[str]] = None,
     ) -> FusedFrame:
         frame = self._fuse_hypotheses_core(
             hyps,
@@ -272,6 +293,8 @@ class FusionEngine:
             latencies_ms=latencies_ms,
             node_counts=node_counts,
             hypothesis_counts=hypothesis_counts,
+            healthy_source_count=len(sources or []),
+            ignored_sources=[],
         )
         return self._refine_with_llm_referee(
             frame,
@@ -298,6 +321,8 @@ class FusionEngine:
         latencies_ms: Optional[Dict[str, float]] = None,
         node_counts: Optional[Dict[str, int]] = None,
         hypothesis_counts: Optional[Dict[str, int]] = None,
+        healthy_source_count: Optional[int] = None,
+        ignored_sources: Optional[List[str]] = None,
     ) -> FusedFrame:
         groups: Dict[str, List[EntityHypothesis]] = {}
         for h in hyps:
@@ -377,14 +402,19 @@ class FusionEngine:
         # Sort: higher confidence / actionable first
         fused_entities.sort(key=lambda e: (-e.confidence, e.label.lower()))
 
-        if multi_source_keys:
+        if healthy_source_count is not None and healthy_source_count <= 1:
+            agreement: Optional[float] = None
+        elif multi_source_keys:
             agreement = agreed_keys / multi_source_keys
         elif fused_entities:
             agreement = 0.7  # single source — unknown agreement
         else:
             agreement = 0.0
 
-        needs = agreement < 0.45 or (bool(conflicts) and agreement < 0.6) or not fused_entities
+        if agreement is None:
+            needs = not fused_entities
+        else:
+            needs = agreement < 0.45 or (bool(conflicts) and agreement < 0.6) or not fused_entities
         # Prefer richest semantic source as primary label for report
         primary = ""
         if sources:
@@ -403,6 +433,11 @@ class FusionEngine:
             primary_source=primary,
             needs_reobserve=needs,
             meta={
+                "fusion_mode": "single_source"
+                if healthy_source_count is not None and healthy_source_count <= 1
+                else ("healthy_source" if healthy_source_count and healthy_source_count < len(sources or []) else "multi_source"),
+                "healthy_source_count": int(healthy_source_count if healthy_source_count is not None else len(sources or [])),
+                "ignored_sources": list(ignored_sources or []),
                 "actionable_agreed": agreed_keys,
                 "actionable_total": max(1, multi_source_keys),
                 "entity_count": len(fused_entities),
@@ -478,13 +513,20 @@ class FusionEngine:
         bundles: Optional[List[ObservationBundle]],
         node_counts: Optional[Dict[str, int]],
     ) -> bool:
+        healthy_source_count = frame.report.meta.get("healthy_source_count") if isinstance(frame.report.meta, dict) else None
+        try:
+            healthy_source_count_int = int(healthy_source_count) if healthy_source_count is not None else None
+        except Exception:
+            healthy_source_count_int = None
+        if healthy_source_count_int is not None and healthy_source_count_int <= 1:
+            return False
         if not bundles and not frame.entities:
             return False
         if frame.report.needs_reobserve:
             return True
         if not frame.entities:
             return True
-        if frame.report.conflicts and frame.report.agreement < 0.6:
+        if frame.report.conflicts and frame.report.agreement is not None and frame.report.agreement < 0.6:
             return True
         if bundles:
             richest = max((len(b.observation.nodes or []) for b in bundles), default=0)

@@ -58,6 +58,7 @@ class InteractionContext:
     target_confidence: float = 0.0
     originating_world: str = ""
     active_surface: str = ""  # conversation | call_picker | search | unknown
+    surface_state: Dict[str, str] = field(default_factory=dict)
     selected_object_label: str = ""
     latent_affordances: List[str] = field(default_factory=list)
     selected_object: ContextualBelief = field(default_factory=ContextualBelief)
@@ -70,6 +71,7 @@ class InteractionContext:
             "target_confidence": self.target_confidence,
             "originating_world": self.originating_world,
             "active_surface": self.active_surface,
+            "surface_state": dict(self.surface_state),
             "selected_object_label": self.selected_object_label,
             "latent_affordances": list(self.latent_affordances),
             "selected_object": self.selected_object.to_dict(),
@@ -187,6 +189,8 @@ class ExplorationBranch:
     newly_relevant_affordances: List[str] = field(default_factory=list)
     frontier: List[FrontierAction] = field(default_factory=list)
     frontier_state_signature: str = ""
+    frontier_invalidations: int = 0
+    stale_frontier_reason: str = ""
     policy: BranchPolicy = field(default_factory=BranchPolicy)
     strategy: BranchStrategy = field(default_factory=BranchStrategy)
 
@@ -210,6 +214,8 @@ class ExplorationBranch:
             "newly_relevant_affordances": list(self.newly_relevant_affordances),
             "frontier": [entry.to_dict() for entry in self.frontier],
             "frontier_state_signature": self.frontier_state_signature,
+            "frontier_invalidations": self.frontier_invalidations,
+            "stale_frontier_reason": self.stale_frontier_reason,
             "policy": self.policy.to_dict(),
             "strategy": self.strategy.to_dict(),
         }
@@ -252,6 +258,15 @@ class ExplorationBranch:
         else:
             self.frontier_hypothesis = ""
             self.frontier_plausibility = 0.0
+
+    def invalidate_frontier(self, *, reason: str = "") -> None:
+        self.frontier_invalidations += 1
+        self.stale_frontier_reason = reason
+        self.frontier = []
+        self.frontier_state_signature = ""
+        self.frontier_hypothesis = ""
+        self.frontier_plausibility = 0.0
+        self.active = False
 
     def best_frontier(self, *, only_untried: bool = False) -> Optional[FrontierAction]:
         if not self.frontier:
@@ -406,6 +421,7 @@ class TransitionSummary:
     change_score: float = 0.0
     prediction: Dict[str, Any] = field(default_factory=dict)
     prediction_error: Dict[str, Any] = field(default_factory=dict)
+    diagnosis: Dict[str, Any] = field(default_factory=dict)
     goal_progress: str = ""
     meaningful_change: bool = False
     state_understood: bool = True
@@ -415,6 +431,7 @@ class TransitionSummary:
     contradiction_evidence: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     risk: float = 0.0
+    confidence_delta: float = 0.0
     effect_kind: str = ""
     failure_domain: str = ""
     action_family: str = ""

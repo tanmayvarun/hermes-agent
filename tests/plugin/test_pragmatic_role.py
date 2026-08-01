@@ -283,6 +283,26 @@ def test_decision_engine_falls_back_when_llm_selector_returns_no_choice(monkeypa
     assert decision is not None
 
 
+def test_decision_engine_strict_selector_falls_back_on_not_ambiguous_enough(monkeypatch):
+    from plugin.agent.decision import DecisionEngine
+
+    monkeypatch.setenv("HERMES_SELECTOR_STRICT", "1")
+    monkeypatch.setattr(
+        "plugin.agent.decision.select_action_with_llm",
+        lambda *args, **kwargs: (None, {"reason": "not_ambiguous_enough"}),
+    )
+    monkeypatch.setattr("plugin.agent.decision.synthesize_perception", lambda *args, **kwargs: None)
+    wm = _seed(
+        [
+            _entity(1, label="Chats", bounds=(40, 40, 60, 30)),
+            _entity(2, label="Search", etype="button", bounds=(200, 40, 60, 28)),
+        ]
+    )
+    goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
+    decision = DecisionEngine(selector_enabled=True).decide(goal, wm, ExecutionState())
+    assert decision is not None
+
+
 def test_generic_screen_kind_detects_blocking_overlay_without_app_vocab():
     ents = [
         _entity(1, label="Storage is too full", etype="static", bounds=(120, 120, 420, 48), actions=[]),

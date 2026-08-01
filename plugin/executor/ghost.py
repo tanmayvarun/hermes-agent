@@ -123,6 +123,7 @@ class GhostExecutor:
         return int(x + w / 2.0), int(y + h / 2.0)
 
     def _run(self, cmd: List[str], *, action: str) -> ExecResult:
+        action = action.lower().strip()
         if self.dry_run:
             return ExecResult(ok=True, backend="dry_run", message=f"dry-run {' '.join(cmd)}", command=" ".join(cmd))
 
@@ -140,7 +141,7 @@ class GhostExecutor:
 
         # AX UIElement Press / set value (Accessibility permission)
         try:
-            from plugin.executor.ax_action import ax_available, ax_click, ax_type
+            from plugin.executor.ax_action import ax_available, ax_click, ax_context_click, ax_hover, ax_type
 
             if ax_available():
                 app = self.app or "WhatsApp"
@@ -188,6 +189,7 @@ class PyAutoGUIFallback:
     """Never primary — coordinate/keyboard only when Accessibility path fails."""
 
     def dispatch(self, action: str, ghost_cmd: List[str], *, anchor: Optional[tuple[int, int]] = None) -> ExecResult:
+        action = action.lower().strip()
         if not pyautogui_available():
             return ExecResult(
                 ok=False,

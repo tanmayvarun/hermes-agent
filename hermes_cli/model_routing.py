@@ -48,6 +48,7 @@ class TaskModelProfile:
     prefer_structured_output: bool = True
     prefer_vision: bool = False
     prefer_local: bool = False
+    preferred_models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,11 @@ _TASK_ALIASES: dict[str, str] = {
     "chat_runtime": "chat_runtime",
     "perception": "perception",
     "screen_perception": "perception",
+    "vision": "screen_understanding",
+    "screen_understanding": "screen_understanding",
+    "screen_understand": "screen_understanding",
+    "screen_parse": "screen_understanding",
+    "surface_analysis": "screen_understanding",
     "computer": "computer_use",
     "computer_use": "computer_use",
     "gui": "computer_use",
@@ -110,6 +116,17 @@ TASK_PROFILES: dict[str, TaskModelProfile] = {
         prefer_reasoning=True,
         prefer_structured_output=True,
         prefer_local=True,
+    ),
+    "screen_understanding": TaskModelProfile(
+        name="screen_understanding",
+        min_params_b=100.0,
+        prefer_size="larger",
+        require_tool_call=True,
+        prefer_reasoning=True,
+        prefer_structured_output=True,
+        prefer_vision=True,
+        prefer_local=False,
+        preferred_models=("qwen3.5:cloud", "kimi-k3:cloud", "gemma4:cloud"),
     ),
 }
 
@@ -241,6 +258,23 @@ def _candidate_notes(
     return tuple(notes)
 
 
+def _preferred_model_rank(task_profile: TaskModelProfile, provider: str, model: str) -> int | None:
+    """Return the 0-based rank for a profile's preferred model list."""
+    if not task_profile.preferred_models:
+        return None
+    provider_norm = str(provider or "").strip().lower()
+    model_norm = str(model or "").strip().lower()
+    for idx, preferred in enumerate(task_profile.preferred_models):
+        pref_norm = str(preferred or "").strip().lower()
+        if not pref_norm:
+            continue
+        if pref_norm == model_norm:
+            return idx
+        if provider_norm and pref_norm == f"{provider_norm}/{model_norm}":
+            return idx
+    return None
+
+
 def _score_candidate(
     *,
     task_profile: TaskModelProfile,
@@ -254,8 +288,12 @@ def _score_candidate(
     context_window: int,
     local_provider: bool,
     current_provider: bool,
+    preferred_rank: int | None,
 ) -> float:
     score = 0.0
+
+    if preferred_rank is not None:
+        score += max(0.0, 6.0 - (preferred_rank * 1.25))
 
     if tool_call:
         score += 2.0
@@ -357,6 +395,8 @@ def rank_task_models(
                 model_info = get_model_info(provider, model)
             except Exception:
                 model_info = None
+            preferred_rank = _preferred_model_rank(profile, provider, model)
+            is_preferred = preferred_rank is not None
 
             # Chat-runtime routing must stay high-confidence: if we cannot
             # establish that a model is large enough, do not let it into the
@@ -373,11 +413,23 @@ def rank_task_models(
 
             if profile.require_tool_call and not tool_call:
                 continue
-            if profile.prefer_size == "larger" and params_b is not None and profile.min_params_b is not None and params_b < profile.min_params_b:
+            if (
+                profile.prefer_size == "larger"
+                and params_b is not None
+                and profile.min_params_b is not None
+                and params_b < profile.min_params_b
+                and not is_preferred
+            ):
                 continue
-            if profile.prefer_size == "smaller" and params_b is not None and profile.max_params_b is not None and params_b > profile.max_params_b:
+            if (
+                profile.prefer_size == "smaller"
+                and params_b is not None
+                and profile.max_params_b is not None
+                and params_b > profile.max_params_b
+                and not is_preferred
+            ):
                 continue
-            if profile.prefer_vision and model_info is not None and not vision:
+            if profile.prefer_vision and model_info is not None and not vision and not is_preferred:
                 continue
 
             score = _score_candidate(
@@ -392,6 +444,7 @@ def rank_task_models(
                 context_window=context_window,
                 local_provider=local_provider,
                 current_provider=is_current_provider,
+                preferred_rank=preferred_rank,
             )
             if (
                 profile.name == "chat_runtime"

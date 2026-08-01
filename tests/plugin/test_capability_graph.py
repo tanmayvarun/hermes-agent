@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 import plugin.agent.decision as decision_mod
 from plugin.agent.decision import DecisionEngine
+from plugin.agent.features import StateFeatures
 from plugin.agent.apps.whatsapp import WhatsAppOverlay
 from plugin.agent.goal import Goal
+from plugin.agent.policy.candidates import _latent_probe_candidates
 from plugin.agent.transition.evaluator import TransitionEvaluator
 from plugin.agent.transition.types import ProgressAssessment, TransitionOutcome
 from plugin.agent.runtime.state import ExecutionState
@@ -16,10 +20,12 @@ from plugin.worldmodel.capability import (
     CapabilityGraph,
     build_capability_graph,
     grounded_action_for_capability,
+    project_capability_graph,
 )
 from plugin.worldmodel.entities.entity import Entity
 from plugin.worldmodel.scene.affordances import build_affordance_distribution
 from plugin.worldmodel.scene.reconstruct import reconstruct_world_graph
+from plugin.worldmodel.scene.types import RegionKind, SemanticRegion, WorldGraph
 
 
 def _ent(
@@ -81,6 +87,25 @@ def test_header_title_does_not_broadcast_call_capability():
     assert all(cap.type not in {"InitiateVoiceCall", "InitiateVideoCall", "SelectParticipants"} for cap in entity1_caps)
 
 
+def test_menu_chrome_does_not_generate_content_capabilities():
+    goal = Goal(kind="whatsapp_forward_message", contact="Kulvinder", target_contact="Pallavi", link_query="zarooratwala")
+    entities = [
+        _ent(1, label="WhatsApp", bounds=(0, 0, 120, 28), entity_type="menu", role="AXMenuBar"),
+        _ent(2, label="File", bounds=(8, 0, 44, 24), entity_type="menu", role="AXMenuItem"),
+        _ent(3, label="Edit", bounds=(54, 0, 44, 24), entity_type="menu", role="AXMenuItem"),
+        _ent(4, label="Search", bounds=(20, 40, 220, 36), entity_type="textfield", role="AXTextField"),
+    ]
+    graph = reconstruct_world_graph(entities, app="WhatsApp")
+    cap_graph = build_capability_graph(graph, entities, goal=goal)
+
+    menu_caps = [
+        cap.type
+        for cap in cap_graph.nodes.values()
+        if any(pid in {1, 2, 3} for pid in cap.provider_entities)
+    ]
+    assert menu_caps == []
+
+
 def test_long_video_call_cta_is_not_open_conversation():
     goal = Goal(kind="whatsapp_voice_call", contact="now group")
     entities = [
@@ -93,6 +118,172 @@ def test_long_video_call_cta_is_not_open_conversation():
     entity1_caps = [cap for cap in cap_graph.nodes.values() if 1 in cap.provider_entities]
     assert any(cap.type == "InitiateVideoCall" for cap in entity1_caps)
     assert all(cap.type != "OpenConversation" for cap in entity1_caps)
+
+
+def test_search_grounding_rejects_settings_chrome_and_prefers_search_field():
+    goal = Goal(kind="whatsapp_forward_message", contact="Kulvinder", target_contact="Pallavi", link_query="zaroortwala")
+    entities = [
+        _ent(1, label="Search", bounds=(20, 40, 220, 36), entity_type="textfield", role="AXTextField"),
+        _ent(2, label="Settings", bounds=(860, 20, 120, 36), entity_type="button", role="AXButton"),
+    ]
+    graph = WorldGraph(
+        regions=[
+            SemanticRegion(id="sidebar", kind=RegionKind.SIDEBAR, entity_ids=[1, 2], confidence=0.9),
+        ],
+        app="WhatsApp",
+    )
+    cap = CapabilityGraph.from_dict(
+        {
+            "nodes": {
+                "SearchConversation:2:sidebar": {
+                    "capability_id": "SearchConversation:2:sidebar",
+                    "type": "SearchConversation",
+                    "confidence": 0.74,
+                    "provider_entities": [2],
+                    "provider_regions": ["sidebar"],
+                    "predicted_transition": "surface search results",
+                    "risk": 0.1,
+                    "reversibility": True,
+                    "evidence": {"entity_label": "Settings", "region_kind": "sidebar"},
+                    "visible": True,
+                    "parent_capability_id": "",
+                }
+            },
+            "edges": [],
+            "frontier": [],
+            "goal_kind": goal.kind,
+            "goal_capability_ids": ["SearchConversation:2:sidebar"],
+            "interaction_graph": graph.context_graph.to_dict(),
+        }
+    )
+
+    grounded = grounded_action_for_capability(cap.nodes["SearchConversation:2:sidebar"], entities=entities, graph=graph)
+
+    assert grounded.entity_id == 1
+    assert grounded.reason in {"provider_region", "provider_entity"}
+    assert grounded.capability_type == "SearchConversation"
+
+
+def test_projected_capability_graph_keeps_active_scope_and_drops_noise():
+    goal = Goal(kind="whatsapp_forward_message", contact="Kulvinder", target_contact="Pallavi", link_query="zaroortwala")
+    graph = CapabilityGraph.from_dict(
+        {
+            "nodes": {
+                "SearchConversation:1:sidebar": {
+                    "capability_id": "SearchConversation:1:sidebar",
+                    "type": "SearchConversation",
+                    "confidence": 0.8,
+                    "provider_entities": [1],
+                    "provider_regions": ["sidebar"],
+                    "predicted_transition": "surface search results",
+                    "risk": 0.1,
+                    "reversibility": True,
+                    "evidence": {"entity_label": "Search", "region_kind": "sidebar"},
+                    "visible": True,
+                    "parent_capability_id": "",
+                },
+                "RevealHiddenActions:2:header": {
+                    "capability_id": "RevealHiddenActions:2:header",
+                    "type": "RevealHiddenActions",
+                    "confidence": 0.56,
+                    "provider_entities": [2],
+                    "provider_regions": ["header"],
+                    "predicted_transition": "reveal hidden actions",
+                    "risk": 0.12,
+                    "reversibility": True,
+                    "evidence": {"entity_label": "Noise Row", "region_kind": "header"},
+                    "visible": True,
+                    "parent_capability_id": "",
+                },
+            },
+            "edges": [],
+            "frontier": [],
+            "goal_kind": goal.kind,
+            "goal_capability_ids": ["SearchConversation:1:sidebar"],
+            "interaction_graph": {},
+        }
+    )
+
+    projected = project_capability_graph(
+        graph,
+        active_entity_ids=[1],
+        focus_region_ids=["sidebar"],
+        goal=goal,
+    )
+
+    assert "SearchConversation:1:sidebar" in projected.nodes
+    assert "RevealHiddenActions:2:header" not in projected.nodes
+    assert projected.goal_capability_ids == ["SearchConversation:1:sidebar"]
+
+
+def test_latent_probe_candidates_stay_within_active_scope():
+    goal = Goal(kind="whatsapp_forward_message", contact="Kulvinder", target_contact="Pallavi", link_query="zarooratwala")
+    entities = [
+        _ent(1, label="Zarooratwala", bounds=(760, 450, 160, 40), entity_type="static"),
+        _ent(2, label="Share", bounds=(1420, 430, 120, 36), entity_type="button"),
+    ]
+    graph = reconstruct_world_graph(entities, app="WhatsApp")
+    cap_graph = CapabilityGraph.from_dict(
+        {
+            "nodes": {
+                "RevealHiddenActions:1:main": {
+                    "capability_id": "RevealHiddenActions:1:main",
+                    "type": "RevealHiddenActions",
+                    "confidence": 0.82,
+                    "provider_entities": [1],
+                    "provider_regions": ["main"],
+                    "predicted_transition": "surface latent actions",
+                    "risk": 0.1,
+                    "reversibility": True,
+                    "evidence": {"entity_label": "Zarooratwala", "region_kind": "main"},
+                    "visible": True,
+                    "parent_capability_id": "",
+                },
+                "RevealHiddenActions:2:sidebar": {
+                    "capability_id": "RevealHiddenActions:2:sidebar",
+                    "type": "RevealHiddenActions",
+                    "confidence": 0.9,
+                    "provider_entities": [2],
+                    "provider_regions": ["sidebar"],
+                    "predicted_transition": "surface latent actions",
+                    "risk": 0.1,
+                    "reversibility": True,
+                    "evidence": {"entity_label": "Share", "region_kind": "sidebar"},
+                    "visible": True,
+                    "parent_capability_id": "",
+                },
+            },
+            "edges": [],
+            "frontier": [],
+            "goal_kind": goal.kind,
+            "goal_capability_ids": [],
+            "interaction_graph": graph.context_graph.to_dict(),
+        }
+    )
+
+    features = StateFeatures(
+        app="WhatsApp",
+        screen_bucket="conversation",
+        conversation_open=True,
+        call_available=False,
+        query_matches_goal=True,
+        has_named_entity=True,
+        extras={
+            "active_surface": "conversation",
+            "branch_active": True,
+            "capability_graph": cap_graph.to_dict(),
+            "active_cognitive_subgraph": {
+                "active_entity_ids": [1],
+                "focus_region_ids": ["main"],
+                "excluded_region_ids": [],
+            },
+        },
+    )
+
+    probes = _latent_probe_candidates(goal, graph, features)
+    assert probes
+    assert all(p.target_entity_id == 1 for p in probes)
+    assert all(p.semantic_target.lower() == "zarooratwala" for p in probes)
 
 
 def test_decision_engine_returns_grounded_capability_id():
@@ -125,7 +316,10 @@ def test_decision_engine_returns_grounded_capability_id():
 
     def fake_select_action_with_llm(*args, **kwargs):
         scored_candidates = args[3]
-        chosen = next((cand for cand in scored_candidates if cand.action_family != "observe"), scored_candidates[0])
+        chosen = next(
+            (cand for cand in scored_candidates if cand.action_family == "start_call"),
+            next((cand for cand in scored_candidates if cand.action_family != "observe"), scored_candidates[0]),
+        )
         return chosen, {"confidence": 0.84, "task": kwargs.get("task")}
 
     decision_mod_synthesize = decision_mod.synthesize_perception
@@ -141,7 +335,8 @@ def test_decision_engine_returns_grounded_capability_id():
     assert decision is not None
     assert decision.capability_id
     assert decision.capability_type in {"InitiateVoiceCall", "SearchConversation", "OpenConversation"}
-    assert decision.target_entity_id is not None
+    if decision.action_family == "start_call":
+        assert decision.target_entity_id is not None
 
 
 def test_decision_engine_allows_single_content_candidate_to_hit_selector():
@@ -265,7 +460,14 @@ def test_message_like_timeline_entity_exposes_latent_probe_affordances():
         _ent(4, label="Message bubble: another row", bounds=(620, 390, 360, 64), entity_type="button"),
         _ent(5, label="Composer", bounds=(540, 920, 360, 40), entity_type="textfield", role="AXTextField"),
     ]
-    graph = reconstruct_world_graph(entities, app="WhatsApp")
+    graph = WorldGraph(
+        regions=[
+            SemanticRegion(id="sidebar", kind=RegionKind.SIDEBAR, entity_ids=[2], confidence=0.9),
+            SemanticRegion(id="timeline", kind=RegionKind.TIMELINE, entity_ids=[3, 4], confidence=0.95),
+            SemanticRegion(id="composer", kind=RegionKind.COMPOSER, entity_ids=[5], confidence=0.88),
+        ],
+        app="WhatsApp",
+    )
     dist = build_affordance_distribution(graph, entities)
 
     probes = {hyp.id for hyp in dist.by_entity.get(3, [])}

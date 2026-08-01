@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from plugin.worldmodel.scene.types import (
     ActionRisk,
+    ActiveCognitiveSubgraph,
     AffordanceDistribution,
     AffordanceHypothesis,
     AttentionSubgraph,
@@ -36,9 +37,11 @@ from plugin.worldmodel.scene.affordances import (
     enrich_world_graph,
     preferred_regions_for_goal,
 )
+from plugin.worldmodel.scene.focus import attach_active_cognitive_subgraph, build_active_cognitive_subgraph
 
 __all__ = [
     "ActionRisk",
+    "ActiveCognitiveSubgraph",
     "AffordanceDistribution",
     "AffordanceHypothesis",
     "AttentionSubgraph",
@@ -53,6 +56,8 @@ __all__ = [
     "SemanticRegion",
     "SideEffectClass",
     "WorldGraph",
+    "attach_active_cognitive_subgraph",
+    "build_active_cognitive_subgraph",
     "reconstruct_world_graph",
     "region_id_for_entity",
     "region_ids_for_entity",

@@ -298,6 +298,78 @@ class AttentionSubgraph:
 
 
 @dataclass
+class SurfaceState:
+    """Compositional split-pane surface model for controller-facing state."""
+
+    base_surface: str = ""
+    sidebar_surface: str = ""
+    main_surface: str = ""
+    overlay_surface: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "base_surface": self.base_surface,
+            "sidebar_surface": self.sidebar_surface,
+            "main_surface": self.main_surface,
+            "overlay_surface": self.overlay_surface,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "SurfaceState":
+        return cls(
+            base_surface=str(d.get("base_surface") or ""),
+            sidebar_surface=str(d.get("sidebar_surface") or ""),
+            main_surface=str(d.get("main_surface") or ""),
+            overlay_surface=str(d.get("overlay_surface") or ""),
+        )
+
+
+@dataclass
+class ActiveCognitiveSubgraph:
+    """Goal-conditioned focus slice over the full scene graph."""
+
+    world_id: str = ""
+    phase: str = ""
+    focus_region_ids: List[str] = field(default_factory=list)
+    active_entity_ids: List[int] = field(default_factory=list)
+    relevant_relation_ids: List[str] = field(default_factory=list)
+    grounded_capability_ids: List[str] = field(default_factory=list)
+    excluded_region_ids: List[str] = field(default_factory=list)
+    exclusion_reasons: Dict[str, str] = field(default_factory=dict)
+    confidence: float = 0.0
+    unresolved_questions: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "world_id": self.world_id,
+            "phase": self.phase,
+            "focus_region_ids": list(self.focus_region_ids),
+            "active_entity_ids": [int(x) for x in self.active_entity_ids],
+            "relevant_relation_ids": list(self.relevant_relation_ids),
+            "grounded_capability_ids": list(self.grounded_capability_ids),
+            "excluded_region_ids": list(self.excluded_region_ids),
+            "exclusion_reasons": dict(self.exclusion_reasons),
+            "confidence": float(self.confidence),
+            "unresolved_questions": list(self.unresolved_questions),
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ActiveCognitiveSubgraph":
+        return cls(
+            world_id=str(d.get("world_id") or ""),
+            phase=str(d.get("phase") or ""),
+            focus_region_ids=[str(x) for x in (d.get("focus_region_ids") or [])],
+            active_entity_ids=[int(x) for x in (d.get("active_entity_ids") or [])],
+            relevant_relation_ids=[str(x) for x in (d.get("relevant_relation_ids") or [])],
+            grounded_capability_ids=[str(x) for x in (d.get("grounded_capability_ids") or [])],
+            excluded_region_ids=[str(x) for x in (d.get("excluded_region_ids") or [])],
+            exclusion_reasons={str(k): str(v) for k, v in (d.get("exclusion_reasons") or {}).items()},
+            confidence=float(d.get("confidence") if d.get("confidence") is not None else 0.0),
+            unresolved_questions=[str(x) for x in (d.get("unresolved_questions") or [])],
+        )
+
+
+@dataclass
 class SceneUnderstandingReport:
     """Worldview-style components for layout / affordance uncertainty."""
 
@@ -364,6 +436,8 @@ class WorldGraph:
     affordances: AffordanceDistribution = field(default_factory=AffordanceDistribution)
     risks: List[ActionRisk] = field(default_factory=list)
     attention: Optional[AttentionSubgraph] = None
+    active_subgraph: Optional[ActiveCognitiveSubgraph] = None
+    surface_state: Optional[SurfaceState] = None
     report: SceneUnderstandingReport = field(default_factory=SceneUnderstandingReport)
     source_patch_id: Optional[str] = None
     app: str = ""
@@ -376,6 +450,8 @@ class WorldGraph:
             "affordances": self.affordances.to_dict(),
             "risks": [r.to_dict() for r in self.risks],
             "attention": None if self.attention is None else self.attention.to_dict(),
+            "active_subgraph": None if self.active_subgraph is None else self.active_subgraph.to_dict(),
+            "surface_state": None if self.surface_state is None else self.surface_state.to_dict(),
             "report": self.report.to_dict(),
             "source_patch_id": self.source_patch_id,
             "app": self.app,
@@ -384,6 +460,8 @@ class WorldGraph:
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "WorldGraph":
         attn_raw = d.get("attention")
+        active_raw = d.get("active_subgraph")
+        surface_raw = d.get("surface_state")
         return cls(
             regions=[SemanticRegion.from_dict(x) for x in (d.get("regions") or [])],
             context_graph=ContextGraph.from_dict(d.get("context_graph") or {}),
@@ -391,6 +469,8 @@ class WorldGraph:
             affordances=AffordanceDistribution.from_dict(d.get("affordances") or {}),
             risks=[ActionRisk.from_dict(x) for x in (d.get("risks") or [])],
             attention=None if attn_raw is None else AttentionSubgraph.from_dict(attn_raw),
+            active_subgraph=None if active_raw is None else ActiveCognitiveSubgraph.from_dict(active_raw),
+            surface_state=None if surface_raw is None else SurfaceState.from_dict(surface_raw),
             report=SceneUnderstandingReport.from_dict(d.get("report") or {}),
             source_patch_id=d.get("source_patch_id"),
             app=str(d.get("app") or ""),

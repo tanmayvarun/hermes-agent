@@ -189,3 +189,65 @@ def test_resolve_content_rows_keeps_adapter_boundary_thin(monkeypatch):
     assert result.evidence
     assert result.next_information_actions == []
 
+
+def test_resolve_content_objects_includes_active_subgraph_in_prompt(monkeypatch):
+    from agent import auxiliary_client
+
+    seen = {}
+
+    def fake_call_llm(**kwargs):
+        seen["messages"] = kwargs.get("messages")
+        return _response(
+            {
+                "summary": "Selected the relevant object.",
+                "confidence": 0.92,
+                "selected_object_id": "10",
+                "ranked_objects": [{"object_id": "10", "score": 0.99, "reason": "matches the goal"}],
+                "selected_source_entity_ids": [10],
+                "selected_object_text": "Shared link",
+                "supporting_evidence": ["adapter exposed the visible row"],
+                "contradictions": [],
+                "next_information_actions": [],
+                "needs_followup_observe": False,
+            }
+        )
+
+    monkeypatch.setattr(auxiliary_client, "call_llm", fake_call_llm)
+
+    rows = [
+        {
+            "entity_id": 10,
+            "text": "Shared link",
+            "label": "Shared link",
+            "description": "ZarooratWala – Fresh Groceries Delivered",
+            "role": "AXStaticText",
+            "entity_type": "static",
+            "visible": True,
+        }
+    ]
+
+    result = resolve_content_rows(
+        _goal(),
+        rows,
+        source_app="WhatsApp",
+        container_id="Kulvinder Ji",
+        container_type="conversation",
+        context=DiscoveryContext(
+            source_app="WhatsApp",
+            container_id="Kulvinder Ji",
+            container_type="conversation",
+            active_subgraph={
+                "phase": "conversation",
+                "focus_region_ids": ["timeline"],
+                "active_entity_ids": [10],
+                "grounded_capability_ids": ["select_content"],
+            },
+        ),
+        world=None,
+        force_llm=True,
+    )
+
+    assert result.selected_object_id == "10"
+    payload = json.loads(seen["messages"][1]["content"])
+    assert payload["context"]["active_subgraph"]["active_entity_ids"] == [10]
+    assert payload["context"]["active_subgraph"]["focus_region_ids"] == ["timeline"]

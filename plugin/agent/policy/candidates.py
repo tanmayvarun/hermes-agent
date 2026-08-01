@@ -14,6 +14,7 @@ from plugin.agent.action import Action
 from plugin.agent.apps.base import AppOverlay
 from plugin.agent.features import StateFeatures
 from plugin.agent.goal import Goal
+from plugin.perception.representation import structured_perception_bridge
 from plugin.agent.apps.whatsapp_targets import exact_label_visible
 from plugin.agent.apps.whatsapp_targets import in_composer_band
 from plugin.worldmodel.entities.normalize import _clean_label
@@ -46,6 +47,16 @@ _VOICE_NEGATIVE_LABELS = {
     "hang up",
 }
 
+_CONTENT_REGION_HINTS = {
+    "content",
+    "timeline",
+    "conversation",
+    "chat",
+    "detail",
+    "main",
+    "search_results",
+}
+
 
 def _screen_kind(features: StateFeatures) -> str:
     kind = str(getattr(features, "screen_kind", "") or "").strip().lower()
@@ -72,6 +83,25 @@ def _preferred_scroll_amount(goal: Goal, features: StateFeatures) -> int:
     return 3
 
 
+def _is_content_like_region(provider_regions: List[str]) -> bool:
+    regions = {str(r or "").strip().lower() for r in provider_regions if str(r or "").strip()}
+    if not regions:
+        return False
+    return any(any(hint in region for hint in _CONTENT_REGION_HINTS) for region in regions)
+
+
+def _probe_target_is_content_like(entity, provider_regions: List[str]) -> bool:
+    if not _is_content_like_region(provider_regions):
+        return False
+    etype = str(getattr(entity, "entity_type", "") or "").strip().lower()
+    label = _clean_label(str(getattr(entity, "label", "") or getattr(entity, "semantic_role", "") or "")).lower()
+    if etype == "button" and not any(
+        tok in label for tok in ("message", "link", "photo", "video", "reply", "forward", "share")
+    ):
+        return False
+    return True
+
+
 def _visible_search_result_rows(features: StateFeatures) -> List[str]:
     rows = features.extras.get("search_result_rows") or []
     out: List[str] = []
@@ -86,6 +116,69 @@ def _visible_search_result_rows(features: StateFeatures) -> List[str]:
     return out
 
 
+def _active_subgraph_scope(world: WorldModel, features: StateFeatures) -> tuple[set[int], set[str]]:
+    active = (
+        features.extras.get("active_cognitive_subgraph")
+        or getattr(world, "last_active_subgraph", None)
+        or {}
+    )
+    entity_ids: set[int] = set()
+    region_ids: set[str] = set()
+    if isinstance(active, dict):
+        for raw in active.get("active_entity_ids") or []:
+            try:
+                entity_ids.add(int(raw))
+            except (TypeError, ValueError):
+                continue
+        for raw in active.get("focus_region_ids") or []:
+            rid = str(raw).strip()
+            if rid:
+                region_ids.add(rid)
+    return entity_ids, region_ids
+
+
+def _row_matches_active_scope(row: str, active_entity_ids: set[int], world: WorldModel) -> bool:
+    if not active_entity_ids:
+        return True
+    row_l = _clean_label(row).lower()
+    if not row_l:
+        return False
+    for eid in active_entity_ids:
+        ent = world.entities.get(int(eid))
+        if ent is None or not ent.visible:
+            continue
+        blob = _clean_label(
+            " ".join(
+                [
+                    getattr(ent, "label", "") or "",
+                    getattr(ent, "semantic_role", "") or "",
+                    str((getattr(ent, "attributes", {}) or {}).get("description") or ""),
+                ]
+            )
+        ).lower()
+        if not blob:
+            continue
+        if row_l in blob or blob in row_l:
+            return True
+    return False
+
+
+def _probe_in_active_scope(
+    *,
+    entity_id: int,
+    provider_regions: List[str],
+    active_entity_ids: set[int],
+    active_region_ids: set[str],
+) -> bool:
+    if active_entity_ids and entity_id in active_entity_ids:
+        return True
+    if active_region_ids and provider_regions:
+        provider_region_set = {str(rid).strip() for rid in provider_regions if str(rid).strip()}
+        if provider_region_set.intersection(active_region_ids):
+            return True
+    return not active_entity_ids and not active_region_ids
+
+
 def _latent_probe_candidates(goal: Goal, world: WorldModel, features: StateFeatures) -> List[Action]:
     cap_raw = features.extras.get("capability_graph") or getattr(world, "last_capability_graph", {}) or {}
     try:
@@ -97,12 +190,16 @@ def _latent_probe_candidates(goal: Goal, world: WorldModel, features: StateFeatu
     branch_active = bool(features.extras.get("branch_active")) or bool(features.extras.get("world_exploration_needed"))
     if not branch_active and surface not in {"conversation", "list", "search_results", "detail", "sidebar"}:
         return []
+    active_entity_ids, active_region_ids = _active_subgraph_scope(world, features)
 
     probe_nodes = [
         cap
         for cap in cap_graph.nodes.values()
         if cap.type in {"RevealHiddenActions", "ProbeSurface"}
-        and (not cap.visible or bool(getattr(cap, "evidence", {}).get("latent")))
+        and (
+            branch_active
+            or (not cap.visible or bool(getattr(cap, "evidence", {}).get("latent")))
+        )
     ]
     if not probe_nodes:
         probe_nodes = [
@@ -111,20 +208,48 @@ def _latent_probe_candidates(goal: Goal, world: WorldModel, features: StateFeatu
             if node.capability_id in cap_graph.nodes and node.type in {"RevealHiddenActions", "ProbeSurface"}
         ]
 
-    by_id = {e.id: e for e in world.entities.values() if e.visible}
+    world_entities = getattr(world, "entities", None)
+    if isinstance(world_entities, dict):
+        by_id = {int(eid): e for eid, e in world_entities.items() if getattr(e, "visible", False)}
+    else:
+        by_id = {}
     probe_actions: List[Action] = []
     seen_targets = set()
     for cap in probe_nodes:
         ent_id = None
+        entity = None
         if getattr(cap, "provider_entities", None):
             for candidate_id in cap.provider_entities:
-                if candidate_id in by_id:
-                    ent_id = candidate_id
+                if active_entity_ids and candidate_id not in active_entity_ids:
+                    continue
+                ent_id = candidate_id
+                entity = by_id.get(candidate_id)
+                if entity is not None:
                     break
-        entity = by_id.get(ent_id) if ent_id is not None else None
+        if ent_id is None and getattr(cap, "provider_entities", None):
+            ent_id = int(cap.provider_entities[0])
         if entity is None:
+            fallback_label = _clean_label(
+                str((getattr(cap, "evidence", {}) or {}).get("entity_label") or (getattr(cap, "evidence", {}) or {}).get("label") or "")
+            ).strip()
+            if not fallback_label:
+                continue
+            target = fallback_label
+        else:
+            target = _clean_label(entity.label or entity.semantic_role or "").strip()
+        if not _probe_in_active_scope(
+            entity_id=ent_id or (entity.id if entity is not None else 0),
+            provider_regions=list(getattr(cap, "provider_regions", None) or []),
+            active_entity_ids=active_entity_ids,
+            active_region_ids=active_region_ids,
+        ):
             continue
-        target = _clean_label(entity.label or entity.semantic_role or "").strip()
+        if not target:
+            continue
+        if entity is not None and not _probe_target_is_content_like(
+            entity, list(getattr(cap, "provider_regions", None) or [])
+        ):
+            continue
         key = (cap.type, target.lower())
         if key in seen_targets:
             continue
@@ -142,7 +267,7 @@ def _latent_probe_candidates(goal: Goal, world: WorldModel, features: StateFeatu
                     value_delta=0.08,
                     evidence_score=0.12,
                     reversible=True,
-                    target_entity_id=entity.id,
+                    target_entity_id=ent_id,
                     capability_type="RevealHiddenActions",
                     frontier_label="reveal hidden actions",
                     frontier_score=0.18,
@@ -160,7 +285,7 @@ def _latent_probe_candidates(goal: Goal, world: WorldModel, features: StateFeatu
                     value_delta=0.07,
                     evidence_score=0.1,
                     reversible=True,
-                    target_entity_id=entity.id,
+                    target_entity_id=ent_id,
                     capability_type="RevealHiddenActions",
                     frontier_label="reveal hidden actions",
                     frontier_score=0.16,
@@ -179,7 +304,7 @@ def _latent_probe_candidates(goal: Goal, world: WorldModel, features: StateFeatu
                     value_delta=0.05,
                     evidence_score=0.08,
                     reversible=True,
-                    target_entity_id=entity.id,
+                    target_entity_id=ent_id,
                     capability_type="ProbeSurface",
                     frontier_label="probe surface",
                     frontier_score=0.14,
@@ -200,6 +325,7 @@ def enumerate_candidates(
     out: List[Action] = []
     world_explore = bool(features.extras.get("world_exploration_needed"))
     actuation_weak = bool(features.extras.get("actuation_weak"))
+    active_entity_ids, _active_region_ids = _active_subgraph_scope(world, features)
 
     out.append(
         Action(
@@ -252,7 +378,7 @@ def enumerate_candidates(
             )
         )
     if not emitted_dismiss and bool(features.has_dialog) and not storage_pressure:
-        perception_summary = features.extras.get("perception_summary") or {}
+        perception_summary = structured_perception_bridge(features=features, world=world)
         target = str(perception_summary.get("likely_next_target") or "").strip()
         if not target:
             target = "dialog dismiss"
@@ -381,10 +507,29 @@ def enumerate_candidates(
                     rationale=f"type search hypothesis[{hyp_i}]={search_text!r} (raw={contact!r})",
                     expected_predicate=f"SearchQueryEquals({search_text})",
                     action_family="type_query",
+                    target_entity_id=_matching_entity_id(world, "Search"),
+                    grounding_reason="visible_search_field" if _matching_entity_id(world, "Search") is not None else "",
+                    grounding_confidence=0.8 if _matching_entity_id(world, "Search") is not None else 0.0,
                 )
             )
 
     source_rows = [str(row) for row in (features.extras.get("source_conversation_rows") or []) if str(row).strip()]
+    if not source_rows:
+        source_rows = [
+            str(row)
+            for row in (features.extras.get("conversation_context_rows") or [])
+            if str(row).strip()
+        ]
+    if not source_rows:
+        source_rows = [
+            str(row)
+            for row in (features.extras.get("conversation_timeline_text") or [])
+            if str(row).strip()
+        ]
+    if active_entity_ids:
+        source_rows = [
+            row for row in source_rows if _row_matches_active_scope(row, active_entity_ids, world)
+        ]
     source_rows_visible = bool(source_rows)
     search_rows = _visible_search_result_rows(features)
     if allow_source_search and contact and source_rows and not in_conversation_surface:
@@ -630,6 +775,7 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
     picker = bool(preds.get("destination_picker_visible"))
     obj_selected = bool(preds.get("source_object_selected") or src_status in {"provisional", "confirmed"})
     world_id = str(getattr(world, "world_id", "") or features.extras.get("world_id") or "w0")
+    active_entity_ids, _active_region_ids = _active_subgraph_scope(world, features)
 
     on_source = bool(source) and (
         source.lower() in open_c
@@ -666,6 +812,9 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
                         rationale=f"search source chat {source}",
                         expected_predicate=f"SearchQueryEquals({source})",
                         action_family="type_query",
+                        target_entity_id=_matching_entity_id(world, "Search"),
+                        grounding_reason="visible_search_field" if _matching_entity_id(world, "Search") is not None else "",
+                        grounding_confidence=0.8 if _matching_entity_id(world, "Search") is not None else 0.0,
                     )
                 )
             if (
@@ -683,9 +832,23 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
                         rationale="focus search for source",
                         expected_predicate="SearchInputFocused",
                         action_family="open_search",
+                        target_entity_id=_matching_entity_id(world, "Search"),
+                        grounding_reason="visible_search_field" if _matching_entity_id(world, "Search") is not None else "",
+                        grounding_confidence=0.8 if _matching_entity_id(world, "Search") is not None else 0.0,
                     )
                 )
         return out
+
+    source_rows = [str(row) for row in (features.extras.get("source_conversation_rows") or []) if str(row).strip()]
+    if active_entity_ids:
+        source_rows = [
+            row for row in source_rows if _row_matches_active_scope(row, active_entity_ids, world)
+        ]
+    search_rows = _visible_search_result_rows(features)
+    if active_entity_ids:
+        search_rows = [
+            row for row in search_rows if _row_matches_active_scope(row, active_entity_ids, world)
+        ]
 
     if phase in {"FIND_LINK", "OPEN_FORWARD"}:
         # Object resolution frontier — bind by entity_id; never naked More
@@ -713,25 +876,30 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
             for e in hits:
                 if e not in ordered:
                     ordered.append(e)
-            if phase == "OPEN_FORWARD" and bool(preds.get("source_object_selected")) and src_eid is not None:
-                ordered = [e for e in ordered if e.id != int(src_eid)]
-            for e in ordered[:4]:
-                if e.entity_type in {"window", "group", "scroll"}:
-                    continue
-                lab = _clean_label(e.label or e.semantic_role or "") or query
-                out.append(
-                    Action(
-                        action="Click",
-                        semantic_target=lab,
-                        rationale=f"select source object matching {query!r} entity_id={e.id}",
-                        expected_predicate="SourceObjectSelected",
-                        action_family="select_content",
-                        target_entity_id=int(e.id),
-                        observed_in_world=world_id,
-                        grounding_reason="timeline_query_match",
-                        grounding_confidence=0.8 if src_status != "ambiguous" else 0.5,
+            if not (phase == "OPEN_FORWARD" and bool(preds.get("source_object_selected"))):
+                if phase == "OPEN_FORWARD" and bool(preds.get("source_object_selected")) and src_eid is not None:
+                    ordered = [e for e in ordered if e.id != int(src_eid)]
+                if active_entity_ids:
+                    scoped = [e for e in ordered if e.id in active_entity_ids]
+                    if scoped:
+                        ordered = scoped
+                for e in ordered[:4]:
+                    if e.entity_type in {"window", "group", "scroll"}:
+                        continue
+                    lab = _clean_label(e.label or e.semantic_role or "") or query
+                    out.append(
+                        Action(
+                            action="Click",
+                            semantic_target=lab,
+                            rationale=f"select source object matching {query!r} entity_id={e.id}",
+                            expected_predicate="SourceObjectSelected",
+                            action_family="select_content",
+                            target_entity_id=int(e.id),
+                            observed_in_world=world_id,
+                            grounding_reason="timeline_query_match",
+                            grounding_confidence=0.8 if src_status != "ambiguous" else 0.5,
+                        )
                     )
-                )
             # NEVER Type(link_query) into Search — that field is global chat find
             # ("Search or start new chat"). Content binding is timeline select only.
 
@@ -739,7 +907,7 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
         likely_ids = []
         if isinstance(conv_rel, dict):
             likely_ids = [int(x) for x in (conv_rel.get("likely_source_message_ids") or []) if str(x).strip()]
-        if likely_ids:
+        if likely_ids and not (phase == "OPEN_FORWARD" and bool(preds.get("source_object_selected"))):
             for eid in likely_ids[:4]:
                 ent = world.entities.get(int(eid))
                 if ent is None or not ent.visible:
@@ -763,17 +931,37 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
                 )
 
         if conversation_resolved and src_status in {"unresolved", "ambiguous", "provisional"}:
-            out.append(
-                Action(
-                    action="Scroll",
-                    semantic_target="Conversation timeline",
-                    rationale="explore conversation timeline for unresolved source object",
-                    expected_predicate="",
-                    action_family="scroll_content",
-                    scroll_direction=_preferred_scroll_direction(goal, features),
-                    scroll_amount=_preferred_scroll_amount(goal, features),
+            timeline_scroll_allowed = True
+            if active_entity_ids:
+                timeline_scroll_allowed = False
+                for eid in active_entity_ids:
+                    ent = world.entities.get(int(eid))
+                    if ent is None or not ent.visible:
+                        continue
+                    blob = _clean_label(
+                        " ".join(
+                            [
+                                getattr(ent, "label", "") or "",
+                                getattr(ent, "semantic_role", "") or "",
+                                str((getattr(ent, "attributes", {}) or {}).get("description") or ""),
+                            ]
+                        )
+                    ).lower()
+                    if source.lower() in blob or query.lower() in blob:
+                        timeline_scroll_allowed = True
+                        break
+            if timeline_scroll_allowed:
+                out.append(
+                    Action(
+                        action="Scroll",
+                        semantic_target="Conversation timeline",
+                        rationale="explore conversation timeline for unresolved source object",
+                        expected_predicate="",
+                        action_family="scroll_content",
+                        scroll_direction=_preferred_scroll_direction(goal, features),
+                        scroll_amount=_preferred_scroll_amount(goal, features),
+                    )
                 )
-            )
         if exact_label_visible(world, "Go to most recent message"):
             out.append(
                 Action(
@@ -814,37 +1002,50 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
             ):
                 src_ent = world.entities.get(int(src_eid))
                 if src_ent is not None and src_ent.visible:
-                    lab = _clean_label(src_ent.label or src_ent.semantic_role or "") or query or source or "selected message"
-                    out.append(
-                        Action(
-                            action="Hover",
-                            semantic_target=lab,
-                            rationale=f"reveal hidden message actions on selected source object: {lab}",
-                            expected_predicate="LatentActionsRevealed",
-                            action_family="probe_hover",
-                            target_entity_id=int(src_ent.id),
-                            observed_in_world=world_id,
-                            grounding_reason="selected_source_object",
-                            grounding_confidence=0.85,
-                            capability_type="RevealHiddenActions",
-                            frontier_label="reveal hidden message actions",
+                    provider_regions = list(
+                        getattr(
+                            cap_graph.nodes.get(
+                                f"RevealHiddenActions:{int(src_ent.id)}:sidebar", None
+                            ),
+                            "provider_regions",
+                            None,
                         )
+                        or []
                     )
-                    out.append(
-                        Action(
-                            action="ContextClick",
-                            semantic_target=lab,
-                            rationale=f"open context menu to reveal hidden message actions on {lab}",
-                            expected_predicate="LatentActionsRevealed",
-                            action_family="probe_context_menu",
-                            target_entity_id=int(src_ent.id),
-                            observed_in_world=world_id,
-                            grounding_reason="selected_source_object",
-                            grounding_confidence=0.82,
-                            capability_type="RevealHiddenActions",
-                            frontier_label="reveal hidden message actions",
+                    if not _probe_target_is_content_like(src_ent, provider_regions):
+                        pass
+                    elif not active_entity_ids or int(src_ent.id) in active_entity_ids:
+                        lab = _clean_label(src_ent.label or src_ent.semantic_role or "") or query or source or "selected message"
+                        out.append(
+                            Action(
+                                action="Hover",
+                                semantic_target=lab,
+                                rationale=f"reveal hidden message actions on selected source object: {lab}",
+                                expected_predicate="LatentActionsRevealed",
+                                action_family="probe_hover",
+                                target_entity_id=int(src_ent.id),
+                                observed_in_world=world_id,
+                                grounding_reason="selected_source_object",
+                                grounding_confidence=0.85,
+                                capability_type="RevealHiddenActions",
+                                frontier_label="reveal hidden message actions",
+                            )
                         )
-                    )
+                        out.append(
+                            Action(
+                                action="ContextClick",
+                                semantic_target=lab,
+                                rationale=f"open context menu to reveal hidden message actions on {lab}",
+                                expected_predicate="LatentActionsRevealed",
+                                action_family="probe_context_menu",
+                                target_entity_id=int(src_ent.id),
+                                observed_in_world=world_id,
+                                grounding_reason="selected_source_object",
+                                grounding_confidence=0.82,
+                                capability_type="RevealHiddenActions",
+                                frontier_label="reveal hidden message actions",
+                            )
+                        )
         # Explicitly do NOT emit More / Menu / More options (header More is unscoped)
         return out
 
@@ -873,6 +1074,9 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
                     rationale=f"search forward destination {dest}",
                     expected_predicate=f"SearchQueryEquals({dest})",
                     action_family="type_query",
+                    target_entity_id=_matching_entity_id(world, "Search"),
+                    grounding_reason="visible_search_field" if _matching_entity_id(world, "Search") is not None else "",
+                    grounding_confidence=0.8 if _matching_entity_id(world, "Search") is not None else 0.0,
                 )
             )
         return out
