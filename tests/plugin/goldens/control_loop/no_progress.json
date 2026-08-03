@@ -1,0 +1,161 @@
+{
+  "decision_families": [
+    "type_query",
+    "open_search",
+    "observe",
+    "type_query",
+    "open_search",
+    "observe"
+  ],
+  "executed": [
+    {
+      "action": "Type",
+      "family": "type_query",
+      "target": "Search"
+    },
+    {
+      "action": "Click",
+      "family": "open_search",
+      "target": "Search"
+    },
+    {
+      "action": "Type",
+      "family": "type_query",
+      "target": "Search"
+    },
+    {
+      "action": "Click",
+      "family": "open_search",
+      "target": "Search"
+    }
+  ],
+  "final_surface": "chat_list",
+  "iterations": [
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 0,
+      "observations": 0,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "target": "Search"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "ok": true,
+          "target": "Search"
+        }
+      ],
+      "iteration": 1,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_search",
+          "target": "Search"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_search",
+          "ok": true,
+          "target": "Search"
+        }
+      ],
+      "iteration": 2,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 3,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "target": "Search"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "ok": true,
+          "target": "Search"
+        }
+      ],
+      "iteration": 4,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_search",
+          "target": "Search"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_search",
+          "ok": true,
+          "target": "Search"
+        }
+      ],
+      "iteration": 5,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 6,
+      "observations": 1,
+      "outcomes": []
+    }
+  ],
+  "result": {
+    "iterations": 6,
+    "ok": false,
+    "reason": "Maximum step count reached"
+  }
+}

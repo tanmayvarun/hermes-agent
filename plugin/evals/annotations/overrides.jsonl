@@ -1,0 +1,15 @@
+# Gold labels. One JSON object per line, keyed by fixture id; any field here
+# replaces the derived one and is marked source=manual.
+#
+# Every label below was read off the recorded screenshot for that frame. Do not
+# add a line you have not looked at: a guessed gold label is worse than an
+# honest gap, because the metric will report confidence in it.
+#
+# Recorded screenshots live in the recording directory, not in the repo:
+#   plugin/experiments/fixtures/perceptor/live_forward/<screenshot.name>
+{"id": "open_source/frame_0056", "surface": "chat_list", "surface_state": {"sidebar": "chat_list", "main": "none", "overlay": "none"}, "focused_field_role": "sidebar_search", "note": "Sidebar search field focused and empty, showing type filters (Photos/GIFs/Links). Main pane is the WhatsApp splash. No conversation open."}
+{"id": "find_link/frame_0059", "surface": "conversation", "surface_state": {"sidebar": "search_results", "main": "conversation", "overlay": "none"}, "open_conversation": "Pallavi", "distractors": ["Pallavi Ather Gen3", "Pallavi<>Pravin intro", "Project management Pallavi"], "note": "Sidebar filtered by 'Pallavi' with the Gen3 group directly beneath the real contact; main pane already has Pallavi open. The single-label ground truth reads chat_list here, which is why surface accuracy needs the gold set."}
+{"id": "find_link/frame_0060", "surface": "conversation", "surface_state": {"sidebar": "search_results", "main": "conversation", "overlay": "none"}, "open_conversation": "Pallavi", "note": "Visually identical to frame_0059 one step later; the AX-derived label flips between the two while the screen does not."}
+{"id": "select_destination/frame_0164", "surface": "forward_picker", "surface_state": {"sidebar": "search_results", "main": "conversation", "overlay": "forward_picker"}, "open_conversation": "Pallavi", "latent_affordances": ["Send"], "note": "Send-to overlay open with an unfiltered recipient list and an empty filter field. One message is selected in the main pane."}
+{"id": "select_destination/frame_0166", "surface": "forward_picker", "surface_state": {"sidebar": "search_results", "main": "conversation", "overlay": "forward_picker"}, "open_conversation": "Pallavi", "latent_affordances": ["Send"], "distractors": ["Tanmay <> Artha", "Tanmay Saurabh Connect", "Tanmay <> Murali", "Tanmay Refund - Birla evara", "Aakash <> Tanmay"], "note": "Filter reads 'Tanmay' and every visible row is a group whose name merely contains it. The plain destination is not on screen, so resolving to the first row would forward to the wrong recipient."}
+{"id": "open_forward/frame_0215", "surface": "context_menu", "surface_state": {"sidebar": "search_results", "main": "conversation", "overlay": "context_menu"}, "open_conversation": "Pallavi", "critical_ctas": ["invoke_affordance"], "latent_affordances": [], "note": "Message context menu open on the target message: Reply, React, Star, Pin, Forward, Copy, Info, Delete, Select messages. Forward is observed here, not latent."}

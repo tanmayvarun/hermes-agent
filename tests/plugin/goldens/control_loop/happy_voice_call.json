@@ -1,0 +1,110 @@
+{
+  "decision_families": [
+    "type_query",
+    "open_contact",
+    "observe",
+    "observe"
+  ],
+  "executed": [
+    {
+      "action": "Type",
+      "family": "type_query",
+      "target": "Search"
+    },
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "Pallavi"
+    }
+  ],
+  "final_surface": "conversation",
+  "iterations": [
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 0,
+      "observations": 0,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "target": "Search"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "ok": true,
+          "target": "Search"
+        }
+      ],
+      "iteration": 1,
+      "observations": 2,
+      "outcomes": [
+        "promising_unresolved"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "Pallavi"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "Pallavi"
+        }
+      ],
+      "iteration": 2,
+      "observations": 2,
+      "outcomes": [
+        "promising_unresolved"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 3,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 4,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 5,
+      "observations": 1,
+      "outcomes": []
+    }
+  ],
+  "result": {
+    "raised": "RuntimeError: LLM-selected action start_call could not be grounded; refusing observe fallback"
+  }
+}

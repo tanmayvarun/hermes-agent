@@ -1,0 +1,733 @@
+{
+  "corpus": {
+    "count": 43,
+    "phases": {
+      "find_link": 13,
+      "open_forward": 5,
+      "open_source": 13,
+      "select_destination": 12
+    },
+    "traits": {
+      "has_objects": 43,
+      "last_action_failed": 2,
+      "no_ax_content": 43,
+      "repeated_reading": 12,
+      "shell_only": 43,
+      "target_visible": 26
+    },
+    "missing_failure_traits": [
+      "no_screenshot",
+      "surface_disputed"
+    ],
+    "with_screenshot": 43,
+    "with_response": 43
+  },
+  "annotations": {
+    "fixtures": 43,
+    "labelled": {
+      "observed_next_surface": 35,
+      "surface": 35
+    },
+    "rates": {
+      "observed_next_surface": 0.814,
+      "surface": 0.814
+    },
+    "label_sources": {
+      "contract": 86,
+      "manual": 24,
+      "outcome": 35,
+      "shadow_fused": 29
+    }
+  },
+  "gates": [
+    {
+      "name": "settings_is_not_a_search_affordance",
+      "passed": true,
+      "question": "Does a global menu item become a task CTA?",
+      "detail": "Settings excluded as chrome"
+    },
+    {
+      "name": "generic_button_is_not_forward",
+      "passed": true,
+      "question": "Does an unrelated button get bound to Forward?",
+      "detail": "no candidate claimed to be Forward"
+    },
+    {
+      "name": "encryption_notice_is_not_an_object_target",
+      "passed": true,
+      "question": "Does an object-scoped gesture stay on the object?",
+      "detail": "probe targets ['zarooratwala.com/fresh']"
+    },
+    {
+      "name": "exact_contact_beats_group_with_same_prefix",
+      "passed": true,
+      "question": "Does 'Pallavi' open Pallavi rather than a group starting with it?",
+      "detail": "chose 'Pallavi'"
+    },
+    {
+      "name": "self_marker_wins_for_destination",
+      "passed": true,
+      "question": "Does forwarding to yourself resolve the (you) row?",
+      "detail": "chose 'Tanmay (you)'"
+    },
+    {
+      "name": "group_thread_never_wins_a_destination",
+      "passed": true,
+      "question": "Can a group chat receive a message meant for a person?",
+      "detail": "abstained with the near-misses kept for the caller"
+    },
+    {
+      "name": "containment_only_match_abstains",
+      "passed": true,
+      "question": "Does a name that merely contains the referent get acted on?",
+      "detail": "abstained but kept the ranking for a retry"
+    },
+    {
+      "name": "open_source_chat_is_not_searched_again",
+      "passed": true,
+      "question": "Is a finished phase ever restarted?",
+      "detail": "source match is exact, mismatch is refused"
+    },
+    {
+      "name": "picker_cannot_fall_into_sidebar_search",
+      "passed": true,
+      "question": "Can a picker jump to sidebar search on a typing action?",
+      "detail": "critic accepted surface 'forward_picker'"
+    },
+    {
+      "name": "keyboard_open_never_overrides_a_chosen_point",
+      "passed": true,
+      "question": "Does a keyboard shortcut override a chosen target?",
+      "detail": "point wins over keyboard"
+    },
+    {
+      "name": "blind_confident_claim_is_detected",
+      "passed": true,
+      "question": "Would a confident claim with no evidence be caught?",
+      "detail": "detector reported 1.0"
+    },
+    {
+      "name": "irreversible_send_is_never_a_reversible_invoke",
+      "passed": true,
+      "question": "Can Send be taken through the reversible path?",
+      "detail": "commit labels are gated"
+    },
+    {
+      "name": "latent_forward_is_never_reported_as_observed",
+      "passed": true,
+      "question": "Is a predicted control ever stated as present?",
+      "detail": "Forward latent behind context_click_zarooratwala.com/fresh"
+    },
+    {
+      "name": "goal_keyword_in_a_filename_is_not_an_object",
+      "passed": true,
+      "question": "Does lexical similarity beat structural eligibility?",
+      "detail": "filename is not actionable"
+    }
+  ],
+  "gate_failures": [],
+  "metrics": [
+    {
+      "name": "ax_content_recall",
+      "layer": "observation",
+      "value": 0.0,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Did required evidence survive sensing?",
+      "higher_is_better": true,
+      "detail": {
+        "weighted_found": 0.0,
+        "weighted_required": 745.0
+      },
+      "examples": [
+        "open_source/frame_0055: no search_input",
+        "open_source/frame_0055: no conversation_row Pallavi",
+        "open_source/frame_0056: no search_input",
+        "open_source/frame_0056: no conversation_row Pallavi",
+        "open_source/frame_0057: no search_input"
+      ]
+    },
+    {
+      "name": "chrome_pollution_rate",
+      "layer": "observation",
+      "value": 1.0,
+      "scored": 43,
+      "skipped": 0,
+      "question": "How much of the retained tree is irrelevant?",
+      "higher_is_better": false,
+      "detail": {
+        "chrome_nodes": 86,
+        "retained_nodes": 86
+      },
+      "examples": [
+        "open_source/frame_0055: all 2 retained nodes are chrome",
+        "open_source/frame_0056: all 2 retained nodes are chrome",
+        "open_source/frame_0057: all 2 retained nodes are chrome",
+        "open_source/frame_0058: all 2 retained nodes are chrome",
+        "find_link/frame_0059: all 2 retained nodes are chrome"
+      ]
+    },
+    {
+      "name": "surface_accuracy",
+      "layer": "structure",
+      "value": 1.0,
+      "scored": 6,
+      "skipped": 37,
+      "question": "Did objects and regions form the correct hierarchy?",
+      "higher_is_better": true,
+      "detail": {
+        "confusions": {},
+        "gold_labels": 6
+      },
+      "examples": []
+    },
+    {
+      "name": "surface_agreement_with_shadow",
+      "layer": "structure",
+      "value": 0.6552,
+      "scored": 29,
+      "skipped": 14,
+      "question": "Do the two independent readings of the screen agree?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": [
+        "find_link/frame_0068: ax=chat_list model=conversation",
+        "select_destination/frame_0167: ax=search model=forward_picker",
+        "select_destination/frame_0168: ax=search model=forward_picker",
+        "select_destination/frame_0170: ax=search model=forward_picker",
+        "select_destination/frame_0171: ax=search model=forward_picker"
+      ]
+    },
+    {
+      "name": "overlay_detection_rate",
+      "layer": "structure",
+      "value": 1.0,
+      "scored": 3,
+      "skipped": 40,
+      "question": "Is a surface layered over the app noticed?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "target_grounding_accuracy",
+      "layer": "structure",
+      "value": null,
+      "scored": 0,
+      "skipped": 43,
+      "question": "Did the action attach to the object the goal is about?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "object_scope_violation_rate",
+      "layer": "structure",
+      "value": 0.0,
+      "scored": 26,
+      "skipped": 17,
+      "question": "Do object-scoped gestures stay on task objects?",
+      "higher_is_better": false,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "critical_cta_recall",
+      "layer": "affordance",
+      "value": 0.6127,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Did it identify what can be done now?",
+      "higher_is_better": true,
+      "detail": {
+        "critical_found": 87,
+        "critical_required": 142
+      },
+      "examples": [
+        "open_source/frame_0055: frontier omits type_query",
+        "open_source/frame_0055: frontier omits resolve_entity",
+        "open_source/frame_0056: frontier omits type_query",
+        "open_source/frame_0056: frontier omits resolve_entity",
+        "open_source/frame_0057: frontier omits type_query"
+      ]
+    },
+    {
+      "name": "invalid_cta_rate",
+      "layer": "affordance",
+      "value": 0.1473,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Did it invent actions the surface does not support?",
+      "higher_is_better": false,
+      "detail": {
+        "invalid": 19,
+        "offered": 129
+      },
+      "examples": [
+        "open_source/frame_0081: offers invoke_affordance (Allow)",
+        "open_source/frame_0081: offers invoke_affordance (Open System Settings)",
+        "open_source/frame_0082: offers invoke_affordance (Allow)",
+        "open_source/frame_0082: offers invoke_affordance (Open System Settings)",
+        "open_source/frame_0083: offers invoke_affordance (Allow)"
+      ]
+    },
+    {
+      "name": "latent_affordance_f1",
+      "layer": "latent_affordance",
+      "value": 0.7179,
+      "scored": 22,
+      "skipped": 21,
+      "question": "Did it predict what probes may reveal?",
+      "higher_is_better": true,
+      "detail": {
+        "precision": 0.6364,
+        "recall": 0.8235,
+        "true_positive": 42,
+        "false_positive": 24,
+        "false_negative": 9
+      },
+      "examples": [
+        "find_link/frame_0060: predicted 'delete' which is not in ground truth",
+        "find_link/frame_0060: predicted 'react' which is not in ground truth",
+        "find_link/frame_0061: predicted 'delete' which is not in ground truth",
+        "find_link/frame_0061: predicted 'react' which is not in ground truth",
+        "find_link/frame_0062: predicted 'delete' which is not in ground truth"
+      ]
+    },
+    {
+      "name": "task_focus_score",
+      "layer": "relevance",
+      "value": 0.3186,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Did it focus on the task-relevant subgraph?",
+      "higher_is_better": true,
+      "detail": {
+        "credited": 72.0,
+        "objects": 226.0
+      },
+      "examples": []
+    },
+    {
+      "name": "distractor_capture_rate",
+      "layer": "relevance",
+      "value": 0.5,
+      "scored": 2,
+      "skipped": 41,
+      "question": "Does a similar name beat the right one?",
+      "higher_is_better": false,
+      "detail": {},
+      "examples": [
+        "select_destination/frame_0166: chose the distractor 'aakash <> tanmay'"
+      ]
+    },
+    {
+      "name": "top3_acceptable_action_rate",
+      "layer": "ranking",
+      "value": 0.814,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Are useful actions high in the frontier?",
+      "higher_is_better": true,
+      "detail": {
+        "mean_reciprocal_rank": 0.814,
+        "frames_with_ranked_frontier": 0,
+        "ranked_frontier_coverage": 0.0
+      },
+      "examples": [
+        "find_link/frame_0061: proposed ['type'] on conversation, none acceptable",
+        "find_link/frame_0065: proposed ['press_escape'] on conversation, none acceptable",
+        "select_destination/frame_0165: proposed ['compose_search_query'] on forward_picker, none acceptable",
+        "open_forward/frame_0215: proposed ['invoke_affordance'] on context_menu, none acceptable",
+        "select_destination/frame_0218: proposed ['type'] on conversation, none acceptable"
+      ]
+    },
+    {
+      "name": "forbidden_action_rate",
+      "layer": "ranking",
+      "value": 0.0233,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Did it pick a move this surface forbids?",
+      "higher_is_better": false,
+      "detail": {},
+      "examples": [
+        "select_destination/frame_0165: compose_search_query on forward_picker"
+      ]
+    },
+    {
+      "name": "unsupported_high_confidence_rate",
+      "layer": "uncertainty",
+      "value": 0.0,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Does it know when it does not know?",
+      "higher_is_better": false,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "evidence_gap_declaration_rate",
+      "layer": "uncertainty",
+      "value": 0.3023,
+      "scored": 43,
+      "skipped": 0,
+      "question": "Does it name what it could not establish?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": [
+        "open_source/frame_0056: no AX content, no declared gap, confidence 0.95",
+        "open_source/frame_0057: no AX content, no declared gap, confidence 0.95",
+        "open_source/frame_0058: no AX content, no declared gap, confidence 0.95",
+        "find_link/frame_0063: no AX content, no declared gap, confidence 0.95",
+        "find_link/frame_0064: no AX content, no declared gap, confidence 0.95"
+      ]
+    }
+  ],
+  "closed_loop": {
+    "runs": 12,
+    "completion_rate": 0.0,
+    "false_success_rate": 0.0,
+    "stage_reach_rate": {
+      "opened_correct_conversation": 0.0,
+      "found_target_object": 0.0,
+      "opened_forward_surface": 0.0,
+      "selected_destination": 0.0,
+      "committed_send": 0.0,
+      "verified_completion": 0.0
+    },
+    "furthest_stage_counts": {
+      "none": 12
+    },
+    "median_steps": 172,
+    "mean_model_calls": 9.75,
+    "mean_failed_actions": 0.08,
+    "mean_replans": 8.08,
+    "runs_detail": [
+      {
+        "run": "forward_zarooratwala_live_20260802_153923",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 222,
+        "model_calls": 14,
+        "failed_actions": 0,
+        "replans": 21,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_154812",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 16,
+        "model_calls": 0,
+        "failed_actions": 0,
+        "replans": 0,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_154907",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 282,
+        "model_calls": 18,
+        "failed_actions": 0,
+        "replans": 25,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_155754",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 153,
+        "model_calls": 10,
+        "failed_actions": 0,
+        "replans": 10,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_160605",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": true,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 271,
+        "model_calls": 18,
+        "failed_actions": 0,
+        "replans": 15,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_173316",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 74,
+        "model_calls": 5,
+        "failed_actions": 0,
+        "replans": 1,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_180855",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 172,
+        "model_calls": 12,
+        "failed_actions": 0,
+        "replans": 3,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_181446",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 306,
+        "model_calls": 23,
+        "failed_actions": 1,
+        "replans": 7,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_191108",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 226,
+        "model_calls": 15,
+        "failed_actions": 0,
+        "replans": 15,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_202504",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 27,
+        "model_calls": 1,
+        "failed_actions": 0,
+        "replans": 0,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_203759",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 16,
+        "model_calls": 0,
+        "failed_actions": 0,
+        "replans": 0,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      },
+      {
+        "run": "forward_zarooratwala_live_20260802_205856",
+        "stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "claimed_stages": {
+          "opened_correct_conversation": false,
+          "found_target_object": false,
+          "opened_forward_surface": false,
+          "selected_destination": false,
+          "committed_send": false,
+          "verified_completion": false
+        },
+        "furthest_stage": "",
+        "steps": 27,
+        "model_calls": 1,
+        "failed_actions": 0,
+        "replans": 0,
+        "completed": false,
+        "false_success": false,
+        "reason": ""
+      }
+    ]
+  }
+}

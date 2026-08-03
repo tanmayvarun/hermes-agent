@@ -1,0 +1,545 @@
+{
+  "corpus_version": 1,
+  "id": "find_link/frame_0065",
+  "phase": "find_link",
+  "traits": [
+    "no_ax_content",
+    "shell_only",
+    "has_objects",
+    "target_visible"
+  ],
+  "source": {
+    "run": "live_forward",
+    "frame": 65,
+    "captured_at": "2026-08-02T12:17:09"
+  },
+  "screenshot": {
+    "recorded": true,
+    "name": "frame_0065.png",
+    "image_size": []
+  },
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 10,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "msg_zarooratwala_link",
+          "kind": "message",
+          "text": "ZarooratWala - Fresh Groceries Delivered link message",
+          "matches_goal": true,
+          "seen_on_frame": 10,
+          "point": [
+            680,
+            480
+          ]
+        },
+        {
+          "id": "msg_forwarded_text",
+          "kind": "message",
+          "text": "Forwarded: Chunni ko bhi Prabal se baat karna tha...",
+          "matches_goal": false,
+          "seen_on_frame": 10,
+          "point": [
+            680,
+            580
+          ]
+        },
+        {
+          "id": "search_sidebar",
+          "kind": "search_results",
+          "text": "Search results for 'Pallavi zarooratwala'",
+          "matches_goal": false,
+          "seen_on_frame": 10,
+          "point": [
+            180,
+            200
+          ]
+        },
+        {
+          "id": "conversation_header",
+          "kind": "header",
+          "text": "Pallavi",
+          "matches_goal": false,
+          "seen_on_frame": 10,
+          "point": [
+            350,
+            50
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_conversation_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "conversation header shows Pallavi",
+            "messages visible in chat area"
+          ],
+          "confirmed_on_frame": 10
+        },
+        {
+          "predicate": "zarooratwala_message_visible",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "green message bubble with ZarooratWala link visible in conversation"
+          ],
+          "confirmed_on_frame": 10
+        },
+        {
+          "predicate": "message_not_selected",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": [
+            "no context menu visible",
+            "message not highlighted"
+          ],
+          "confirmed_on_frame": 10
+        }
+      ],
+      "progress": {
+        "phase": "initiate_forward",
+        "objective": "Right-click on the zarooratwala message to open context menu with forward option",
+        "notes": "Zarooratwala message is now visible in the conversation. Need to right-click it to access forward option, then select Tanmay as destination."
+      },
+      "attempts": [
+        {
+          "frame": 6,
+          "action": "click",
+          "target": "search_in_chat_btn",
+          "result": "ok: click search button center=(850.0, 50.0)"
+        },
+        {
+          "frame": 7,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed 'zarooratwala' into search field"
+        },
+        {
+          "frame": 8,
+          "action": "observe",
+          "target": "",
+          "result": "ok: search results visible in sidebar"
+        },
+        {
+          "frame": 8,
+          "action": "scroll_content",
+          "target": "",
+          "result": "ok: pyautogui scroll"
+        },
+        {
+          "frame": 9,
+          "action": "observe",
+          "target": "",
+          "result": "ok: search results visible, need to click one to navigate"
+        },
+        {
+          "frame": 9,
+          "action": "click",
+          "target": "search_result_1",
+          "result": "ok: clicked search result to navigate to message"
+        },
+        {
+          "frame": 10,
+          "action": "observe",
+          "target": "",
+          "result": "ok: zarooratwala message now visible in conversation"
+        },
+        {
+          "frame": 10,
+          "action": "probe_context_menu",
+          "target": "",
+          "result": "ok: context click '' center=(680.0, 480.0)"
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 11,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence"
+    ],
+    "last_action": {
+      "action": "ContextClick",
+      "family": "probe_context_menu",
+      "target": "",
+      "text": "",
+      "result": {
+        "ok": true,
+        "message": "context click '' center=(680.0, 480.0)"
+      },
+      "you_predicted": {
+        "surface": "conversation",
+        "likely_controls": [
+          "context_menu",
+          "forward_option",
+          "reply_option",
+          "delete_option"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 11,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "context_menu",
+          "kind": "menu",
+          "text": "Context menu with Forward option visible",
+          "matches_goal": false,
+          "seen_on_frame": 11,
+          "point": [
+            390,
+            550
+          ]
+        },
+        {
+          "id": "forward_option",
+          "kind": "menu_item",
+          "text": "Forward",
+          "matches_goal": true,
+          "seen_on_frame": 11,
+          "point": [
+            390,
+            530
+          ]
+        },
+        {
+          "id": "cartoon_message",
+          "kind": "message",
+          "text": "JAY JAGANNATH CARTOON video message",
+          "matches_goal": false,
+          "seen_on_frame": 11,
+          "point": [
+            450,
+            450
+          ]
+        },
+        {
+          "id": "search_sidebar",
+          "kind": "search_results",
+          "text": "Search results for zarooratwala in left sidebar",
+          "matches_goal": false,
+          "seen_on_frame": 11,
+          "point": [
+            180,
+            200
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_conversation_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "conversation header shows Pallavi",
+            "messages visible in chat area"
+          ],
+          "confirmed_on_frame": 11
+        },
+        {
+          "predicate": "context_menu_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "context menu visible with Forward, Reply, Copy options"
+          ],
+          "confirmed_on_frame": 11
+        },
+        {
+          "predicate": "wrong_message_selected",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "context menu is on cartoon video message, not zarooratwala link"
+          ],
+          "confirmed_on_frame": 11
+        }
+      ],
+      "progress": {
+        "phase": "find_correct_message",
+        "objective": "Close current context menu and locate the actual zarooratwala link message to forward",
+        "notes": "Context menu opened but on wrong message (cartoon video). Need to close it and find the zarooratwala link message. Search results in sidebar show the link exists."
+      },
+      "attempts": [
+        {
+          "frame": 7,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed 'zarooratwala' into search field"
+        },
+        {
+          "frame": 8,
+          "action": "observe",
+          "target": "",
+          "result": "ok: search results visible in sidebar"
+        },
+        {
+          "frame": 8,
+          "action": "scroll_content",
+          "target": "",
+          "result": "ok: pyautogui scroll"
+        },
+        {
+          "frame": 9,
+          "action": "observe",
+          "target": "",
+          "result": "ok: search results visible, need to click one to navigate"
+        },
+        {
+          "frame": 9,
+          "action": "click",
+          "target": "search_result_1",
+          "result": "ok: clicked search result to navigate to message"
+        },
+        {
+          "frame": 10,
+          "action": "observe",
+          "target": "",
+          "result": "ok: zarooratwala message now visible in conversation"
+        },
+        {
+          "frame": 10,
+          "action": "probe_context_menu",
+          "target": "",
+          "result": "ok: context click '' center=(680.0, 480.0)"
+        },
+        {
+          "frame": 11,
+          "action": "observe",
+          "target": "",
+          "result": "ok: context menu open but on wrong message (cartoon video)"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "target_object_visible": true,
+      "target_object_id": "forward_option"
+    },
+    "belief_updates": [
+      {
+        "predicate": "pallavi_conversation_open",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "conversation header shows Pallavi",
+          "messages visible in chat area"
+        ],
+        "confirmed_on_frame": 11
+      },
+      {
+        "predicate": "context_menu_open",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "context menu visible with Forward, Reply, Copy options"
+        ],
+        "confirmed_on_frame": 11
+      },
+      {
+        "predicate": "wrong_message_selected",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "context menu is on cartoon video message, not zarooratwala link"
+        ],
+        "confirmed_on_frame": 11
+      }
+    ],
+    "next_action": {
+      "family": "press_escape",
+      "target_id": null,
+      "target_point": null,
+      "text": "",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "message_list",
+        "search_sidebar"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "context_menu",
+        "kind": "menu",
+        "text": "Context menu with Forward option visible",
+        "matches_goal": false,
+        "seen_on_frame": 11,
+        "point": [
+          390,
+          550
+        ]
+      },
+      {
+        "id": "forward_option",
+        "kind": "menu_item",
+        "text": "Forward",
+        "matches_goal": true,
+        "seen_on_frame": 11,
+        "point": [
+          390,
+          530
+        ]
+      },
+      {
+        "id": "cartoon_message",
+        "kind": "message",
+        "text": "JAY JAGANNATH CARTOON video message",
+        "matches_goal": false,
+        "seen_on_frame": 11,
+        "point": [
+          450,
+          450
+        ]
+      },
+      {
+        "id": "search_sidebar",
+        "kind": "search_results",
+        "text": "Search results for zarooratwala in left sidebar",
+        "matches_goal": false,
+        "seen_on_frame": 11,
+        "point": [
+          180,
+          200
+        ]
+      }
+    ],
+    "missing_evidence": [
+      "zarooratwala_link_message_location"
+    ],
+    "scene_summary": "Context menu is open on a cartoon video message (JAY JAGANNATH CARTOON), not the zarooratwala link I need to forward. The menu shows Forward option but it's on the wrong message. Need to close this menu and locate the correct zarooratwala link message.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 18.611
+  },
+  "shadow_task_state": {
+    "phase": "FIND_LINK",
+    "local_objective": "resolve source object matching query",
+    "predicates": {
+      "source_conversation_open": true,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "Pallavi",
+    "wa_screen": "CONVERSATION"
+  },
+  "annotation": {
+    "unlabelled": [
+      "target_object"
+    ],
+    "surface": "conversation",
+    "critical_ctas": [
+      "locate_content",
+      "select_content",
+      "reveal_actions"
+    ],
+    "acceptable_next_actions": {
+      "locate_content": 3,
+      "select_content": 3,
+      "reveal_actions": 3,
+      "scroll": 2,
+      "hover": 1,
+      "observe": 0
+    },
+    "forbidden_next_actions": [
+      "compose_search_query",
+      "commit_irreversible"
+    ],
+    "latent_affordances": [
+      "Forward",
+      "Reply",
+      "Copy"
+    ],
+    "required_controls": [
+      {
+        "kind": "message",
+        "label": "zarooratwala",
+        "weight": 10,
+        "why": "the message being forwarded"
+      },
+      {
+        "kind": "timeline",
+        "weight": 5,
+        "why": "history has to be scrollable"
+      }
+    ],
+    "chrome_node_ids": [
+      2,
+      1
+    ],
+    "observed_next_surface": "conversation",
+    "evidence_available": {
+      "screenshot": true,
+      "ax_content": false,
+      "ax_nodes": 2
+    },
+    "sources": {
+      "surface": "shadow_fused",
+      "actions": "contract",
+      "controls": "contract",
+      "transition": "outcome"
+    }
+  }
+}

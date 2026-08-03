@@ -1,0 +1,89 @@
+{
+  "frames_seen": 316,
+  "written": 43,
+  "out_dir": "plugin/evals/fixtures",
+  "coverage": {
+    "count": 43,
+    "phases": {
+      "find_link": 13,
+      "open_forward": 5,
+      "open_source": 13,
+      "select_destination": 12
+    },
+    "traits": {
+      "has_objects": 43,
+      "last_action_failed": 2,
+      "no_ax_content": 43,
+      "repeated_reading": 12,
+      "shell_only": 43,
+      "target_visible": 26
+    },
+    "missing_failure_traits": [
+      "no_screenshot",
+      "surface_disputed"
+    ],
+    "with_screenshot": 43,
+    "with_response": 43
+  },
+  "annotation_coverage": {
+    "fixtures": 43,
+    "labelled": {
+      "observed_next_surface": 35,
+      "surface": 35
+    },
+    "rates": {
+      "observed_next_surface": 0.814,
+      "surface": 0.814
+    },
+    "label_sources": {
+      "contract": 86,
+      "outcome": 35,
+      "shadow_fused": 35
+    }
+  },
+  "ids": [
+    "open_source/frame_0055",
+    "open_source/frame_0056",
+    "open_source/frame_0057",
+    "open_source/frame_0058",
+    "find_link/frame_0059",
+    "find_link/frame_0060",
+    "find_link/frame_0061",
+    "find_link/frame_0062",
+    "find_link/frame_0063",
+    "find_link/frame_0064",
+    "find_link/frame_0065",
+    "find_link/frame_0066",
+    "open_source/frame_0067",
+    "find_link/frame_0068",
+    "find_link/frame_0069",
+    "find_link/frame_0070",
+    "find_link/frame_0071",
+    "find_link/frame_0072",
+    "open_source/frame_0080",
+    "open_source/frame_0081",
+    "open_source/frame_0082",
+    "open_source/frame_0083",
+    "open_source/frame_0084",
+    "open_source/frame_0085",
+    "open_source/frame_0086",
+    "open_source/frame_0132",
+    "select_destination/frame_0164",
+    "select_destination/frame_0165",
+    "select_destination/frame_0166",
+    "select_destination/frame_0167",
+    "select_destination/frame_0168",
+    "select_destination/frame_0169",
+    "select_destination/frame_0170",
+    "select_destination/frame_0171",
+    "select_destination/frame_0172",
+    "open_forward/frame_0215",
+    "select_destination/frame_0218",
+    "select_destination/frame_0219",
+    "select_destination/frame_0220",
+    "open_forward/frame_0248",
+    "open_forward/frame_0290",
+    "open_forward/frame_0293",
+    "open_forward/frame_0294"
+  ]
+}

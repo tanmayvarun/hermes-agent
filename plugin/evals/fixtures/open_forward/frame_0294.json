@@ -1,0 +1,630 @@
+{
+  "corpus_version": 1,
+  "id": "open_forward/frame_0294",
+  "phase": "open_forward",
+  "traits": [
+    "no_ax_content",
+    "shell_only",
+    "has_objects",
+    "target_visible"
+  ],
+  "source": {
+    "run": "live_forward",
+    "frame": 294,
+    "captured_at": "2026-08-02T18:25:30"
+  },
+  "screenshot": {
+    "recorded": true,
+    "name": "frame_0294.png",
+    "image_size": [
+      1280,
+      829
+    ]
+  },
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 19,
+      "surface": "context_menu",
+      "open_conversation": "Pallavi",
+      "focused_field_role": "in_chat_or_composer",
+      "objects": [
+        {
+          "id": "ctx_reply",
+          "kind": "menu_item",
+          "text": "Reply",
+          "matches_goal": false,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            250
+          ]
+        },
+        {
+          "id": "ctx_react",
+          "kind": "menu_item",
+          "text": "React",
+          "matches_goal": false,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            270
+          ]
+        },
+        {
+          "id": "ctx_star",
+          "kind": "menu_item",
+          "text": "Star",
+          "matches_goal": false,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            290
+          ]
+        },
+        {
+          "id": "ctx_pin",
+          "kind": "menu_item",
+          "text": "Pin",
+          "matches_goal": false,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            310
+          ]
+        },
+        {
+          "id": "ctx_forward",
+          "kind": "menu_item",
+          "text": "Forward",
+          "matches_goal": true,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            330
+          ]
+        },
+        {
+          "id": "ctx_copy",
+          "kind": "menu_item",
+          "text": "Copy",
+          "matches_goal": false,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            350
+          ]
+        },
+        {
+          "id": "ctx_info",
+          "kind": "menu_item",
+          "text": "Info",
+          "matches_goal": false,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            370
+          ]
+        },
+        {
+          "id": "ctx_delete",
+          "kind": "menu_item",
+          "text": "Delete",
+          "matches_goal": false,
+          "seen_on_frame": 19,
+          "point": [
+            670,
+            390
+          ]
+        },
+        {
+          "id": "msg_zarooratwala_link",
+          "kind": "message_bubble",
+          "text": "ZarooratWala – Fresh Groceries Delivered https://www.zarooratwala.com/...",
+          "matches_goal": true,
+          "seen_on_frame": 19,
+          "point": [
+            820,
+            120
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_chat_exists",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Conversation header shows 'Pallavi'"
+          ],
+          "confirmed_on_frame": 19
+        },
+        {
+          "predicate": "zarooratwala_message_visible",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Message bubble with zarooratwala link visible"
+          ],
+          "confirmed_on_frame": 19
+        },
+        {
+          "predicate": "context_menu_open",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Context menu visible with Forward option"
+          ],
+          "confirmed_on_frame": 19
+        },
+        {
+          "predicate": "forward_option_available",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Forward option visible in context menu"
+          ],
+          "confirmed_on_frame": 19
+        }
+      ],
+      "progress": {
+        "phase": "invoke_forward",
+        "objective": "Click Forward in the context menu to open the forward picker, then select Tanmay as destination",
+        "notes": "Context menu is open with Forward option visible. Need to click Forward to open the contact picker for selecting Tanmay."
+      },
+      "attempts": [
+        {
+          "frame": 14,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(194.0, 301.0) via entity bounds"
+        },
+        {
+          "frame": 15,
+          "action": "reveal_actions",
+          "target": "",
+          "result": "ok: substrate=addressable_entity label= mode=context_click had_bounds=True; context click 'entity' center=(1269.0, 187.0"
+        },
+        {
+          "frame": 16,
+          "action": "reveal_actions",
+          "target": "msg_zarooratwala_link",
+          "result": "ok: context menu opened successfully with Forward option visible"
+        },
+        {
+          "frame": 16,
+          "action": "locate_content",
+          "target": "",
+          "result": "ok: realization=native_find steps=1 text_match_reachable=False surface_exhausted=False surface_changed=True message=quer"
+        },
+        {
+          "frame": 17,
+          "action": "reveal_actions",
+          "target": "context_click",
+          "result": "ok: substrate=addressable_entity label=context_click mode=context_click had_bounds=True; context click 'context_click' c"
+        },
+        {
+          "frame": 18,
+          "action": "reveal_actions",
+          "target": "msg_zarooratwala_link",
+          "result": "pending"
+        },
+        {
+          "frame": 18,
+          "action": "reveal_actions",
+          "target": "Forward",
+          "result": "ok: substrate=addressable_entity label=Forward mode=context_click had_bounds=True; context click 'Forward' center=(1077."
+        },
+        {
+          "frame": 19,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: substrate=affordance_set affordance=Forward had_bounds=False; click 'Forward' center=(1143.5, 361.0) code=0"
+        }
+      ],
+      "exhausted": [
+        "dismiss_transient"
+      ]
+    },
+    "observation": {
+      "frame": 20,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            39,
+            1710,
+            984
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        829
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "InvokeAffordance",
+      "family": "invoke_affordance",
+      "target": "",
+      "text": "Forward",
+      "result": {
+        "ok": true,
+        "message": "substrate=affordance_set affordance=Forward had_bounds=False; click 'Forward' center=(1143.5, 361.0) code=0"
+      },
+      "you_predicted": {
+        "surface": "forward_picker",
+        "likely_controls": [
+          "Search contacts",
+          "Contact list",
+          "Send button",
+          "Cancel"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 20,
+      "surface": "context_menu",
+      "open_conversation": "Pallavi",
+      "focused_field_role": "none",
+      "objects": [
+        {
+          "id": "toolbar_forward",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": true,
+          "seen_on_frame": 20,
+          "point": [
+            600,
+            780
+          ]
+        },
+        {
+          "id": "toolbar_cancel",
+          "kind": "button",
+          "text": "Cancel",
+          "matches_goal": false,
+          "seen_on_frame": 20,
+          "point": [
+            960,
+            780
+          ]
+        },
+        {
+          "id": "msg_zarooratwala_link",
+          "kind": "message_bubble",
+          "text": "ZarooratWala – Fresh Groceries Delivered https://www.zarooratwala.com/...",
+          "matches_goal": true,
+          "seen_on_frame": 20,
+          "point": [
+            820,
+            120
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_chat_exists",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Conversation header shows 'Pallavi'"
+          ],
+          "confirmed_on_frame": 20
+        },
+        {
+          "predicate": "zarooratwala_message_visible",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Message bubble with zarooratwala link visible"
+          ],
+          "confirmed_on_frame": 20
+        },
+        {
+          "predicate": "context_menu_open",
+          "value": false,
+          "confidence": 0.99,
+          "evidence": [
+            "Context menu is closed, selection toolbar is visible"
+          ],
+          "confirmed_on_frame": 20
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Toolbar shows '1 Selected'"
+          ],
+          "confirmed_on_frame": 20
+        },
+        {
+          "predicate": "forward_picker_open",
+          "value": false,
+          "confidence": 0.99,
+          "evidence": [
+            "Contact picker dialog is not visible"
+          ],
+          "confirmed_on_frame": 20
+        }
+      ],
+      "progress": {
+        "phase": "invoke_forward_picker",
+        "objective": "Click the Forward button in the bottom selection toolbar to open the contact picker dialog",
+        "notes": "Context menu Forward action selected the message and showed the bottom toolbar. Now need to click the Forward button in the toolbar to open the contact picker for Tanmay."
+      },
+      "attempts": [
+        {
+          "frame": 14,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(194.0, 301.0) via entity bounds"
+        },
+        {
+          "frame": 15,
+          "action": "reveal_actions",
+          "target": "",
+          "result": "ok: substrate=addressable_entity label= mode=context_click had_bounds=True; context click 'entity' center=(1269.0, 187.0"
+        },
+        {
+          "frame": 16,
+          "action": "reveal_actions",
+          "target": "msg_zarooratwala_link",
+          "result": "ok: context menu opened successfully with Forward option visible"
+        },
+        {
+          "frame": 16,
+          "action": "locate_content",
+          "target": "",
+          "result": "ok: realization=native_find steps=1 text_match_reachable=False surface_exhausted=False surface_changed=True message=quer"
+        },
+        {
+          "frame": 17,
+          "action": "reveal_actions",
+          "target": "context_click",
+          "result": "ok: substrate=addressable_entity label=context_click mode=context_click had_bounds=True; context click 'context_click' c"
+        },
+        {
+          "frame": 18,
+          "action": "reveal_actions",
+          "target": "msg_zarooratwala_link",
+          "result": "pending"
+        },
+        {
+          "frame": 18,
+          "action": "reveal_actions",
+          "target": "Forward",
+          "result": "ok: substrate=addressable_entity label=Forward mode=context_click had_bounds=True; context click 'Forward' center=(1077."
+        },
+        {
+          "frame": 19,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: substrate=affordance_set affordance=Forward had_bounds=False; click 'Forward' center=(1143.5, 361.0) code=0"
+        }
+      ],
+      "exhausted": [
+        "dismiss_transient"
+      ]
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "context_menu",
+      "open_conversation": "Pallavi",
+      "target_object_visible": true,
+      "target_object_id": "toolbar_forward",
+      "focused_field_role": "none"
+    },
+    "belief_updates": [
+      {
+        "predicate": "pallavi_chat_exists",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "Conversation header shows 'Pallavi'"
+        ],
+        "confirmed_on_frame": 20
+      },
+      {
+        "predicate": "zarooratwala_message_visible",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "Message bubble with zarooratwala link visible"
+        ],
+        "confirmed_on_frame": 20
+      },
+      {
+        "predicate": "context_menu_open",
+        "value": false,
+        "confidence": 0.99,
+        "evidence": [
+          "Context menu is closed, selection toolbar is visible"
+        ],
+        "confirmed_on_frame": 20
+      },
+      {
+        "predicate": "message_selected",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "Toolbar shows '1 Selected'"
+        ],
+        "confirmed_on_frame": 20
+      },
+      {
+        "predicate": "forward_picker_open",
+        "value": false,
+        "confidence": 0.99,
+        "evidence": [
+          "Contact picker dialog is not visible"
+        ],
+        "confirmed_on_frame": 20
+      }
+    ],
+    "next_action": {
+      "family": "invoke_affordance",
+      "target_id": null,
+      "target_point": [
+        600,
+        780
+      ],
+      "text": "Forward",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "forward_picker",
+      "likely_controls": [
+        "Search contacts",
+        "Contact list",
+        "Send button",
+        "Cancel"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "toolbar_forward",
+        "kind": "button",
+        "text": "Forward",
+        "matches_goal": true,
+        "seen_on_frame": 20,
+        "point": [
+          600,
+          780
+        ]
+      },
+      {
+        "id": "toolbar_cancel",
+        "kind": "button",
+        "text": "Cancel",
+        "matches_goal": false,
+        "seen_on_frame": 20,
+        "point": [
+          960,
+          780
+        ]
+      },
+      {
+        "id": "msg_zarooratwala_link",
+        "kind": "message_bubble",
+        "text": "ZarooratWala – Fresh Groceries Delivered https://www.zarooratwala.com/...",
+        "matches_goal": true,
+        "seen_on_frame": 20,
+        "point": [
+          820,
+          120
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "scene_summary": "The WhatsApp conversation with Pallavi is open. A message is selected, indicated by the '1 Selected' toolbar at the bottom with Forward, Copy, Share, and Cancel buttons. The context menu is closed. The next step is to click the Forward button in this bottom toolbar to open the contact picker.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 32.183
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "UNKNOWN"
+  },
+  "annotation": {
+    "unlabelled": [
+      "surface",
+      "target_object",
+      "observed_next_surface"
+    ],
+    "critical_ctas": [
+      "invoke_affordance"
+    ],
+    "acceptable_next_actions": {
+      "invoke_affordance": 3,
+      "dismiss_transient": 1,
+      "observe": 0
+    },
+    "forbidden_next_actions": [
+      "compose_search_query",
+      "type_query",
+      "locate_content",
+      "commit_irreversible"
+    ],
+    "latent_affordances": [],
+    "required_controls": [
+      {
+        "kind": "menu_item",
+        "label": "Forward",
+        "weight": 10,
+        "why": "the affordance being invoked"
+      }
+    ],
+    "chrome_node_ids": [
+      2,
+      1
+    ],
+    "evidence_available": {
+      "screenshot": true,
+      "ax_content": false,
+      "ax_nodes": 2
+    },
+    "sources": {
+      "actions": "contract",
+      "controls": "contract"
+    }
+  }
+}

@@ -1,0 +1,657 @@
+{
+  "corpus_version": 1,
+  "id": "find_link/frame_0062",
+  "phase": "find_link",
+  "traits": [
+    "no_ax_content",
+    "shell_only",
+    "has_objects",
+    "target_visible"
+  ],
+  "source": {
+    "run": "live_forward",
+    "frame": 62,
+    "captured_at": "2026-08-02T12:15:22"
+  },
+  "screenshot": {
+    "recorded": true,
+    "name": "frame_0062.png",
+    "image_size": []
+  },
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 7,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "msg_otp_warning",
+          "kind": "message",
+          "text": "Don't share your OTP with anyone - Protect your OTPs during phone calls",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            400,
+            280
+          ]
+        },
+        {
+          "id": "msg_cartoon_post",
+          "kind": "message",
+          "text": "JAY JAGANNATH CARTOON - Prasanta Kumar... happy in Chennai",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            400,
+            500
+          ]
+        },
+        {
+          "id": "msg_lucky_girl",
+          "kind": "message",
+          "text": "Lucky girl 10:26 PM",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            750,
+            700
+          ]
+        },
+        {
+          "id": "msg_first_customer",
+          "kind": "message",
+          "text": "First customer to get otp 1000 10:26 PM",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            750,
+            730
+          ]
+        },
+        {
+          "id": "msg_sis_special",
+          "kind": "message",
+          "text": "my sis is special 10:26 PM",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            750,
+            760
+          ]
+        },
+        {
+          "id": "search_field",
+          "kind": "search_input",
+          "text": "Search field (expected after clicking search button)",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            850,
+            50
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_conversation_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "conversation header shows Pallavi",
+            "messages visible in chat area"
+          ],
+          "confirmed_on_frame": 7
+        },
+        {
+          "predicate": "search_field_active",
+          "value": true,
+          "confidence": 0.8,
+          "evidence": [
+            "clicked search in conversation button",
+            "search field should now be active"
+          ],
+          "confirmed_on_frame": 7
+        },
+        {
+          "predicate": "zarooratwala_not_visible",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "current visible messages don't contain zarooratwala"
+          ],
+          "confirmed_on_frame": 7
+        }
+      ],
+      "progress": {
+        "phase": "search_in_conversation",
+        "objective": "Type 'zarooratwala' into the in-chat search field to find the target message",
+        "notes": "Search button clicked. Search field should now be active. Will type the search query to find the zarooratwala message."
+      },
+      "attempts": [
+        {
+          "frame": 3,
+          "action": "observe",
+          "target": "",
+          "result": "ok: observe"
+        },
+        {
+          "frame": 4,
+          "action": "observe",
+          "target": "",
+          "result": "ok: observe"
+        },
+        {
+          "frame": 4,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(190.0, 175.0) via entity bounds"
+        },
+        {
+          "frame": 5,
+          "action": "observe",
+          "target": "",
+          "result": "ok: conversation opened, zarooratwala not visible"
+        },
+        {
+          "frame": 5,
+          "action": "scroll_content",
+          "target": "",
+          "result": "ok: pyautogui scroll"
+        },
+        {
+          "frame": 6,
+          "action": "observe",
+          "target": "",
+          "result": "ok: scrolled, zarooratwala still not visible"
+        },
+        {
+          "frame": 6,
+          "action": "click",
+          "target": "search_in_chat_btn",
+          "result": "ok: click search button center=(850.0, 50.0)"
+        },
+        {
+          "frame": 7,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed 'zarooratwala' into search field label='Pallavi' AXValue='Pallavi zarooratwala' open='Cmd+F search shortcut' e"
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 8,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence"
+    ],
+    "last_action": {
+      "action": "Type",
+      "family": "type_query",
+      "target": "",
+      "text": "zarooratwala",
+      "result": {
+        "ok": true,
+        "message": "typed 'zarooratwala' into search field label='Pallavi' AXValue='Pallavi zarooratwala' open='Cmd+F search shortcut' evidence=\"AXStaticText title='Pallavi zaroora"
+      },
+      "you_predicted": {
+        "surface": "conversation",
+        "likely_controls": [
+          "search_results",
+          "highlighted_message"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 8,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "search_results_sidebar",
+          "kind": "search_results",
+          "text": "Messages from Pallavi containing zarooratwala - multiple links visible",
+          "matches_goal": true,
+          "seen_on_frame": 8,
+          "point": [
+            180,
+            250
+          ]
+        },
+        {
+          "id": "msg_otp_warning",
+          "kind": "message",
+          "text": "Don't share your OTP with anyone - Protect your OTPs during phone calls",
+          "matches_goal": false,
+          "seen_on_frame": 8,
+          "point": [
+            400,
+            280
+          ]
+        },
+        {
+          "id": "msg_cartoon_post",
+          "kind": "message",
+          "text": "JAY JAGANNATH CARTOON - Prasanta Kumar... happy in Chennai",
+          "matches_goal": false,
+          "seen_on_frame": 8,
+          "point": [
+            400,
+            500
+          ]
+        },
+        {
+          "id": "msg_lucky_girl",
+          "kind": "message",
+          "text": "Lucky girl 10:26 PM",
+          "matches_goal": false,
+          "seen_on_frame": 8,
+          "point": [
+            750,
+            700
+          ]
+        },
+        {
+          "id": "msg_first_customer",
+          "kind": "message",
+          "text": "First customer to get otp 1000 10:26 PM",
+          "matches_goal": false,
+          "seen_on_frame": 8,
+          "point": [
+            750,
+            730
+          ]
+        },
+        {
+          "id": "msg_sis_special",
+          "kind": "message",
+          "text": "my sis is special 10:26 PM",
+          "matches_goal": false,
+          "seen_on_frame": 8,
+          "point": [
+            750,
+            760
+          ]
+        },
+        {
+          "id": "search_field",
+          "kind": "search_input",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 8,
+          "point": [
+            180,
+            80
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_conversation_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "conversation header shows Pallavi",
+            "messages visible in chat area"
+          ],
+          "confirmed_on_frame": 8
+        },
+        {
+          "predicate": "search_executed",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "search field shows 'Pallavi zarooratwala'",
+            "search results visible in sidebar"
+          ],
+          "confirmed_on_frame": 8
+        },
+        {
+          "predicate": "zarooratwala_messages_exist",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "sidebar shows multiple zarooratwala search results"
+          ],
+          "confirmed_on_frame": 8
+        },
+        {
+          "predicate": "target_message_not_highlighted_in_view",
+          "value": true,
+          "confidence": 0.8,
+          "evidence": [
+            "no highlighted text visible in current conversation view"
+          ],
+          "confirmed_on_frame": 8
+        }
+      ],
+      "progress": {
+        "phase": "locate_target_message",
+        "objective": "Find and select the zarooratwala message in the conversation to forward it",
+        "notes": "Search executed successfully. Sidebar shows zarooratwala results. Need to scroll conversation to find the highlighted message or click a search result."
+      },
+      "attempts": [
+        {
+          "frame": 4,
+          "action": "observe",
+          "target": "",
+          "result": "ok: observe"
+        },
+        {
+          "frame": 4,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(190.0, 175.0) via entity bounds"
+        },
+        {
+          "frame": 5,
+          "action": "observe",
+          "target": "",
+          "result": "ok: conversation opened, zarooratwala not visible"
+        },
+        {
+          "frame": 5,
+          "action": "scroll_content",
+          "target": "",
+          "result": "ok: pyautogui scroll"
+        },
+        {
+          "frame": 6,
+          "action": "observe",
+          "target": "",
+          "result": "ok: scrolled, zarooratwala still not visible"
+        },
+        {
+          "frame": 6,
+          "action": "click",
+          "target": "search_in_chat_btn",
+          "result": "ok: click search button center=(850.0, 50.0)"
+        },
+        {
+          "frame": 7,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed 'zarooratwala' into search field"
+        },
+        {
+          "frame": 8,
+          "action": "observe",
+          "target": "",
+          "result": "ok: search results visible in sidebar, need to locate message in conversation"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {
+      "reason": null,
+      "to": null
+    },
+    "observed_state": {
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "target_object_visible": true,
+      "target_object_id": "search_results_sidebar"
+    },
+    "belief_updates": [
+      {
+        "predicate": "pallavi_conversation_open",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "conversation header shows Pallavi",
+          "messages visible in chat area"
+        ],
+        "confirmed_on_frame": 8
+      },
+      {
+        "predicate": "search_executed",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "search field shows 'Pallavi zarooratwala'",
+          "search results visible in sidebar"
+        ],
+        "confirmed_on_frame": 8
+      },
+      {
+        "predicate": "zarooratwala_messages_exist",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "sidebar shows multiple zarooratwala search results"
+        ],
+        "confirmed_on_frame": 8
+      },
+      {
+        "predicate": "target_message_not_highlighted_in_view",
+        "value": true,
+        "confidence": 0.8,
+        "evidence": [
+          "no highlighted text visible in current conversation view"
+        ],
+        "confirmed_on_frame": 8
+      }
+    ],
+    "next_action": {
+      "family": "scroll",
+      "target_id": null,
+      "target_point": [
+        600,
+        400
+      ],
+      "text": "",
+      "confidence": 0.85
+    },
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "highlighted_message",
+        "search_navigation"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "search_results_sidebar",
+        "kind": "search_results",
+        "text": "Messages from Pallavi containing zarooratwala - multiple links visible",
+        "matches_goal": true,
+        "seen_on_frame": 8,
+        "point": [
+          180,
+          250
+        ]
+      },
+      {
+        "id": "msg_otp_warning",
+        "kind": "message",
+        "text": "Don't share your OTP with anyone - Protect your OTPs during phone calls",
+        "matches_goal": false,
+        "seen_on_frame": 8,
+        "point": [
+          400,
+          280
+        ]
+      },
+      {
+        "id": "msg_cartoon_post",
+        "kind": "message",
+        "text": "JAY JAGANNATH CARTOON - Prasanta Kumar... happy in Chennai",
+        "matches_goal": false,
+        "seen_on_frame": 8,
+        "point": [
+          400,
+          500
+        ]
+      },
+      {
+        "id": "msg_lucky_girl",
+        "kind": "message",
+        "text": "Lucky girl 10:26 PM",
+        "matches_goal": false,
+        "seen_on_frame": 8,
+        "point": [
+          750,
+          700
+        ]
+      },
+      {
+        "id": "msg_first_customer",
+        "kind": "message",
+        "text": "First customer to get otp 1000 10:26 PM",
+        "matches_goal": false,
+        "seen_on_frame": 8,
+        "point": [
+          750,
+          730
+        ]
+      },
+      {
+        "id": "msg_sis_special",
+        "kind": "message",
+        "text": "my sis is special 10:26 PM",
+        "matches_goal": false,
+        "seen_on_frame": 8,
+        "point": [
+          750,
+          760
+        ]
+      },
+      {
+        "id": "search_field",
+        "kind": "search_input",
+        "text": "Pallavi zarooratwala",
+        "matches_goal": false,
+        "seen_on_frame": 8,
+        "point": [
+          180,
+          80
+        ]
+      }
+    ],
+    "missing_evidence": [
+      "highlighted search result in conversation view"
+    ],
+    "scene_summary": "Search for 'zarooratwala' executed in Pallavi conversation. Sidebar shows multiple search results containing zarooratwala links. The conversation view doesn't show a highlighted message yet. Need to scroll in the conversation area to find the highlighted search result.",
+    "confidence": 0.85,
+    "model": "qwen3.5:397b",
+    "latency_s": 20.427
+  },
+  "shadow_task_state": {
+    "phase": "FIND_LINK",
+    "local_objective": "resolve source object matching query",
+    "predicates": {
+      "source_conversation_open": true,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "Pallavi",
+    "wa_screen": "CONVERSATION"
+  },
+  "annotation": {
+    "unlabelled": [
+      "target_object"
+    ],
+    "surface": "conversation",
+    "critical_ctas": [
+      "locate_content",
+      "select_content",
+      "reveal_actions"
+    ],
+    "acceptable_next_actions": {
+      "locate_content": 3,
+      "select_content": 3,
+      "reveal_actions": 3,
+      "scroll": 2,
+      "hover": 1,
+      "observe": 0
+    },
+    "forbidden_next_actions": [
+      "compose_search_query",
+      "commit_irreversible"
+    ],
+    "latent_affordances": [
+      "Forward",
+      "Reply",
+      "Copy"
+    ],
+    "required_controls": [
+      {
+        "kind": "message",
+        "label": "zarooratwala",
+        "weight": 10,
+        "why": "the message being forwarded"
+      },
+      {
+        "kind": "timeline",
+        "weight": 5,
+        "why": "history has to be scrollable"
+      }
+    ],
+    "chrome_node_ids": [
+      2,
+      1
+    ],
+    "observed_next_surface": "conversation",
+    "evidence_available": {
+      "screenshot": true,
+      "ax_content": false,
+      "ax_nodes": 2
+    },
+    "sources": {
+      "surface": "shadow_fused",
+      "actions": "contract",
+      "controls": "contract",
+      "transition": "outcome"
+    }
+  }
+}

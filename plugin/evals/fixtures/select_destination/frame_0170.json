@@ -1,0 +1,620 @@
+{
+  "corpus_version": 1,
+  "id": "select_destination/frame_0170",
+  "phase": "select_destination",
+  "traits": [
+    "no_ax_content",
+    "shell_only",
+    "repeated_reading",
+    "has_objects",
+    "target_visible"
+  ],
+  "source": {
+    "run": "live_forward",
+    "frame": 170,
+    "captured_at": "2026-08-02T15:19:29"
+  },
+  "screenshot": {
+    "recorded": true,
+    "name": "frame_0170.png",
+    "image_size": [
+      1280,
+      720
+    ]
+  },
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 12,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "forward_picker_search",
+          "kind": "search_field",
+          "text": "Tanmay",
+          "matches_goal": false,
+          "seen_on_frame": 12,
+          "point": [
+            585,
+            325
+          ]
+        },
+        {
+          "id": "tanmay_artha",
+          "kind": "contact",
+          "text": "Tanmay <> Artha",
+          "matches_goal": false,
+          "seen_on_frame": 12,
+          "point": [
+            585,
+            395
+          ]
+        },
+        {
+          "id": "tanmay_saurabh",
+          "kind": "contact",
+          "text": "Tanmay Saurabh Connect",
+          "matches_goal": false,
+          "seen_on_frame": 12,
+          "point": [
+            585,
+            435
+          ]
+        },
+        {
+          "id": "tanmay_murali",
+          "kind": "contact",
+          "text": "Tanmay <> Murali",
+          "matches_goal": false,
+          "seen_on_frame": 12,
+          "point": [
+            585,
+            475
+          ]
+        },
+        {
+          "id": "aakash_tanmay",
+          "kind": "contact",
+          "text": "Aakash <> Tanmay",
+          "matches_goal": true,
+          "seen_on_frame": 12,
+          "point": [
+            585,
+            635
+          ]
+        },
+        {
+          "id": "tanmay_vida",
+          "kind": "contact",
+          "text": "Tanmay Vida v1 Pro",
+          "matches_goal": false,
+          "seen_on_frame": 12,
+          "point": [
+            585,
+            675
+          ]
+        },
+        {
+          "id": "forward_button",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 12,
+          "point": [
+            590,
+            910
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "conversation_opened",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Pallavi conversation is open"
+          ],
+          "confirmed_on_frame": 12
+        },
+        {
+          "predicate": "target_message_visible",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "zarooratwala link message is visible"
+          ],
+          "confirmed_on_frame": 12
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "'1 Selected' indicator visible at bottom"
+          ],
+          "confirmed_on_frame": 12
+        },
+        {
+          "predicate": "forward_picker_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Send to dialog is visible with contact list"
+          ],
+          "confirmed_on_frame": 12
+        },
+        {
+          "predicate": "destination_selected",
+          "value": false,
+          "confidence": 1.0,
+          "evidence": [
+            "No checkmark visible next to any contact in Send to dialog"
+          ],
+          "confirmed_on_frame": 12
+        }
+      ],
+      "progress": {
+        "phase": "select_destination",
+        "objective": "Click 'Aakash <> Tanmay' contact row in the Send to dialog to select as recipient",
+        "notes": "Previous clicks may have hit keyboard/search area. Need to click directly on the contact row in the forward picker dialog."
+      },
+      "attempts": [
+        {
+          "frame": 4,
+          "action": "reveal_actions",
+          "target": "zarooratwala_message",
+          "result": "ok: context menu opened"
+        },
+        {
+          "frame": 5,
+          "action": "invoke_affordance",
+          "target": "Forward",
+          "result": "ok: context menu Forward clicked, message selected state entered"
+        },
+        {
+          "frame": 6,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: Forward button clicked, forward picker opened"
+        },
+        {
+          "frame": 8,
+          "action": "compose_search_query",
+          "target": "",
+          "result": "ok: Tanmay query composed"
+        },
+        {
+          "frame": 9,
+          "action": "open_entity",
+          "target": "Aakash <> Tanmay",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 10,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 11,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(878, 952)"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Aakash <> Tanmay' into search field label='Tanmay' AXValue='Aakash <> Tanmay' open='Cmd+F search shortcut' ev"
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 13,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "Type",
+      "family": "type_query",
+      "target": "Search",
+      "text": "Aakash <> Tanmay",
+      "result": {
+        "ok": true,
+        "message": "typed 'Aakash <> Tanmay' into search field label='Tanmay' AXValue='Aakash <> Tanmay' open='Cmd+F search shortcut' evidence=\"AXTextField value='Aakash <> Tanmay'"
+      },
+      "you_predicted": {
+        "surface": "forward_picker",
+        "likely_controls": [
+          "checkmark_on_contact",
+          "forward_button",
+          "selected_contact_indicator"
+        ]
+      }
+    },
+    "identical_readings_in_a_row": 2
+  },
+  "response": {
+    "world_model": {
+      "frame": 13,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "send_to_search",
+          "kind": "search_field",
+          "text": "Aakash <> Tanmay",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            585,
+            325
+          ]
+        },
+        {
+          "id": "aakash_tanmay_result",
+          "kind": "contact",
+          "text": "Aakash <> Tanmay - Rishi, VC Aakash, You",
+          "matches_goal": true,
+          "seen_on_frame": 13,
+          "point": [
+            585,
+            395
+          ]
+        },
+        {
+          "id": "forward_button",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            590,
+            910
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "conversation_opened",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Pallavi conversation is open"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "target_message_visible",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "zarooratwala link message is visible"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "'1 Selected' indicator visible at bottom"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "forward_picker_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Send to dialog is visible with contact list"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "destination_selected",
+          "value": false,
+          "confidence": 1.0,
+          "evidence": [
+            "No checkmark visible next to Aakash <> Tanmay contact"
+          ],
+          "confirmed_on_frame": 13
+        }
+      ],
+      "progress": {
+        "phase": "select_destination",
+        "objective": "Click on 'Aakash <> Tanmay' contact row to select as recipient",
+        "notes": "Search completed, contact visible in results. Need to click the contact row to select it before forwarding."
+      },
+      "attempts": [
+        {
+          "frame": 4,
+          "action": "reveal_actions",
+          "target": "zarooratwala_message",
+          "result": "ok: context menu opened"
+        },
+        {
+          "frame": 5,
+          "action": "invoke_affordance",
+          "target": "Forward",
+          "result": "ok: context menu Forward clicked, message selected state entered"
+        },
+        {
+          "frame": 6,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: Forward button clicked, forward picker opened"
+        },
+        {
+          "frame": 8,
+          "action": "compose_search_query",
+          "target": "",
+          "result": "ok: Tanmay query composed"
+        },
+        {
+          "frame": 9,
+          "action": "open_entity",
+          "target": "Aakash <> Tanmay",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 10,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 11,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(878, 952)"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Aakash <> Tanmay' into search field"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "target_object_visible": true,
+      "target_object_id": "aakash_tanmay_result"
+    },
+    "belief_updates": [
+      {
+        "predicate": "conversation_opened",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Pallavi conversation is open"
+        ],
+        "confirmed_on_frame": 13
+      },
+      {
+        "predicate": "target_message_visible",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "zarooratwala link message is visible"
+        ],
+        "confirmed_on_frame": 13
+      },
+      {
+        "predicate": "message_selected",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "'1 Selected' indicator visible at bottom"
+        ],
+        "confirmed_on_frame": 13
+      },
+      {
+        "predicate": "forward_picker_open",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Send to dialog is visible with contact list"
+        ],
+        "confirmed_on_frame": 13
+      },
+      {
+        "predicate": "destination_selected",
+        "value": false,
+        "confidence": 1.0,
+        "evidence": [
+          "No checkmark visible next to Aakash <> Tanmay contact"
+        ],
+        "confirmed_on_frame": 13
+      }
+    ],
+    "next_action": {
+      "family": "click",
+      "target_id": null,
+      "target_point": [
+        585,
+        395
+      ],
+      "text": "",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "forward_picker",
+      "likely_controls": [
+        "checkmark_on_contact",
+        "forward_button_enabled"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "send_to_search",
+        "kind": "search_field",
+        "text": "Aakash <> Tanmay",
+        "matches_goal": false,
+        "seen_on_frame": 13,
+        "point": [
+          585,
+          325
+        ]
+      },
+      {
+        "id": "aakash_tanmay_result",
+        "kind": "contact",
+        "text": "Aakash <> Tanmay - Rishi, VC Aakash, You",
+        "matches_goal": true,
+        "seen_on_frame": 13,
+        "point": [
+          585,
+          395
+        ]
+      },
+      {
+        "id": "forward_button",
+        "kind": "button",
+        "text": "Forward",
+        "matches_goal": false,
+        "seen_on_frame": 13,
+        "point": [
+          590,
+          910
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "scene_summary": "Send to dialog is open with search results showing 'Aakash <> Tanmay' contact. The contact row is visible but not yet selected (no checkmark). Need to click on the contact row to select it as the forwarding destination.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 16.998
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "SEARCH_RESULTS"
+  },
+  "annotation": {
+    "unlabelled": [
+      "target_object"
+    ],
+    "surface": "search",
+    "critical_ctas": [
+      "resolve_entity",
+      "open_entity",
+      "type_query",
+      "compose_search_query"
+    ],
+    "acceptable_next_actions": {
+      "resolve_entity": 3,
+      "open_entity": 3,
+      "compose_search_query": 2,
+      "type_query": 2,
+      "scroll": 1,
+      "observe": 0
+    },
+    "forbidden_next_actions": [
+      "commit_irreversible",
+      "invoke_affordance"
+    ],
+    "latent_affordances": [],
+    "required_controls": [
+      {
+        "kind": "search_input",
+        "weight": 10,
+        "why": "the query has to be typed somewhere"
+      },
+      {
+        "kind": "conversation_row",
+        "label": "Pallavi",
+        "weight": 10,
+        "why": "the source chat must be openable"
+      }
+    ],
+    "chrome_node_ids": [
+      2,
+      1
+    ],
+    "observed_next_surface": "search",
+    "evidence_available": {
+      "screenshot": true,
+      "ax_content": false,
+      "ax_nodes": 2
+    },
+    "sources": {
+      "surface": "shadow_fused",
+      "actions": "contract",
+      "controls": "contract",
+      "transition": "outcome"
+    }
+  }
+}

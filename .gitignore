@@ -158,3 +158,15 @@ apps/desktop/demo/
 # PR body is the archive. See the hermes-agent-dev skill's
 # pr-infographic-workflow reference (storage rule + lapse #8 / #COMMIT-1).
 infographic/
+
+# --- Local WIP protection (unified-cognition recovery, 2026-08-03) ---
+# Machine-local secrets and locks. Never commit.
+auth.json
+auth.lock
+# Model/provider probe caches — machine-local, regenerated on demand.
+cache/
+models_dev_cache.json
+ollama_cloud_models_cache.json
+provider_models_cache.json
+# Live experiment run logs / transcripts — large, non-deterministic, not source.
+plugin/experiments/runs/

@@ -1,0 +1,77 @@
+{
+  "decision_families": [
+    "open_contact",
+    "select_content"
+  ],
+  "executed": [
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "ZarooratWala"
+    },
+    {
+      "action": "Click",
+      "family": "select_content",
+      "target": "https://zarooratwala.com/charger"
+    }
+  ],
+  "final_surface": "conversation",
+  "iterations": [
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 0,
+      "observations": 0,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "ZarooratWala"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "ZarooratWala"
+        }
+      ],
+      "iteration": 1,
+      "observations": 2,
+      "outcomes": [
+        "promising_unresolved"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "select_content",
+          "target": "https://zarooratwala.com/charger"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "select_content",
+          "ok": true,
+          "target": "https://zarooratwala.com/charger"
+        }
+      ],
+      "iteration": 2,
+      "observations": 2,
+      "outcomes": [
+        "promising_unresolved"
+      ]
+    }
+  ],
+  "result": {
+    "iterations": 2,
+    "ok": false,
+    "reason": "Maximum step count reached"
+  }
+}

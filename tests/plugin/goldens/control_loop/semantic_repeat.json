@@ -1,0 +1,189 @@
+{
+  "decision_families": [
+    "open_contact",
+    "open_contact",
+    "open_contact",
+    "open_contact",
+    "open_contact",
+    "open_contact"
+  ],
+  "executed": [
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "ZarooratWala"
+    },
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "ZarooratWala"
+    },
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "ZarooratWala"
+    },
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "ZarooratWala"
+    },
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "ZarooratWala"
+    },
+    {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "ZarooratWala"
+    }
+  ],
+  "final_surface": "chat_list",
+  "iterations": [
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 0,
+      "observations": 0,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "ZarooratWala"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "ZarooratWala"
+        }
+      ],
+      "iteration": 1,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "ZarooratWala"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "ZarooratWala"
+        }
+      ],
+      "iteration": 2,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "ZarooratWala"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "ZarooratWala"
+        }
+      ],
+      "iteration": 3,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "ZarooratWala"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "ZarooratWala"
+        }
+      ],
+      "iteration": 4,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "ZarooratWala"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "ZarooratWala"
+        }
+      ],
+      "iteration": 5,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    },
+    {
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "target": "ZarooratWala"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "open_contact",
+          "ok": true,
+          "target": "ZarooratWala"
+        }
+      ],
+      "iteration": 6,
+      "observations": 2,
+      "outcomes": [
+        "no_effect"
+      ]
+    }
+  ],
+  "result": {
+    "iterations": 6,
+    "ok": false,
+    "reason": "Maximum step count reached"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "decision_families": [
+    "type_query",
+    "observe",
+    "observe",
+    "observe",
+    "type_query",
+    "observe"
+  ],
+  "executed": [
+    {
+      "action": "Type",
+      "family": "type_query",
+      "target": "Search"
+    },
+    {
+      "action": "Type",
+      "family": "type_query",
+      "target": "Search"
+    }
+  ],
+  "final_surface": "chat_list",
+  "iterations": [
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 0,
+      "observations": 0,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "target": "Search"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "ok": false,
+          "target": "Search"
+        }
+      ],
+      "iteration": 1,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 2,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 3,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 4,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "target": "Search"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Type",
+          "family": "type_query",
+          "ok": false,
+          "target": "Search"
+        }
+      ],
+      "iteration": 5,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
+      "executions": [],
+      "iteration": 6,
+      "observations": 1,
+      "outcomes": []
+    }
+  ],
+  "result": {
+    "iterations": 6,
+    "ok": false,
+    "reason": "Maximum step count reached"
+  }
+}

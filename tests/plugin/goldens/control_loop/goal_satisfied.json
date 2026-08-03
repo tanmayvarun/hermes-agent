@@ -1,0 +1,26 @@
+{
+  "decision_families": [],
+  "executed": [],
+  "final_surface": "ringing",
+  "iterations": [
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 0,
+      "observations": 0,
+      "outcomes": []
+    },
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 1,
+      "observations": 1,
+      "outcomes": []
+    }
+  ],
+  "result": {
+    "iterations": 1,
+    "ok": true,
+    "reason": "goal succeeded"
+  }
+}
