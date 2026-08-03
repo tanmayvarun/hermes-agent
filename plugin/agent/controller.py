@@ -168,6 +168,30 @@ def _consume_surprise(execution_state: Any) -> None:
         execution_state.last_attribution = updated
 
 
+def _observe_capability_reliability(decision: Any, ok: bool) -> None:
+    """Feed the executed action's outcome back into the capability registry.
+
+    The registry seeds each verb's reliability with a conservative prior and
+    ranks its shortlist by a value score built from that reliability. Nothing
+    was updating the prior, so the ordering could never learn which capabilities
+    actually work here. Nudging the executed verb's reliability toward the
+    observed outcome (an EMA inside the registry) closes that loop: a verb that
+    keeps failing on this surface drifts down the shortlist, a reliable one
+    drifts up. Best-effort and side-effect free beyond the in-memory prior.
+    """
+    family = str(getattr(decision, "action_family", "") or "").strip().lower()
+    if not family:
+        return
+    try:
+        from plugin.agent.executive.capabilities import default_registry
+
+        registry = default_registry()
+        if registry.get(family) is not None:
+            registry.observe_reliability(family, bool(ok))
+    except Exception:
+        pass
+
+
 # Meta-actions that unconditionally pre-empt this frame's grounded decision.
 # VERIFY/BACKTRACK/ASK_USER are terminal-ish control moves. THINK and PROBE are
 # deliberate detours handled separately (they are bounded and may fall through
@@ -2083,6 +2107,7 @@ def run_goal_closed_loop(
 
         execution = execute.execute(decision)
         runtime.execution_state.record(decision, execution.__dict__)
+        _observe_capability_reliability(decision, execution.ok)
         _log_cycle(
             log,
             iteration=iteration,

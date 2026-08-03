@@ -53,6 +53,29 @@ def test_brief_carries_world_task_navigation_and_goal():
     assert "Pallavi" in packet["visible_candidates"]
 
 
+def test_brief_carries_the_registry_disclosure_view():
+    """The packet exposes a progressive-disclosure view of the registry, not a
+    bare verb list: a relevant shortlist plus the family taxonomy and counts."""
+    doc = {"surface": "search", "objects": [{"text": "Pallavi", "kind": "contact"}]}
+    brief = build_decision_brief(_goal(), world_document=doc, features=_features())
+    disclosure = brief.to_packet()["capability_disclosure"]
+    assert disclosure["relevant"], "a situation shortlist must be offered"
+    assert disclosure["installed_count"] >= disclosure["relevant_count"]
+    assert isinstance(disclosure["families"], dict) and disclosure["families"]
+
+
+def test_situation_facts_gate_the_registry_ordering():
+    """When candidates are visible, candidate/entity facts hold, so the picker
+    verbs the situation satisfies are ranked ahead of ones that cannot run."""
+    from plugin.agent.decision_consultation import TaskState, situation_facts
+
+    state = TaskState(phase="reach_source", open_conversation="Pallavi", source_chat_open=True)
+    facts = situation_facts(state, candidates=["Pallavi", "Pallavi Gen3"], goal={"source_conversation": "Pallavi"})
+    assert "candidate_set" in facts
+    assert "addressable_entity" in facts
+    assert "task_evidence" in facts
+
+
 def test_navigation_forbids_sidebar_search_on_picker():
     nav = navigation_options("forward_picker", "destination_filter")
     assert "compose_search_query" in nav.forbidden

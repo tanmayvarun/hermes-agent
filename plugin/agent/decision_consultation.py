@@ -54,6 +54,10 @@ _DECISION_SYSTEM = (
     "- locate_content makes content reachable inside the open surface; only "
     "use it when the open conversation is the intended source.\n"
     "- Skip any step whose result the world document already shows.\n"
+    "- capability_disclosure ranks the capabilities relevant to this situation "
+    "(cheapest, most reliable, precondition-satisfied first) and groups the rest "
+    "by family; prefer a relevant capability over one whose preconditions are "
+    "not yet met.\n"
     "- target is the capability argument (a label, a query, or empty)."
 )
 
@@ -139,6 +143,11 @@ class DecisionBrief:
     capabilities: List[str] = field(default_factory=list)
     candidates: List[str] = field(default_factory=list)
     perceptor_suggestion: Dict[str, Any] = field(default_factory=dict)
+    # Progressive-disclosure view of the capability registry: the relevant
+    # shortlist for this situation, the family taxonomy, and how much of the
+    # catalog that shortlist is — so the model sees "N of M relevant" rather
+    # than a flat verb dump.
+    capability_disclosure: Dict[str, Any] = field(default_factory=dict)
 
     def to_packet(self) -> Dict[str, Any]:
         return {
@@ -148,6 +157,7 @@ class DecisionBrief:
             "navigation": self.navigation.to_dict(),
             "allowed_capabilities": self.capabilities,
             "forbidden_capabilities": self.navigation.forbidden,
+            "capability_disclosure": self.capability_disclosure,
             "visible_candidates": self.candidates[:24],
             "perceptor_suggestion": self.perceptor_suggestion,
         }
@@ -208,6 +218,49 @@ def ranked_capabilities(
     # its place at the end rather than being dropped.
     ranked += [c for c in choosable if c not in set(ranked)]
     return ranked
+
+
+def situation_facts(
+    task_state: "TaskState",
+    *,
+    candidates: Iterable[str] = (),
+    goal: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    """The facts the registry gates capability preconditions against.
+
+    These are the situation's answer to "what is true right now" in the same
+    vocabulary the capability descriptors declare their preconditions in
+    (``task_evidence``, ``candidate_set``, ``affordance_set`` ...). Passing them
+    to the registry lets retrieval rank precondition-satisfied capabilities
+    ahead of ones that cannot run yet, instead of a static value ordering.
+    Precondition-failing verbs are never dropped from the final list — the
+    registry only reorders — so an incomplete fact set degrades gracefully.
+    """
+    goal = goal or {}
+    facts: List[str] = []
+    cand = [c for c in candidates if str(c or "").strip()]
+
+    # There is always some goal evidence to author a query from.
+    if goal.get("source_conversation") or goal.get("source_query"):
+        facts.append("task_evidence")
+    # A surface that hosts a search field is searchable.
+    if task_state.phase in {"reach_source", "hunt_content", "choose_destination"}:
+        facts.append("searchable_surface")
+    # An open source chat is a surface content can be located within.
+    if task_state.source_chat_open or task_state.open_conversation:
+        facts.append("open_surface")
+    # Visible rows/objects are addressable entities, and a set of them to pick from.
+    if cand:
+        facts.append("candidate_set")
+    if cand or task_state.open_conversation:
+        facts.append("addressable_entity")
+    # A revealed action set exists once actions are exposed on the target.
+    if task_state.phase == "invoke_forward":
+        facts.append("affordance_set")
+    # A commit target is gated open only at the phases where committing is due.
+    if task_state.phase in {"choose_destination", "act_on_content"}:
+        facts.append("gated_target")
+    return facts
 
 
 def navigation_options(surface: str, field_role: str = "") -> NavigationInfo:
@@ -364,13 +417,30 @@ def build_decision_brief(
             "text": str(perceptor_action.get("text") or ""),
             "target_label": str(perceptor_action.get("target_label") or ""),
         }
+    goal_dict = {
+        "operation": str(getattr(goal, "kind", "") or ""),
+        "source_conversation": str(getattr(goal, "contact", "") or ""),
+        "source_query": str(getattr(goal, "link_query", "") or ""),
+        "destination": str(getattr(goal, "target_contact", "") or ""),
+    }
+    candidate_labels = [str(r.get("label") or "") for r in rows if r.get("label")]
+
+    # The registry now retrieves against the situation, not in the abstract:
+    # what is true right now (facts) plus what the executive last decided to do
+    # (meta_action) drive both the ranked shortlist and its disclosure view.
+    facts = situation_facts(task_state, candidates=candidate_labels, goal=goal_dict)
+    meta_action = str(getattr(execution_state, "last_meta_action", "") or "act")
+
+    from plugin.agent.executive.capabilities import default_registry
+
+    disclosure = default_registry().disclosure(
+        meta_action=meta_action,
+        facts=facts,
+        limit=6,
+    )
+
     return DecisionBrief(
-        goal={
-            "operation": str(getattr(goal, "kind", "") or ""),
-            "source_conversation": str(getattr(goal, "contact", "") or ""),
-            "source_query": str(getattr(goal, "link_query", "") or ""),
-            "destination": str(getattr(goal, "target_contact", "") or ""),
-        },
+        goal=goal_dict,
         world={
             "surface": str(doc.get("surface") or ""),
             "open_conversation": str(doc.get("open_conversation") or ""),
@@ -387,9 +457,12 @@ def build_decision_brief(
         capabilities=ranked_capabilities(
             surface=str(doc.get("surface") or ""),
             forbidden=navigation.forbidden,
+            facts=facts,
+            meta_action=meta_action,
         ),
-        candidates=[str(r.get("label") or "") for r in rows if r.get("label")],
+        candidates=candidate_labels,
         perceptor_suggestion=suggestion,
+        capability_disclosure=disclosure,
     )
 
 
