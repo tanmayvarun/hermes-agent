@@ -440,3 +440,61 @@ def test_a_provisional_binding_promoting_to_resolved_does_not_flip():
     # Same value throughout: a status upgrade must not be recorded as a belief flip.
     assert state.workspace.belief_flips == 0
     assert state.workspace.fact("binding.source_object").status == "observed"
+
+
+# --------------------------------------------------- goal-contract consultation
+
+
+def _forward_contract_state() -> ExecutionState:
+    from plugin.agent.executive.workspace import GoalState, goal_contract_for
+
+    contract = goal_contract_for("whatsapp_forward_message")
+    state = ExecutionState()
+    state.workspace.goal = GoalState(
+        kind="whatsapp_forward_message",
+        success_conditions=list(contract["success_conditions"]),
+        constraints=list(contract["constraints"]),
+    )
+    return state
+
+
+def test_contract_status_is_empty_before_any_phase():
+    from plugin.agent.executive.sync import contract_status
+
+    state = _forward_contract_state()
+    status = contract_status(state)
+    # Nothing satisfied yet: every success condition is still pending.
+    assert status["satisfied"] == []
+    assert status["pending"] == status["success_conditions"]
+    assert status["all_satisfied"] is False
+    assert status["constraints"]  # the contract's constraints are surfaced
+
+
+def test_contract_progress_tracks_phase_ladder():
+    from plugin.agent.executive.sync import contract_status
+
+    state = _forward_contract_state()
+    state.workspace.commit(WorkspaceProposal(source="perception", phase="invoke_forward"))
+    status = contract_status(state)
+    # Mid-ladder: some conditions satisfied, some pending, not yet complete.
+    assert status["satisfied"]
+    assert status["pending"]
+    assert status["all_satisfied"] is False
+
+
+def test_contract_is_complete_at_the_terminal_phase():
+    from plugin.agent.executive.sync import contract_status
+
+    state = _forward_contract_state()
+    state.workspace.commit(WorkspaceProposal(source="perception", phase="verified"))
+    status = contract_status(state)
+    assert status["pending"] == []
+    assert status["all_satisfied"] is True
+
+
+def test_contract_status_is_empty_without_a_contract():
+    from plugin.agent.executive.sync import contract_status
+
+    # A goal with no registered contract has nothing to consult.
+    state = ExecutionState()
+    assert contract_status(state).get("all_satisfied") in (False, None)

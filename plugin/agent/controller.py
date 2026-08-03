@@ -18,6 +18,7 @@ from plugin.agent.executive.sync import (
     commit_bindings,
     commit_reading,
     commit_transition,
+    contract_status,
     has_resolved_binding,
     workspace_blocking_uncertainties,
     workspace_of,
@@ -1665,6 +1666,12 @@ def run_goal_closed_loop(
         )
         ambiguous = contradiction_count > 0 or stuck_without_route
         steps_remaining = max(0, step_budget - iteration + 1)
+        # Consult the goal contract: what "done" means and what must hold. When
+        # every success condition is met the executive verifies completion (ladder
+        # rung 0) rather than trusting a single grounded move — the executive, not
+        # a submodule, owns the completion judgement.
+        contract = contract_status(runtime.execution_state)
+        contract_complete = bool(contract.get("all_satisfied"))
         sufficiency, meta = assess_executive_judgement(
             runtime.execution_state,
             blocking_uncertainties=blocking_uncertainties,
@@ -1678,6 +1685,7 @@ def run_goal_closed_loop(
             probe_available=probe_available,
             ambiguous=ambiguous,
             steps_remaining=steps_remaining,
+            goal_complete=contract_complete,
         )
         # Backtracks exhausted: stop retreating (commit or escalate). Without this
         # the executive prefers BACKTRACK (higher value than a thin ACT) forever,
@@ -1720,6 +1728,12 @@ def run_goal_closed_loop(
                 "blocking_uncertainties": [str(q) for q in blocking_uncertainties][:8],
                 "static_streak": static_streak,
                 "beliefs": beliefs_payload,
+                "goal_contract": {
+                    "satisfied": [str(s) for s in (contract.get("satisfied") or [])],
+                    "pending": [str(s) for s in (contract.get("pending") or [])],
+                    "constraints": [str(c) for c in (contract.get("constraints") or [])],
+                    "all_satisfied": contract_complete,
+                },
             },
         )
         prev_meta_suppress = bool(getattr(meta, "suppress_observe", False))

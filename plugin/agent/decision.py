@@ -1356,6 +1356,16 @@ class DecisionEngine:
         attempts = list(getattr(execution_state, "search_attempt_log", None) or [])
         if attempts:
             features.extras["search_attempt_log"] = attempts
+        # Surface the goal contract (what "done" means, what must hold) so the
+        # reasoning model applies the success conditions and constraints — the
+        # executive consults its own contract rather than leaving it inert on the
+        # workspace. Especially the irreversibility constraints, which bear on
+        # whether a commit is safe.
+        _ws = getattr(execution_state, "workspace", None)
+        _gc = getattr(_ws, "goal", None) if _ws is not None else None
+        if _gc is not None and (getattr(_gc, "success_conditions", None) or getattr(_gc, "constraints", None)):
+            features.extras["goal_success_conditions"] = list(_gc.success_conditions or [])
+            features.extras["goal_constraints"] = list(_gc.constraints or [])
         # Persist empty-hit evidence so compose refuses to repeat the dead query.
         if features.extras.get("search_empty"):
             dead = str(

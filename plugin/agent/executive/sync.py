@@ -401,6 +401,45 @@ def assess_executive_judgement(
     return sufficiency, meta
 
 
+def contract_status(execution_state: Any) -> Dict[str, Any]:
+    """Report the goal contract and which success conditions are met so far.
+
+    The contract (success conditions + constraints) is the executive's own
+    definition of "done" and "what must hold". It lived on the workspace but was
+    never consulted; this reads it and estimates progress from the one signal the
+    core has that is domain-general — the phase's position on the registered
+    ladder — so the executive can (a) know how many success conditions remain,
+    (b) judge completion at the contract level, and (c) surface the constraints
+    that still bind. The mapping is deliberately coarse: phases and success
+    conditions both describe the same task arc, so ladder progress is a fair
+    proxy for how much of the contract is satisfied.
+    """
+    workspace = workspace_of(execution_state)
+    if workspace is None:
+        return {}
+    success = list(workspace.goal.success_conditions or [])
+    constraints = list(workspace.goal.constraints or [])
+    ladder = workspace.ladder()
+    phase = str(workspace.phase or "").strip().lower()
+    satisfied: list = []
+    pending: list = list(success)
+    if success and ladder and phase in ladder:
+        span = max(1, len(ladder) - 1)
+        fraction = ladder.index(phase) / span
+        n = max(0, min(len(success), round(fraction * len(success))))
+        satisfied = list(success[:n])
+        pending = list(success[n:])
+    all_satisfied = bool(success) and not pending
+    return {
+        "success_conditions": success,
+        "constraints": constraints,
+        "satisfied": satisfied,
+        "pending": pending,
+        "all_satisfied": all_satisfied,
+        "phase": phase,
+    }
+
+
 def workspace_snapshot(execution_state: Any) -> Dict[str, Any]:
     workspace = workspace_of(execution_state)
     return workspace.to_dict() if workspace is not None else {}
