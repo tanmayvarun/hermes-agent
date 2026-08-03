@@ -90,7 +90,7 @@ class MacAppTreeObserver:
         screenshot_path: Optional[str] = None
         screenshot_error: Optional[str] = None
         tree = None
-        if self.with_screenshot or True:
+        if self.with_screenshot:
             try:
                 tree, im, _im_seg = get_tree_screenshot(bundle)
                 if im is not None:
@@ -105,6 +105,12 @@ class MacAppTreeObserver:
                 screenshot_path, capture_error = _capture_screen_screenshot(app_name=app_name)
                 if not screenshot_path and capture_error:
                     screenshot_error = f"{screenshot_error}; screenshot_fallback={capture_error}"
+                # Screenshot failed, but we can still recover the AX tree so the
+                # observation is not empty — perception degrades to AX, not to nothing.
+                try:
+                    tree = get_tree(bundle)
+                except Exception:
+                    tree = None
         else:
             tree = get_tree(bundle)
 
@@ -146,6 +152,41 @@ class MacAppTreeObserver:
             return str(app.localizedName() or "Unknown")
         except Exception:
             return "Unknown"
+
+
+def attach_screenshot_to_observation(
+    obs: Observation,
+    *,
+    app_name: str,
+    require_screenshot: bool = False,
+) -> tuple[Observation, Optional[str]]:
+    """Best-effort attach a screenshot to an observation that lacks one.
+
+    The deep-AX source (``pyobjc_ax``) produces a tree without pixels; the
+    multimodal perceptor (screen understanding / unified cognition) needs the
+    screenshot to reason over the actual surface. This captures the screen and
+    attaches its path so AX + pixels travel together in one observation — the
+    redundant, complete input the perceptor was designed around. Returns the
+    (possibly mutated) observation and any capture error.
+    """
+    if obs.screenshot_path:
+        return obs, None
+    screenshot_path, screenshot_error = _capture_screen_screenshot(app_name=app_name)
+    if screenshot_path:
+        obs.screenshot_path = screenshot_path
+        obs.meta = dict(obs.meta or {})
+        obs.meta["screenshot_source"] = "screencapture"
+        if screenshot_error:
+            obs.meta["screenshot_error"] = screenshot_error
+        return obs, screenshot_error
+    if screenshot_error:
+        obs.meta = dict(obs.meta or {})
+        obs.meta["screenshot_error"] = screenshot_error
+        # In strict mode a missing screenshot is a degraded observation: the
+        # caller asked for pixels and we could not provide them.
+        if require_screenshot:
+            obs.degraded = True
+    return obs, screenshot_error
 
 
 class FixtureObserver:

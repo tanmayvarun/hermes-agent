@@ -10,8 +10,8 @@ from plugin.perception.sources.macapptree import MacAppTreeSource
 from plugin.perception.sources.pyobjc_ax import PyObjcAxSource
 
 
-def default_sources(*, with_screenshot: bool = False, with_vision: bool = False) -> List[PerceptionSource]:
-    out: List[PerceptionSource] = [PyObjcAxSource()]
+def default_sources(*, with_screenshot: bool = True, with_vision: bool = False) -> List[PerceptionSource]:
+    out: List[PerceptionSource] = [PyObjcAxSource(with_screenshot=with_screenshot)]
     if str(os.getenv("HERMES_ENABLE_MACAPPTREE_SOURCE", "")).strip().lower() in {"1", "true", "yes", "on"}:
         try:
             out.append(MacAppTreeSource(with_screenshot=with_screenshot))

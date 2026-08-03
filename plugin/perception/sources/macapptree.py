@@ -8,7 +8,7 @@ from plugin.perception.sources.base import ObservationBundle, PerceptionSource, 
 class MacAppTreeSource:
     source_id = "macapptree"
 
-    def __init__(self, *, with_screenshot: bool = False) -> None:
+    def __init__(self, *, with_screenshot: bool = True) -> None:
         self.with_screenshot = with_screenshot
 
     def observe(self, app: str) -> ObservationBundle:

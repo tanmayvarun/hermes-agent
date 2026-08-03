@@ -42,11 +42,13 @@ def observe_fused_frame(
     secondary: bool = True,
     source_timeout_s: float = 8.0,
     trace_bundle=None,
+    with_screenshot: bool = True,
+    with_vision: bool = False,
 ) -> FusedFrame:
     from plugin.perception.sources import default_sources
     from plugin.perception.observation import Observation
 
-    srcs = sources or default_sources()
+    srcs = sources or default_sources(with_screenshot=with_screenshot, with_vision=with_vision)
     if not secondary and srcs:
         srcs = srcs[:1]
     bundles: List[ObservationBundle] = []
@@ -134,6 +136,8 @@ def observe_fused(
     prefer_source: str = "pyobjc_ax",
     source_timeout_s: float = 8.0,
     trace_bundle=None,
+    with_screenshot: bool = True,
+    with_vision: bool = False,
 ) -> Tuple[Observation, FusionReport]:
     _ = prefer_source
     frame = observe_fused_frame(
@@ -142,5 +146,7 @@ def observe_fused(
         secondary=secondary,
         source_timeout_s=source_timeout_s,
         trace_bundle=trace_bundle,
+        with_screenshot=with_screenshot,
+        with_vision=with_vision,
     )
     return frame.to_observation(), frame.report
