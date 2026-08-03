@@ -8,7 +8,7 @@ Invariant (intent vs world uncertainty):
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List
 
 from plugin.agent.action import Action
 from plugin.agent.apps.base import AppOverlay
@@ -908,7 +908,50 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
         if isinstance(conv_rel, dict):
             likely_ids = [int(x) for x in (conv_rel.get("likely_source_message_ids") or []) if str(x).strip()]
         if likely_ids and not (phase == "OPEN_FORWARD" and bool(preds.get("source_object_selected"))):
-            for eid in likely_ids[:4]:
+            # The LLM relevance pass *proposes* source-message ids, but it can
+            # include rows that do not actually relate to the link — e.g. the
+            # end-to-end-encryption banner, which was being selected and clicked
+            # with a negative score. Gate the proposals through the matching
+            # capability (resolve_many) against the link query: only emit a
+            # select_content for a candidate that genuinely relates. When none
+            # do, emit nothing here so the timeline scroll below becomes the move
+            # (search the history) instead of clicking a non-matching row.
+            matched_ids: List[int] = []
+            if query:
+                from plugin.agent.capabilities.resolve_entity import resolve_many
+
+                rows: List[Dict[str, Any]] = []
+                for eid in likely_ids[:6]:
+                    ent = world.entities.get(int(eid))
+                    if ent is None or not ent.visible:
+                        continue
+                    desc = str((getattr(ent, "attributes", {}) or {}).get("description") or "")
+                    blob = _clean_label(" ".join([ent.label or "", ent.semantic_role or "", desc]))
+                    rows.append(
+                        {
+                            "label": blob or (ent.label or f"message {eid}"),
+                            "id": int(eid),
+                            "hints": [desc] if desc else [],
+                        }
+                    )
+                if rows:
+                    resolution = resolve_many(query, rows, threshold=0.0, role="source")
+                    for r in resolution.ranked:
+                        try:
+                            rid = int(r.get("id"))
+                        except (TypeError, ValueError):
+                            continue
+                        if float(r.get("score") or 0.0) > 0.0 and rid not in matched_ids:
+                            matched_ids.append(rid)
+            else:
+                # No link query to match on — keep the proposals as-is.
+                matched_ids = [
+                    int(eid)
+                    for eid in likely_ids[:4]
+                    if world.entities.get(int(eid)) is not None
+                    and world.entities.get(int(eid)).visible
+                ]
+            for eid in matched_ids[:4]:
                 ent = world.entities.get(int(eid))
                 if ent is None or not ent.visible:
                     continue
@@ -917,12 +960,12 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
                     Action(
                         action="Click",
                         semantic_target=lab,
-                        rationale=f"LLM-ranked source message candidate entity_id={eid}",
+                        rationale=f"source message matching {query!r} entity_id={eid}",
                         expected_predicate="SourceObjectVisible",
                         action_family="select_content",
                         target_entity_id=int(eid),
                         observed_in_world=world_id,
-                        grounding_reason="llm_message_relevance",
+                        grounding_reason="matched_message_relevance",
                         grounding_confidence=max(
                             0.72,
                             float(conv_rel.get("confidence", 0.0) or 0.0),
