@@ -719,10 +719,30 @@ class DecisionEngine:
             # perceptor names the gap, the executive decides what to do about it.
             if execution_state is not None:
                 execution_state.last_unified_proposal = {
-                    "frame": int(getattr(execution_state, "iteration", 0) or 0),
+                    "frame": int(
+                        getattr(execution_state, "decision_frame", None)
+                        if getattr(execution_state, "decision_frame", None) is not None
+                        else getattr(execution_state, "iteration", 0)
+                        or 0
+                    ),
                     "evidence_gaps": [str(g) for g in (proposal.evidence_gaps or []) if str(g).strip()],
                     "coverage": proposal.coverage,
                     "confidence": float(proposal.confidence or 0.0),
+                    "surface": str((proposal.observed_state or {}).get("surface") or "").strip(),
+                    # The model's belief patch is the perceptor's read of the
+                    # scene. It must reach the one authoritative workspace, not
+                    # only features.extras — that is what lets the workspace
+                    # arbitrate contradictions and count belief flips.
+                    "beliefs": [
+                        {
+                            "predicate": str(u.get("predicate") or "").strip(),
+                            "value": u.get("value"),
+                            "confidence": u.get("confidence"),
+                            "evidence": u.get("evidence"),
+                        }
+                        for u in (proposal.belief_updates or [])
+                        if isinstance(u, dict) and str(u.get("predicate") or "").strip()
+                    ][:16],
                 }
 
         escalate, escalate_reason = should_escalate(

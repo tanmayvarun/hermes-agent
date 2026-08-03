@@ -14,6 +14,7 @@ from plugin.agent.executive.meta_action import MetaAction, MetaChoice
 from plugin.agent.executive.sync import (
     assess_executive_judgement,
     bind_goal,
+    commit_beliefs,
     commit_bindings,
     commit_reading,
     commit_transition,
@@ -266,6 +267,46 @@ def _commit_frame_beliefs(
             source="task_binding",
             evidence=f"derived on {surface}",
         )
+
+    # Route the perceptor's own belief patch into the workspace. The unified
+    # proposal (persisted this frame on the execution state) carries the model's
+    # read of the scene as predicate/value beliefs plus the surface it saw.
+    # Committing them here is what makes the workspace — not features.extras —
+    # the single authoritative record: the critic arbitrates each against any
+    # established belief, records contradictions, and counts belief flips.
+    frame = int(getattr(runtime.execution_state, "decision_frame", -2) or -2)
+    uni = getattr(runtime.execution_state, "last_unified_proposal", None)
+    if isinstance(uni, dict) and int(uni.get("frame", -999)) == frame:
+        perceived_facts: Dict[str, Any] = {}
+        surf = str(uni.get("surface") or "").strip().lower()
+        if surf:
+            perceived_facts["surface"] = surf
+        for belief in uni.get("beliefs") or []:
+            predicate = str(belief.get("predicate") or "").strip()
+            raw_value = belief.get("value")
+            if not predicate or raw_value is None:
+                continue
+            if isinstance(raw_value, bool):
+                # A bool predicate is still a belief when false; encode it so the
+                # workspace does not treat "false" as an empty (dropped) reading.
+                value_str = "true" if raw_value else "false"
+            else:
+                value_str = str(raw_value).strip()
+            if not value_str:
+                continue
+            conf = belief.get("confidence")
+            perceived_facts[predicate] = (
+                (value_str, float(conf)) if conf is not None else value_str
+            )
+        if perceived_facts:
+            commit_beliefs(
+                runtime.execution_state,
+                source="perception",
+                facts=perceived_facts,
+                confidence=coverage,
+                evidence="unified perception belief patch",
+                status="observed",
+            )
 
 
 @dataclass
@@ -1498,6 +1539,11 @@ def run_goal_closed_loop(
         before_view = dict(view)
         before_feats = _feature_dict(runtime, goal, wv)
 
+        # Per-turn token so any reading persisted during decide() (e.g. the
+        # unified proposal's evidence_gaps / coverage / belief patch) can be
+        # matched to *this* loop turn. execution_state.iteration only advances on
+        # executed actions, so it cannot be used as the frame here.
+        runtime.execution_state.decision_frame = iteration
         decision = eng.decide(
             goal,
             runtime.world_model,
