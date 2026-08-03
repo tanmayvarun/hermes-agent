@@ -1331,6 +1331,41 @@ file will silently overwrite recent fixes on main when squashed. Verify
 with `git diff HEAD~1..HEAD` after merging — unexpected deletions are a
 red flag.
 
+### Commit after every logical change — the updater can hard-reset the tree
+
+Uncommitted work is not safe here, and neither are local unpushed commits on
+the tracked branch. Hermes' own auto-updater (`scripts/install.sh`) on every
+update does `git stash push --include-untracked` → `git reset --hard
+origin/<branch>` → `git stash apply`. If the stash re-apply conflicts, or your
+work sits on the branch being reset, **uncommitted changes and any local commits
+ahead of origin are discarded.** The same loss happens any time another agent,
+an installer, a build script, or a stale-branch squash-merge runs a destructive
+git command (`reset --hard`, `checkout -f`, `clean -fd`, `stash drop`). This has
+already silently wiped hours of integration wiring at least once.
+
+Because code generation is idempotent the work is *recoverable*, but only if you
+never depend on the working tree as storage. Rules:
+
+1. **Commit after every logical change that matters — do this without asking.**
+   A committed change survives a `reset --hard` (recoverable via `git reflog`
+   for ~90 days); an uncommitted one does not, and an untracked file that gets
+   `git clean`ed is unrecoverable from git entirely.
+2. **Work on a dedicated branch, never directly on the branch the updater
+   tracks** (usually `main`). `git reset --hard origin/main` throws away commits
+   that are ahead of origin; a WIP branch (e.g. `wip/<topic>-<date>`) keeps your
+   commits out of the reset's path, and pushing it is the only fully durable
+   backup.
+3. **Before running any installer/updater/build/long-running script that can
+   touch git state, verify the tree is clean** (`git status`) and commit or
+   stash-to-a-named-branch first.
+4. **Never run a destructive git command on changes you did not create**
+   (`reset --hard`, `checkout -f`, `clean -fd`/`-fdx`, `stash drop`,
+   `branch -D`) without explicit user approval. If a reset is unavoidable,
+   snapshot first: `git branch wip/backup-$(date -u +%Y%m%d-%H%M%S)`.
+5. **Recovery, if it happens anyway:** `git reflog` recovers committed-but-
+   orphaned work; Cursor's local file history recovers uncommitted/untracked
+   edits. Check both before concluding anything is lost.
+
 ### Don't wire in dead code without E2E validation
 Unused code that was never shipped was dead for a reason. Before wiring an
 unused module into a live code path, E2E test the real resolution chain
