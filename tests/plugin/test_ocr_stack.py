@@ -131,38 +131,75 @@ def test_forced_ocr_retry_applies_even_with_high_coverage(monkeypatch):
     assert recovered.meta["ocr"]["selected_engine"] == "easyocr"
 
 
-def test_ocr_recovery_is_noop_in_ax_only_mode(monkeypatch):
-    selector = OCRSelector(min_learn_attempts=1)
+def _whatsapp_obs(*, coverage: float, source: str = "macapptree") -> Observation:
+    return Observation(
+        timestamp=0.0,
+        app_name="WhatsApp",
+        window_name="WhatsApp",
+        nodes=[AxNode(role="AXButton", name="Search", bbox=(0.0, 0.0, 10.0, 10.0))],
+        screenshot_path="/tmp/fake.png",
+        source=source,
+        coverage=coverage,
+        degraded=False,
+    )
+
+
+def test_maybe_recover_is_adaptive_noop_when_coverage_is_high(monkeypatch):
+    # OCR is enabled, but when accessibility already covers the surface there is
+    # nothing to recover: unforced recovery on high coverage is a no-op.
+    easy = _FakeEngine(
+        "easyocr",
+        [OCRRun(engine_id="easyocr", use_case="whatsapp chat", spans=[OCRSpan(text="Search", confidence=0.93)])],
+    )
+    monkeypatch.setattr("plugin.perception.ocr.recovery.available_ocr_engines", lambda: [easy])
+    monkeypatch.delenv("HERMES_PERCEPTION_OCR", raising=False)
+    from plugin.perception.macos.fusion.coverage import maybe_recover_with_ocr
+
+    obs = _whatsapp_obs(coverage=1.0)
+    recovered = maybe_recover_with_ocr(obs, use_case="whatsapp chat", force=False)
+
+    assert recovered is obs
+    assert "ocr" not in recovered.meta
+
+
+def test_maybe_recover_runs_ocr_when_accessibility_is_blind(monkeypatch):
+    # The regression case: a chrome-only AX tree. OCR must recover content so the
+    # perceptor is not blind. Coverage is thin -> unforced recovery still fires.
     easy = _FakeEngine(
         "easyocr",
         [
             OCRRun(
                 engine_id="easyocr",
                 use_case="whatsapp chat",
-                spans=[OCRSpan(text="Search", confidence=0.93, bbox=(10.0, 11.0, 18.0, 9.0))],
+                spans=[OCRSpan(text="Zarooratwala", confidence=0.9, bbox=(10.0, 20.0, 80.0, 16.0))],
             )
         ],
     )
-    monkeypatch.setattr(
-        "plugin.perception.ocr.recovery.available_ocr_engines",
-        lambda: [easy],
-    )
+    monkeypatch.setattr("plugin.perception.ocr.recovery.available_ocr_engines", lambda: [easy])
+    monkeypatch.delenv("HERMES_PERCEPTION_OCR", raising=False)
+    from plugin.perception.macos.fusion.coverage import maybe_recover_with_screen2ax
 
-    obs = Observation(
-        timestamp=0.0,
-        app_name="WhatsApp",
-        window_name="WhatsApp",
-        nodes=[AxNode(role="AXButton", name="Search", bbox=(0.0, 0.0, 10.0, 10.0))],
-        screenshot_path="/tmp/fake.png",
-        coverage=1.0,
-        degraded=False,
+    obs = _whatsapp_obs(coverage=0.05)
+    recovered = maybe_recover_with_screen2ax(obs)
+
+    assert recovered.source == "screen2ax:easyocr"
+    assert any(n.attributes.get("ocr") for n in recovered.nodes)
+    assert recovered.meta["ocr"]["status"] == "applied"
+
+
+def test_ocr_can_be_disabled_by_env(monkeypatch):
+    easy = _FakeEngine(
+        "easyocr",
+        [OCRRun(engine_id="easyocr", use_case="whatsapp chat", spans=[OCRSpan(text="X", confidence=0.9)])],
     )
+    monkeypatch.setattr("plugin.perception.ocr.recovery.available_ocr_engines", lambda: [easy])
+    monkeypatch.setenv("HERMES_PERCEPTION_OCR", "0")
     from plugin.perception.macos.fusion.coverage import maybe_recover_with_ocr
 
-    recovered = maybe_recover_with_ocr(obs, use_case="whatsapp chat", force=False)
+    obs = _whatsapp_obs(coverage=0.05)
+    recovered = maybe_recover_with_ocr(obs, use_case="whatsapp chat", force=True)
 
     assert recovered is obs
-    assert recovered.source == "macapptree"
     assert "ocr" not in recovered.meta
 
 

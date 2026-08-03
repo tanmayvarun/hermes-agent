@@ -14,10 +14,15 @@ class Screen2AxSource:
 
     def observe(self, app: str) -> ObservationBundle:
         def _fn(app_name: str) -> Observation:
-            from plugin.perception.macos.fusion.coverage import maybe_recover_with_screen2ax
+            import time as _time
+
+            from plugin.perception.macos.accessibility.observer import (
+                attach_screenshot_to_observation,
+            )
+            from plugin.perception.macos.fusion.coverage import maybe_recover_with_ocr
 
             stub = Observation(
-                timestamp=0.0,
+                timestamp=_time.time(),
                 app_name=app_name,
                 window_name="",
                 nodes=[],
@@ -26,6 +31,15 @@ class Screen2AxSource:
                 coverage=0.0,
                 degraded=True,
             )
-            return maybe_recover_with_screen2ax(stub)
+            # This is the dedicated pixels->content source: it must have its own
+            # screenshot to read. Running in parallel with the AX source keeps OCR
+            # off the critical path.
+            if not stub.screenshot_path:
+                stub, _err = attach_screenshot_to_observation(
+                    stub, app_name=app_name, require_screenshot=False
+                )
+            # Force OCR: this source's whole job is to recover content from pixels,
+            # independent of AX coverage (the AX tree may be blind on this surface).
+            return maybe_recover_with_ocr(stub, use_case=app_name, force=True)
 
         return timed_observe(self.source_id, _fn, app)

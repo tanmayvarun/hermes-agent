@@ -1,13 +1,18 @@
-"""Layer 4 — vision fallback gate. Primary path is Accessibility (none)."""
+"""Layer 4 — vision recovery gate over the Accessibility primary path."""
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from plugin.perception.observation import Observation
 
 logger = logging.getLogger(__name__)
+
+
+def _ocr_enabled() -> bool:
+    return str(os.getenv("HERMES_PERCEPTION_OCR", "1")).strip().lower() not in {"0", "false", "no", "off"}
 
 COVERAGE_THRESHOLD = 0.80
 
@@ -27,17 +32,25 @@ def needs_screen2ax(obs: Observation, *, visual_node_estimate: Optional[int] = N
 
 
 def maybe_recover_with_ocr(obs: Observation, *, use_case: str = "", force: bool = False) -> Observation:
-    """AX-only rollback: keep the hook, but do not invoke OCR for now.
+    """Augment an observation with content recovered from its screenshot via OCR.
 
-    We are intentionally disabling OCR at the fusion boundary so the live
-    agent runs from Accessibility-only perception while we evaluate AX routing
-    and planning.
+    Accessibility can be blind on some surfaces — a chrome-only AX tree exposes
+    only the app/window and no content (WhatsApp is the canonical case). OCR over
+    the screenshot recovers the visible text so the perceptor still sees content;
+    with AX + pixels + OCR feeding one observation, a single blind channel no
+    longer blinds the perceptor. Best-effort: without a screenshot or an OCR
+    engine the observation is returned unchanged. Set HERMES_PERCEPTION_OCR=0 to
+    disable.
     """
-    return obs
+    if not _ocr_enabled():
+        return obs
+    from plugin.perception.ocr.recovery import recover_observation_with_ocr
+
+    return recover_observation_with_ocr(obs, use_case=use_case, force=force)
 
 
 def maybe_recover_with_screen2ax(obs: Observation) -> Observation:
-    """Backward-compatible alias for screenshot OCR recovery."""
+    """Adaptive OCR recovery: only when accessibility coverage looks thin."""
     if not needs_screen2ax(obs):
         return obs
     return maybe_recover_with_ocr(obs, force=False)
