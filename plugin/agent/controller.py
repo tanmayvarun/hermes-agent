@@ -20,6 +20,8 @@ from plugin.agent.executive.sync import (
     commit_transition,
     contract_status,
     has_resolved_binding,
+    open_exploration_question,
+    settle_exploration_question,
     workspace_blocking_uncertainties,
     workspace_of,
 )
@@ -1580,29 +1582,47 @@ def run_goal_closed_loop(
         # from the one authoritative record, not from whichever store was last
         # touched. The workspace critic decides what to accept.
         _commit_frame_beliefs(runtime, goal, feats, coverage=coverage)
-        blocking_uncertainties = list(workspace_blocking_uncertainties(runtime.execution_state))
-        # Domain-general overlay hint: the app overlay may surface a blocking
-        # uncertainty from its own task view (the forward phase machine, demoted
-        # to a hint). The executive consumes it exactly like a workspace
-        # question — the controller never reads phase names directly.
+        # The domain's fresh blocking signal this frame (transient truth): the app
+        # overlay's task view (the forward phase machine, demoted to a hint). The
+        # executive consumes it exactly like a question — the controller never
+        # reads phase names directly.
+        domain_blocking: List[str] = []
         observe_hint = getattr(overlay, "observe_blocking_uncertainties", None)
         if callable(observe_hint):
             try:
                 for q in observe_hint((feats.extras or {}).get("forward_task")) or []:
-                    if q not in blocking_uncertainties:
-                        blocking_uncertainties.append(q)
+                    if q and str(q) not in domain_blocking:
+                        domain_blocking.append(str(q))
             except Exception:
                 pass
         # The workspace is authoritative over the overlay hint: if it already
         # holds a resolved source-object binding, the source is not an open
         # uncertainty no matter what the derived phase says. This is what demotes
         # the forward phase machine from a source of truth to a hint.
-        if "source_object_unresolved" in blocking_uncertainties and has_resolved_binding(
+        if "source_object_unresolved" in domain_blocking and has_resolved_binding(
             runtime.execution_state, "source_object"
         ):
-            blocking_uncertainties = [
-                q for q in blocking_uncertainties if q != "source_object_unresolved"
-            ]
+            domain_blocking = [q for q in domain_blocking if q != "source_object_unresolved"]
+        # Reconcile the QuestionLedger with the domain's current signal, so the
+        # ledger is a live record of what the executive is hunting for. New
+        # uncertainties are opened as exploration questions (keyed by the question,
+        # not the action, so a later re-test of a settled one is visibly
+        # redundant); questions the domain no longer flags are answered, so they
+        # stop blocking and are not re-searched. ask() is idempotent — it only
+        # records new questions and extra test attempts, never reopens a settled
+        # one.
+        previously_open = set(workspace_blocking_uncertainties(runtime.execution_state))
+        for q in domain_blocking:
+            open_exploration_question(runtime.execution_state, question=q, kind="where_is")
+        for q in previously_open:
+            if q not in domain_blocking:
+                settle_exploration_question(
+                    runtime.execution_state,
+                    question=q,
+                    answered=True,
+                    evidence="no longer flagged by the domain",
+                )
+        blocking_uncertainties = list(domain_blocking)
         action_surprised = _last_action_surprised(runtime.execution_state)
         awaiting_verification = _awaiting_verification(runtime.execution_state)
         # Repeated no-progress backtracks mean the branch space is exhausted:
@@ -1612,6 +1632,18 @@ def run_goal_closed_loop(
             int(getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0)
             >= _MAX_CONSECUTIVE_BACKTRACKS
         )
+        if backtrack_exhausted and blocking_uncertainties:
+            # The branch space is spent: every retreat has failed. Abandon the
+            # open questions this exploration was testing so the executive stops
+            # re-searching them (they drop out of blocking) and escalates instead
+            # of hunting the same unanswerable thing forever.
+            for q in blocking_uncertainties:
+                settle_exploration_question(
+                    runtime.execution_state,
+                    question=str(q),
+                    answered=False,
+                    evidence="branch space exhausted",
+                )
         hard_block = backtrack_exhausted and not has_grounded_action
         if action_surprised:
             # Record the surprise into the bounded history perception attends to,
