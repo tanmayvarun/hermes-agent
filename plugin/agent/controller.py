@@ -1027,6 +1027,9 @@ def run_goal_closed_loop(
             and prev_snap_pre is not None
             and prev_static_streak >= 1
             and prev_meta_suppress
+            # A surprise from the last action means our model of what happened is
+            # wrong — always re-perceive to re-understand, never reuse.
+            and not _last_action_surprised(runtime.execution_state)
         )
         if skip_reperception:
             snap_pre = prev_snap_pre
@@ -1352,6 +1355,8 @@ def run_goal_closed_loop(
         has_grounded_action = bool(decision) and str(decision.action or "").strip().lower() != "observe"
         blocking_uncertainties = workspace_blocking_uncertainties(runtime.execution_state)
         coverage = float(wv or 0.0)
+        action_surprised = _last_action_surprised(runtime.execution_state)
+        awaiting_verification = _awaiting_verification(runtime.execution_state)
         sufficiency, meta = assess_executive_judgement(
             runtime.execution_state,
             blocking_uncertainties=blocking_uncertainties,
@@ -1359,6 +1364,8 @@ def run_goal_closed_loop(
             coverage=coverage,
             has_grounded_action=has_grounded_action,
             previously_suppressed=prev_meta_suppress,
+            last_action_surprised=action_surprised,
+            awaiting_verification=awaiting_verification,
         )
         beliefs_payload: Dict[str, Any] = {}
         _ws = workspace_of(runtime.execution_state)
@@ -1386,6 +1393,8 @@ def run_goal_closed_loop(
                 "meta_perception_enabled": meta_perception_enabled,
                 "coverage": round(coverage, 3),
                 "has_grounded_action": has_grounded_action,
+                "last_action_surprised": action_surprised,
+                "awaiting_verification": awaiting_verification,
                 "blocking_uncertainties": [str(q) for q in blocking_uncertainties][:8],
                 "static_streak": static_streak,
                 "beliefs": beliefs_payload,

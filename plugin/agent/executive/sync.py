@@ -223,6 +223,8 @@ def assess_executive_judgement(
     coverage: Optional[float] = None,
     has_grounded_action: bool = False,
     previously_suppressed: bool = False,
+    last_action_surprised: bool = False,
+    awaiting_verification: bool = False,
 ):
     """Compute this frame's sufficiency and meta-action, and record them.
 
@@ -247,6 +249,7 @@ def assess_executive_judgement(
             identical_observe_streak=streak,
             coverage=coverage,
             previously_suppressed=previously_suppressed,
+            last_action_surprised=bool(last_action_surprised),
         )
     )
 
@@ -264,6 +267,8 @@ def assess_executive_judgement(
         MetaContext(
             sufficiency=sufficiency,
             has_grounded_action=bool(has_grounded_action),
+            awaiting_verification=bool(awaiting_verification),
+            last_action_surprised=bool(last_action_surprised),
             branch_stale=branch_stale,
             question_settled=question_settled,
         )
@@ -281,7 +286,7 @@ def assess_executive_judgement(
             ambiguous=not sufficiency.sufficient_to_act and not sufficiency.observe_has_value,
             branch_exhausted=branch_stale,
             contradiction=contradictions > 0,
-            last_action_surprised=False,
+            last_action_surprised=bool(last_action_surprised),
         )
     )
     query = from_sufficiency(sufficiency)

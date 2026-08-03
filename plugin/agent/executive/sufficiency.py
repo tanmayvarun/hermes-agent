@@ -39,6 +39,11 @@ class SufficiencyInputs:
     coverage: Optional[float] = None
     # A prior suppression that has not yet been cleared by real change.
     previously_suppressed: bool = False
+    # The most recent action did not produce the world we predicted (no
+    # transition, a regression, or an unexpected surface). A surprise means the
+    # executive's model of "what just happened" is wrong, so a look has value
+    # even if the evidence otherwise looked sufficient to act.
+    last_action_surprised: bool = False
 
 
 @dataclass
@@ -102,6 +107,7 @@ def assess_sufficiency(inputs: SufficiencyInputs) -> DecisionSufficiency:
     # reported value, assume a middling view rather than perfect knowledge.
     cov = float(inputs.coverage) if inputs.coverage is not None else 0.7
     grounded = ["grounded_action"] if inputs.has_grounded_action else []
+    surprised = bool(inputs.last_action_surprised)
 
     if blocking:
         # Still hunting for something the domain named. Observation is how the
@@ -117,6 +123,22 @@ def assess_sufficiency(inputs: SufficiencyInputs) -> DecisionSufficiency:
             sufficient_for_which_actions=[],
             confidence=round(min(cov, 0.6), 3),
             reason="blocking uncertainty: " + ", ".join(blocking[:3]),
+        )
+
+    if surprised:
+        # The last action did not produce the world we predicted. Before acting
+        # again, look: re-perceiving is how the executive re-understands what
+        # actually happened (an unexpected surface, a click that landed on the
+        # wrong region) instead of blindly repeating a move that already failed.
+        return DecisionSufficiency(
+            sufficient_to_act=False,
+            observe_has_value=True,
+            suppress_observe=False,
+            needs_exploration=True,
+            useful_information_actions=["observe"],
+            sufficient_for_which_actions=[],
+            confidence=round(min(cov, 0.4), 3),
+            reason="last action surprised us; re-perceive before re-acting",
         )
 
     if gaps and not stale:
