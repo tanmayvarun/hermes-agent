@@ -402,12 +402,20 @@ class FusionEngine:
         # Sort: higher confidence / actionable first
         fused_entities.sort(key=lambda e: (-e.confidence, e.label.lower()))
 
-        if healthy_source_count is not None and healthy_source_count <= 1:
-            agreement: Optional[float] = None
+        agreement: Optional[float]
+        ignored = list(ignored_sources or [])
+        if healthy_source_count is not None and healthy_source_count <= 1 and ignored:
+            # Other sources were submitted but degraded/ignored: we expected
+            # corroboration and got none, so cross-source agreement is genuinely
+            # unknown (not the same as a single source that stands on its own).
+            agreement = None
         elif multi_source_keys:
             agreement = agreed_keys / multi_source_keys
         elif fused_entities:
-            agreement = 0.7  # single source — unknown agreement
+            # A single source that stands alone has nothing to contradict it:
+            # report self-agreement rather than "unknown", so downstream gates
+            # (which compare agreement to a threshold) treat it as usable.
+            agreement = 0.7
         else:
             agreement = 0.0
 
