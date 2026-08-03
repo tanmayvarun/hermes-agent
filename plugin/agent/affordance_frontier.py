@@ -189,6 +189,35 @@ class TransitionEdge:
 
 
 @dataclass
+class UnknownFrontier:
+    """An honest "unknown beyond this edge": an object whose full action set is
+    not yet known, the question that would resolve it, and the probes that would
+    answer that question.
+
+    This is distinct from a probe action (a concrete move to make) and from a
+    latent action (a specific control we predict): a frontier marks the
+    *epistemic hole* itself, so the executive can reason about topology it has
+    not explored instead of assuming an object has no further actions. Once a
+    probe grounds the object's actions, its frontier is resolved and dropped.
+    """
+
+    object_id: str = ""
+    object_label: str = ""
+    question: str = ""
+    suggested_probes: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"question": self.question}
+        if self.object_id:
+            out["object_id"] = self.object_id
+        if self.object_label:
+            out["object_label"] = self.object_label[:80]
+        if self.suggested_probes:
+            out["suggested_probes"] = list(self.suggested_probes)
+        return out
+
+
+@dataclass
 class AffordanceFrontier:
     surface: str = ""
     observed_actions: List[Affordance] = field(default_factory=list)
@@ -196,6 +225,9 @@ class AffordanceFrontier:
     probe_actions: List[Affordance] = field(default_factory=list)
     known_transition_edges: List[TransitionEdge] = field(default_factory=list)
     excluded_actions: List[Dict[str, str]] = field(default_factory=list)
+    # Where the action topology is genuinely unexplored: objects whose reachable
+    # actions we predict but have not observed. "unknown beyond this edge".
+    unknown_frontiers: List[UnknownFrontier] = field(default_factory=list)
 
     def to_packet(self) -> Dict[str, Any]:
         return {
@@ -206,6 +238,7 @@ class AffordanceFrontier:
             "known_transition_edges": [
                 e.to_dict() for e in self.known_transition_edges[:MAX_EDGES]
             ],
+            "unknown_frontiers": [f.to_dict() for f in self.unknown_frontiers[:MAX_PROBE]],
             "excluded_actions": list(self.excluded_actions[:MAX_EXCLUDED]),
         }
 
@@ -811,6 +844,11 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
         )
     frontier.observed_actions = frontier.observed_actions + promoted
     frontier.latent_actions = still_latent
+    # A successful reveal grounds the probed object's actions, so its topology
+    # hole is filled: the object's actions are now observed, not merely
+    # predicted, and the unknown frontier that asked for them is resolved.
+    if promoted:
+        frontier.unknown_frontiers = []
     return frontier
 
 
@@ -840,12 +878,25 @@ def build_affordance_frontier(
     reveal_mode = _norm(getattr(overlay, "reveal_mode", "") or "context_click")
     probes: List[Affordance] = []
     latents: List[Affordance] = []
+    unknown: List[UnknownFrontier] = []
     for affordance in observed:
         if affordance.family != "select_content":
             continue
         new_probes, new_latents = probes_for_object(affordance, reveal_mode=reveal_mode)
         probes.extend(new_probes)
         latents.extend(new_latents)
+        # This object has actions we predict but have not observed: mark the
+        # hole so the executive knows the topology past it is unexplored, not
+        # empty. Resolved once a probe grounds the object's actions.
+        if new_probes:
+            unknown.append(
+                UnknownFrontier(
+                    object_id=str(affordance.target_id) if affordance.target_id is not None else affordance.id,
+                    object_label=affordance.target_label,
+                    question=f"which actions does {affordance.target_label or 'this object'!r} expose?",
+                    suggested_probes=[p.family for p in new_probes],
+                )
+            )
         # One object's probes are enough to describe the mechanic; repeating
         # them per message is noise the transformer has to wade through.
         break
@@ -865,5 +916,6 @@ def build_affordance_frontier(
         latent_actions=latents[:MAX_LATENT],
         probe_actions=probes[:MAX_PROBE],
         known_transition_edges=edges[:MAX_EDGES],
+        unknown_frontiers=unknown[:MAX_PROBE],
         excluded_actions=excluded[:MAX_EXCLUDED],
     )

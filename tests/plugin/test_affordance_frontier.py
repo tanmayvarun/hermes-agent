@@ -169,7 +169,40 @@ def test_observation_replaces_prediction_for_the_same_edge():
     assert context_edges[0].enumeration_status == "observed"
 
 
-def test_packet_shape_is_the_five_declared_classes():
+def test_message_object_gets_an_unknown_frontier_naming_its_probes():
+    """A message whose actions we predict but have not observed is unexplored
+    topology, not an empty object: the frontier says so and how to resolve it."""
+    frontier = _frontier()
+
+    assert frontier.unknown_frontiers, "the message's action set is not yet known"
+    uf = frontier.unknown_frontiers[0]
+    assert "action" in uf.question.lower()
+    assert "reveal_actions" in uf.suggested_probes
+
+
+def test_grounding_a_reveal_resolves_the_objects_unknown_frontier():
+    """A successful reveal grounds the probed object's actions, so its topology
+    hole is filled and the unknown frontier is dropped."""
+    from plugin.agent.affordance_frontier import ground_revealed
+
+    frontier = _frontier()
+    assert frontier.unknown_frontiers, "precondition: there is an unexplored object"
+    revealed_label = frontier.latent_actions[0].target_label
+
+    class _Action:
+        label = revealed_label
+        is_grounded = True
+        confidence = 0.9
+        target = {"point": [980, 510]}
+
+    class _Reveal:
+        actions = [_Action()]
+
+    ground_revealed(frontier, _Reveal())
+    assert not frontier.unknown_frontiers
+
+
+def test_packet_shape_is_the_declared_classes():
     packet = _frontier().to_packet()
 
     assert set(packet) == {
@@ -178,6 +211,7 @@ def test_packet_shape_is_the_five_declared_classes():
         "latent_actions",
         "probe_actions",
         "known_transition_edges",
+        "unknown_frontiers",
         "excluded_actions",
     }
     for entry in packet["latent_actions"]:
