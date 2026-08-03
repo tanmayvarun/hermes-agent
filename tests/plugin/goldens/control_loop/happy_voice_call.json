@@ -3,7 +3,8 @@
     "type_query",
     "open_contact",
     "observe",
-    "observe"
+    "observe",
+    "start_call"
   ],
   "executed": [
     {
@@ -15,9 +16,14 @@
       "action": "Click",
       "family": "open_contact",
       "target": "Pallavi"
+    },
+    {
+      "action": "Click",
+      "family": "start_call",
+      "target": "Call"
     }
   ],
-  "final_surface": "conversation",
+  "final_surface": "ringing",
   "iterations": [
     {
       "decisions": [],
@@ -97,14 +103,31 @@
       "outcomes": []
     },
     {
-      "decisions": [],
-      "executions": [],
+      "decisions": [
+        {
+          "action": "Click",
+          "family": "start_call",
+          "target": "Call"
+        }
+      ],
+      "executions": [
+        {
+          "action": "Click",
+          "family": "start_call",
+          "ok": true,
+          "target": "Call"
+        }
+      ],
       "iteration": 5,
-      "observations": 1,
-      "outcomes": []
+      "observations": 2,
+      "outcomes": [
+        "goal_satisfied"
+      ]
     }
   ],
   "result": {
-    "raised": "RuntimeError: LLM-selected action start_call could not be grounded; refusing observe fallback"
+    "iterations": 5,
+    "ok": true,
+    "reason": "goal succeeded"
   }
 }
