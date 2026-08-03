@@ -152,8 +152,20 @@ class ReferenceResolver:
                 entities,
                 scene_graph=getattr(world, "last_scene_graph", None) or {},
             )
+            # On an AX-blind app (WhatsApp) every entity is a vision-materialised
+            # "static" OCR read, and in_sidebar_band deliberately returns False for
+            # them — so the AX-era gate below (static only when sidebar-like) drops
+            # the *entire* candidate pool, forcing resolution into the crude
+            # shortest-label fallback that grabs the search-box query echo instead
+            # of the chat row. The perceptor's reads are the only entities we have
+            # on such an app, so admit them and let name-match scoring decide.
+            attrs = getattr(e, "attributes", None)
+            is_vision = (
+                isinstance(attrs, dict)
+                and str(attrs.get("source") or "").strip().lower() == "vision"
+            )
             if etype not in {"button", "link", "cell", "unknown"} and not (
-                etype == "static" and sidebar_like
+                etype == "static" and (sidebar_like or is_vision)
             ):
                 continue
             if _is_search_mirror(e):
