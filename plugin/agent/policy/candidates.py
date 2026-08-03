@@ -796,6 +796,42 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
     if phase == "PRECLEAR":
         return out
 
+    # Search-masks-timeline: after finding the link via global search and clicking
+    # the message result, the source conversation opens on the right, but the
+    # global search stays active on the left — so the perceptor reads the screen as
+    # search_results, the conversation timeline is never "observed", the source
+    # object can never become visible, and the agent re-opens the chat forever.
+    # The human move is to close the search so the messages are readable. Fire only
+    # when we are already on the source conversation and the object is not yet
+    # visible/selected, so this cannot interfere with the OPEN_SOURCE search itself.
+    search_masking = bool(
+        features.search_focused
+        or features.extras.get("search_visible")
+        or features.extras.get("result_surface_visible")
+        or str(features.extras.get("wa_screen") or "").upper() in {"SEARCH", "SEARCH_RESULTS"}
+    )
+    if (
+        on_source
+        and search_masking
+        and not bool(preds.get("source_object_visible"))
+        and not bool(preds.get("source_object_selected"))
+        and not picker
+        and phase not in {"PRECLEAR", "OPEN_SOURCE"}
+    ):
+        out.append(
+            Action(
+                action="dismiss",
+                semantic_target="",
+                rationale="clear active search so the open conversation timeline becomes observable",
+                expected_predicate="SourceObjectVisible",
+                action_family="dismiss",
+                observed_in_world=world_id,
+                grounding_reason="search_masks_timeline",
+                grounding_confidence=0.9,
+            )
+        )
+        return out
+
     if phase == "OPEN_SOURCE":
         if source and not on_source:
             search_ready = bool(
