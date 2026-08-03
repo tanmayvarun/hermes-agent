@@ -66,6 +66,30 @@ def _activate_app(app_name: str) -> None:
     time.sleep(0.4)
 
 
+def _is_frontmost(app_name: str) -> bool:
+    """Whether the named app is currently the frontmost application.
+
+    Capability runtimes call this so they only activate the app when it is *not*
+    already frontmost — keeping background actuation background (no needless raise)
+    and only foregrounding when a synthetic click/keystroke genuinely requires it.
+    """
+    needle = _clean(str(app_name or "")).lower()
+    if not needle:
+        return False
+    try:
+        from AppKit import NSWorkspace
+
+        front = NSWorkspace.sharedWorkspace().frontmostApplication()
+    except Exception:
+        return False
+    if front is None:
+        return False
+    name = _clean(str(front.localizedName() or "")).lower()
+    if not name:
+        return False
+    return name == needle or needle in name or name in needle
+
+
 def _ax_attr(el: Any, attr: str) -> Any:
     from ApplicationServices import AXUIElementCopyAttributeValue
 
