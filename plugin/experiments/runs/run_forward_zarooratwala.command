@@ -44,11 +44,12 @@ export HERMES_AUXILIARY_PROVIDER_POLICY=ollama-only
 : "${HERMES_DECISION_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_DECISION_HIGH_RISK_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_SELECTOR_STRICT:=1}"
-# Executive loop (meta-action dispatch + perception gate) is opt-in until the
-# perception blocker is resolved: on a chrome-only AX tree it has nothing to
-# ground and only thrashes. Set HERMES_META_PERCEPTION=1 in the environment to
-# enable it. Workspace population is always on regardless of this flag.
-: "${HERMES_META_PERCEPTION:=0}"
+# Executive loop (meta-action dispatch + perception gate). This was opt-in only
+# while perception was blocked (a chrome-only AX tree gave it nothing to ground,
+# so it thrashed). That blocker is resolved: the vision model (qwen3.5:397b)
+# perceives content again, so the executive loop now has real state to reason
+# over and is on by default. Set HERMES_META_PERCEPTION=0 to disable.
+: "${HERMES_META_PERCEPTION:=1}"
 export HERMES_META_PERCEPTION
 # Perceptor: the multimodal brain is off by default in code (it reroutes every
 # decision path), so the live experiment turns it on. Unified cognition reasons
