@@ -610,6 +610,35 @@ def run_forward_message_live(
                 if ent is not None:
                     return ax_click(APP, ent.label or target or "Not Now", bounds=ent.bounds)
                 return ax_click(APP, target or "Not Now")
+            # Capability families the brain emits (open_entity, select_content,
+            # reveal_actions, invoke_affordance, locate_content, ...) route through
+            # the single capability dispatch layer rather than growing per-app
+            # motor forks here. Entity resolution, click, and context-menu reveal
+            # all live behind that contract; the overlay supplies the WhatsApp
+            # realizations (resolve_target -> world-model bounds).
+            from plugin.agent.apps.whatsapp import WhatsAppOverlay
+            from plugin.agent.capabilities.dispatch import (
+                can_dispatch,
+                dispatch_from_step,
+            )
+
+            if can_dispatch(fam or act):
+                outcome = dispatch_from_step(
+                    step,
+                    app=APP,
+                    overlay=WhatsAppOverlay(),
+                    world=runtime.world_model,
+                )
+                ent_id = None
+                if isinstance(getattr(outcome, "evidence", None), dict):
+                    ent_id = outcome.evidence.get("entity_id") or outcome.evidence.get("id")
+                if ent_id is not None:
+                    runtime.execution_state.last_target_id = ent_id
+                return ExecResult(
+                    ok=bool(outcome.ok),
+                    backend="capability",
+                    message=str(outcome.message or outcome.capability or (fam or act)),
+                )
             return ExecResult(ok=False, backend="ax", message=f"unsupported action {step.action}")
 
     log.step(
