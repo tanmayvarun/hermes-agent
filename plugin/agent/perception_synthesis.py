@@ -359,10 +359,105 @@ def _select_perception_task_name(view: Dict[str, Any], features: StateFeatures) 
     return _SCREEN_UNDERSTANDING_TASK if _screen_understanding_needed(view, features) else "perception"
 
 
+def _perception_image_max_width() -> int:
+    """Max width to which a screenshot is downscaled before the vision call.
+
+    Full-res UI screenshots (1710x984+) dominate vision latency: the model bills
+    latency in image tokens, which scale with resolution. Capping the width keeps
+    UI text legible for the screen-understanding read while cutting tokens (and so
+    the ~100s/look latency) substantially. 0 disables downscaling.
+    """
+    import os
+
+    try:
+        raw = os.getenv("HERMES_PERCEPTION_IMAGE_MAX_WIDTH", "")
+        if not raw.strip():
+            raw = os.getenv("HERMES_UNIFIED_IMAGE_MAX_WIDTH", "1280")
+        width = int(raw)
+    except (TypeError, ValueError):
+        width = 1280
+    return max(320, width) if width > 0 else 0
+
+
+def _perception_phash_max_distance() -> int:
+    """Hamming distance under which two frames count as the *same* scene.
+
+    The semantic cache key jitters frame-to-frame (worldview score, scene
+    attention, timeline), so it misses even when the screen is visually
+    identical, paying a full ~100s vision call for nothing. An average-hash of
+    the pixels catches that: if the frame is within this many bits of the last
+    perceived frame, the previous reading is reused. 0 disables the skip.
+    """
+    import os
+
+    try:
+        raw = os.getenv("HERMES_PERCEPTION_PHASH_MAX_DIST", "")
+        dist = int(raw) if raw.strip() else 3
+    except (TypeError, ValueError):
+        dist = 3
+    return max(0, dist)
+
+
+def _image_ahash(path: str) -> Optional[int]:
+    """64-bit average hash of a screenshot (8x8 grayscale, bit = pixel > mean)."""
+    p = str(path or "").strip()
+    if not p:
+        return None
+    try:
+        from PIL import Image
+
+        with Image.open(p) as image:
+            small = image.convert("L").resize((8, 8), Image.LANCZOS)
+            pixels = list(small.getdata())
+    except Exception:
+        return None
+    if not pixels:
+        return None
+    mean = sum(pixels) / float(len(pixels))
+    bits = 0
+    for value in pixels:
+        bits = (bits << 1) | (1 if value > mean else 0)
+    return bits
+
+
+def _hamming(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
+
+def _current_screenshot_path(world: WorldModel, view: Dict[str, Any], extras: Dict[str, Any]) -> str:
+    return str(
+        (extras.get("screenshot_path") if isinstance(extras, dict) else "")
+        or view.get("screenshot_path")
+        or getattr(world, "last_screenshot_path", "")
+        or ""
+    ).strip()
+
+
 def _screenshot_to_data_url(screenshot_path: str) -> str:
     path = str(screenshot_path or "").strip()
     if not path:
         return ""
+    # Downscale first — the screen-understanding read is purely semantic (it
+    # parses no pixel coordinates), so a narrower frame preserves the answer
+    # while dropping most of the image tokens that drive vision latency.
+    max_w = _perception_image_max_width()
+    if max_w:
+        try:
+            import io
+
+            from PIL import Image
+
+            with Image.open(path) as image:
+                image = image.convert("RGB")
+                if image.width > max_w:
+                    height = max(1, round(image.height * max_w / image.width))
+                    image = image.resize((max_w, height), Image.LANCZOS)
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=85, optimize=True)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            return f"data:image/jpeg;base64,{encoded}"
+        except Exception:
+            pass  # fall back to the raw bytes below
     try:
         with open(path, "rb") as fh:
             blob = fh.read()
@@ -1238,9 +1333,52 @@ def synthesize_perception(
     task_name = _select_perception_task_name(view, features_obj)
     cache_key = _perception_cache_key(goal, world, view, features_obj, task_name=task_name)
     cached = getattr(world, "last_perception_synthesis", None) or {}
+    goal_task_sig = hashlib.sha1(
+        json.dumps(
+            {
+                "kind": goal.kind,
+                "contact": goal.contact,
+                "target_contact": goal.target_contact,
+                "link_query": goal.link_query,
+                "app": goal.app,
+                "task_name": task_name,
+            },
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
     if isinstance(cached, dict) and cached.get("cache_key") == cache_key:
         raw = cached.get("summary")
         if isinstance(raw, dict):
+            summary = _parse_summary(raw, goal, view, features_obj)
+            logger.info(
+                "Perception LLM human summary: %s",
+                _format_perception_human_readable(
+                    summary,
+                    task_name=task_name,
+                    target=raw.get("selected_target") if isinstance(raw.get("selected_target"), dict) else None,
+                    cache_hit=True,
+                ),
+            )
+            return summary
+
+    # Scene-unchanged skip: the semantic cache key jitters frame-to-frame, so it
+    # misses even when the screen looks identical. If the pixels are within a few
+    # bits of the last perceived frame (and the goal/task are the same), reuse the
+    # previous reading instead of paying a full ~100s vision call for nothing.
+    phash_max = _perception_phash_max_distance()
+    current_phash: Optional[int] = None
+    if phash_max and isinstance(cached, dict) and cached.get("goal_task_sig") == goal_task_sig:
+        shot_path = _current_screenshot_path(world, view, features_obj.extras)
+        current_phash = _image_ahash(shot_path)
+        prev_phash = cached.get("phash")
+        raw = cached.get("summary")
+        if (
+            current_phash is not None
+            and isinstance(prev_phash, int)
+            and isinstance(raw, dict)
+            and _hamming(current_phash, prev_phash) <= phash_max
+        ):
             summary = _parse_summary(raw, goal, view, features_obj)
             logger.info(
                 "Perception LLM human summary: %s",
@@ -1448,9 +1586,13 @@ def synthesize_perception(
             cache_hit=False,
         ),
     )
+    if current_phash is None:
+        current_phash = _image_ahash(_current_screenshot_path(world, view, features_obj.extras))
     world.last_perception_synthesis = {
         "cache_key": cache_key,
         "summary": result,
+        "phash": current_phash,
+        "goal_task_sig": goal_task_sig,
     }
     features_obj.extras["perception_llm"] = result
     features_obj.extras["perception_human_readable"] = _format_perception_human_readable(
