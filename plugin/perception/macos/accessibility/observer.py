@@ -84,12 +84,31 @@ def _window_id_for_app(app_name: str) -> Optional[int]:
     return best_id
 
 
+def _raise_app(app_name: str) -> None:
+    """Bring the app forward / un-minimize it so it has a composited window.
+
+    For an AX-blind app, background window-scoped capture needs an on-screen
+    window; when there is none (the app is minimized or on another Space), there
+    is nothing to scope to. Raising the app is the agent's job — it owns keeping
+    its own surface perceivable — so we activate it rather than grabbing whatever
+    else is on screen and perceiving the wrong app.
+    """
+    import time as _time
+
+    try:
+        subprocess.run(["open", "-a", app_name], capture_output=True, timeout=10)
+    except Exception:
+        pass
+    _time.sleep(0.6)
+
+
 def _capture_screen_screenshot(*, app_name: str = "WhatsApp") -> tuple[Optional[str], Optional[str]]:
     """Capture the target app's window to a temp PNG, or return an explicit error.
 
     Prefers a window-scoped grab (``screencapture -l <id>``) so an occluding
-    window cannot leak into perception; falls back to a full-screen grab only
-    when the window id cannot be resolved or the scoped grab comes up empty.
+    window cannot leak into perception. If the app has no on-screen window at all
+    (minimized / another Space), the agent raises it and re-resolves rather than
+    perceiving the wrong app; a full-screen grab is the last resort only.
     """
     fd, path = tempfile.mkstemp(suffix=".png", prefix=f"{app_name.lower().replace(' ', '_')}_obs_")
     os.close(fd)
@@ -113,6 +132,13 @@ def _capture_screen_screenshot(*, app_name: str = "WhatsApp") -> tuple[Optional[
 
     errors: list[str] = []
     win_id = _window_id_for_app(app_name)
+    if win_id is None:
+        # No on-screen window for the task app: it is minimized or on another
+        # Space, so there is nothing to scope a background grab to. Raise it and
+        # re-resolve — capturing the whole screen here would perceive whatever
+        # foreign app happens to be frontmost (the exact drift we must avoid).
+        _raise_app(app_name)
+        win_id = _window_id_for_app(app_name)
     if win_id is not None:
         # -l scopes to the window; -o drops the drop-shadow border. The window
         # server composites just this window, so z-order / occlusion is moot.
