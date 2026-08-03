@@ -1128,18 +1128,23 @@ class DecisionEngine:
         overlay: Any,
         execution_state: Any,
     ) -> Optional[Action]:
-        """Open a visible search-result row that matches the goal, deterministically.
+        """Open a visible row that matches the contact we need, deterministically.
 
-        When the result surface is up and a visible row matches the target we
-        searched for, the right move is to open that row — not to re-search, and
-        not to wait for the perception model to say so. The row is right there.
-        App-agnostic: it keys off result_surface_visible + a visible row whose
-        label matches the goal's target, so it transfers to any search surface.
+        When a row that names the contact we are trying to open is right there on
+        screen — a search result, or a source-conversation row in the list — the
+        move is to open it, not to re-search and not to idle on observe waiting
+        for the perception model to say what is already visible. The real
+        safeguard is the *name match* to the contact we need; the surface it
+        appears on (search results vs. chat list) is app-specific noise. This is
+        why it is gated on a matching row, not on query_matches_goal.
         """
         extras = features.extras or {}
-        if not (extras.get("result_surface_visible") or extras.get("search_result_rows")):
-            return None
-        if not (features.query_matches_goal and features.has_named_entity):
+        surface_up = bool(
+            extras.get("result_surface_visible")
+            or extras.get("search_result_rows")
+            or extras.get("source_conversation_visible")
+        )
+        if not surface_up:
             return None
         target = str(goal.contact or getattr(goal, "target_contact", "") or "").strip()
         if not target:
