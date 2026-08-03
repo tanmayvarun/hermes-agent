@@ -16,30 +16,122 @@ from plugin.perception.observation import Observation
 logger = logging.getLogger(__name__)
 
 
+def _normalize_owner(name: Any) -> str:
+    """Owner/app name with invisible format characters dropped, lowercased.
+
+    macOS reports some window owners with leading Unicode bidi/format marks
+    (e.g. WhatsApp as ``"\u200eWhatsApp"``); comparing raw strings misses them.
+    """
+    import unicodedata
+
+    text = str(name or "")
+    cleaned = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return cleaned.strip().lower()
+
+
+def _window_id_for_app(app_name: str) -> Optional[int]:
+    """The window id of the target app's largest on-screen normal window.
+
+    Perception must look at the app it is controlling, not at whatever window
+    happens to be topmost. A full-screen grab leaks an occluding app's pixels
+    into the vision path — e.g. an editor in front of WhatsApp reads as the
+    editor's content, and the perceptor then reasons about the wrong world.
+    Resolving the window id lets the capture be scoped to that window's pixels
+    (composited by the window server) regardless of z-order, which is how a
+    human "looks at the WhatsApp window" even when another window overlaps it.
+
+    Returns None when Quartz is unavailable or the app has no normal window, so
+    the caller can fall back to a full-screen grab.
+    """
+    target = _normalize_owner(app_name)
+    if not target:
+        return None
+    try:
+        from Quartz import (
+            CGWindowListCopyWindowInfo,
+            kCGNullWindowID,
+            kCGWindowListOptionOnScreenOnly,
+        )
+    except Exception:
+        return None
+    try:
+        infos = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID) or []
+    except Exception:
+        return None
+    best_id: Optional[int] = None
+    best_area = 0.0
+    for info in infos:
+        owner = _normalize_owner(info.get("kCGWindowOwnerName"))
+        # WhatsApp for Mac reports its owner as "\u200eWhatsApp" (a leading bidi
+        # mark), so a raw equality check misses it. Normalising both sides drops
+        # invisible format characters; containment tolerates similar decorations.
+        if owner != target and target not in owner and owner not in target:
+            continue
+        # Layer 0 is a normal application window; menubar items, overlays, and
+        # shadows live on other layers and must not win the size comparison.
+        layer = info.get("kCGWindowLayer")
+        if layer not in (0, None):
+            continue
+        bounds = info.get("kCGWindowBounds") or {}
+        try:
+            area = float(bounds.get("Width", 0.0)) * float(bounds.get("Height", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if area > best_area:
+            best_area = area
+            num = info.get("kCGWindowNumber")
+            best_id = int(num) if num is not None else None
+    return best_id
+
+
 def _capture_screen_screenshot(*, app_name: str = "WhatsApp") -> tuple[Optional[str], Optional[str]]:
-    """Capture the current screen to a temp PNG, or return an explicit error."""
+    """Capture the target app's window to a temp PNG, or return an explicit error.
+
+    Prefers a window-scoped grab (``screencapture -l <id>``) so an occluding
+    window cannot leak into perception; falls back to a full-screen grab only
+    when the window id cannot be resolved or the scoped grab comes up empty.
+    """
     fd, path = tempfile.mkstemp(suffix=".png", prefix=f"{app_name.lower().replace(' ', '_')}_obs_")
     os.close(fd)
     shot = Path(path)
-    try:
-        proc = subprocess.run(
-            ["screencapture", "-x", str(shot)],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=12,
-        )
-        if shot.exists() and shot.stat().st_size > 0:
-            return str(shot), None
-        err = (proc.stderr or "").strip() or "screencapture produced an empty file"
-        raise RuntimeError(err)
-    except Exception as exc:  # noqa: BLE001 - capture must be best-effort
+
+    def _run(cmd: list[str]) -> tuple[bool, str]:
         try:
-            shot.unlink(missing_ok=True)
-        except Exception:
-            pass
-        return None, str(exc)
+            proc = subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=12,
+            )
+        except Exception as exc:  # noqa: BLE001 - capture must be best-effort
+            return False, str(exc)
+        if shot.exists() and shot.stat().st_size > 0:
+            return True, ""
+        return False, (proc.stderr or "").strip() or "screencapture produced an empty file"
+
+    errors: list[str] = []
+    win_id = _window_id_for_app(app_name)
+    if win_id is not None:
+        # -l scopes to the window; -o drops the drop-shadow border. The window
+        # server composites just this window, so z-order / occlusion is moot.
+        ok, err = _run(["screencapture", "-x", "-o", "-l", str(win_id), str(shot)])
+        if ok:
+            return str(shot), None
+        if err:
+            errors.append(f"window-scoped: {err}")
+
+    ok, err = _run(["screencapture", "-x", str(shot)])
+    if ok:
+        return str(shot), None
+    if err:
+        errors.append(f"full-screen: {err}")
+    try:
+        shot.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return None, "; ".join(errors) or "screencapture failed"
 
 
 class Observer(Protocol):
