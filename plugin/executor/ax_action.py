@@ -676,15 +676,35 @@ def ax_click(
                 prefer_roles=["AXButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXPopUpButton"],
             )
             if el_bg is not None and _supports_press(el_bg):
-                err_bg = _press(el_bg)
-                if _press_ok(err_bg):
-                    time.sleep(0.2)
-                    return ExecResult(
-                        ok=True,
-                        backend="ax_bg",
-                        message=f"AXPress {_clean(target)!r} in background (no foreground)",
-                        command=f"ax_click {app} {target}",
-                    )
+                # A background press must be confirmed to target the *same* thing the
+                # caller resolved. On AX-blind apps (WhatsApp) a "search-mirror"
+                # AXStaticText titled with the query advertises AXPress but sits in
+                # the search field, not the chat row — pressing it reports success
+                # while nothing opens, which is exactly the silent no-op that loops
+                # the agent on search_results forever. When the caller supplies
+                # world-model bounds (the vision-perceived location of the target),
+                # only press in the background if the name-resolved element actually
+                # sits there. With no bounds (a pure AX-tree target on an AX-rich
+                # app) the element found by name *is* the target, so press it.
+                bc = _bounds_center(bounds)
+                fc = _frame_center(el_bg)
+                coincides = bc is None or (
+                    fc is not None
+                    and fc[0] >= 0
+                    and fc[1] >= 0
+                    and abs(fc[0] - bc[0]) <= 40.0
+                    and abs(fc[1] - bc[1]) <= 40.0
+                )
+                if coincides:
+                    err_bg = _press(el_bg)
+                    if _press_ok(err_bg):
+                        time.sleep(0.2)
+                        return ExecResult(
+                            ok=True,
+                            backend="ax_bg",
+                            message=f"AXPress {_clean(target)!r} in background (no foreground)",
+                            command=f"ax_click {app} {target}",
+                        )
 
         _activate_app(app)
         prefer = ["AXButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXPopUpButton", "AXStaticText"]
