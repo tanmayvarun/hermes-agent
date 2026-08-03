@@ -735,6 +735,20 @@ def _last_action_report(features: StateFeatures, execution_state: Any) -> Dict[s
     repeats = int(getattr(execution_state, "repeated_action_count", 0) or 0)
     if repeats >= 2:
         out["times_repeated_in_a_row"] = repeats
+
+    # Perception-history contract: the recent *pattern* of surprises, not just
+    # the last one. When the agent has been surprised more than once, feed the
+    # short history so the model can reason over the sequence (e.g. "twice a
+    # click on this row opened a link") and re-perceive at finer granularity.
+    history = getattr(execution_state, "recent_surprises", None)
+    if isinstance(history, list) and len(history) >= 2:
+        compact: List[Dict[str, Any]] = []
+        for s in history[-4:]:
+            if not isinstance(s, dict):
+                continue
+            compact.append({k: v for k, v in s.items() if v not in (None, "", [])})
+        if compact:
+            out["recent_surprises"] = compact
     return out
 
 
@@ -900,7 +914,16 @@ _SYSTEM_PROMPT = (
     "browser or another app opened, a wrong menu appeared — your next move is to "
     "return to the task surface (dismiss/close/go back), then retry the intended "
     "action corrected. Trying the same thing again and expecting a different "
-    "result is the one move that is never allowed."
+    "result is the one move that is never allowed.\n"
+    "last_action.recent_surprises, when present, is the short history of your "
+    "recent failed moves — read it as a pattern, not isolated events. If the "
+    "same kind of surprise recurs (e.g. clicking a conversation row keeps "
+    "opening a link), treat it as evidence that your segmentation of the scene "
+    "is wrong: re-perceive that region at finer granularity and describe, in "
+    "the world_model, the distinct sub-regions you now resolve (the link text "
+    "vs. the safe area of the row that opens the conversation) before choosing "
+    "where to act. Let the accumulated surprises sharpen your perception, the "
+    "way prior context sharpens a prediction."
 )
 
 

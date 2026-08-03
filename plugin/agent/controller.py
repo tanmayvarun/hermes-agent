@@ -1358,6 +1358,23 @@ def run_goal_closed_loop(
         coverage = float(wv or 0.0)
         action_surprised = _last_action_surprised(runtime.execution_state)
         awaiting_verification = _awaiting_verification(runtime.execution_state)
+        if action_surprised:
+            # Record the surprise into the bounded history perception attends to,
+            # so the model sees the pattern of recent failures, not just the last.
+            _attrib = getattr(runtime.execution_state, "last_attribution", None) or {}
+            _ev = _attrib.get("evidence") if isinstance(_attrib.get("evidence"), dict) else {}
+            runtime.execution_state.note_surprise(
+                {
+                    "iteration": iteration,
+                    "action": str(getattr(runtime.execution_state, "last_action", "") or ""),
+                    "family": str(_attrib.get("action_family") or ""),
+                    "effect": str(_attrib.get("effect_kind") or ""),
+                    "outcome": str(_attrib.get("outcome") or ""),
+                    "failure_domain": str(_attrib.get("likely_failure_domain") or ""),
+                    "world_change_score": _ev.get("change_score"),
+                    "notes": [str(n) for n in (_attrib.get("notes") or []) if str(n).strip()][:3],
+                }
+            )
         sufficiency, meta = assess_executive_judgement(
             runtime.execution_state,
             blocking_uncertainties=blocking_uncertainties,

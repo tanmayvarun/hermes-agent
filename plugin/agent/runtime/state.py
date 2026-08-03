@@ -59,6 +59,11 @@ class ExecutionState:
     hypothesis_layers: HypothesisLayers = field(default_factory=HypothesisLayers)
     last_transition: Optional[Dict[str, Any]] = None
     last_attribution: Optional[Dict[str, Any]] = None
+    # Bounded history of recent surprises (actions whose result was not what we
+    # predicted). Fed to perception so the model sees the *pattern* of failures,
+    # not just the last one, and can re-perceive at finer granularity — the
+    # perception analogue of attending over prior context.
+    recent_surprises: List[Dict[str, Any]] = field(default_factory=list)
     active_action_world_id: str = ""
     # World-uncertainty flag: prefer re-observe + fresh affordances; never revise intent
     world_exploration_needed: bool = False
@@ -85,6 +90,25 @@ class ExecutionState:
             self.world_seq += 1
             self.world_id = f"w{self.world_seq}"
         return self.world_id
+
+    def note_surprise(self, entry: Dict[str, Any], *, cap: int = 5) -> None:
+        """Append one surprise to the bounded history, de-duping the same frame.
+
+        Kept small on purpose: perception needs the recent *shape* of failures
+        (what we tried, what actually happened), not an unbounded transcript.
+        """
+        if not isinstance(entry, dict) or not entry:
+            return
+        frame = entry.get("iteration")
+        if self.recent_surprises and frame is not None:
+            if self.recent_surprises[-1].get("iteration") == frame:
+                # Same iteration re-emitting (e.g. across a perception skip):
+                # replace rather than duplicate.
+                self.recent_surprises[-1] = entry
+                return
+        self.recent_surprises.append(entry)
+        if len(self.recent_surprises) > cap:
+            del self.recent_surprises[0 : len(self.recent_surprises) - cap]
 
     def advance_search_hypothesis(self, n_hypotheses: int) -> bool:
         """Move to next search hypothesis. Returns True if advanced."""
