@@ -26,6 +26,10 @@ class Action:
     # Bound to world version when chosen; stale targets must be re-resolved
     observed_in_world: str = ""
     target_entity_id: int | None = None
+    # A model-supplied screen point (x, y) for actions grounded on pixels rather
+    # than an AX entity. The runtime turns it into a small clickable box so the
+    # point survives to the mouse instead of being lost when no entity resolves.
+    target_point: tuple[float, float] | None = None
     capability_id: str = ""
     capability_type: str = ""
     reversible: bool = True

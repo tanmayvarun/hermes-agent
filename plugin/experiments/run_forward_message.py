@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 
 from plugin.agent.controller import resolve_step_budget, run_goal_closed_loop
+from plugin.agent.capabilities.open_entity import _POINT_TARGET_SIZE
 from plugin.agent.decision import DecisionEngine
 from plugin.agent.goal import Goal
 from plugin.agent.perception_cycle import build_view_features
