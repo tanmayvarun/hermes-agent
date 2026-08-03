@@ -673,6 +673,7 @@ class DecisionEngine:
         from plugin.agent.unified_cognition import (
             consult_unified_cognition,
             proposal_to_action,
+            ranked_action_candidates,
             should_escalate,
             unified_cognition_enabled,
         )
@@ -687,8 +688,29 @@ class DecisionEngine:
 
         action: Optional[Action] = None
         reason = "no_proposal"
+        action_rank = -1
+        rejected_siblings: List[str] = []
         if proposal is not None:
-            action, reason = proposal_to_action(proposal, goal, world, features)
+            # The model returns a ranked frontier, best first. Try each in order:
+            # a considered alternative the model already offered beats sending the
+            # whole run to the slow text reasoner because the top pick happened to
+            # be inadmissible (e.g. a pointer move with no target). We record the
+            # rank we landed on and the siblings we rejected, for the trace.
+            candidates_ranked = ranked_action_candidates(proposal)
+            if not candidates_ranked and proposal.next_action:
+                candidates_ranked = [dict(proposal.next_action)]
+            original_head = proposal.next_action
+            for idx, cand in enumerate(candidates_ranked):
+                proposal.next_action = cand
+                cand_action, cand_reason = proposal_to_action(proposal, goal, world, features)
+                if cand_action is not None:
+                    action, reason, action_rank = cand_action, cand_reason, idx
+                    break
+                fam = str(cand.get("family") or "").strip().lower() or "unknown"
+                rejected_siblings.append(f"{fam}:{cand_reason}")
+                reason = cand_reason
+            if action is None:
+                proposal.next_action = original_head
             self._apply_belief_updates(proposal, features)
 
         escalate, escalate_reason = should_escalate(
@@ -699,6 +721,8 @@ class DecisionEngine:
             "admissibility": reason,
             "escalated": escalate,
             "escalation_reason": escalate_reason,
+            "action_rank": action_rank,
+            "rejected_siblings": rejected_siblings,
         }
         if action is None or escalate:
             return None
@@ -1096,6 +1120,69 @@ class DecisionEngine:
             ),
         )
 
+    def _promote_visible_search_result(
+        self,
+        goal: Goal,
+        world: WorldModel,
+        features: StateFeatures,
+        overlay: Any,
+        execution_state: Any,
+    ) -> Optional[Action]:
+        """Open a visible search-result row that matches the goal, deterministically.
+
+        When the result surface is up and a visible row matches the target we
+        searched for, the right move is to open that row — not to re-search, and
+        not to wait for the perception model to say so. The row is right there.
+        App-agnostic: it keys off result_surface_visible + a visible row whose
+        label matches the goal's target, so it transfers to any search surface.
+        """
+        extras = features.extras or {}
+        if not (extras.get("result_surface_visible") or extras.get("search_result_rows")):
+            return None
+        if not (features.query_matches_goal and features.has_named_entity):
+            return None
+        target = str(goal.contact or getattr(goal, "target_contact", "") or "").strip()
+        if not target:
+            return None
+
+        try:
+            candidates = enumerate_candidates(goal, world, features, overlay)
+        except Exception:
+            return None
+        opens = [
+            cand
+            for cand in candidates
+            if cand.action_family == "open_contact" and str(cand.semantic_target or "").strip()
+        ]
+        if not opens:
+            return None
+
+        tl = target.lower()
+        matched = [
+            cand
+            for cand in opens
+            if tl in cand.semantic_target.lower() or cand.semantic_target.lower() in tl
+        ]
+        chosen = max(matched or opens, key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0))
+        if not matched:
+            # No row actually matches the target — do not open the wrong contact.
+            return None
+
+        self._bind_capability(chosen, features, world, goal)
+        chosen.observed_in_world = str(getattr(execution_state, "world_id", "") or "")
+        chosen.grounding_reason = chosen.grounding_reason or "visible_search_result"
+        self.last_trace = DecisionTrace(
+            features=features.to_dict(),
+            candidates=[],
+            goal_status={"reason": "deterministic_visible_search_result_promotion"},
+            chosen={
+                "action": chosen.action,
+                "target": chosen.semantic_target,
+                "family": chosen.action_family,
+            },
+        )
+        return chosen
+
     def decide(
         self,
         goal: Goal,
@@ -1232,6 +1319,14 @@ class DecisionEngine:
         unified_action = self._unified_fast_path(goal, world, features, execution_state, [])
         if unified_action is not None:
             return unified_action
+
+        # A visible search-result row that matches the target is opened directly,
+        # without a perception-model round-trip: the answer is on screen.
+        promoted_row = self._promote_visible_search_result(
+            goal, world, features, overlay, execution_state
+        )
+        if promoted_row is not None:
+            return promoted_row
 
         non_observe_count = 0
         try:
