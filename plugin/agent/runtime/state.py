@@ -14,6 +14,7 @@ from plugin.agent.transition.experience import StateExperience
 from plugin.agent.transition.types import ExplorationBranch, InteractionContext
 from plugin.worldmodel.capability import CapabilityMemory
 from plugin.worldmodel.model import WorldModel, WorldPatch
+from plugin.agent.executive.workspace import AttemptRecord, ExecutiveWorkspace, WorkspaceProposal
 
 
 @dataclass
@@ -64,6 +65,11 @@ class ExecutionState:
     # not just the last one, and can re-perceive at finer granularity — the
     # perception analogue of attending over prior context.
     recent_surprises: List[Dict[str, Any]] = field(default_factory=list)
+    # The executive's single authoritative record of task state: arbitrated
+    # beliefs, open questions, attempts and transitions. The sync helpers and
+    # assess_executive_judgement read/write it through workspace_of(); without
+    # it the whole executive belief layer is inert.
+    workspace: ExecutiveWorkspace = field(default_factory=ExecutiveWorkspace)
     active_action_world_id: str = ""
     # World-uncertainty flag: prefer re-observe + fresh affordances; never revise intent
     world_exploration_needed: bool = False
@@ -155,6 +161,84 @@ class ExecutionState:
         self.last_plan_step = step
         self.last_action = step.action.lower()
         self.last_result = execution
+        self._commit_action_attempt(step, execution)
+
+    def _commit_action_attempt(self, step: PlanStep, execution: Dict[str, Any]) -> None:
+        """Land the executed action in the workspace — the one authoritative record.
+
+        Only the runtime knows what was truly executed and what came back, so the
+        attempt (and the step it consumed from the budget) is written straight
+        into the workspace here rather than reconstructed elsewhere. The unified
+        world document, when present, is kept in sync so the next model call sees
+        the real outcome.
+        """
+        exec_map = execution if isinstance(execution, dict) else {}
+        ok = bool(exec_map.get("ok"))
+        message = str(exec_map.get("message") or "").strip()
+        outcome = f"{'ok' if ok else 'failed'}:{message}" if message else ("ok" if ok else "failed")
+        family = str(getattr(step, "action_family", "") or "").strip() or str(step.action or "").strip().lower()
+        target = str(getattr(step, "semantic_target", "") or "").strip()
+        self.workspace.commit(
+            WorkspaceProposal(
+                source="runtime",
+                frame=int(self.iteration or 0),
+                attempts=[
+                    AttemptRecord(
+                        frame=int(self.iteration or 0),
+                        kind="action",
+                        action=family,
+                        target=target,
+                        outcome=outcome,
+                    )
+                ],
+                budgets={"steps_used": int(self.workspace.budgets.steps_used) + 1},
+            )
+        )
+        document = getattr(self, "unified_world_document", None)
+        if isinstance(document, dict):
+            from plugin.agent.world_document import record_attempt
+
+            self.unified_world_document = record_attempt(
+                document,
+                frame=int(self.iteration or 0),
+                action=family,
+                target=target,
+                result=outcome,
+            )
+
+    def record_search_attempt(self, query: str, outcome: str) -> None:
+        """Record a search the agent ran, as a workspace attempt.
+
+        ``search_attempt_log`` is a *view* of these — there is deliberately no
+        second store to drift from. Search refinement reads the log; the truth
+        lives in the workspace.
+        """
+        q = str(query or "").strip()
+        if not q:
+            return
+        self.workspace.commit(
+            WorkspaceProposal(
+                source="runtime",
+                frame=int(self.iteration or 0),
+                attempts=[
+                    AttemptRecord(
+                        frame=int(self.iteration or 0),
+                        kind="search",
+                        action="search",
+                        text=q,
+                        outcome=str(outcome or "").strip(),
+                    )
+                ],
+            )
+        )
+
+    @property
+    def search_attempt_log(self) -> List[Dict[str, Any]]:
+        """The search attempts, in the legacy ``{"q","outcome"}`` shape.
+
+        A pure view of the workspace attempts so the two can never disagree.
+        """
+        return self.workspace.search_attempts()
 
     def record_verification(self, verification: Dict[str, Any]) -> None:
         self.last_verification = verification
