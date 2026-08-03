@@ -718,7 +718,21 @@ def test_perception_prompt_projects_whatsapp_timeline_and_filters_noise():
 
 
 def test_perception_timeout_is_capped():
-    assert _perception_timeout_seconds() <= 15.0
+    # The budget must fit a large cloud vision model (qwen3.5:397b peaked ~58s),
+    # but stay bounded so a hung call cannot stall the loop indefinitely.
+    from plugin.agent.perception_synthesis import _MAX_PERCEPTION_TIMEOUT_SECONDS
+
+    timeout = _perception_timeout_seconds()
+    assert 15.0 <= timeout <= _MAX_PERCEPTION_TIMEOUT_SECONDS
+
+
+def test_perception_timeout_env_override_is_bounded(monkeypatch):
+    from plugin.agent.perception_synthesis import _MAX_PERCEPTION_TIMEOUT_SECONDS
+
+    monkeypatch.setenv("HERMES_PERCEPTION_LLM_TIMEOUT_SECONDS", "500")
+    assert _perception_timeout_seconds() == _MAX_PERCEPTION_TIMEOUT_SECONDS
+    monkeypatch.setenv("HERMES_PERCEPTION_LLM_TIMEOUT_SECONDS", "1")
+    assert _perception_timeout_seconds() == 5.0
 
 
 def test_perception_summary_bumps_matching_family():

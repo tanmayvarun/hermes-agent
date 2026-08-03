@@ -33,7 +33,11 @@ logger = logging.getLogger(__name__)
 _CACHE_KEY = "__perception_synthesis_cache__"
 _DEFAULT_WORLDVIEW_THRESHOLD = 0.93
 _DEFAULT_PERCEPTION_FAIL_HARD = True
-_DEFAULT_PERCEPTION_TIMEOUT_SECONDS = 15.0
+_DEFAULT_PERCEPTION_TIMEOUT_SECONDS = 60.0
+# Hard ceiling on the perception LLM budget. Sized for a large cloud vision model
+# (qwen3.5:397b historically peaked near ~58s); env/config can dial it down for
+# faster models but not below the 5s floor applied at the call site.
+_MAX_PERCEPTION_TIMEOUT_SECONDS = 90.0
 _DEFAULT_PERCEPTION_MAX_TOKENS = 192
 _DEFAULT_PERCEPTION_MIN_CONFIDENCE = 0.7
 _DEFAULT_PERCEPTION_PROMPT_SHAPE = "balanced"
@@ -407,11 +411,18 @@ def _perception_fail_hard() -> bool:
 
 
 def _perception_timeout_seconds() -> float:
-    """Return the dedicated timeout budget for perception synthesis."""
+    """Return the dedicated timeout budget for perception synthesis.
+
+    The multimodal perceptor runs a large cloud vision model over a screenshot;
+    historically qwen3.5:397b took ~16s median, ~25s p90, up to ~58s. A 15s cap
+    (left over from the AX-only era, when no image was sent) silently killed the
+    vast majority of those calls, so vision never landed. The cap is raised to
+    let the vision model finish; overridable via env/config for faster models.
+    """
     env_timeout = os.getenv("HERMES_PERCEPTION_LLM_TIMEOUT_SECONDS", "").strip()
     if env_timeout:
         try:
-            return max(5.0, min(float(env_timeout), 15.0))
+            return max(5.0, min(float(env_timeout), _MAX_PERCEPTION_TIMEOUT_SECONDS))
         except Exception:
             pass
     try:
@@ -421,7 +432,7 @@ def _perception_timeout_seconds() -> float:
         agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
         raw = agent_cfg.get("perception_llm_timeout_seconds", _DEFAULT_PERCEPTION_TIMEOUT_SECONDS)
         timeout = float(raw)
-        return max(5.0, min(timeout, 15.0))
+        return max(5.0, min(timeout, _MAX_PERCEPTION_TIMEOUT_SECONDS))
     except Exception:
         return _DEFAULT_PERCEPTION_TIMEOUT_SECONDS
 
