@@ -70,6 +70,11 @@ class ExecutionState:
     # assess_executive_judgement read/write it through workspace_of(); without
     # it the whole executive belief layer is inert.
     workspace: ExecutiveWorkspace = field(default_factory=ExecutiveWorkspace)
+    # Consecutive executive BACKTRACK meta-actions with no intervening real move.
+    # Backtracking repeatedly with no new evidence is not progress; once it runs
+    # long the branch space is exhausted and the executive escalates instead of
+    # thrashing. Reset whenever a non-backtrack move is taken.
+    consecutive_backtracks: int = 0
     active_action_world_id: str = ""
     # World-uncertainty flag: prefer re-observe + fresh affordances; never revise intent
     world_exploration_needed: bool = False

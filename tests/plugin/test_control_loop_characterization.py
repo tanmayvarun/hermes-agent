@@ -621,6 +621,43 @@ def test_meta_action_backtrack_is_dispatched_as_a_loop_phase(tmp_path, monkeypat
     assert any(e.get("kind") == "meta_backtrack" for e in events)
 
 
+def test_exhausted_backtracks_commit_when_a_move_exists_else_escalate():
+    """The thrash fix: once backtracks are exhausted, retreating stops.
+
+    The first live executive run backtracked on ~98 of 100 iterations. When the
+    branch space is exhausted the executive must stop retreating — commit the
+    grounded move if one exists, otherwise escalate to the user.
+    """
+    from plugin.agent.controller import _resolve_exhausted_backtrack
+    from plugin.agent.executive.meta_action import MetaAction, MetaChoice
+
+    backtrack = MetaChoice(MetaAction.BACKTRACK, "branch stale")
+
+    # Not yet exhausted: the backtrack stands.
+    unchanged = _resolve_exhausted_backtrack(
+        backtrack, backtrack_exhausted=False, has_grounded_action=False
+    )
+    assert unchanged.action is MetaAction.BACKTRACK
+
+    # Exhausted with a grounded move: commit it instead of retreating again.
+    committed = _resolve_exhausted_backtrack(
+        backtrack, backtrack_exhausted=True, has_grounded_action=True
+    )
+    assert committed.action is MetaAction.ACT
+
+    # Exhausted with nothing to ground: escalate to the user.
+    escalated = _resolve_exhausted_backtrack(
+        backtrack, backtrack_exhausted=True, has_grounded_action=False
+    )
+    assert escalated.action is MetaAction.ASK_USER
+
+    # A non-backtrack move is never rewritten, even when exhausted.
+    act = MetaChoice(MetaAction.ACT, "grounded")
+    assert _resolve_exhausted_backtrack(
+        act, backtrack_exhausted=True, has_grounded_action=True
+    ).action is MetaAction.ACT
+
+
 def test_executive_judgement_is_recorded_with_gate_off(tmp_path):
     """The judgement is always-on even when it does not drive perception."""
     app = _call_app()

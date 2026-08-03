@@ -19,6 +19,19 @@ def test_a_hard_block_escalates_to_the_user():
     assert choice.action is MetaAction.ASK_USER
 
 
+def test_assess_threads_a_hard_block_to_ask_user():
+    # A hard block computed by the controller (e.g. backtracks exhausted) must
+    # reach the selector through assess_executive_judgement and win.
+    from plugin.agent.executive.sync import assess_executive_judgement
+    from plugin.agent.runtime.state import ExecutionState
+
+    state = ExecutionState()
+    _suff_verdict, meta = assess_executive_judgement(
+        state, has_grounded_action=False, hard_block=True
+    )
+    assert meta.action is MetaAction.ASK_USER
+
+
 def test_a_surprise_forces_verification_before_anything_else():
     choice = select_meta_action(
         MetaContext(awaiting_verification=True, last_action_surprised=True, has_grounded_action=True)

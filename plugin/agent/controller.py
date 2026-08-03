@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 from plugin.agent.action import Action
 from plugin.agent.apps.registry import get_overlay
 from plugin.agent.decision import DecisionEngine, get_decision_engine
-from plugin.agent.executive.meta_action import MetaAction
+from plugin.agent.executive.meta_action import MetaAction, MetaChoice
 from plugin.agent.executive.sync import (
     assess_executive_judgement,
     bind_goal,
@@ -119,6 +119,27 @@ def _awaiting_verification(execution_state: Any) -> bool:
     )
 
 
+def _resolve_exhausted_backtrack(
+    meta: "MetaChoice",
+    *,
+    backtrack_exhausted: bool,
+    has_grounded_action: bool,
+) -> "MetaChoice":
+    """Stop an endless BACKTRACK run once retreating provably cannot help.
+
+    After enough no-progress backtracks the branch space is exhausted: retreating
+    again is the thrash the first live executive run exposed (backtrack on ~98 of
+    100 iterations). Commit the grounded move if one exists; otherwise escalate,
+    because there is nothing left to ground. Returns ``meta`` unchanged when
+    backtracks are not exhausted or the move is not a backtrack.
+    """
+    if backtrack_exhausted and meta.action == MetaAction.BACKTRACK:
+        if has_grounded_action:
+            return MetaChoice(MetaAction.ACT, "backtracks exhausted; commit the grounded action")
+        return MetaChoice(MetaAction.ASK_USER, "backtracks exhausted; nothing can be grounded")
+    return meta
+
+
 def _consume_surprise(execution_state: Any) -> None:
     """Mark the last surprising attribution as handled so VERIFY fires once.
 
@@ -141,6 +162,12 @@ def _consume_surprise(execution_state: Any) -> None:
 # re-perceive they want is gated at the top of the loop); these three are real
 # control-flow moves the executive takes instead of acting.
 _META_PREEMPTS = {MetaAction.VERIFY, MetaAction.BACKTRACK, MetaAction.ASK_USER}
+
+# Backtracking retreats the branch to explore elsewhere. If it repeats this many
+# times with no real move in between, the branch space is exhausted and looking/
+# retreating again cannot help (e.g. perception is starved and nothing can be
+# grounded); the executive escalates to the user instead of thrashing.
+_MAX_CONSECUTIVE_BACKTRACKS = 5
 
 # The domain derives a fine-grained phase (OPEN_SOURCE, FIND_LINK, ...). The
 # workspace records progress against the abstract phase ladder so regression
@@ -1517,6 +1544,14 @@ def run_goal_closed_loop(
             ]
         action_surprised = _last_action_surprised(runtime.execution_state)
         awaiting_verification = _awaiting_verification(runtime.execution_state)
+        # Repeated no-progress backtracks mean the branch space is exhausted:
+        # nothing can be grounded and retreating again cannot help (e.g.
+        # perception is starved). Escalate rather than thrash.
+        backtrack_exhausted = (
+            int(getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0)
+            >= _MAX_CONSECUTIVE_BACKTRACKS
+        )
+        hard_block = backtrack_exhausted and not has_grounded_action
         if action_surprised:
             # Record the surprise into the bounded history perception attends to,
             # so the model sees the pattern of recent failures, not just the last.
@@ -1543,6 +1578,15 @@ def run_goal_closed_loop(
             previously_suppressed=prev_meta_suppress,
             last_action_surprised=action_surprised,
             awaiting_verification=awaiting_verification,
+            hard_block=hard_block,
+        )
+        # Backtracks exhausted: stop retreating (commit or escalate). Without this
+        # the executive prefers BACKTRACK (higher value than a thin ACT) forever,
+        # which is the thrash the first live run exposed.
+        meta = _resolve_exhausted_backtrack(
+            meta,
+            backtrack_exhausted=backtrack_exhausted,
+            has_grounded_action=has_grounded_action,
         )
         beliefs_payload: Dict[str, Any] = {}
         _ws = workspace_of(runtime.execution_state)
@@ -1598,13 +1642,23 @@ def run_goal_closed_loop(
             if meta.action == MetaAction.ASK_USER:
                 return _finish_failure(
                     "executive escalated to the user: no self-serve move resolves the block",
-                    {"meta_action": meta.to_dict(), "app_view": view},
+                    {
+                        "meta_action": meta.to_dict(),
+                        "app_view": view,
+                        "consecutive_backtracks": int(
+                            getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0
+                        ),
+                        "blocking_uncertainties": [str(q) for q in blocking_uncertainties][:8],
+                    },
                     iterations=iteration,
                 )
             if meta.action == MetaAction.BACKTRACK:
                 # The branch has gone stale. Retreat by invalidating the current
                 # frontier so the next decision explores elsewhere, instead of
                 # committing this frame's stale-branch action.
+                runtime.execution_state.consecutive_backtracks = (
+                    int(getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0) + 1
+                )
                 branch_hint = _invalidate_stale_frontier(
                     runtime, reason="executive_backtrack", fallback="observe"
                 )
@@ -1615,6 +1669,7 @@ def run_goal_closed_loop(
                     payload={
                         "branch_hint": branch_hint,
                         "branch": runtime.execution_state.exploration_branch.to_dict(),
+                        "consecutive_backtracks": runtime.execution_state.consecutive_backtracks,
                     },
                     status="warn",
                 )
@@ -1623,11 +1678,17 @@ def run_goal_closed_loop(
                 # frame. Consume the surprise so we verify it once, then spend the
                 # turn confirming rather than committing a move we cannot trust.
                 _consume_surprise(runtime.execution_state)
+                # Verifying is a real move, not a retreat: the backtrack run ends.
+                runtime.execution_state.consecutive_backtracks = 0
             # Both VERIFY and BACKTRACK want a fresh look next iteration — never
             # let the perception gate reuse the prior snapshot after a meta move.
             prev_meta_suppress = False
             _wait(settle_s, f"executive {meta.action.value}")
             continue
+
+        # Any non-preempting frame (we are about to observe/act normally) breaks a
+        # backtrack run: the branch is no longer being retreated.
+        runtime.execution_state.consecutive_backtracks = 0
 
         # Low resolution confidence: observe to refine; ask only after attempts
         policy = str(feats.extras.get("resolution_policy") or "")

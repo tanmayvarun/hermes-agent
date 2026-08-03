@@ -293,6 +293,7 @@ def assess_executive_judgement(
     previously_suppressed: bool = False,
     last_action_surprised: bool = False,
     awaiting_verification: bool = False,
+    hard_block: bool = False,
 ):
     """Compute this frame's sufficiency and meta-action, and record them.
 
@@ -339,6 +340,7 @@ def assess_executive_judgement(
             last_action_surprised=bool(last_action_surprised),
             branch_stale=branch_stale,
             question_settled=question_settled,
+            hard_block=bool(hard_block),
         )
     )
 

@@ -44,10 +44,11 @@ export HERMES_AUXILIARY_PROVIDER_POLICY=ollama-only
 : "${HERMES_DECISION_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_DECISION_HIGH_RISK_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_SELECTOR_STRICT:=1}"
-# Let the executive drive the loop: meta-action selection gates perception and
-# dispatches VERIFY/BACKTRACK/ASK_USER as real phases (workspace population is
-# always on regardless). Overridable via the environment.
-: "${HERMES_META_PERCEPTION:=1}"
+# Executive loop (meta-action dispatch + perception gate) is opt-in until the
+# perception blocker is resolved: on a chrome-only AX tree it has nothing to
+# ground and only thrashes. Set HERMES_META_PERCEPTION=1 in the environment to
+# enable it. Workspace population is always on regardless of this flag.
+: "${HERMES_META_PERCEPTION:=0}"
 export HERMES_META_PERCEPTION
 export HERMES_FORWARD_STRICT_PERCEPTION
 export HERMES_FORWARD_PERCEPTION_SOURCE_TIMEOUT_SECONDS
