@@ -587,9 +587,16 @@ class ObjectDiscoveryEngine:
         top_score = float(ranked[0].score or 0.0) if ranked else 0.0
         second_score = float(ranked[1].score or 0.0) if len(ranked) > 1 else 0.0
         gap = top_score - second_score
+        # Singletons should stay deterministic even if the caller sets
+        # ``force_llm``. There is nothing to arbitrate when only one visible
+        # candidate survives projection, and consulting the LLM here only adds
+        # provider fragility without improving the decision.
         should_rerank = bool(
-            force_llm
-            or (context.use_llm and len(ranked) > 1 and (top_score < _LLM_SCORE_THRESHOLD or gap < 0.18))
+            len(ranked) > 1
+            and (
+                force_llm
+                or (context.use_llm and (top_score < _LLM_SCORE_THRESHOLD or gap < 0.18))
+            )
         )
         if should_rerank:
             consultation = consult_reasoning(

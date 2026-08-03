@@ -1002,16 +1002,29 @@ def _forward_candidates(goal: Goal, world: WorldModel, features: StateFeatures) 
             ):
                 src_ent = world.entities.get(int(src_eid))
                 if src_ent is not None and src_ent.visible:
-                    provider_regions = list(
-                        getattr(
-                            cap_graph.nodes.get(
-                                f"RevealHiddenActions:{int(src_ent.id)}:sidebar", None
-                            ),
-                            "provider_regions",
-                            None,
-                        )
-                        or []
+                    provider_regions = []
+                    cap_raw = (
+                        features.extras.get("capability_graph")
+                        or getattr(world, "last_capability_graph", None)
+                        or {}
                     )
+                    if isinstance(cap_raw, dict) and cap_raw:
+                        try:
+                            from plugin.worldmodel.capability import CapabilityGraph
+
+                            cap_graph = CapabilityGraph.from_dict(cap_raw)
+                            provider_regions = list(
+                                getattr(
+                                    cap_graph.nodes.get(
+                                        f"RevealHiddenActions:{int(src_ent.id)}:sidebar", None
+                                    ),
+                                    "provider_regions",
+                                    None,
+                                )
+                                or []
+                            )
+                        except Exception:
+                            provider_regions = []
                     if not _probe_target_is_content_like(src_ent, provider_regions):
                         pass
                     elif not active_entity_ids or int(src_ent.id) in active_entity_ids:
