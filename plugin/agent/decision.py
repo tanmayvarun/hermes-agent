@@ -195,20 +195,235 @@ class DecisionEngine:
             return max(base, 0.7)
         return base
 
+    # Canonical action families the controller can actually execute.
+    _CANONICAL_ACTION_FAMILIES = frozenset(
+        {
+            "observe",
+            "open_search",
+            "type_query",
+            "compose_search_query",
+            "resolve_entity",
+            "open_contact",
+            "select_content",
+            "forward_message",
+            "select_forward_target",
+            "dismiss",
+            "start_call",
+            "end_call",
+            "explore_chrome",
+            "scroll_content",
+            "locate_content",
+            "open_entity",
+            "select_content",
+            "reveal_actions",
+            "invoke_affordance",
+            "dismiss_transient",
+            "commit_irreversible",
+            "probe_hover",
+            "probe_context_menu",
+            "probe_focus",
+        }
+    )
+
+    # Intent keywords, not per-model string aliases: a screen-understanding
+    # model may name the same intent many ways, so classify by what the words
+    # mean rather than maintaining an exhaustive alias table.
+    _FAMILY_INTENT_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("observe", ("window", "focus_app", "activate", "wait", "screenshot", "inspect")),
+        (
+            "compose_search_query",
+            ("compose_search", "author_query", "craft_query", "search_query", "query_author"),
+        ),
+        (
+            "resolve_entity",
+            (
+                "resolve_entity",
+                "resolve_candidate",
+                "select_candidate",
+                "disambiguate",
+                "pick_recipient",
+                "choose_destination",
+            ),
+        ),
+        ("type_query", ("type", "enter_text", "input", "query")),
+        # Before open_search: "find the message about X" is locating content on
+        # the surface you are on, not opening the app's search chrome.
+        ("locate_content", ("locate", "find_in", "find_message", "seek", "look_for", "hunt")),
+        ("open_search", ("search", "find", "filter")),
+        ("open_entity", ("open_entity", "open_conversation", "open_thread", "open_channel")),
+        ("open_contact", ("chat", "conversation", "contact", "thread", "recipient")),
+        (
+            "select_content",
+            (
+                "select_content",
+                "select_message",
+                "focus_message",
+                "message",
+                "link",
+                "bubble",
+                "content",
+                "row",
+            ),
+        ),
+        ("reveal_actions", ("reveal_actions", "context_menu", "right_click", "show_actions")),
+        # "forward"/"share" as free-form labels map to invoking the affordance,
+        # not to a bundled forward plan. Exact family forward_message still
+        # matches the canonical set before keywords run.
+        ("invoke_affordance", ("invoke_affordance", "forward", "share", "reply")),
+        ("commit_irreversible", ("commit_irreversible", "send_message", "confirm_send")),
+        ("dismiss_transient", ("dismiss_transient", "dismiss_overlay", "clear_menu")),
+        ("dismiss", ("dismiss", "close", "cancel", "escape")),
+        ("scroll_content", ("scroll", "backtrack", "history")),
+    )
+
+    @classmethod
+    def _classify_perception_family(cls, family: str) -> str:
+        """Resolve a free-form perceptor family label to a canonical family."""
+        fam = str(family or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if not fam:
+            return ""
+        if fam in cls._CANONICAL_ACTION_FAMILIES:
+            return fam
+        for canonical, keywords in cls._FAMILY_INTENT_KEYWORDS:
+            if any(keyword in fam for keyword in keywords):
+                return canonical
+        return fam
+
     @staticmethod
-    def _family_to_action(family: str, goal: Goal, summary: Dict[str, Any]) -> tuple[str, str, str]:
-        fam = str(family or "").strip().lower()
+    def _ax_content_starved(features: StateFeatures) -> bool:
+        """True when the AX tree exposes only app/window chrome, no content.
+
+        On such frames there is nothing to ground a label or coordinate click
+        against, so keyboard-driven navigation is the only reliable actuator.
+        """
+        extras = features.extras if isinstance(getattr(features, "extras", None), dict) else {}
+        raw = extras.get("app_content_node_count")
+        if raw is None:
+            # Feature builders publish this under the worldview score instead
+            # of promoting it into extras.
+            score = getattr(features, "worldview_score", None)
+            if not isinstance(score, dict):
+                score = extras.get("worldview_score")
+            components = score.get("components") if isinstance(score, dict) else None
+            if isinstance(components, dict):
+                raw = components.get("app_content_node_count")
+        if raw is None:
+            return False
+        try:
+            return int(raw) <= 0
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _search_holds_query(features: Optional[StateFeatures], query: str) -> bool:
+        """True when search already contains ``query`` (AX or typed evidence).
+
+        An authored-but-not-yet-typed compose result must not count — that
+        previously unlocked point-click open_entity while the field was empty.
+        """
+        q = (query or "").strip().lower()
+        if not q or features is None:
+            return False
+        if getattr(features, "query_matches_goal", False):
+            return True
+        extras = features.extras if isinstance(getattr(features, "extras", None), dict) else {}
+        if extras.get("composed_query_pending"):
+            return False
+        for key in ("search_query", "search_query_hint", "last_typed_query"):
+            val = str(extras.get(key) or "").strip().lower()
+            if val and (q in val or val in q):
+                return True
+        return False
+
+    @classmethod
+    def _normalize_perception_family(
+        cls,
+        family: str,
+        summary: Dict[str, Any],
+        goal: Goal,
+        features: Optional[StateFeatures] = None,
+    ) -> str:
+        """Map multimodal family aliases onto the shared action-family vocabulary.
+
+        Screen-understanding models emit their own labels (``search``,
+        ``chat_selection``, ...) rather than the controller's canonical action
+        families. Normalizing here keeps one shared routing contract for every
+        surface instead of teaching each caller a model's vocabulary.
+        """
+        fam = cls._classify_perception_family(family)
+        text = str(summary.get("likely_next_text") or "").strip()
+        target = str(summary.get("likely_next_target") or "").strip()
+        query = text or target or (goal.contact or "")
+        starved = features is not None and cls._ax_content_starved(features)
+
+        # One multimodal experiment: raise search and type the query.
+        # ax_type opens search via Cmd+F before typing, so a bare
+        # "open the search bar" recommendation collapses into one step.
+        if fam == "open_search" and query:
+            return "type_query"
+
+        # Content-starved AX frames cannot ground a contact row click. Reach
+        # the same conversation through search, which is keyboard-driven and
+        # does not depend on an AX node the app never published.
+        if (
+            starved
+            and query
+            and not cls._search_holds_query(features, query)
+            and fam in {
+                "open_contact",
+                "open_entity",
+                "select_content",
+                "probe_hover",
+                "probe_focus",
+                "scroll_content",
+            }
+        ):
+            # Author a query first when the only cue is a bare entity name;
+            # type_query comes after compose (or when the model already authored).
+            from plugin.agent.capabilities.compose_search_query import is_bare_entity_query
+
+            if is_bare_entity_query(query, goal):
+                return "compose_search_query"
+            return "type_query"
+
+        # Unrecognized family with a concrete target: keep the loop moving via
+        # the grounded path instead of falling back to another Observe.
+        if fam and fam not in cls._CANONICAL_ACTION_FAMILIES and query:
+            if starved:
+                from plugin.agent.capabilities.compose_search_query import is_bare_entity_query
+
+                return "compose_search_query" if is_bare_entity_query(query, goal) else "type_query"
+            return "open_contact"
+        return fam
+
+    @classmethod
+    def _family_to_action(
+        cls,
+        family: str,
+        goal: Goal,
+        summary: Dict[str, Any],
+        features: Optional[StateFeatures] = None,
+    ) -> tuple[str, str, str]:
+        fam = cls._normalize_perception_family(family, summary, goal, features)
         target = str(summary.get("likely_next_target") or "").strip()
         text = str(summary.get("likely_next_text") or "").strip()
         if fam in {"open_contact", "start_call", "dismiss", "end_call", "explore_chrome", "open_search"}:
             action = "Click"
+        elif fam == "compose_search_query":
+            action = "ComposeSearchQuery"
+            # Argument is optional notes; authorship uses the goal evidence bag.
+            text = text or ""
+            target = target or ""
         elif fam == "type_query":
             action = "Type"
             if not text:
-                text = target or (goal.contact or "")
+                text = target if target and "search" not in target.lower() else (goal.contact or "")
+            if not text:
+                text = goal.contact or ""
         else:
             action = "Observe"
-        if fam == "open_search" and not target:
+        if fam == "open_search":
+            # ax_click only uses the Cmd+F search shortcut for exact "Search".
             target = "Search"
         elif fam == "dismiss" and not target:
             target = "Dismiss"
@@ -220,6 +435,8 @@ class DecisionEngine:
             target = goal.contact or "Call"
         elif fam == "open_contact" and not target:
             target = goal.contact or ""
+        elif fam == "type_query":
+            target = "Search"
         return action, target, text
 
     @staticmethod
@@ -437,6 +654,171 @@ class DecisionEngine:
         frontier_snapshot.sort(key=lambda a: a.score, reverse=True)
         branch.set_frontier(frontier_snapshot[:12], state_signature=state_sig)
 
+    def _unified_fast_path(
+        self,
+        goal: Goal,
+        world: WorldModel,
+        features: StateFeatures,
+        execution_state: Any,
+        candidates: List[Action],
+    ) -> Optional[Action]:
+        """One multimodal call produces the belief update and the next action.
+
+        The model proposes; this method disposes. An inadmissible proposal, a
+        low-confidence one, or unresolved contradictions all fall through to
+        the enumerate-score-select path, which then escalates to the deep text
+        reasoner. That keeps a single model on the fast path and two models
+        only on escalation.
+        """
+        from plugin.agent.unified_cognition import (
+            consult_unified_cognition,
+            proposal_to_action,
+            should_escalate,
+            unified_cognition_enabled,
+        )
+
+        if not unified_cognition_enabled():
+            return None
+        try:
+            proposal = consult_unified_cognition(goal, world, features, execution_state)
+        except Exception as exc:  # never let cognition failure kill the loop
+            features.extras["unified_cognition"] = {"error": str(exc)[:200]}
+            return None
+
+        action: Optional[Action] = None
+        reason = "no_proposal"
+        if proposal is not None:
+            action, reason = proposal_to_action(proposal, goal, world, features)
+            self._apply_belief_updates(proposal, features)
+
+        escalate, escalate_reason = should_escalate(
+            proposal, features, admissible=action is not None
+        )
+        features.extras["unified_cognition"] = {
+            **(proposal.to_dict() if proposal is not None else {}),
+            "admissibility": reason,
+            "escalated": escalate,
+            "escalation_reason": escalate_reason,
+        }
+        if action is None or escalate:
+            return None
+
+        # A prohibition is the runtime's cycle detector, which cannot tell
+        # searching from looping: scrolling a conversation to hunt for a message
+        # repeats the same action by design and reveals new content each time.
+        # For a reversible action that judgement belongs to the model, which can
+        # see whether the screen moved, so the repetition is reported to it via
+        # the packet instead of vetoing the move. Irreversible actions still stop
+        # here, where a wrong repeat cannot be undone.
+        if execution_state is not None and execution_state.is_prohibited(action):
+            if not action.reversible:
+                features.extras["unified_cognition"]["admissibility"] = "prohibited"
+                return None
+            features.extras["unified_cognition"]["repeat_allowed"] = True
+        if not action.reversible and proposal is not None:
+            if proposal.confidence < self.irreversible_action_confidence_threshold():
+                features.extras["unified_cognition"]["admissibility"] = "irreversible_below_threshold"
+                return None
+
+        self._bind_capability(action, features, world, goal)
+        action.observed_in_world = str(getattr(execution_state, "world_id", "") or "")
+        self.last_trace = DecisionTrace(
+            features=features.to_dict(),
+            candidates=[
+                {
+                    "action": a.action,
+                    "target": a.semantic_target,
+                    "family": a.action_family,
+                    "score": round(a.score, 4),
+                }
+                for a in candidates[:12]
+            ],
+            goal_status={"reason": "unified_multimodal_fast_path"},
+            chosen={
+                "action": action.action,
+                "target": action.semantic_target,
+                "text": action.text,
+                "family": action.action_family,
+                "grounding_reason": action.grounding_reason,
+                "grounding_confidence": action.grounding_confidence,
+            },
+        )
+        return action
+
+    @staticmethod
+    def _apply_belief_updates(proposal: Any, features: StateFeatures) -> None:
+        """Record the model's belief patch for the runtime's own bookkeeping."""
+        updates = [
+            update
+            for update in (getattr(proposal, "belief_updates", None) or [])
+            if isinstance(update, dict) and str(update.get("predicate") or "").strip()
+        ]
+        if updates:
+            features.extras["unified_belief_updates"] = updates[:12]
+        surface = str((getattr(proposal, "observed_state", None) or {}).get("surface") or "").strip()
+        if surface:
+            features.extras["unified_observed_surface"] = surface
+
+    def _bind_capability(
+        self,
+        action: Action,
+        features: StateFeatures,
+        world: WorldModel,
+        goal: Goal,
+    ) -> None:
+        """Attach capability metadata so reversibility gates still apply."""
+        raw = features.extras.get("capability_graph")
+        if not isinstance(raw, dict) or not raw:
+            return
+        try:
+            from plugin.worldmodel.capability import CapabilityGraph
+
+            cap_graph = CapabilityGraph.from_dict(raw)
+            cap = cap_graph.capability_for_action(
+                action_family=action.action_family,
+                semantic_target=action.semantic_target,
+                text=action.text,
+            )
+            if cap is not None:
+                action.capability_id = cap.capability_id
+                action.capability_type = cap.type
+                action.reversible = bool(getattr(cap, "reversible", True))
+        except Exception:
+            return
+
+    # Keyboard-driven and reversible: these need no coordinate or entity
+    # grounding, so a confident screen reading is sufficient evidence to act.
+    _PERCEPTION_ENDORSABLE_FAMILIES = frozenset({"open_search", "type_query"})
+
+    @classmethod
+    def _endorse_with_perception(
+        cls,
+        candidates: List[Action],
+        family: str,
+        confidence: float,
+        summary: Dict[str, Any],
+    ) -> int:
+        """Attach perception evidence to already-enumerated candidates.
+
+        Enumerated search actions carry no grounding, so the grounding filter
+        drops them and only Observe survives. When the perceptor is confident
+        about a reversible keyboard action, that reading is the grounding.
+        """
+        if family not in cls._PERCEPTION_ENDORSABLE_FAMILIES:
+            return 0
+        text = str(summary.get("likely_next_text") or "").strip()
+        endorsed = 0
+        for cand in candidates:
+            if float(getattr(cand, "grounding_confidence", 0.0) or 0.0) >= confidence:
+                continue
+            cand.grounding_confidence = confidence
+            cand.grounding_reason = "multimodal_perception"
+            cand.evidence_score = max(float(getattr(cand, "evidence_score", 0.0) or 0.0), confidence)
+            if not str(getattr(cand, "text", "") or "").strip() and text:
+                cand.text = text
+            endorsed += 1
+        return endorsed
+
     def _promote_perception_candidate(
         self,
         goal: Goal,
@@ -444,12 +826,18 @@ class DecisionEngine:
         features: StateFeatures,
         candidates: List[Action],
     ) -> Optional[Action]:
+        def skip(reason: str) -> None:
+            if isinstance(getattr(features, "extras", None), dict):
+                features.extras["perception_promotion_skipped"] = reason
+            return None
+
         summary = structured_perception_bridge(features=features, world=world)
         if not isinstance(summary, dict):
-            return None
-        family = str(summary.get("likely_next_family") or "").strip().lower()
+            return skip("no_summary")
+        raw_family = str(summary.get("likely_next_family") or "").strip().lower()
+        family = self._normalize_perception_family(raw_family, summary, goal, features)
         if not family or family == "observe":
-            return None
+            return skip(f"family_not_actionable:{raw_family or 'empty'}->{family or 'empty'}")
         non_observe_scores = [
             float(getattr(cand, "score", 0.0) or 0.0)
             for cand in candidates
@@ -457,18 +845,24 @@ class DecisionEngine:
         ]
         frontier_strength = max(non_observe_scores) if non_observe_scores else 0.0
         if frontier_strength >= 0.25 and family in {"open_contact", "type_query", "start_call"}:
-            return None
+            return skip(f"frontier_strong:{round(frontier_strength, 3)}")
         try:
             confidence = max(0.0, min(1.0, float(summary.get("confidence", 0.0) or 0.0)))
         except (TypeError, ValueError):
             confidence = 0.0
-        if confidence < self._perception_promotion_threshold_for_family(family):
-            return None
-        if any(cand.action_family == family for cand in candidates):
-            return None
-        action, target, text = self._family_to_action(family, goal, summary)
+        threshold = self._perception_promotion_threshold_for_family(family)
+        if confidence < threshold:
+            return skip(f"below_threshold:{round(confidence, 3)}<{round(threshold, 3)}")
+        already = [cand for cand in candidates if cand.action_family == family]
+        if already:
+            endorsed = self._endorse_with_perception(already, family, confidence, summary)
+            return skip(
+                f"family_already_enumerated:{family}"
+                + (f":endorsed={endorsed}" if endorsed else "")
+            )
+        action, target, text = self._family_to_action(family, goal, summary, features)
         if action == "Observe":
-            return None
+            return skip(f"action_resolved_to_observe:{family}")
         temp_candidate = Action(
             action=action,
             semantic_target=target,
@@ -478,7 +872,7 @@ class DecisionEngine:
         if self._procedure_stage_alignment_bonus(temp_candidate, features) < 0.0:
             stage = self._selected_procedure_stage(features)
             if stage.get("preferred_capabilities"):
-                return None
+                return skip(f"procedure_stage_conflict:{family}")
         rationale_target = target or text or family
         expected = {
             "open_contact": f"ConversationOpen({rationale_target})",
@@ -489,18 +883,23 @@ class DecisionEngine:
             "open_search": "SearchInputFocused",
             "explore_chrome": "",
         }.get(family, "")
+        # Chrome-only AX trees still allow Cmd+F / type search; treat the
+        # multimodal recommendation as grounded enough for reversible search.
+        grounding_confidence = confidence if family in {"open_search", "type_query"} else 0.0
         return Action(
             action=action,
             semantic_target=target,
             text=text,
             rationale=(
                 f"promoted from perception_summary family={family} "
-                f"confidence={round(confidence, 3)}"
+                f"(raw={raw_family or family}) confidence={round(confidence, 3)}"
             ),
             expected_predicate=expected,
             action_family=family,
             score=0.0,
             evidence_score=confidence,
+            grounding_confidence=grounding_confidence,
+            grounding_reason="multimodal_perception" if grounding_confidence else "",
             frontier_label=f"perception:{family}:{rationale_target}".strip(":"),
             frontier_score=round(confidence, 4),
         )
@@ -634,6 +1033,15 @@ class DecisionEngine:
     @staticmethod
     def _grounded_action_candidates(candidates: List[Action], *, grounding_threshold: float) -> List[Action]:
         out: List[Action] = []
+        selector_arbitrable_families = {
+            "type_query",
+            "open_search",
+            "open_contact",
+            "start_call",
+            "select_content",
+            "forward_message",
+            "select_forward_target",
+        }
         for cand in candidates:
             if cand.action_family == "observe":
                 out.append(cand)
@@ -641,10 +1049,24 @@ class DecisionEngine:
             grounding_confidence = float(getattr(cand, "grounding_confidence", 0.0) or 0.0)
             if getattr(cand, "target_entity_id", None) is not None or grounding_confidence >= grounding_threshold:
                 out.append(cand)
+                continue
+            if cand.action_family in selector_arbitrable_families and (
+                getattr(cand, "capability_id", "") or getattr(cand, "capability_type", "") or cand.semantic_target or cand.text
+            ):
+                out.append(cand)
         return out
 
     @staticmethod
     def _best_grounded_non_observe_candidate(candidates: List[Action], *, grounding_threshold: float) -> Optional[Action]:
+        selector_arbitrable_families = {
+            "type_query",
+            "open_search",
+            "open_contact",
+            "start_call",
+            "select_content",
+            "forward_message",
+            "select_forward_target",
+        }
         grounded = [
             cand
             for cand in candidates
@@ -652,6 +1074,15 @@ class DecisionEngine:
             and (
                 getattr(cand, "target_entity_id", None) is not None
                 or float(getattr(cand, "grounding_confidence", 0.0) or 0.0) >= grounding_threshold
+                or (
+                    cand.action_family in selector_arbitrable_families
+                    and (
+                        getattr(cand, "capability_id", "")
+                        or getattr(cand, "capability_type", "")
+                        or cand.semantic_target
+                        or cand.text
+                    )
+                )
             )
         ]
         if not grounded:
@@ -750,6 +1181,58 @@ class DecisionEngine:
             except Exception:
                 if scene:
                     features.extras["world_graph"] = scene
+        # Sync typed/authored search evidence onto features *before* the unified
+        # fast path. Remaps (resubmit vs click result) read these extras; when
+        # they arrived only after unified cognition, the agent retyped forever.
+        if features.query_matches_goal and features.extras.get("search_query"):
+            world.overlay_hints["search_query"] = str(features.extras["search_query"])
+        hint = execution_state.peek_search_query_hint()
+        if hint and not features.query_matches_goal:
+            world.overlay_hints["search_query"] = hint
+            features = overlay.features(world, goal, worldview_score=worldview_score)
+        if hint:
+            features.extras["search_query_hint"] = hint
+        pending = str(getattr(execution_state, "composed_query_pending", "") or "").strip()
+        if pending:
+            features.extras["composed_query_pending"] = pending
+        locate_q = str(getattr(execution_state, "last_locate_query", "") or "").strip()
+        if locate_q:
+            features.extras["last_locate_query"] = locate_q
+            features.extras["last_locate_realization"] = str(
+                getattr(execution_state, "last_locate_realization", "") or ""
+            )
+        doc = getattr(execution_state, "unified_world_document", None)
+        if isinstance(doc, dict) and doc:
+            features.extras["world_document"] = doc
+            features.extras["focused_field_role"] = str(
+                getattr(execution_state, "focused_field_role", "")
+                or doc.get("focused_field_role")
+                or ""
+            )
+        attempts = list(getattr(execution_state, "search_attempt_log", None) or [])
+        if attempts:
+            features.extras["search_attempt_log"] = attempts
+        # Persist empty-hit evidence so compose refuses to repeat the dead query.
+        if features.extras.get("search_empty"):
+            dead = str(
+                features.extras.get("search_query")
+                or features.extras.get("search_query_hint")
+                or ""
+            ).strip()
+            if dead:
+                execution_state.record_search_attempt(dead, "no_results")
+                features.extras["search_attempt_log"] = list(
+                    getattr(execution_state, "search_attempt_log", None) or []
+                )
+
+        # Unified cognition is the fast path: one multimodal pass over pixels,
+        # AX evidence, task state and goal yields the belief update and the
+        # next action together. Only when it declines or is inadmissible do we
+        # fall back to split perception plus the text selector below.
+        unified_action = self._unified_fast_path(goal, world, features, execution_state, [])
+        if unified_action is not None:
+            return unified_action
+
         non_observe_count = 0
         try:
             non_observe_count = len([cand for cand in candidates if cand.action_family != "observe"])
@@ -775,6 +1258,7 @@ class DecisionEngine:
                         "active_surface": synth.active_surface,
                         "likely_next_family": synth.likely_next_family,
                         "likely_next_target": synth.likely_next_target,
+                        "likely_next_text": synth.likely_next_text,
                         "confidence": round(float(synth.confidence or 0.0), 4),
                     })
                     features.extras["perception_summary"] = summary_bridge
@@ -825,13 +1309,30 @@ class DecisionEngine:
                 )
             except Exception:
                 cap_graph_focus = cap_graph
-        # Sync hint for predicates
-        if features.query_matches_goal and features.extras.get("search_query"):
-            world.overlay_hints["search_query"] = str(features.extras["search_query"])
+        # Re-sync after optional features rebuilds in the fallback path.
         hint = execution_state.peek_search_query_hint()
-        if hint and not features.query_matches_goal:
-            world.overlay_hints["search_query"] = hint
-            features = overlay.features(world, goal, worldview_score=worldview_score)
+        if hint:
+            features.extras["search_query_hint"] = hint
+        pending = str(getattr(execution_state, "composed_query_pending", "") or "").strip()
+        if pending:
+            features.extras["composed_query_pending"] = pending
+        locate_q = str(getattr(execution_state, "last_locate_query", "") or "").strip()
+        if locate_q:
+            features.extras["last_locate_query"] = locate_q
+            features.extras["last_locate_realization"] = str(
+                getattr(execution_state, "last_locate_realization", "") or ""
+            )
+        doc = getattr(execution_state, "unified_world_document", None)
+        if isinstance(doc, dict) and doc:
+            features.extras["world_document"] = doc
+            features.extras["focused_field_role"] = str(
+                getattr(execution_state, "focused_field_role", "")
+                or doc.get("focused_field_role")
+                or ""
+            )
+        attempts = list(getattr(execution_state, "search_attempt_log", None) or [])
+        if attempts:
+            features.extras["search_attempt_log"] = attempts
 
         # Expose active search hypothesis for candidates / inspect
         ref = goal.ensure_reference() if goal.contact else None
@@ -989,6 +1490,7 @@ class DecisionEngine:
             candidates = exp.filter_actions(state_sig, candidates)
             features.extras["experience_suppressed"] = True
             features.extras["pending_backtrack"] = getattr(exp, "pending_backtrack_family", "") or ""
+
         perception_candidate = self._promote_perception_candidate(goal, world, features, candidates)
         if perception_candidate is not None:
             candidates.append(perception_candidate)
@@ -1822,7 +2324,7 @@ class DecisionEngine:
                 from agent.auxiliary_client import LLMProviderExhaustedError
 
                 reason = str((selector_trace or {}).get("reason") or (selector_trace or {}).get("error") or "").strip().lower() or "unknown"
-                if reason != "not_ambiguous_enough":
+                if reason not in {"not_ambiguous_enough", "llm_no_choice_fallback", "unknown"}:
                     raise LLMProviderExhaustedError(f"strict selector mode: {reason}")
                 best = max(
                     grounded_non_observe_scored,
@@ -1844,7 +2346,7 @@ class DecisionEngine:
                     key=lambda cand: float(getattr(cand, "score", 0.0) or 0.0),
                 )
             else:
-                reason = str((selector_trace or {}).get("reason") or "").strip().lower()
+                reason = str((selector_trace or {}).get("reason") or (selector_trace or {}).get("error") or "").strip().lower() or "unknown"
                 best = max(
                     grounded_non_observe_scored,
                     default=observe_candidate,
@@ -1853,7 +2355,7 @@ class DecisionEngine:
                 if strict_selector:
                     from agent.auxiliary_client import LLMProviderExhaustedError
 
-                    if reason not in {"not_ambiguous_enough", "llm_no_choice_fallback"}:
+                    if reason not in {"not_ambiguous_enough", "llm_no_choice_fallback", "unknown"}:
                         raise LLMProviderExhaustedError(
                             f"strict selector mode: no usable LLM choice ({reason or 'unknown'})"
                         )

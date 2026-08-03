@@ -955,6 +955,45 @@ def run_goal_closed_loop(
         view = snap_pre.view
         feats_pre = snap_pre.features
         assert observation is not None and patch is not None
+
+        # When Terminal/other chrome covers the target app, vision correctly
+        # reports desktop_obscured_target / window_management — but there is
+        # no AX affordance to click. Recover by forcing the app frontmost and
+        # re-observing once before decide.
+        if target_app_obscured(feats_pre, view):
+            app_name = str(goal.app or runtime.world_model.active_app or "").strip()
+            recovered = recover_obscured_target_app(app_name)
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="focus_recovery",
+                payload={
+                    "app": app_name,
+                    "recovered": recovered,
+                    "reason": "target_app_obscured",
+                    "screen_type": (_perception_extras(feats_pre).get("perception_summary") or {}).get("screen_type")
+                    if isinstance(_perception_extras(feats_pre).get("perception_summary"), dict)
+                    else (_perception_extras(feats_pre).get("perception_llm") or {}).get("screen_type"),
+                },
+                status="ok" if recovered else "warn",
+            )
+            if recovered:
+                _wait(max(settle_s, 0.8), "focus recovery — raise target app")
+                snap_pre = refresh_perception(
+                    runtime,
+                    goal,
+                    observe=observe,
+                    action_label="focus_recovery",
+                    log_fn=_perception_log_fn(log, iteration),
+                    iteration=iteration,
+                )
+                observation = snap_pre.observation
+                patch = snap_pre.patch
+                wv = snap_pre.worldview
+                view = snap_pre.view
+                feats_pre = snap_pre.features
+                assert observation is not None and patch is not None
+
         _log_cycle(
             log,
             iteration=iteration,
@@ -2402,6 +2441,66 @@ def _forward_hints(runtime: RuntimeState) -> Dict[str, Any]:
         runtime.world_model.overlay_hints = {}
         hints = runtime.world_model.overlay_hints
     return hints
+
+
+def _perception_extras(features: Any) -> Dict[str, Any]:
+    extras = getattr(features, "extras", None)
+    if extras is None and isinstance(features, dict):
+        extras = features.get("extras")
+    return extras if isinstance(extras, dict) else {}
+
+
+def target_app_obscured(features: Any, view: Optional[Dict[str, Any]] = None) -> bool:
+    """True when perception says the target app is covered by another window."""
+    extras = _perception_extras(features)
+    perception = extras.get("perception_llm") if isinstance(extras.get("perception_llm"), dict) else {}
+    summary = extras.get("perception_summary") if isinstance(extras.get("perception_summary"), dict) else {}
+    screen_type = str(
+        perception.get("screen_type")
+        or summary.get("screen_type")
+        or (view or {}).get("screen")
+        or ""
+    ).strip().lower()
+    surface = str(
+        perception.get("active_surface")
+        or summary.get("active_surface")
+        or ""
+    ).strip().lower()
+    family = str(
+        perception.get("likely_next_family")
+        or summary.get("likely_next_family")
+        or ""
+    ).strip().lower()
+    if "obscured" in screen_type or screen_type == "desktop_obscured_target":
+        return True
+    if family in {"window_management", "focus_app", "activate_app"}:
+        return True
+    if "terminal" in surface and "foreground" in surface:
+        return True
+    if "background" in surface and "whatsapp" in surface:
+        return True
+    return False
+
+
+def recover_obscured_target_app(app_name: str) -> bool:
+    """Force the goal app frontmost so AX/screenshots see real content again."""
+    name = str(app_name or "").strip()
+    if not name:
+        return False
+    try:
+        from plugin.executor.ax_action import _activate_app
+        from plugin.perception.macos.launch import launch_app
+
+        launched = launch_app(name, activate=True)
+        _activate_app(name)
+        return bool(getattr(launched, "ok", False))
+    except Exception:
+        try:
+            from plugin.perception.macos.launch import launch_app
+
+            return bool(launch_app(name, activate=True).ok)
+        except Exception:
+            return False
 
 
 def _apply_forward_observe_stagnation(
