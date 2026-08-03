@@ -804,6 +804,32 @@ class WhatsAppOverlay:
             },
         }
 
+    # Phases in which the source object is still being hunted: an unresolved
+    # source binding here is a genuine blocking uncertainty. Once past them
+    # (destination picking, done) the source object no longer gates progress.
+    _SOURCE_HUNT_PHASES = {"FIND_LINK", "OPEN_FORWARD"}
+
+    def observe_blocking_uncertainties(self, forward_task: Optional[Dict[str, Any]]) -> List[str]:
+        """Domain-general blocking uncertainty distilled from the forward task.
+
+        The controller no longer reads WhatsApp phase names or binding shapes to
+        decide whether the source object is still being hunted; it asks the
+        overlay, which returns a small, app-neutral vocabulary the executive's
+        sufficiency judgement consumes. The forward phase machine is thus demoted
+        to an overlay *hint*, not a control-flow authority.
+        """
+        if not isinstance(forward_task, dict) or not forward_task:
+            return []
+        phase = str(forward_task.get("derived_phase") or "").strip().upper()
+        if phase not in self._SOURCE_HUNT_PHASES:
+            return []
+        bindings = forward_task.get("bindings")
+        src = bindings.get("source_object") if isinstance(bindings, dict) else None
+        status = str((src or {}).get("status") or "").strip().lower() if isinstance(src, dict) else ""
+        if status in {"unresolved", "ambiguous"}:
+            return ["source_object_unresolved"]
+        return []
+
     def features(self, world: WorldModel, goal: Goal, *, worldview_score: float = 1.0) -> StateFeatures:
         from plugin.agent.apps.whatsapp_semantics import apply_semantic_types
 

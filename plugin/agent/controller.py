@@ -1354,7 +1354,19 @@ def run_goal_closed_loop(
         # Computed and recorded every iteration for observability. Under
         # HERMES_META_PERCEPTION it also gates the next iteration's re-perceive.
         has_grounded_action = bool(decision) and str(decision.action or "").strip().lower() != "observe"
-        blocking_uncertainties = workspace_blocking_uncertainties(runtime.execution_state)
+        blocking_uncertainties = list(workspace_blocking_uncertainties(runtime.execution_state))
+        # Domain-general overlay hint: the app overlay may surface a blocking
+        # uncertainty from its own task view (the forward phase machine, demoted
+        # to a hint). The executive consumes it exactly like a workspace
+        # question — the controller never reads phase names directly.
+        observe_hint = getattr(overlay, "observe_blocking_uncertainties", None)
+        if callable(observe_hint):
+            try:
+                for q in observe_hint((feats.extras or {}).get("forward_task")) or []:
+                    if q not in blocking_uncertainties:
+                        blocking_uncertainties.append(q)
+            except Exception:
+                pass
         coverage = float(wv or 0.0)
         action_surprised = _last_action_surprised(runtime.execution_state)
         awaiting_verification = _awaiting_verification(runtime.execution_state)
