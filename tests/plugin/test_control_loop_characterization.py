@@ -587,6 +587,40 @@ def test_meta_perception_gate_skips_a_reperceive_without_crashing(tmp_path, monk
     assert skipped, "a static world with the gate on should skip at least one re-perceive"
 
 
+def test_meta_action_backtrack_is_dispatched_as_a_loop_phase(tmp_path, monkeypatch):
+    """Under the flag, a stale branch makes the executive BACKTRACK, and that
+    verdict pre-empts acting: a ``meta_action_phase`` is emitted and the frontier
+    is invalidated, rather than the loop blindly committing the frame's action.
+
+    This is what "meta-action drives the loop" means — the executive's choice of
+    move is control flow, not just a perception gate.
+    """
+    monkeypatch.setenv("HERMES_META_PERCEPTION", "1")
+    app = _frozen_app()
+    log = EventLogger(tmp_path / "meta_dispatch.jsonl", also_console=False, run_id="meta_dispatch")
+    runtime = RuntimeState()
+    result = run_goal_closed_loop(
+        runtime,
+        _call_goal(),
+        observe=app.observe,
+        execute=app,
+        log=log,
+        max_iterations=8,
+        settle_s=0.0,
+        wait_fn=lambda *_a, **_k: None,
+    )
+    assert result is not None
+    events = log.read_all()
+    phase_events = [e for e in events if e.get("kind") == "meta_action_phase"]
+    handlings = {str(e.get("handling") or "") for e in phase_events}
+    # The executive elected a pre-empting move and it was dispatched as a phase.
+    assert phase_events, "a stale branch under the flag should dispatch a meta-action phase"
+    assert handlings <= {"verify", "backtrack", "ask_user"}
+    assert "backtrack" in handlings
+    # The backtrack phase actually invalidated the frontier (not a no-op log line).
+    assert any(e.get("kind") == "meta_backtrack" for e in events)
+
+
 def test_executive_judgement_is_recorded_with_gate_off(tmp_path):
     """The judgement is always-on even when it does not drive perception."""
     app = _call_app()

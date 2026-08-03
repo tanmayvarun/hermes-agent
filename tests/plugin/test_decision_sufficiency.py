@@ -27,6 +27,24 @@ def test_a_blocking_uncertainty_keeps_the_agent_looking():
     assert "source_object_unresolved" in verdict.blocking_uncertainties
 
 
+def test_a_surprise_forces_a_look_even_with_a_grounded_action():
+    # Reflection: when the last action did not produce the world we predicted,
+    # the executive must re-perceive before acting again — even if it otherwise
+    # had a grounded move and high coverage. This is the closed loop that the
+    # hardcoded surprise=False bug used to break.
+    verdict = assess_sufficiency(
+        SufficiencyInputs(
+            has_grounded_action=True,
+            coverage=0.95,
+            last_action_surprised=True,
+        )
+    )
+    assert verdict.sufficient_to_act is False
+    assert verdict.observe_has_value is True
+    assert verdict.suppress_observe is False
+    assert verdict.needs_exploration is True
+
+
 def test_a_blocking_uncertainty_beats_a_stale_streak():
     # The object may be off-screen, not absent: never suppress while hunting.
     verdict = assess_sufficiency(

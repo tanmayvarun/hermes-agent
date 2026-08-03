@@ -355,3 +355,88 @@ def test_commit_beliefs_helper_threads_status():
     state = ExecutionState()
     commit_beliefs(state, source="model", facts={"below_fold": "likely"}, status="inferred")
     assert state.workspace.fact("below_fold").status == "inferred"
+
+
+# ------------------------------------------------ goal contract (constraints)
+
+
+def test_binding_a_goal_seeds_its_contract_into_the_workspace():
+    from plugin.agent.executive.sync import bind_goal
+
+    state = ExecutionState()
+    bind_goal(state, Goal(kind="whatsapp_forward_message", contact="ZarooratWala", target_contact="Pallavi"))
+    contract = state.workspace.goal
+    # The task contract — what "done" means and what must hold — lives in the
+    # one authoritative record, not only in a task-specific state object.
+    assert contract.success_conditions
+    assert any("irreversible" in c for c in contract.constraints)
+
+
+def test_an_unknown_goal_has_an_empty_contract():
+    from plugin.agent.executive.workspace import goal_contract_for
+
+    assert goal_contract_for("filesystem_find") == {}
+
+
+def test_a_domain_can_register_its_own_contract():
+    from plugin.agent.executive.workspace import GoalState, register_goal_contract
+
+    register_goal_contract(
+        "slack_dm",
+        success_conditions=("dm opened", "message sent"),
+        constraints=("send is irreversible",),
+    )
+    seeded = GoalState.from_goal(Goal(kind="slack_dm"))
+    assert seeded.success_conditions == ["dm opened", "message sent"]
+    assert seeded.constraints == ["send is irreversible"]
+
+
+# ------------------------------------------------------- object bindings
+
+
+def test_a_resolved_binding_becomes_an_authoritative_fact():
+    from plugin.agent.executive.sync import commit_bindings, has_resolved_binding
+
+    state = ExecutionState()
+    state.iteration = 4
+    commit_bindings(
+        state,
+        bindings={
+            "source_object": {"status": "resolved", "resolved_label": "the charger link", "confidence": 0.9},
+            "destination_object": {"status": "unresolved"},
+        },
+    )
+    assert state.workspace.fact_value("binding.source_object") == "the charger link"
+    assert has_resolved_binding(state, "source_object")
+    # An unresolved binding is represented by absence, not a fact that would flip.
+    assert not has_resolved_binding(state, "destination_object")
+
+
+def test_binding_status_maps_onto_epistemic_status():
+    from plugin.agent.executive.sync import commit_bindings
+
+    state = ExecutionState()
+    commit_bindings(
+        state,
+        bindings={"source_object": {"status": "provisional", "resolved_entity_id": 42, "confidence": 0.7}},
+    )
+    claim = state.workspace.fact("binding.source_object")
+    assert claim.value == "42"
+    assert claim.status == "inferred"  # provisional is not yet observed
+
+
+def test_a_provisional_binding_promoting_to_resolved_does_not_flip():
+    from plugin.agent.executive.sync import commit_bindings
+
+    state = ExecutionState()
+    commit_bindings(
+        state,
+        bindings={"source_object": {"status": "provisional", "resolved_label": "charger link", "confidence": 0.6}},
+    )
+    commit_bindings(
+        state,
+        bindings={"source_object": {"status": "resolved", "resolved_label": "charger link", "confidence": 0.95}},
+    )
+    # Same value throughout: a status upgrade must not be recorded as a belief flip.
+    assert state.workspace.belief_flips == 0
+    assert state.workspace.fact("binding.source_object").status == "observed"

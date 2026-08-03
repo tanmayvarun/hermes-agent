@@ -10,8 +10,14 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 from plugin.agent.action import Action
 from plugin.agent.apps.registry import get_overlay
 from plugin.agent.decision import DecisionEngine, get_decision_engine
+from plugin.agent.executive.meta_action import MetaAction
 from plugin.agent.executive.sync import (
     assess_executive_judgement,
+    bind_goal,
+    commit_bindings,
+    commit_reading,
+    commit_transition,
+    has_resolved_binding,
     workspace_blocking_uncertainties,
     workspace_of,
 )
@@ -111,6 +117,128 @@ def _awaiting_verification(execution_state: Any) -> bool:
         _SURPRISE_OUTCOMES
         | {TransitionOutcome.PROMISING_UNRESOLVED.value}
     )
+
+
+def _consume_surprise(execution_state: Any) -> None:
+    """Mark the last surprising attribution as handled so VERIFY fires once.
+
+    A VERIFY turn re-perceives and acknowledges the surprise. If the surprise
+    stayed on the attribution the executive would verify the same one every
+    frame; stamping it verified lets the next frame act on the re-understood
+    world instead of looping. The surprise still lives in ``recent_surprises``,
+    so perception keeps the pattern.
+    """
+    attrib = getattr(execution_state, "last_attribution", None)
+    if isinstance(attrib, dict):
+        updated = dict(attrib)
+        updated["outcome"] = "verified"
+        updated["effect_kind"] = "verified"
+        execution_state.last_attribution = updated
+
+
+# Meta-actions that pre-empt executing this frame's grounded decision. THINK /
+# PERCEIVE / PROBE / ACT fall through to the normal decide -> execute path (the
+# re-perceive they want is gated at the top of the loop); these three are real
+# control-flow moves the executive takes instead of acting.
+_META_PREEMPTS = {MetaAction.VERIFY, MetaAction.BACKTRACK, MetaAction.ASK_USER}
+
+# The domain derives a fine-grained phase (OPEN_SOURCE, FIND_LINK, ...). The
+# workspace records progress against the abstract phase ladder so regression
+# protection is domain-neutral. This maps the forward machine's phases onto that
+# ladder; the controller never lets a raw domain phase name reach the workspace.
+_FORWARD_PHASE_TO_LADDER = {
+    "preclear": "reach_source",
+    "open_source": "reach_source",
+    "find_link": "hunt_content",
+    "open_forward": "invoke_forward",
+    "pick_dest": "choose_destination",
+    "done": "committed",
+}
+
+
+def _ladder_phase(goal_kind: str, derived_phase: str) -> str:
+    """Map a domain's derived phase onto the workspace's abstract ladder."""
+    dp = str(derived_phase or "").strip().lower()
+    if not dp:
+        return ""
+    if str(goal_kind or "").strip().lower() == "whatsapp_forward_message":
+        return _FORWARD_PHASE_TO_LADDER.get(dp, "")
+    return ""
+
+
+def _feats_extras(feats: Any) -> Dict[str, Any]:
+    """Read an ``extras`` mapping from either a StateFeatures or a feature dict."""
+    if isinstance(feats, dict):
+        extras = feats.get("extras")
+        return extras if isinstance(extras, dict) else {}
+    extras = getattr(feats, "extras", None)
+    return extras if isinstance(extras, dict) else {}
+
+
+def _reading_surface(extras: Dict[str, Any], open_conversation: str) -> str:
+    """Distil one surface label the workspace's wipe protection understands.
+
+    The workspace only needs a coarse surface (conversation / context_menu /
+    forward_picker / chat_list / search) to know whether an empty open-conversation
+    reading is trustworthy. Derived from generic frontier signals, not from a
+    WhatsApp-only field.
+    """
+    if not isinstance(extras, dict):
+        extras = {}
+    if extras.get("destination_picker_visible"):
+        return "forward_picker"
+    if extras.get("forward_surface_open") or extras.get("action_menu_visible"):
+        return "context_menu"
+    if open_conversation or extras.get("source_conversation_visible") or extras.get("latent_conversation_open"):
+        return "conversation"
+    if extras.get("result_surface_visible") or extras.get("search_result_rows"):
+        return "search"
+    return "chat_list"
+
+
+def _commit_frame_beliefs(
+    runtime: RuntimeState,
+    goal: Goal,
+    feats: Any,
+    *,
+    coverage: float,
+) -> None:
+    """Record this frame's reading into the workspace — the one authoritative record.
+
+    The controller already computes perception and features every iteration; this
+    folds that same reading into the workspace (open conversation, phase, object
+    bindings) so the executive reads task state from one place instead of from
+    whichever store happened to be updated. It only proposes — the workspace
+    critic decides what to accept, refusing e.g. a wipe of the open conversation
+    seen from under an overlay.
+    """
+    extras = getattr(feats, "extras", None) or {}
+    open_conversation = str(extras.get("open_conversation") or "").strip()
+    derived_phase = str(
+        extras.get("forward_phase")
+        or (extras.get("forward_task") or {}).get("derived_phase")
+        or ""
+    )
+    surface = _reading_surface(extras, open_conversation)
+    commit_reading(
+        runtime.execution_state,
+        source="perception",
+        surface=surface,
+        # Only offer a value when we have one: an empty string here would be a
+        # proposal to close, which the critic weighs against the surface.
+        open_conversation=open_conversation or None,
+        phase=_ladder_phase(goal.kind, derived_phase) or None,
+        confidence=coverage,
+        evidence=f"frame reading on {surface}",
+    )
+    bindings = (extras.get("forward_task") or {}).get("bindings")
+    if isinstance(bindings, dict) and bindings:
+        commit_bindings(
+            runtime.execution_state,
+            bindings=bindings,
+            source="task_binding",
+            evidence=f"derived on {surface}",
+        )
 
 
 @dataclass
@@ -949,6 +1077,10 @@ def run_goal_closed_loop(
         )
         return result
 
+    # Attach the goal to the workspace once, so it knows the phase ladder and
+    # carries the task contract (success conditions, constraints) authoritatively.
+    bind_goal(runtime.execution_state, goal)
+
     # Executive meta-perception state carried across iterations. The judgement
     # is computed every iteration for observability; under HERMES_META_PERCEPTION
     # it also gates whether we re-perceive at the top of the loop.
@@ -1354,6 +1486,12 @@ def run_goal_closed_loop(
         # Computed and recorded every iteration for observability. Under
         # HERMES_META_PERCEPTION it also gates the next iteration's re-perceive.
         has_grounded_action = bool(decision) and str(decision.action or "").strip().lower() != "observe"
+        coverage = float(wv or 0.0)
+        # Fold this frame's reading into the workspace before judging: the
+        # executive must read task state (open conversation, phase, bindings)
+        # from the one authoritative record, not from whichever store was last
+        # touched. The workspace critic decides what to accept.
+        _commit_frame_beliefs(runtime, goal, feats, coverage=coverage)
         blocking_uncertainties = list(workspace_blocking_uncertainties(runtime.execution_state))
         # Domain-general overlay hint: the app overlay may surface a blocking
         # uncertainty from its own task view (the forward phase machine, demoted
@@ -1367,7 +1505,16 @@ def run_goal_closed_loop(
                         blocking_uncertainties.append(q)
             except Exception:
                 pass
-        coverage = float(wv or 0.0)
+        # The workspace is authoritative over the overlay hint: if it already
+        # holds a resolved source-object binding, the source is not an open
+        # uncertainty no matter what the derived phase says. This is what demotes
+        # the forward phase machine from a source of truth to a hint.
+        if "source_object_unresolved" in blocking_uncertainties and has_resolved_binding(
+            runtime.execution_state, "source_object"
+        ):
+            blocking_uncertainties = [
+                q for q in blocking_uncertainties if q != "source_object_unresolved"
+            ]
         action_surprised = _last_action_surprised(runtime.execution_state)
         awaiting_verification = _awaiting_verification(runtime.execution_state)
         if action_surprised:
@@ -1434,6 +1581,53 @@ def run_goal_closed_loop(
         prev_static_streak = static_streak
         prev_snap_pre = snap_pre
         prev_state_sig = state_sig
+
+        # --- Meta-action as a real loop phase ---
+        # Under HERMES_META_PERCEPTION the executive's meta-action does not only
+        # gate perception: VERIFY / BACKTRACK / ASK_USER are control-flow moves
+        # that pre-empt executing this frame's grounded decision. ACT / THINK /
+        # PERCEIVE / PROBE fall through to the normal decide -> execute path.
+        if meta_perception_enabled and meta.action in _META_PREEMPTS:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="meta_action_phase",
+                payload={"meta_action": meta.to_dict(), "handling": meta.action.value},
+                status="warn" if meta.action == MetaAction.ASK_USER else "ok",
+            )
+            if meta.action == MetaAction.ASK_USER:
+                return _finish_failure(
+                    "executive escalated to the user: no self-serve move resolves the block",
+                    {"meta_action": meta.to_dict(), "app_view": view},
+                    iterations=iteration,
+                )
+            if meta.action == MetaAction.BACKTRACK:
+                # The branch has gone stale. Retreat by invalidating the current
+                # frontier so the next decision explores elsewhere, instead of
+                # committing this frame's stale-branch action.
+                branch_hint = _invalidate_stale_frontier(
+                    runtime, reason="executive_backtrack", fallback="observe"
+                )
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_backtrack",
+                    payload={
+                        "branch_hint": branch_hint,
+                        "branch": runtime.execution_state.exploration_branch.to_dict(),
+                    },
+                    status="warn",
+                )
+            elif meta.action == MetaAction.VERIFY:
+                # The last action surprised us; we have already re-perceived this
+                # frame. Consume the surprise so we verify it once, then spend the
+                # turn confirming rather than committing a move we cannot trust.
+                _consume_surprise(runtime.execution_state)
+            # Both VERIFY and BACKTRACK want a fresh look next iteration — never
+            # let the perception gate reuse the prior snapshot after a meta move.
+            prev_meta_suppress = False
+            _wait(settle_s, f"executive {meta.action.value}")
+            continue
 
         # Low resolution confidence: observe to refine; ask only after attempts
         policy = str(feats.extras.get("resolution_policy") or "")
@@ -1874,6 +2068,23 @@ def run_goal_closed_loop(
         effect_kind = str(attrib_dict.get("effect_kind") or attempt.effect_kind or "")
         action_family = str(attrib_dict.get("action_family") or decision.action_family or "")
         target_label = str(decision.semantic_target or attrib_dict.get("semantic_target") or "")
+        # Record where the screen went into the workspace — the one authoritative
+        # transition history the executive reasons over.
+        _before_extras = _feats_extras(before_feats)
+        _after_extras = _feats_extras(after_feats)
+        commit_transition(
+            runtime.execution_state,
+            action=str(decision.action or ""),
+            family=action_family or str(decision.action_family or ""),
+            before_surface=_reading_surface(
+                _before_extras, str(_before_extras.get("open_conversation") or "")
+            ),
+            after_surface=_reading_surface(
+                _after_extras, str(_after_extras.get("open_conversation") or "")
+            ),
+            outcome=str(getattr(attempt, "outcome", "") or effect_kind or ""),
+            progress_delta=attempt_progress_delta,
+        )
         if effect_kind in {"transition_not_perceived", "missing_geometry"}:
             uncertainty = Uncertainty(
                 question="Is perception stale or incomplete for the current post-action world?",

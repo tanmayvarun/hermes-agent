@@ -116,6 +116,74 @@ def commit_beliefs(
     return workspace
 
 
+def commit_bindings(
+    execution_state: Any,
+    *,
+    bindings: Dict[str, Any],
+    source: str = "task_binding",
+    evidence: str = "",
+) -> Optional[ExecutiveWorkspace]:
+    """Record object bindings (source/destination) as authoritative workspace facts.
+
+    A domain may keep a task-specific state object to *derive* a phase, but the
+    binding of an object to the goal — what the source object is, once resolved —
+    belongs in the one authoritative record, not only in that state object. Each
+    resolved binding contributes a ``binding.<name>`` fact whose epistemic status
+    mirrors the domain's resolution status (resolved -> observed, provisional/
+    ambiguous -> inferred). Unresolved bindings carry no value and are dropped:
+    an unknown is represented by the *absence* of the fact (and by an open
+    question), not by a fact that would flip when it finally resolves.
+    """
+    workspace = workspace_of(execution_state)
+    if workspace is None or not isinstance(bindings, dict) or not bindings:
+        return None
+    frame = int(getattr(execution_state, "iteration", 0) or 0)
+    status_to_epistemic = {
+        "confirmed": "observed",
+        "resolved": "observed",
+        "provisional": "inferred",
+        "ambiguous": "inferred",
+    }
+    facts: Dict[str, Claim] = {}
+    for name, binding in bindings.items():
+        if not isinstance(binding, dict):
+            continue
+        status = str(binding.get("status") or "").strip().lower()
+        value = str(
+            binding.get("resolved_value")
+            or binding.get("resolved_label")
+            or (
+                binding.get("resolved_entity_id")
+                if binding.get("resolved_entity_id") is not None
+                else ""
+            )
+            or ""
+        ).strip()
+        if not value or status not in status_to_epistemic:
+            # Unresolved / valueless binding: nothing authoritative to record yet.
+            continue
+        facts[f"binding.{name}"] = Claim(
+            value=value,
+            source=source,
+            confidence=float(binding.get("confidence") or 0.0),
+            frame=frame,
+            evidence=evidence,
+            status=status_to_epistemic[status],
+        )
+    if not facts:
+        return None
+    workspace.commit(WorkspaceProposal(source=source, frame=frame, facts=facts))
+    return workspace
+
+
+def has_resolved_binding(execution_state: Any, name: str) -> bool:
+    """Whether the workspace authoritatively holds a resolved binding for ``name``."""
+    workspace = workspace_of(execution_state)
+    if workspace is None:
+        return False
+    return workspace.fact(f"binding.{name}") is not None
+
+
 def commit_transition(
     execution_state: Any,
     *,

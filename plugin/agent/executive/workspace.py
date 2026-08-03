@@ -61,6 +61,57 @@ def register_phase_ladder(goal_kind: str, ladder: Sequence[str]) -> None:
         PHASE_LADDERS[key] = tuple(str(p).strip().lower() for p in ladder if str(p).strip())
 
 
+# Success conditions and constraints are the *contract* of a task: what "done"
+# means and what must hold along the way. Like the phase ladder, they are domain
+# knowledge the core merely stores — the workspace, not a task-specific state
+# object, is the authoritative record of the task contract. A domain registers
+# its contract; the core has no opinion about the content.
+GOAL_CONTRACTS: Dict[str, Dict[str, Tuple[str, ...]]] = {
+    "whatsapp_forward_message": {
+        "success_conditions": (
+            "source conversation reached",
+            "source content identified",
+            "forward invoked on the content",
+            "destination chosen",
+            "message delivered to the destination",
+        ),
+        "constraints": (
+            "send is irreversible: confirm the destination before committing",
+            "forward the content from the correct source conversation",
+        ),
+    },
+    "whatsapp_voice_call": {
+        "success_conditions": (
+            "target conversation reached",
+            "voice call started",
+            "call connected or ringing",
+        ),
+        "constraints": (
+            "placing a call is irreversible: confirm the contact before calling",
+        ),
+    },
+}
+
+
+def goal_contract_for(goal_kind: str) -> Dict[str, Tuple[str, ...]]:
+    return GOAL_CONTRACTS.get(str(goal_kind or "").strip().lower(), {})
+
+
+def register_goal_contract(
+    goal_kind: str,
+    *,
+    success_conditions: Sequence[str] = (),
+    constraints: Sequence[str] = (),
+) -> None:
+    """Let a domain declare its success conditions and constraints in the core."""
+    key = str(goal_kind or "").strip().lower()
+    if key:
+        GOAL_CONTRACTS[key] = {
+            "success_conditions": tuple(str(s).strip() for s in success_conditions if str(s).strip()),
+            "constraints": tuple(str(c).strip() for c in constraints if str(c).strip()),
+        }
+
+
 def _norm(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
 
@@ -190,12 +241,16 @@ class GoalState:
     def from_goal(cls, goal: Any) -> "GoalState":
         if goal is None:
             return cls()
+        kind = str(getattr(goal, "kind", "") or "")
+        contract = goal_contract_for(kind)
         return cls(
-            kind=str(getattr(goal, "kind", "") or ""),
+            kind=kind,
             objective=str(getattr(goal, "description", "") or getattr(goal, "prompt", "") or ""),
             subject=str(getattr(goal, "contact", "") or ""),
             destination=str(getattr(goal, "target_contact", "") or ""),
             query=str(getattr(goal, "link_query", "") or ""),
+            success_conditions=list(contract.get("success_conditions", ())),
+            constraints=list(contract.get("constraints", ())),
         )
 
     def to_dict(self) -> Dict[str, Any]:
