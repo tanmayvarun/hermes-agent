@@ -1150,6 +1150,15 @@ class DecisionEngine:
         if not target:
             return None
 
+        # If we are already inside the conversation with the target, there is
+        # nothing to open — promoting open_contact here would reopen the chat we
+        # are in (or, on a call task, preempt the actual call). This mirrors the
+        # value model's demotion of open_contact once the source is open.
+        open_c = str((features.extras or {}).get("open_conversation") or "").strip().lower()
+        tl_target = target.lower()
+        if open_c and (tl_target in open_c or open_c in tl_target):
+            return None
+
         try:
             candidates = enumerate_candidates(goal, world, features, overlay)
         except Exception:
