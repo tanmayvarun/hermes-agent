@@ -311,6 +311,7 @@ def assess_executive_judgement(
         ModeContext,
         cognitive_mode,
         decision_ladder,
+        mode_triggers,
     )
     from plugin.agent.executive.meta_action import (
         MetaAction,
@@ -378,25 +379,45 @@ def assess_executive_judgement(
 
     contradictions = 0
     workspace = workspace_of(execution_state)
+    phase = ""
     if workspace is not None:
         try:
             contradictions = len(workspace.unresolved_contradictions)
         except Exception:
             contradictions = 0
-    mode = cognitive_mode(
-        ModeContext(
-            ambiguous=not sufficiency.sufficient_to_act and not sufficiency.observe_has_value,
-            branch_exhausted=branch_stale,
-            contradiction=contradictions > 0,
-            last_action_surprised=bool(last_action_surprised),
-        )
+        phase = str(getattr(workspace, "phase", "") or "").strip().lower()
+    # The remaining deliberation triggers, populated from signals available here
+    # (they were declared but never set, so those modes could never fire):
+    #  - new_goal: the first judgement of a run, before any meta-action recorded;
+    #  - high_consequence: an irreversible commit is one step away (phase near
+    #    the terminal rung), so the executive should reason, not react;
+    #  - no_matching_procedure: nothing to do — no grounded move, no useful probe,
+    #    and a look would not help — which is exactly when to consult the model.
+    new_goal = getattr(execution_state, "last_meta_action", None) is None
+    high_consequence = phase in {"invoke_forward", "choose_destination", "act_on_content", "commit"}
+    no_matching_procedure = (
+        not has_grounded_action
+        and not probe_available
+        and not sufficiency.observe_has_value
+        and not sufficiency.sufficient_to_act
     )
+    mode_ctx = ModeContext(
+        new_goal=bool(new_goal),
+        ambiguous=not sufficiency.sufficient_to_act and not sufficiency.observe_has_value,
+        branch_exhausted=branch_stale,
+        high_consequence=bool(high_consequence),
+        contradiction=contradictions > 0,
+        no_matching_procedure=bool(no_matching_procedure),
+        last_action_surprised=bool(last_action_surprised),
+    )
+    mode = cognitive_mode(mode_ctx)
     query = from_sufficiency(sufficiency)
 
     if execution_state is not None:
         execution_state.last_sufficiency = sufficiency.to_dict()
         execution_state.last_meta_action = meta.action.value
         execution_state.last_cognitive_mode = mode
+        execution_state.last_mode_triggers = mode_triggers(mode_ctx)
         execution_state.last_perception_query = query.to_dict()
     return sufficiency, meta
 

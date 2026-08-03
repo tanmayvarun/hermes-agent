@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 from plugin.agent.action import Action
 from plugin.agent.apps.registry import get_overlay
 from plugin.agent.decision import DecisionEngine, get_decision_engine
+from plugin.agent.executive.hierarchy import DELIBERATIVE as _DELIBERATIVE
 from plugin.agent.executive.meta_action import MetaAction, MetaChoice
 from plugin.agent.executive.sync import (
     assess_executive_judgement,
@@ -1773,6 +1774,7 @@ def run_goal_closed_loop(
                 "sufficiency": sufficiency.to_dict(),
                 "meta_action": meta.to_dict(),
                 "cognitive_mode": getattr(runtime.execution_state, "last_cognitive_mode", None),
+                "mode_triggers": getattr(runtime.execution_state, "last_mode_triggers", None),
                 "perception_query": getattr(runtime.execution_state, "last_perception_query", None),
                 "meta_perception_enabled": meta_perception_enabled,
                 "coverage": round(perceptor_coverage, 3),
@@ -1796,6 +1798,22 @@ def run_goal_closed_loop(
         prev_static_streak = static_streak
         prev_snap_pre = snap_pre
         prev_state_sig = state_sig
+
+        # Route by cognitive mode, don't just log it. A deliberative frame (new
+        # goal, ambiguity, an exhausted branch, an approaching irreversible
+        # commit, a contradiction, a surprise, or no matching procedure) should
+        # run the strong enumerate/score/consult reasoner next frame rather than
+        # the multimodal fast path; a reactive frame (clear intention, grounded
+        # low-risk move, known transition) keeps the fast path. This is the
+        # design's two-mode executive expressed as the fast-path gate the deep
+        # path already honours via force_deliberation. THINK/PROBE set the same
+        # flag for their own reasons; setting it here is idempotent.
+        if (
+            meta_perception_enabled
+            and getattr(runtime.execution_state, "last_cognitive_mode", "") == _DELIBERATIVE
+            and meta.action not in _META_PREEMPTS
+        ):
+            runtime.execution_state.force_deliberation = True
 
         # --- Meta-action as a real loop phase ---
         # Under HERMES_META_PERCEPTION the executive's meta-action does not only

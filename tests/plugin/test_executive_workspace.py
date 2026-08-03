@@ -24,6 +24,22 @@ def _workspace(kind: str = "whatsapp_forward_message") -> ExecutiveWorkspace:
     return ExecutiveWorkspace(goal=GoalState(kind=kind, subject="ZarooratWala", destination="Pallavi"))
 
 
+def test_judgement_records_cognitive_mode_and_is_deliberative_on_a_new_goal():
+    """cognitive_mode is not just logged — the first judgement of a run has no
+    prior meta-action, so new_goal fires and the mode is deliberative, and both
+    the mode and the triggers that produced it are recorded on the state."""
+    from plugin.agent.executive.hierarchy import DELIBERATIVE
+    from plugin.agent.executive.sync import assess_executive_judgement, bind_goal
+
+    state = ExecutionState()
+    bind_goal(state, Goal(kind="whatsapp_forward_message", contact="ZarooratWala", target_contact="Pallavi"))
+
+    assess_executive_judgement(state, has_grounded_action=False)
+
+    assert state.last_cognitive_mode == DELIBERATIVE
+    assert "new_goal" in (state.last_mode_triggers or [])
+
+
 def test_a_reading_becomes_a_claim_with_provenance():
     ws = _workspace()
     ws.commit(
