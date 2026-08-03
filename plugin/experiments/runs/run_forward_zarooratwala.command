@@ -50,6 +50,17 @@ export HERMES_AUXILIARY_PROVIDER_POLICY=ollama-only
 # enable it. Workspace population is always on regardless of this flag.
 : "${HERMES_META_PERCEPTION:=0}"
 export HERMES_META_PERCEPTION
+# Perceptor: the multimodal brain is off by default in code (it reroutes every
+# decision path), so the live experiment turns it on. Unified cognition reasons
+# over the screenshot; layered perception models overlays/occlusion; OCR recovers
+# content from pixels when the AX tree is blind. These are the perceptor's best
+# form — restore them here (the hard reset wiped them from this launcher).
+: "${HERMES_UNIFIED_COGNITION:=1}"
+: "${HERMES_LAYERED_PERCEPTION:=1}"
+: "${HERMES_PERCEPTION_OCR:=1}"
+export HERMES_UNIFIED_COGNITION
+export HERMES_LAYERED_PERCEPTION
+export HERMES_PERCEPTION_OCR
 export HERMES_FORWARD_STRICT_PERCEPTION
 export HERMES_FORWARD_PERCEPTION_SOURCE_TIMEOUT_SECONDS
 export HERMES_FORWARD_STRICT_PERCEPTION_RETRIES
