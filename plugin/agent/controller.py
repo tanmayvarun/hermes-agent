@@ -10,6 +10,11 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 from plugin.agent.action import Action
 from plugin.agent.apps.registry import get_overlay
 from plugin.agent.decision import DecisionEngine, get_decision_engine
+from plugin.agent.executive.sync import (
+    assess_executive_judgement,
+    workspace_blocking_uncertainties,
+    workspace_of,
+)
 from plugin.agent.goal import Goal, GoalStatus, evaluate_goal
 from plugin.agent.policy.events import log_policy_event
 from plugin.agent.runtime.state import RuntimeState
@@ -48,6 +53,63 @@ from plugin.perception.observation import Observation
 
 # Backward alias
 PlanStep = Action
+
+_TRUE_ENV = {"1", "true", "yes", "on"}
+
+
+def _meta_perception_enabled() -> bool:
+    """Whether the executive's meta-action may gate top-of-loop re-perception.
+
+    Off by default: the executive judgement is always *computed and recorded*
+    for observability, but it only drives control flow (skipping a re-perceive
+    on a stable world) when this flag is on.
+    """
+    import os
+
+    return str(os.getenv("HERMES_META_PERCEPTION", "")).strip().lower() in _TRUE_ENV
+
+
+# Attribution signatures that mean the last action did not do what we expected:
+# either the world did not move, moved backwards, or moved in a way we could not
+# confirm. These raise a "surprise" the executive reacts to (verify / re-perceive
+# before blindly re-acting) instead of the old always-forward march.
+_SURPRISE_EFFECTS = {
+    "no_transition",
+    "regression",
+    "transition_not_perceived",
+    "missing_geometry",
+    "unexpected_transition",
+}
+_SURPRISE_OUTCOMES = {
+    TransitionOutcome.NO_EFFECT.value,
+    TransitionOutcome.REGRESSION.value,
+    TransitionOutcome.UNCERTAIN.value,
+}
+
+
+def _last_action_surprised(execution_state: Any) -> bool:
+    """Did the most recent non-observe action fail to produce the expected world?"""
+    attrib = getattr(execution_state, "last_attribution", None)
+    if not isinstance(attrib, dict) or not attrib:
+        return False
+    effect = str(attrib.get("effect_kind") or "").strip().lower()
+    outcome = str(attrib.get("outcome") or "").strip().lower()
+    return effect in _SURPRISE_EFFECTS or outcome in _SURPRISE_OUTCOMES
+
+
+def _awaiting_verification(execution_state: Any) -> bool:
+    """A non-observe action just fired and its predicted transition is unconfirmed."""
+    last_action = str(getattr(execution_state, "last_action", "") or "").strip().lower()
+    if not last_action or last_action == "observe":
+        return False
+    attrib = getattr(execution_state, "last_attribution", None)
+    if not isinstance(attrib, dict) or not attrib:
+        return False
+    outcome = str(attrib.get("outcome") or "").strip().lower()
+    return outcome in (
+        _SURPRISE_OUTCOMES
+        | {TransitionOutcome.PROMISING_UNRESOLVED.value}
+    )
 
 
 @dataclass
@@ -886,6 +948,16 @@ def run_goal_closed_loop(
         )
         return result
 
+    # Executive meta-perception state carried across iterations. The judgement
+    # is computed every iteration for observability; under HERMES_META_PERCEPTION
+    # it also gates whether we re-perceive at the top of the loop.
+    meta_perception_enabled = _meta_perception_enabled()
+    prev_meta_suppress = False
+    prev_static_streak = 0
+    prev_snap_pre: Optional[PerceptionSnapshot] = None
+    prev_state_sig: Optional[str] = None
+    static_streak = 0
+
     for iteration in range(1, step_budget + 1):
         if _goal_run_budget_exceeded():
             elapsed = _goal_run_elapsed_s()
@@ -941,14 +1013,45 @@ def run_goal_closed_loop(
                 status="warn",
             )
         runtime.execution_state.tick_search_query_hint()
-        snap_pre = refresh_perception(
-            runtime,
-            goal,
-            observe=observe,
-            action_label=runtime.execution_state.last_action or "observe",
-            log_fn=_perception_log_fn(log, iteration),
-            iteration=iteration,
+        # Meta-perception gate: reuse the prior snapshot instead of paying for a
+        # re-perceive that cannot tell us more. Two conditions must both hold:
+        #  - the world is provably static (the last action moved nothing), so
+        #    reusing the previous snapshot is lossless; and
+        #  - the executive's last judgement did not want another look (it chose
+        #    to act/backtrack, not perceive/probe).
+        # This is the executive driving perception rather than the old
+        # always-perceive default, without the risk of reusing a stale view
+        # after an action that actually changed the world.
+        skip_reperception = (
+            meta_perception_enabled
+            and prev_snap_pre is not None
+            and prev_static_streak >= 1
+            and prev_meta_suppress
         )
+        if skip_reperception:
+            snap_pre = prev_snap_pre
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="perception_skipped",
+                payload={
+                    "reason": "executive judged re-perception low value on a stable world",
+                    "meta_suppressed": prev_meta_suppress,
+                    "static_streak": prev_static_streak,
+                    "last_meta_action": getattr(
+                        runtime.execution_state, "last_meta_action", None
+                    ),
+                },
+            )
+        else:
+            snap_pre = refresh_perception(
+                runtime,
+                goal,
+                observe=observe,
+                action_label=runtime.execution_state.last_action or "observe",
+                log_fn=_perception_log_fn(log, iteration),
+                iteration=iteration,
+            )
         observation = snap_pre.observation
         patch = snap_pre.patch
         wv = snap_pre.worldview
@@ -1014,6 +1117,13 @@ def run_goal_closed_loop(
         )
         runtime.execution_state.note_world_signature(state_sig, None)
         experience.visit(state_sig)
+        # Track how long the world has looked identical, independent of the
+        # forward-specific observe streak. This feeds the meta-perception gate
+        # so a provably static world can skip a redundant re-perceive.
+        if prev_state_sig is not None and state_sig == prev_state_sig:
+            static_streak += 1
+        else:
+            static_streak = 0
         semantic_repeat = runtime.execution_state.note_semantic_state(state_sig)
         update_interaction_context(
             runtime.execution_state.interaction_context,
@@ -1235,6 +1345,56 @@ def run_goal_closed_loop(
         )
         overlay = get_overlay(goal.app, runtime.world_model)
         feats = overlay.features(runtime.world_model, goal, worldview_score=wv)
+
+        # --- Executive judgement: one authoritative act-vs-perceive verdict ---
+        # Computed and recorded every iteration for observability. Under
+        # HERMES_META_PERCEPTION it also gates the next iteration's re-perceive.
+        has_grounded_action = bool(decision) and str(decision.action or "").strip().lower() != "observe"
+        blocking_uncertainties = workspace_blocking_uncertainties(runtime.execution_state)
+        coverage = float(wv or 0.0)
+        sufficiency, meta = assess_executive_judgement(
+            runtime.execution_state,
+            blocking_uncertainties=blocking_uncertainties,
+            evidence_gaps=[],
+            coverage=coverage,
+            has_grounded_action=has_grounded_action,
+            previously_suppressed=prev_meta_suppress,
+        )
+        beliefs_payload: Dict[str, Any] = {}
+        _ws = workspace_of(runtime.execution_state)
+        if _ws is not None:
+            try:
+                beliefs_payload = {
+                    "facts": {k: c.value for k, c in (_ws.facts or {}).items()},
+                    "belief_flips": int(_ws.belief_flips or 0),
+                    "contradictions": [
+                        c.to_dict() if hasattr(c, "to_dict") else str(c)
+                        for c in (_ws.unresolved_contradictions or [])
+                    ][:8],
+                }
+            except Exception:
+                beliefs_payload = {}
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="executive_judgement",
+            payload={
+                "sufficiency": sufficiency.to_dict(),
+                "meta_action": meta.to_dict(),
+                "cognitive_mode": getattr(runtime.execution_state, "last_cognitive_mode", None),
+                "perception_query": getattr(runtime.execution_state, "last_perception_query", None),
+                "meta_perception_enabled": meta_perception_enabled,
+                "coverage": round(coverage, 3),
+                "has_grounded_action": has_grounded_action,
+                "blocking_uncertainties": [str(q) for q in blocking_uncertainties][:8],
+                "static_streak": static_streak,
+                "beliefs": beliefs_payload,
+            },
+        )
+        prev_meta_suppress = bool(getattr(meta, "suppress_observe", False))
+        prev_static_streak = static_streak
+        prev_snap_pre = snap_pre
+        prev_state_sig = state_sig
 
         # Low resolution confidence: observe to refine; ask only after attempts
         policy = str(feats.extras.get("resolution_policy") or "")
