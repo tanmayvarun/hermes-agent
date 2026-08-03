@@ -446,6 +446,36 @@ def run_forward_message_live(
                 amount = int(getattr(step, "scroll_amount", 0) or 3)
                 anchor = self._scroll_anchor()
                 return get_executor(dry_run=False, app=APP).scroll(direction, amount=amount, anchor=anchor)
+            if fam == "compose_search_query" or act == "composesearchquery":
+                # ComposeSearchQuery authors the next search string from goal
+                # evidence (the planner leaves step.text empty by design) and
+                # types it into Search. Authorship is model-driven, not a
+                # contact+link template. Contract:
+                #   compose_search_query -> type_query(chosen) -> open_entity(result)
+                import types as _types
+
+                from plugin.agent.capabilities.compose_search_query import (
+                    author_query_for_goal,
+                )
+
+                try:
+                    view_now, feats_now, _ = build_view_features(runtime, goal_obj)
+                except Exception:
+                    view_now, feats_now = {}, {}
+                extras_now = feats_now.get("extras") if isinstance(feats_now, dict) else {}
+                feats_shim = _types.SimpleNamespace(extras=extras_now or {})
+                chosen = (step.text or "").strip() or author_query_for_goal(
+                    goal_obj,
+                    world_document=view_now if isinstance(view_now, dict) else None,
+                    features=feats_shim,
+                )
+                if not chosen:
+                    return ExecResult(
+                        ok=False,
+                        backend="ax",
+                        message="compose_search_query produced no query",
+                    )
+                return ax_type(APP, chosen, into=target or "Search", submit=False)
             if act == "type":
                 return ax_type(APP, step.text or "", into=target or "Search", submit=False)
             if fam == "end_call" or target.lower() in {"end call", "decline"}:
