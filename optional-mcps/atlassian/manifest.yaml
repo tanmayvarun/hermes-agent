@@ -1,0 +1,24 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: atlassian
+description: Work with Jira issues and Confluence pages via Atlassian's remote MCP.
+source: https://support.atlassian.com/atlassian-rovo-mcp-server/
+
+# Atlassian ships a remote MCP covering Jira + Confluence over Streamable
+# HTTP with native OAuth 2.1. Prefer /v1/mcp over the deprecated /v1/sse path.
+transport:
+  type: http
+  url: https://mcp.atlassian.com/v1/mcp
+
+auth:
+  type: oauth
+
+post_install: |
+  On first connection, Hermes will open a browser to authenticate with Atlassian
+  (Jira / Confluence). After auth, restart your Hermes session so the tools
+  are loaded.
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure atlassian

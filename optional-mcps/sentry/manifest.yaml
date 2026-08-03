@@ -1,0 +1,28 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: sentry
+description: Query Sentry issues, traces, and Seer analysis for debugging.
+source: https://docs.sentry.io/product/sentry-mcp/
+
+# Sentry's hosted remote MCP with native OAuth / DCR over Streamable HTTP.
+# Optionally scope to one org/project by editing the url after install:
+#   https://mcp.sentry.dev/mcp/<org>
+#   https://mcp.sentry.dev/mcp/<org>/<project>
+transport:
+  type: http
+  url: https://mcp.sentry.dev/mcp
+
+auth:
+  type: oauth
+
+post_install: |
+  On first connection, Hermes will open a browser to authenticate with Sentry.
+  After auth, restart your Hermes session so the Sentry tools are loaded.
+
+  Optional org/project scoping — edit ~/.hermes/config.yaml:
+    mcp_servers.sentry.url: https://mcp.sentry.dev/mcp/<org>/<project>
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure sentry

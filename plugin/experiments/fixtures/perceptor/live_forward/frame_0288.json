@@ -1,0 +1,490 @@
+{
+  "frame": 288,
+  "captured_at": "2026-08-02T18:22:11",
+  "screenshot": "frame_0288.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 13,
+      "surface": "chat_list",
+      "open_conversation": "Pallavi Ather Gen3",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "search_result_1",
+          "kind": "message_result",
+          "text": "Pallavi - You: https://www.zarooratwala.com/...",
+          "matches_goal": true,
+          "seen_on_frame": 13,
+          "point": [
+            150,
+            230
+          ]
+        },
+        {
+          "id": "search_result_2",
+          "kind": "message_result",
+          "text": "Pallavi - You: Zarooratwala",
+          "matches_goal": true,
+          "seen_on_frame": 13,
+          "point": [
+            150,
+            310
+          ]
+        },
+        {
+          "id": "search_result_3",
+          "kind": "message_result",
+          "text": "Pallavi - You: https://www.instagram.com/zarooratwala/...",
+          "matches_goal": true,
+          "seen_on_frame": 13,
+          "point": [
+            150,
+            420
+          ]
+        },
+        {
+          "id": "search_field",
+          "kind": "search_field",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            150,
+            95
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_chat_exists",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Pallavi individual chat messages visible in search results"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "wrong_conversation_open",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Currently viewing Pallavi Ather Gen3 group, search results show individual Pallavi messages"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "zarooratwala_message_found",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Search results show multiple zarooratwala links from Pallavi individual chat"
+          ],
+          "confirmed_on_frame": 13
+        }
+      ],
+      "progress": {
+        "phase": "open_source_conversation",
+        "objective": "Click on search result to open individual Pallavi conversation with zarooratwala message",
+        "notes": "Search successful. Multiple zarooratwala messages found in search results. Need to click first search result to open individual Pallavi chat."
+      },
+      "attempts": [
+        {
+          "frame": 8,
+          "action": "dismiss_transient",
+          "target": "",
+          "result": "ok: but call overlay still present"
+        },
+        {
+          "frame": 9,
+          "action": "dismiss_transient",
+          "target": "",
+          "result": "ok: but call overlay still visible"
+        },
+        {
+          "frame": 10,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Return' into search field label='Return' AXValue='Pallavi'"
+        },
+        {
+          "frame": 10,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi' into search field label='Return' AXValue='Pallavi'"
+        },
+        {
+          "frame": 11,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(200.0, 254.0) via entity bounds"
+        },
+        {
+          "frame": 12,
+          "action": "open_entity",
+          "target": "Pallavi Ather Gen3",
+          "result": "opened wrong group conversation"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi zarooratwala' into search field"
+        },
+        {
+          "frame": 13,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Pallavi zarooratwala' point=(200, 307)"
+        }
+      ],
+      "exhausted": [
+        "dismiss_transient"
+      ]
+    },
+    "observation": {
+      "frame": 14,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            39,
+            1710,
+            984
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        829
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "Click",
+      "family": "open_contact",
+      "target": "",
+      "text": "",
+      "result": {
+        "ok": true,
+        "message": "keyboard open search result for query='Pallavi zarooratwala' point=(200, 307)"
+      },
+      "you_predicted": {
+        "surface": "conversation",
+        "likely_controls": [
+          "message_list",
+          "message_input_field",
+          "back_button",
+          "zarooratwala_message"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 14,
+      "surface": "chat_list",
+      "open_conversation": "Pallavi Ather Gen3",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "search_result_1",
+          "kind": "message_result",
+          "text": "Pallavi - https://www.zarooratwala.com/...",
+          "matches_goal": true,
+          "seen_on_frame": 14,
+          "point": [
+            145,
+            225
+          ]
+        },
+        {
+          "id": "search_result_2",
+          "kind": "message_result",
+          "text": "Pallavi - You: Zarooratwala",
+          "matches_goal": true,
+          "seen_on_frame": 14,
+          "point": [
+            145,
+            385
+          ]
+        },
+        {
+          "id": "search_result_3",
+          "kind": "message_result",
+          "text": "Pallavi - https://www.instagram.com/zarooratwala/...",
+          "matches_goal": true,
+          "seen_on_frame": 14,
+          "point": [
+            145,
+            520
+          ]
+        },
+        {
+          "id": "search_field",
+          "kind": "search_field",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            145,
+            90
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_chat_exists",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Pallavi individual chat messages visible in search results"
+          ],
+          "confirmed_on_frame": 14
+        },
+        {
+          "predicate": "wrong_conversation_open",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Currently viewing Pallavi Ather Gen3 group, search results show individual Pallavi messages"
+          ],
+          "confirmed_on_frame": 14
+        },
+        {
+          "predicate": "zarooratwala_message_found",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Search results show multiple zarooratwala links from Pallavi individual chat"
+          ],
+          "confirmed_on_frame": 14
+        }
+      ],
+      "progress": {
+        "phase": "open_source_conversation",
+        "objective": "Click on first search result to open individual Pallavi conversation with zarooratwala message",
+        "notes": "Search results visible in left sidebar. First result contains zarooratwala.com link. Need to click it to open individual Pallavi chat."
+      },
+      "attempts": [
+        {
+          "frame": 9,
+          "action": "dismiss_transient",
+          "target": "",
+          "result": "ok: but call overlay still visible"
+        },
+        {
+          "frame": 10,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Return' into search field label='Return' AXValue='Pallavi'"
+        },
+        {
+          "frame": 10,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi' into search field label='Return' AXValue='Pallavi'"
+        },
+        {
+          "frame": 11,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(200.0, 254.0) via entity bounds"
+        },
+        {
+          "frame": 12,
+          "action": "open_entity",
+          "target": "Pallavi Ather Gen3",
+          "result": "opened wrong group conversation"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi zarooratwala' into search field"
+        },
+        {
+          "frame": 13,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Pallavi zarooratwala' point=(200, 307)"
+        },
+        {
+          "frame": 14,
+          "action": "click",
+          "target": "search_result_1",
+          "result": "pending"
+        }
+      ],
+      "exhausted": [
+        "dismiss_transient"
+      ]
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "chat_list",
+      "open_conversation": "Pallavi Ather Gen3",
+      "target_object_visible": true,
+      "target_object_id": "search_result_1",
+      "focused_field_role": "sidebar_search"
+    },
+    "belief_updates": [
+      {
+        "predicate": "pallavi_chat_exists",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "Pallavi individual chat messages visible in search results"
+        ],
+        "confirmed_on_frame": 14
+      },
+      {
+        "predicate": "wrong_conversation_open",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "Currently viewing Pallavi Ather Gen3 group, search results show individual Pallavi messages"
+        ],
+        "confirmed_on_frame": 14
+      },
+      {
+        "predicate": "zarooratwala_message_found",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "Search results show multiple zarooratwala links from Pallavi individual chat"
+        ],
+        "confirmed_on_frame": 14
+      }
+    ],
+    "next_action": {
+      "family": "click",
+      "target_id": null,
+      "target_point": [
+        145,
+        225
+      ],
+      "text": "",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "message_list",
+        "message_input_field",
+        "back_button",
+        "zarooratwala_message"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "search_result_1",
+        "kind": "message_result",
+        "text": "Pallavi - https://www.zarooratwala.com/...",
+        "matches_goal": true,
+        "seen_on_frame": 14,
+        "point": [
+          145,
+          225
+        ]
+      },
+      {
+        "id": "search_result_2",
+        "kind": "message_result",
+        "text": "Pallavi - You: Zarooratwala",
+        "matches_goal": true,
+        "seen_on_frame": 14,
+        "point": [
+          145,
+          385
+        ]
+      },
+      {
+        "id": "search_result_3",
+        "kind": "message_result",
+        "text": "Pallavi - https://www.instagram.com/zarooratwala/...",
+        "matches_goal": true,
+        "seen_on_frame": 14,
+        "point": [
+          145,
+          520
+        ]
+      },
+      {
+        "id": "search_field",
+        "kind": "search_field",
+        "text": "Pallavi zarooratwala",
+        "matches_goal": false,
+        "seen_on_frame": 14,
+        "point": [
+          145,
+          90
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "scene_summary": "WhatsApp showing search results for 'Pallavi zarooratwala' in left sidebar. Three message results visible from individual Pallavi chat containing zarooratwala links. Right side still shows Pallavi Ather Gen3 group conversation. Need to click first search result to open individual Pallavi chat.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 18.649
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "LIST"
+  }
+}

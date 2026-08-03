@@ -1,0 +1,216 @@
+{
+  "frame": 49,
+  "captured_at": "2026-08-02T11:15:57",
+  "screenshot": "frame_0049.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "task_state": {
+      "phase": "FIND_LINK",
+      "local_objective": "resolve source object matching query",
+      "source_conversation_open": true,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "current_observation": {
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "screen": "CONVERSATION",
+      "search_visible": false,
+      "search_query": "",
+      "open_conversation": "Pallavi",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "recent_transition": {
+      "previous_action": {
+        "action": "Click",
+        "family": "open_contact",
+        "target": "",
+        "text": ""
+      },
+      "expected": {
+        "surface": "search",
+        "likely_controls": [
+          "search_input",
+          "search_results"
+        ]
+      },
+      "previous_result": {
+        "ok": true,
+        "message": "click 'target' center=(196.0, 83.0) via entity bounds"
+      },
+      "previous_observed_state": {
+        "surface": "conversation",
+        "open_conversation": "Pallavi",
+        "target_object_visible": false
+      },
+      "observed_delta": "you have read this same screen 3 times in a row — the last action did not move the task forward, so try a different action or a different target"
+    },
+    "exploration": {
+      "attempted_in_current_state": [
+        "scroll||up",
+        "click||"
+      ],
+      "recent_failures": [
+        "no_progress_watchdog",
+        "no_effect:open_contact:no_transition",
+        "no_progress_watchdog",
+        "semantic_repeat_replan"
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence"
+    ]
+  },
+  "response": {
+    "observed_state": {
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "target_object_visible": false,
+      "target_object_id": null
+    },
+    "belief_updates": [
+      {
+        "predicate": "source_object_visible",
+        "value": false,
+        "confidence": 1.0,
+        "evidence": [
+          "Visible messages do not contain 'zarooratwala'",
+          "Visible messages are from 10:22 PM and 10:26 PM, likely newer than the target link"
+        ]
+      },
+      {
+        "predicate": "chat_pane_scrolled",
+        "value": false,
+        "confidence": 0.8,
+        "evidence": [
+          "Previous scroll action may have targeted chat list instead of conversation pane",
+          "Targeting conversation pane explicitly now"
+        ]
+      }
+    ],
+    "next_action": {
+      "family": "scroll",
+      "target_id": null,
+      "target_point": [
+        1000,
+        500
+      ],
+      "text": "up",
+      "confidence": 0.9
+    },
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "older_messages",
+        "date_dividers"
+      ]
+    },
+    "visible_objects": [
+      {
+        "kind": "message",
+        "text": "Don't share your OTP with anyone",
+        "point": [
+          400,
+          250
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "Protect your OTPs during phone calls...",
+        "point": [
+          400,
+          350
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "Facebook Post: JAY JAGANNATH CARTOON...",
+        "point": [
+          500,
+          500
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "Lucky girl",
+        "point": [
+          850,
+          700
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "First customer to get otp 1000",
+        "point": [
+          850,
+          720
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "my sis is special",
+        "point": [
+          850,
+          740
+        ],
+        "matches_goal": false
+      }
+    ],
+    "missing_evidence": [
+      "Message containing 'zarooratwala'",
+      "Search icon within conversation header"
+    ],
+    "scene_summary": "The conversation with Pallavi is open, showing recent messages about OTPs and family, but the target 'zarooratwala' link is not visible. I will scroll up in the conversation pane to reveal older messages.",
+    "confidence": 0.9,
+    "model": "qwen3.5:397b",
+    "latency_s": 77.945
+  }
+}

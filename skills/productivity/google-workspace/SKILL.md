@@ -21,6 +21,8 @@ metadata:
 
 Gmail, Calendar, Drive, Contacts, Sheets, and Docs — through Hermes-managed OAuth and a thin CLI wrapper. When `gws` is installed, the skill uses it as the execution backend for broader Google Workspace coverage; otherwise it falls back to the bundled Python client implementation.
 
+Prefer this skill over Google's hosted Gmail MCP (`gmailmcp.googleapis.com`) for personal `@gmail.com` accounts — that MCP is still Developer Preview and often returns "caller does not have permission" even when the classic Gmail API works. For UI-only Gmail tasks (labels in the web UI, etc.), use the `browser` toolset or `computer-use` against an already-logged-in session.
+
 ## References
 
 - `references/gmail-search-syntax.md` — Gmail search operators (is:unread, from:, newer_than:, etc.)

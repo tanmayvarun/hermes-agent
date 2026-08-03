@@ -1,0 +1,44 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: slack
+description: Read channels, search conversations, and send Slack messages.
+source: https://docs.slack.dev/ai/slack-mcp-server/
+
+# Slack's hosted MCP (Streamable HTTP) does NOT support Dynamic Client
+# Registration. You must back Hermes with a Slack app (internal or
+# Marketplace-published) and supply that app's client_id + client_secret.
+# Docs: https://docs.slack.dev/ai/mcp-server/
+transport:
+  type: http
+  url: https://mcp.slack.com/mcp
+
+auth:
+  type: oauth
+  redirect_port: 18710
+  env:
+    - name: SLACK_MCP_CLIENT_ID
+      prompt: "Slack app Client ID"
+      required: true
+      secret: false
+    - name: SLACK_MCP_CLIENT_SECRET
+      prompt: "Slack app Client Secret"
+      required: true
+      secret: true
+
+post_install: |
+  One-time Slack app setup (required — Slack rejects DCR):
+    1. Create an Internal Slack app at https://api.slack.com/apps
+       (or reuse an existing internal/Marketplace app)
+    2. Enable user-token OAuth scopes for the tools you need
+       (see https://docs.slack.dev/ai/mcp-server/ — search, chat:write, etc.)
+    3. Set Redirect URL to:
+         http://127.0.0.1:18710/callback
+    4. Copy Client ID + Client Secret into the install prompts (or
+       ~/.hermes/.env as SLACK_MCP_CLIENT_ID / SLACK_MCP_CLIENT_SECRET)
+    5. Workspace admin may need to approve the app for MCP use
+
+  Then run: hermes mcp login slack
+  After auth, restart Hermes so Slack tools load.
+  Reconfigure tools with: hermes mcp configure slack

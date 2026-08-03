@@ -1,0 +1,45 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: google-calendar
+description: List events, check availability, and manage Google Calendar.
+source: https://developers.google.com/workspace/calendar/api/guides/configure-mcp-server
+
+# Pre-registered Google Cloud OAuth client required (no DCR). Enable
+# calendar-json.googleapis.com + calendarmcp.googleapis.com.
+transport:
+  type: http
+  url: https://calendarmcp.googleapis.com/mcp/v1
+
+auth:
+  type: oauth
+  redirect_port: 18702
+  env:
+    - name: GOOGLE_CALENDAR_MCP_CLIENT_ID
+      prompt: "Google OAuth Client ID (Web application)"
+      required: true
+      secret: false
+    - name: GOOGLE_CALENDAR_MCP_CLIENT_SECRET
+      prompt: "Google OAuth Client Secret"
+      required: true
+      secret: true
+
+post_install: |
+  One-time Google Cloud setup (if you have not already):
+    1. Enable APIs: calendar-json.googleapis.com and calendarmcp.googleapis.com
+    2. OAuth consent scopes: calendar.events.readonly,
+       calendar.calendarlist.readonly, calendar.events.freebusy
+       (add write scopes if you want create/update tools)
+    3. Create OAuth Client ID type "Web application"
+    4. Add Authorized redirect URI:
+         http://127.0.0.1:18702/callback
+
+  Tip: you can reuse one GCP OAuth client across Gmail/Calendar/Drive/Sheets
+  by adding every Hermes redirect_port URI to that client, then pasting the
+  same client ID/secret for each install.
+
+  Docs: https://developers.google.com/workspace/guides/configure-mcp-servers
+
+  After browser consent, restart Hermes to load Calendar tools.
+  Reconfigure tools with: hermes mcp configure google-calendar

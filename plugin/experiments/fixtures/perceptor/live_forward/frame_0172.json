@@ -1,0 +1,524 @@
+{
+  "frame": 172,
+  "captured_at": "2026-08-02T15:20:27",
+  "screenshot": "frame_0172.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 14,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "send_to_search",
+          "kind": "search_field",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            585,
+            325
+          ]
+        },
+        {
+          "id": "no_results",
+          "kind": "label",
+          "text": "No results",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            585,
+            525
+          ]
+        },
+        {
+          "id": "forward_button",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            590,
+            910
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "conversation_opened",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Pallavi conversation is open"
+          ],
+          "confirmed_on_frame": 14
+        },
+        {
+          "predicate": "target_message_visible",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "zarooratwala link message is visible"
+          ],
+          "confirmed_on_frame": 14
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "'1 Selected' indicator visible at bottom"
+          ],
+          "confirmed_on_frame": 14
+        },
+        {
+          "predicate": "forward_picker_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Send to dialog is visible"
+          ],
+          "confirmed_on_frame": 14
+        },
+        {
+          "predicate": "destination_selected",
+          "value": false,
+          "confidence": 1.0,
+          "evidence": [
+            "No results showing in forward picker"
+          ],
+          "confirmed_on_frame": 14
+        }
+      ],
+      "progress": {
+        "phase": "select_destination",
+        "objective": "Search for 'Tanmay' contact in forward picker",
+        "notes": "Previous search query 'Pallavi zarooratwala' was wrong - it searched for message content not destination contact. Need to search for 'Tanmay' instead."
+      },
+      "attempts": [
+        {
+          "frame": 8,
+          "action": "compose_search_query",
+          "target": "",
+          "result": "ok: Tanmay query composed"
+        },
+        {
+          "frame": 9,
+          "action": "open_entity",
+          "target": "Aakash <> Tanmay",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 10,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 11,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(878, 952)"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Aakash <> Tanmay' into search field"
+        },
+        {
+          "frame": 13,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi zarooratwala' into search field"
+        },
+        {
+          "frame": 14,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi zarooratwala' - wrong query, no results"
+        },
+        {
+          "frame": 14,
+          "action": "open_entity",
+          "target": "Tanmay",
+          "result": "ok: keyboard open search result for query='Pallavi zarooratwala' point=(878, 488)"
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 15,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "OpenEntity",
+      "family": "open_entity",
+      "target": "Tanmay",
+      "text": "Tanmay",
+      "result": {
+        "ok": true,
+        "message": "keyboard open search result for query='Pallavi zarooratwala' point=(878, 488)"
+      },
+      "you_predicted": {
+        "surface": "forward_picker",
+        "likely_controls": [
+          "contact_result_tanmay",
+          "checkmark_on_contact",
+          "forward_button"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 15,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "send_to_search",
+          "kind": "search_field",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            585,
+            325
+          ]
+        },
+        {
+          "id": "clear_button",
+          "kind": "button",
+          "text": "X",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            655,
+            325
+          ]
+        },
+        {
+          "id": "no_results",
+          "kind": "label",
+          "text": "No results",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            585,
+            525
+          ]
+        },
+        {
+          "id": "forward_button",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            590,
+            910
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "conversation_opened",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Pallavi conversation is open"
+          ],
+          "confirmed_on_frame": 15
+        },
+        {
+          "predicate": "target_message_visible",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "zarooratwala link message is visible"
+          ],
+          "confirmed_on_frame": 15
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "'1 Selected' indicator visible at bottom"
+          ],
+          "confirmed_on_frame": 15
+        },
+        {
+          "predicate": "forward_picker_open",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Send to dialog is visible"
+          ],
+          "confirmed_on_frame": 15
+        },
+        {
+          "predicate": "destination_selected",
+          "value": false,
+          "confidence": 1.0,
+          "evidence": [
+            "No results showing in forward picker - wrong search query"
+          ],
+          "confirmed_on_frame": 15
+        }
+      ],
+      "progress": {
+        "phase": "select_destination",
+        "objective": "Search for 'Tanmay' contact in forward picker",
+        "notes": "Current search query 'Pallavi zarooratwala' is wrong - searching for message content instead of destination contact. Need to clear and search for 'Tanmay'."
+      },
+      "attempts": [
+        {
+          "frame": 9,
+          "action": "open_entity",
+          "target": "Aakash <> Tanmay",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 10,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(945, 795)"
+        },
+        {
+          "frame": 11,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: keyboard open search result for query='Tanmay' point=(878, 952)"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Aakash <> Tanmay' into search field"
+        },
+        {
+          "frame": 13,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi zarooratwala' into search field"
+        },
+        {
+          "frame": 14,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi zarooratwala' - wrong query, no results"
+        },
+        {
+          "frame": 14,
+          "action": "open_entity",
+          "target": "Tanmay",
+          "result": "ok: keyboard open search result for query='Pallavi zarooratwala' point=(878, 488)"
+        },
+        {
+          "frame": 15,
+          "action": "open_entity",
+          "target": "Tanmay",
+          "result": "failed: wrong search query still in field"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "target_object_visible": false,
+      "target_object_id": null
+    },
+    "belief_updates": [
+      {
+        "predicate": "conversation_opened",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Pallavi conversation is open"
+        ],
+        "confirmed_on_frame": 15
+      },
+      {
+        "predicate": "target_message_visible",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "zarooratwala link message is visible"
+        ],
+        "confirmed_on_frame": 15
+      },
+      {
+        "predicate": "message_selected",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "'1 Selected' indicator visible at bottom"
+        ],
+        "confirmed_on_frame": 15
+      },
+      {
+        "predicate": "forward_picker_open",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Send to dialog is visible"
+        ],
+        "confirmed_on_frame": 15
+      },
+      {
+        "predicate": "destination_selected",
+        "value": false,
+        "confidence": 1.0,
+        "evidence": [
+          "No results showing in forward picker - wrong search query"
+        ],
+        "confirmed_on_frame": 15
+      }
+    ],
+    "next_action": {
+      "family": "compose_search_query",
+      "target_id": null,
+      "target_point": [
+        585,
+        325
+      ],
+      "text": "Tanmay",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "forward_picker",
+      "likely_controls": [
+        "contact_result_tanmay",
+        "checkmark_on_contact",
+        "forward_button"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "send_to_search",
+        "kind": "search_field",
+        "text": "Pallavi zarooratwala",
+        "matches_goal": false,
+        "seen_on_frame": 15,
+        "point": [
+          585,
+          325
+        ]
+      },
+      {
+        "id": "clear_button",
+        "kind": "button",
+        "text": "X",
+        "matches_goal": false,
+        "seen_on_frame": 15,
+        "point": [
+          655,
+          325
+        ]
+      },
+      {
+        "id": "no_results",
+        "kind": "label",
+        "text": "No results",
+        "matches_goal": false,
+        "seen_on_frame": 15,
+        "point": [
+          585,
+          525
+        ]
+      },
+      {
+        "id": "forward_button",
+        "kind": "button",
+        "text": "Forward",
+        "matches_goal": false,
+        "seen_on_frame": 15,
+        "point": [
+          590,
+          910
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "scene_summary": "Forward picker dialog is open with wrong search query 'Pallavi zarooratwala' showing no results. Need to search for destination contact 'Tanmay' instead. The search field is focused and ready for new input.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 19.36
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "SEARCH_RESULTS"
+  }
+}

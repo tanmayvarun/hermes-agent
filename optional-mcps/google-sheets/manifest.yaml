@@ -1,0 +1,40 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: google-sheets
+description: Read and update Google Sheets values via Google's remote MCP.
+source: https://developers.google.com/workspace/guides/configure-mcp-servers
+
+# Pre-registered Google Cloud OAuth client required (no DCR). Enable
+# sheets.googleapis.com + sheetsmcp.googleapis.com.
+transport:
+  type: http
+  url: https://sheetsmcp.googleapis.com/mcp/v1
+
+auth:
+  type: oauth
+  redirect_port: 18704
+  env:
+    - name: GOOGLE_SHEETS_MCP_CLIENT_ID
+      prompt: "Google OAuth Client ID (Web application)"
+      required: true
+      secret: false
+    - name: GOOGLE_SHEETS_MCP_CLIENT_SECRET
+      prompt: "Google OAuth Client Secret"
+      required: true
+      secret: true
+
+post_install: |
+  One-time Google Cloud setup (if you have not already):
+    1. Enable APIs: sheets.googleapis.com and sheetsmcp.googleapis.com
+    2. OAuth consent scopes: spreadsheets.readonly, spreadsheets,
+       drive.readonly, drive.file
+    3. Create OAuth Client ID type "Web application"
+    4. Add Authorized redirect URI:
+         http://127.0.0.1:18704/callback
+
+  Docs: https://developers.google.com/workspace/guides/configure-mcp-servers
+
+  After browser consent, restart Hermes to load Sheets tools.
+  Reconfigure tools with: hermes mcp configure google-sheets

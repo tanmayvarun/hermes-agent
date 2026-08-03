@@ -1,0 +1,511 @@
+{
+  "frame": 252,
+  "captured_at": "2026-08-02T16:13:47",
+  "screenshot": "frame_0252.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 13,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "forward_btn",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            590,
+            900
+          ]
+        },
+        {
+          "id": "copy_btn",
+          "kind": "button",
+          "text": "Copy",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            625,
+            900
+          ]
+        },
+        {
+          "id": "share_btn",
+          "kind": "button",
+          "text": "Share",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            655,
+            900
+          ]
+        },
+        {
+          "id": "cancel_btn",
+          "kind": "button",
+          "text": "Cancel",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            920,
+            900
+          ]
+        },
+        {
+          "id": "chat_search",
+          "kind": "search_input",
+          "text": "Tanmay",
+          "matches_goal": false,
+          "seen_on_frame": 13,
+          "point": [
+            180,
+            85
+          ]
+        },
+        {
+          "id": "message_selected",
+          "kind": "message",
+          "text": "1 Selected - zarooratwala link",
+          "matches_goal": true,
+          "seen_on_frame": 13,
+          "point": [
+            600,
+            500
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "1 Selected shown at bottom toolbar"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "forward_picker_closed",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Main WhatsApp window visible, no forward dialog present"
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "search_went_to_wrong_field",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": [
+            "Tanmay appears in left sidebar chat search, not in forward picker"
+          ],
+          "confirmed_on_frame": 13
+        }
+      ],
+      "progress": {
+        "phase": "invoke_affordance",
+        "objective": "Reopen forward picker and search for Tanmay",
+        "notes": "Previous search went to main chat search instead of forward picker. Forward picker closed. Message still selected. Need to click Forward button again to reopen forward picker."
+      },
+      "attempts": [
+        {
+          "frame": 7,
+          "action": "reveal_actions",
+          "target": "",
+          "result": "ok: context click on message"
+        },
+        {
+          "frame": 10,
+          "action": "invoke_affordance",
+          "target": "forward_btn",
+          "result": "ok: Forward clicked, context menu opened"
+        },
+        {
+          "frame": 11,
+          "action": "invoke_affordance",
+          "target": "forward_btn",
+          "result": "ok: Forward clicked in bottom toolbar"
+        },
+        {
+          "frame": 12,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: forward picker now open"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed Tanmay but went to wrong search field"
+        },
+        {
+          "frame": 13,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: substrate=affordance_set affordance=Forward had_bounds=False; click 'Forward' center=(1130.5, 978.0) code=0"
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 14,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "InvokeAffordance",
+      "family": "invoke_affordance",
+      "target": "",
+      "text": "Forward",
+      "result": {
+        "ok": true,
+        "message": "substrate=affordance_set affordance=Forward had_bounds=False; click 'Forward' center=(1130.5, 978.0) code=0"
+      },
+      "you_predicted": {
+        "surface": "forward_picker",
+        "likely_controls": [
+          "search_field",
+          "contact_list",
+          "send_button"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 14,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "forward_search",
+          "kind": "search_input",
+          "text": "Search",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            580,
+            330
+          ]
+        },
+        {
+          "id": "contact_1",
+          "kind": "contact",
+          "text": "Harness Jyothsna Mamidi",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            580,
+            450
+          ]
+        },
+        {
+          "id": "contact_2",
+          "kind": "contact",
+          "text": "Piyush Bir",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            580,
+            500
+          ]
+        },
+        {
+          "id": "contact_3",
+          "kind": "contact",
+          "text": "Munni Di WhatsApp",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            580,
+            550
+          ]
+        },
+        {
+          "id": "send_btn",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            590,
+            900
+          ]
+        },
+        {
+          "id": "cancel_btn",
+          "kind": "button",
+          "text": "Cancel",
+          "matches_goal": false,
+          "seen_on_frame": 14,
+          "point": [
+            920,
+            900
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "forward_picker_open",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Send to dialog visible with contact list"
+          ],
+          "confirmed_on_frame": 14
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "1 Selected shown at bottom toolbar"
+          ],
+          "confirmed_on_frame": 14
+        }
+      ],
+      "progress": {
+        "phase": "open_entity",
+        "objective": "Search for and select Tanmay in forward picker",
+        "notes": "Forward picker is now correctly open. Need to type Tanmay in the search field to find the destination contact."
+      },
+      "attempts": [
+        {
+          "frame": 7,
+          "action": "reveal_actions",
+          "target": "",
+          "result": "ok: context click on message"
+        },
+        {
+          "frame": 10,
+          "action": "invoke_affordance",
+          "target": "forward_btn",
+          "result": "ok: Forward clicked, context menu opened"
+        },
+        {
+          "frame": 11,
+          "action": "invoke_affordance",
+          "target": "forward_btn",
+          "result": "ok: Forward clicked in bottom toolbar"
+        },
+        {
+          "frame": 12,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: forward picker now open"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed Tanmay but went to wrong search field"
+        },
+        {
+          "frame": 13,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: Forward clicked again"
+        },
+        {
+          "frame": 14,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: forward picker now correctly open"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "target_object_visible": false,
+      "target_object_id": null
+    },
+    "belief_updates": [
+      {
+        "predicate": "forward_picker_open",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "Send to dialog visible with contact list"
+        ],
+        "confirmed_on_frame": 14
+      },
+      {
+        "predicate": "message_selected",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "1 Selected shown at bottom toolbar"
+        ],
+        "confirmed_on_frame": 14
+      }
+    ],
+    "next_action": {
+      "family": "type",
+      "target_id": null,
+      "target_point": [
+        580,
+        330
+      ],
+      "text": "Tanmay",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "forward_picker",
+      "likely_controls": [
+        "search_field_with_text",
+        "filtered_contact_list",
+        "send_button"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "forward_search",
+        "kind": "search_input",
+        "text": "Search",
+        "matches_goal": false,
+        "seen_on_frame": 14,
+        "point": [
+          580,
+          330
+        ]
+      },
+      {
+        "id": "contact_1",
+        "kind": "contact",
+        "text": "Harness Jyothsna Mamidi",
+        "matches_goal": false,
+        "seen_on_frame": 14,
+        "point": [
+          580,
+          450
+        ]
+      },
+      {
+        "id": "contact_2",
+        "kind": "contact",
+        "text": "Piyush Bir",
+        "matches_goal": false,
+        "seen_on_frame": 14,
+        "point": [
+          580,
+          500
+        ]
+      },
+      {
+        "id": "contact_3",
+        "kind": "contact",
+        "text": "Munni Di WhatsApp",
+        "matches_goal": false,
+        "seen_on_frame": 14,
+        "point": [
+          580,
+          550
+        ]
+      },
+      {
+        "id": "send_btn",
+        "kind": "button",
+        "text": "Forward",
+        "matches_goal": false,
+        "seen_on_frame": 14,
+        "point": [
+          590,
+          900
+        ]
+      },
+      {
+        "id": "cancel_btn",
+        "kind": "button",
+        "text": "Cancel",
+        "matches_goal": false,
+        "seen_on_frame": 14,
+        "point": [
+          920,
+          900
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "scene_summary": "Forward picker dialog is now open with 'Send to' header and contact list. Search field is at the top of the dialog. Message is still selected (1 Selected shown). Next I will type 'Tanmay' in the forward picker's search field to find the destination contact.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 18.487
+  },
+  "shadow_task_state": {
+    "phase": "FIND_LINK",
+    "local_objective": "resolve source object matching query",
+    "predicates": {
+      "source_conversation_open": true,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "Pallavi",
+    "wa_screen": "CONVERSATION"
+  }
+}

@@ -1,0 +1,22 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: todoist
+description: Manage Todoist tasks, projects, and filters.
+source: https://github.com/Doist/todoist-mcp
+
+# Doist's official hosted Streamable HTTP MCP server.
+transport:
+  type: http
+  url: https://ai.todoist.net/mcp
+
+auth:
+  type: oauth
+
+post_install: |
+  On first connection, Hermes will open a browser to authenticate with Todoist.
+  After auth, restart your Hermes session so the Todoist tools are loaded.
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure todoist

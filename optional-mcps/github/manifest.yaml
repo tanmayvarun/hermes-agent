@@ -1,0 +1,28 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: github
+description: Manage GitHub repositories, issues, pull requests, and code search.
+source: https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md
+
+# GitHub hosts the remote MCP server at api.githubcopilot.com. OAuth is
+# handled by Hermes's MCP client on first connect. For a read-only surface
+# instead, change the url after install to:
+#   https://api.githubcopilot.com/mcp/readonly
+transport:
+  type: http
+  url: https://api.githubcopilot.com/mcp/
+
+auth:
+  type: oauth
+
+post_install: |
+  On first connection, Hermes will open a browser to authenticate with GitHub.
+  After auth, restart your Hermes session so the GitHub tools are loaded.
+
+  Optional read-only mode — edit ~/.hermes/config.yaml:
+    mcp_servers.github.url: https://api.githubcopilot.com/mcp/readonly
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure github

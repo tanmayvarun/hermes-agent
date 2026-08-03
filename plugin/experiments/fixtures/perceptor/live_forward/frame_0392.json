@@ -1,0 +1,896 @@
+{
+  "frame": 392,
+  "captured_at": "2026-08-03T13:41:18",
+  "screenshot": "frame_0392.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 2,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "focused_field_role": "message_input",
+      "objects": [
+        {
+          "id": "msg_prayer_1",
+          "kind": "message",
+          "text": "Ho'oponopono Prayer to Shiv Shakti for Karmic Healing...",
+          "matches_goal": false,
+          "seen_on_frame": 2,
+          "point": [
+            520,
+            650
+          ]
+        },
+        {
+          "id": "msg_prayer_2",
+          "kind": "message",
+          "text": "Om Namah Shivaya. Om Aim Hreem Kleem Chamundayai Viche...",
+          "matches_goal": false,
+          "seen_on_frame": 2,
+          "point": [
+            520,
+            720
+          ]
+        },
+        {
+          "id": "msg_prayer_3",
+          "kind": "message",
+          "text": "Beloved Lord Shiva and Divine Mother Shakti, I bow at Your...",
+          "matches_goal": false,
+          "seen_on_frame": 2,
+          "point": [
+            520,
+            800
+          ]
+        },
+        {
+          "id": "chat_pallavi_row",
+          "kind": "chat_row",
+          "text": "Pallavi - Ho'oponopono Prayer to Shiv Sha...",
+          "matches_goal": true,
+          "seen_on_frame": 2,
+          "point": [
+            186,
+            180
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_chat_exists",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Pallavi chat visible at top of chat list",
+            "conversation is open"
+          ],
+          "confirmed_on_frame": 2
+        },
+        {
+          "predicate": "tanmay_contact_exists",
+          "value": true,
+          "confidence": 0.8,
+          "evidence": [
+            "goal specifies Tanmay as destination"
+          ],
+          "confirmed_on_frame": 2
+        },
+        {
+          "predicate": "zarooratwala_message_not_visible",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": [
+            "visible messages show prayer content, not zarooratwala link"
+          ],
+          "confirmed_on_frame": 2
+        }
+      ],
+      "progress": {
+        "phase": "locate_target_message",
+        "objective": "Find the zarooratwala message within Pallavi's conversation",
+        "notes": "Pallavi's chat is open. Need to search within conversation for zarooratwala message"
+      },
+      "attempts": [
+        {
+          "frame": 1,
+          "action": "compose_search_query",
+          "target": "",
+          "result": "ok: found Pallavi chat"
+        },
+        {
+          "frame": 2,
+          "action": "open_entity",
+          "target": "chat_pallavi_row",
+          "result": "ok: conversation opened"
+        },
+        {
+          "frame": 2,
+          "action": "locate_content",
+          "target": "",
+          "result": "ok: realization=native_find steps=1 text_match_reachable=False surface_exhausted=False surface_changed=True message=quer"
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 3,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            984
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "resolve_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "affordance_frontier": {
+      "surface": "conversation",
+      "observed_actions": [
+        {
+          "id": "obj_0_select_content",
+          "family": "select_content",
+          "status": "observed",
+          "confidence": 0.6,
+          "target_label": "Ho'oponopono Prayer to Shiv Shakti for Karmic Healing...",
+          "actuators": [
+            {
+              "type": "coordinate_click",
+              "point": [
+                520,
+                650
+              ],
+              "confidence": 0.9
+            }
+          ],
+          "expected_outcomes": [
+            {
+              "probability": 0.8,
+              "predicates": {
+                "target_object_selected": true
+              }
+            }
+          ],
+          "evidence": [
+            {
+              "source": "vision_object",
+              "detail": "kind=message"
+            }
+          ]
+        },
+        {
+          "id": "obj_1_select_content",
+          "family": "select_content",
+          "status": "observed",
+          "confidence": 0.6,
+          "target_label": "Om Namah Shivaya. Om Aim Hreem Kleem Chamundayai Viche...",
+          "actuators": [
+            {
+              "type": "coordinate_click",
+              "point": [
+                520,
+                720
+              ],
+              "confidence": 0.9
+            }
+          ],
+          "expected_outcomes": [
+            {
+              "probability": 0.8,
+              "predicates": {
+                "target_object_selected": true
+              }
+            }
+          ],
+          "evidence": [
+            {
+              "source": "vision_object",
+              "detail": "kind=message"
+            }
+          ]
+        },
+        {
+          "id": "obj_2_select_content",
+          "family": "select_content",
+          "status": "observed",
+          "confidence": 0.6,
+          "target_label": "Beloved Lord Shiva and Divine Mother Shakti, I bow at Your...",
+          "actuators": [
+            {
+              "type": "coordinate_click",
+              "point": [
+                520,
+                800
+              ],
+              "confidence": 0.9
+            }
+          ],
+          "expected_outcomes": [
+            {
+              "probability": 0.8,
+              "predicates": {
+                "target_object_selected": true
+              }
+            }
+          ],
+          "evidence": [
+            {
+              "source": "vision_object",
+              "detail": "kind=message"
+            }
+          ]
+        }
+      ],
+      "latent_actions": [
+        {
+          "id": "reply_via_context_click",
+          "family": "invoke_affordance",
+          "status": "latent",
+          "confidence": 0.64,
+          "target_label": "Reply",
+          "available_now": false,
+          "available_after": "context_click_Ho'oponopono Prayer to Shiv Shakti for Karmic ",
+          "evidence": [
+            {
+              "source": "interaction_prior",
+              "detail": "message-object interaction prior"
+            }
+          ]
+        },
+        {
+          "id": "forward_via_context_click",
+          "family": "invoke_affordance",
+          "status": "latent",
+          "confidence": 0.64,
+          "target_label": "Forward",
+          "available_now": false,
+          "available_after": "context_click_Ho'oponopono Prayer to Shiv Shakti for Karmic ",
+          "evidence": [
+            {
+              "source": "interaction_prior",
+              "detail": "message-object interaction prior"
+            }
+          ]
+        },
+        {
+          "id": "copy_via_context_click",
+          "family": "invoke_affordance",
+          "status": "latent",
+          "confidence": 0.64,
+          "target_label": "Copy",
+          "available_now": false,
+          "available_after": "context_click_Ho'oponopono Prayer to Shiv Shakti for Karmic ",
+          "evidence": [
+            {
+              "source": "interaction_prior",
+              "detail": "message-object interaction prior"
+            }
+          ]
+        },
+        {
+          "id": "delete_via_context_click",
+          "family": "commit_irreversible",
+          "status": "latent",
+          "confidence": 0.64,
+          "target_label": "Delete",
+          "available_now": false,
+          "available_after": "context_click_Ho'oponopono Prayer to Shiv Shakti for Karmic ",
+          "reversible": false,
+          "evidence": [
+            {
+              "source": "interaction_prior",
+              "detail": "message-object interaction prior"
+            }
+          ]
+        },
+        {
+          "id": "react_via_hover",
+          "family": "invoke_affordance",
+          "status": "latent",
+          "confidence": 0.15,
+          "target_label": "React",
+          "available_now": false,
+          "available_after": "hover_Ho'oponopono Prayer to Shiv Shakti for Karmic Healing.",
+          "evidence": [
+            {
+              "source": "interaction_prior",
+              "detail": "message-object interaction prior"
+            }
+          ]
+        }
+      ],
+      "probe_actions": [
+        {
+          "id": "context_click_Ho'oponopono Prayer to Shiv Shakti for Karmic ",
+          "family": "reveal_actions",
+          "status": "probe",
+          "confidence": 0.8,
+          "target_label": "Ho'oponopono Prayer to Shiv Shakti for Karmic Healing...",
+          "actuators": [
+            {
+              "type": "context_click",
+              "confidence": 0.8,
+              "point": [
+                520,
+                650
+              ]
+            }
+          ],
+          "expected_outcomes": [
+            {
+              "probability": 0.8,
+              "surface": "context_menu",
+              "expected_information_gain": 0.8
+            }
+          ],
+          "may_reveal": [
+            {
+              "label": "Reply",
+              "probability": 0.8,
+              "family": "invoke_affordance",
+              "basis": "message-object interaction prior"
+            },
+            {
+              "label": "Forward",
+              "probability": 0.8,
+              "family": "invoke_affordance",
+              "basis": "message-object interaction prior"
+            },
+            {
+              "label": "Copy",
+              "probability": 0.8,
+              "family": "invoke_affordance",
+              "basis": "message-object interaction prior"
+            },
+            {
+              "label": "Delete",
+              "probability": 0.8,
+              "family": "commit_irreversible",
+              "basis": "message-object interaction prior"
+            }
+          ],
+          "expected_information_gain": 0.8,
+          "evidence": [
+            {
+              "source": "interaction_prior",
+              "detail": "message -> context_click"
+            }
+          ]
+        },
+        {
+          "id": "hover_Ho'oponopono Prayer to Shiv Shakti for Karmic Healing.",
+          "family": "hover",
+          "status": "probe",
+          "confidence": 0.3,
+          "target_label": "Ho'oponopono Prayer to Shiv Shakti for Karmic Healing...",
+          "actuators": [
+            {
+              "type": "hover",
+              "confidence": 0.3,
+              "point": [
+                520,
+                650
+              ]
+            }
+          ],
+          "may_reveal": [
+            {
+              "label": "Reply",
+              "probability": 0.5,
+              "family": "invoke_affordance",
+              "basis": "message-object interaction prior"
+            },
+            {
+              "label": "React",
+              "probability": 0.5,
+              "family": "invoke_affordance",
+              "basis": "message-object interaction prior"
+            },
+            {
+              "label": "Forward",
+              "probability": 0.5,
+              "family": "invoke_affordance",
+              "basis": "message-object interaction prior"
+            }
+          ],
+          "expected_information_gain": 0.5,
+          "evidence": [
+            {
+              "source": "interaction_prior",
+              "detail": "message -> hover"
+            }
+          ]
+        }
+      ],
+      "known_transition_edges": [
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "forward_picker",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "forward_picker",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "context_menu",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "open_entity",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "compose_search_query",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "open_entity",
+          "to_surface": "conversation",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "locate_content",
+          "to_surface": "conversation",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "dialog",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        }
+      ],
+      "excluded_actions": []
+    },
+    "last_action": {
+      "action": "LocateContent",
+      "family": "locate_content",
+      "target": "",
+      "text": "zarooratwala",
+      "result": {
+        "ok": true,
+        "message": "realization=native_find steps=1 text_match_reachable=False surface_exhausted=False surface_changed=True message=queried via find; accessibility text unavailable"
+      },
+      "you_predicted": {
+        "surface": "conversation",
+        "likely_controls": [
+          "search_highlight",
+          "message_matches"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 3,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "focused_field_role": "message_input",
+      "objects": [
+        {
+          "id": "msg_prayer_1",
+          "kind": "message",
+          "text": "Ho'oponopono Prayer to Shiv Shakti for Karmic Healing...",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            520,
+            650
+          ]
+        },
+        {
+          "id": "msg_prayer_2",
+          "kind": "message",
+          "text": "Om Namah Shivaya. Om Aim Hreem Kleem Chamundayai Viche...",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            520,
+            720
+          ]
+        },
+        {
+          "id": "msg_prayer_3",
+          "kind": "message",
+          "text": "Beloved Lord Shiva and Divine Mother Shakti, I bow at Your...",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            520,
+            800
+          ]
+        },
+        {
+          "id": "msg_deleted",
+          "kind": "message",
+          "text": "This message was deleted.",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            520,
+            550
+          ]
+        },
+        {
+          "id": "msg_remedy",
+          "kind": "message",
+          "text": "If you accept this remedy, kindly exchange energy of rs 11...",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            520,
+            580
+          ]
+        },
+        {
+          "id": "msg_gratitude",
+          "kind": "message",
+          "text": "Received with gratitude",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            520,
+            600
+          ]
+        },
+        {
+          "id": "msg_image",
+          "kind": "message",
+          "text": "Look how beautiful! [image]",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            820,
+            350
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "pallavi_chat_exists",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Pallavi chat visible and open"
+          ],
+          "confirmed_on_frame": 3
+        },
+        {
+          "predicate": "tanmay_contact_exists",
+          "value": true,
+          "confidence": 0.8,
+          "evidence": [
+            "goal specifies Tanmay as destination"
+          ],
+          "confirmed_on_frame": 3
+        },
+        {
+          "predicate": "zarooratwala_message_not_visible",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "visible messages show prayer content and image, no zarooratwala link visible",
+            "locate_content reported text_match_reachable=False"
+          ],
+          "confirmed_on_frame": 3
+        },
+        {
+          "predicate": "search_did_not_find_target",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": [
+            "locate_content result: text_match_reachable=False"
+          ],
+          "confirmed_on_frame": 3
+        }
+      ],
+      "progress": {
+        "phase": "locate_target_message",
+        "objective": "Find the zarooratwala message within Pallavi's conversation",
+        "notes": "Pallavi's chat is open. locate_content with 'zarooratwala' did not find a match. Need to scroll to find older messages or try alternative search approach."
+      },
+      "attempts": [
+        {
+          "frame": 1,
+          "action": "compose_search_query",
+          "target": "",
+          "result": "ok: found Pallavi chat"
+        },
+        {
+          "frame": 2,
+          "action": "open_entity",
+          "target": "chat_pallavi_row",
+          "result": "ok: conversation opened"
+        },
+        {
+          "frame": 2,
+          "action": "locate_content",
+          "target": "",
+          "result": "ok: realization=native_find steps=1 text_match_reachable=False - search did not find zarooratwala"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "target_object_visible": false,
+      "target_object_id": null,
+      "focused_field_role": "message_input"
+    },
+    "belief_updates": [
+      {
+        "predicate": "pallavi_chat_exists",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Pallavi chat visible and open"
+        ],
+        "confirmed_on_frame": 3
+      },
+      {
+        "predicate": "tanmay_contact_exists",
+        "value": true,
+        "confidence": 0.8,
+        "evidence": [
+          "goal specifies Tanmay as destination"
+        ],
+        "confirmed_on_frame": 3
+      },
+      {
+        "predicate": "zarooratwala_message_not_visible",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "visible messages show prayer content and image, no zarooratwala link visible",
+          "locate_content reported text_match_reachable=False"
+        ],
+        "confirmed_on_frame": 3
+      },
+      {
+        "predicate": "search_did_not_find_target",
+        "value": true,
+        "confidence": 0.9,
+        "evidence": [
+          "locate_content result: text_match_reachable=False"
+        ],
+        "confirmed_on_frame": 3
+      }
+    ],
+    "next_action": {
+      "family": "compose_search_query",
+      "text": "zarooratwala",
+      "confidence": 0.85
+    },
+    "next_actions": [
+      {
+        "rank": 1,
+        "family": "scroll",
+        "target_id": null,
+        "target_point": [
+          620,
+          400
+        ],
+        "text": "scroll_up",
+        "confidence": 0.75,
+        "expected_progress": 0.4,
+        "expected_information_gain": 0.6,
+        "risk": 0.1,
+        "reason": "The zarooratwala message is not visible in current view. locate_content failed to find it. Need to scroll up in the conversation to reveal older messages that may contain the zarooratwala link."
+      },
+      {
+        "rank": 2,
+        "family": "compose_search_query",
+        "target_id": null,
+        "target_point": [
+          180,
+          80
+        ],
+        "text": "zarooratwala",
+        "confidence": 0.6,
+        "expected_progress": 0.5,
+        "expected_information_gain": 0.7,
+        "risk": 0.1,
+        "reason": "Alternative approach: use the search field in the sidebar to search for zarooratwala across all chats, which may help locate the message."
+      }
+    ],
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "older_messages",
+        "search_highlights_if_any"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "msg_prayer_1",
+        "kind": "message",
+        "text": "Ho'oponopono Prayer to Shiv Shakti for Karmic Healing...",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          520,
+          650
+        ]
+      },
+      {
+        "id": "msg_prayer_2",
+        "kind": "message",
+        "text": "Om Namah Shivaya. Om Aim Hreem Kleem Chamundayai Viche...",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          520,
+          720
+        ]
+      },
+      {
+        "id": "msg_prayer_3",
+        "kind": "message",
+        "text": "Beloved Lord Shiva and Divine Mother Shakti, I bow at Your...",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          520,
+          800
+        ]
+      },
+      {
+        "id": "msg_deleted",
+        "kind": "message",
+        "text": "This message was deleted.",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          520,
+          550
+        ]
+      },
+      {
+        "id": "msg_remedy",
+        "kind": "message",
+        "text": "If you accept this remedy, kindly exchange energy of rs 11...",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          520,
+          580
+        ]
+      },
+      {
+        "id": "msg_gratitude",
+        "kind": "message",
+        "text": "Received with gratitude",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          520,
+          600
+        ]
+      },
+      {
+        "id": "msg_image",
+        "kind": "message",
+        "text": "Look how beautiful! [image]",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          820,
+          350
+        ]
+      }
+    ],
+    "missing_evidence": [
+      "whether zarooratwala message exists in this conversation",
+      "position of target message relative to current view"
+    ],
+    "evidence_gaps": [
+      "is the zarooratwala message above or below current viewport?",
+      "did the search actually execute within this conversation or globally?"
+    ],
+    "coverage": 0.6,
+    "missing_affordance_information": [
+      "scroll direction needed to find target message",
+      "whether WhatsApp search is conversation-scoped or global"
+    ],
+    "recommended_probe": {
+      "family": "scroll",
+      "target_id": null,
+      "may_reveal": [
+        "older_messages",
+        "zarooratwala_link_message"
+      ],
+      "reason": "Scrolling will reveal messages not currently in viewport, potentially finding the target zarooratwala message"
+    },
+    "scene_summary": "WhatsApp conversation with Pallavi is open. Visible messages include a prayer text and an image with caption 'Look how beautiful!'. The locate_content action for 'zarooratwala' did not find a match. Need to scroll to find older messages containing the zarooratwala link.",
+    "confidence": 0.75,
+    "model": "qwen3.5:397b",
+    "latency_s": 24.469
+  },
+  "shadow_task_state": {
+    "phase": "FIND_LINK",
+    "local_objective": "resolve source object matching query",
+    "predicates": {
+      "source_conversation_open": true,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "Pallavi",
+    "wa_screen": "CONVERSATION"
+  }
+}

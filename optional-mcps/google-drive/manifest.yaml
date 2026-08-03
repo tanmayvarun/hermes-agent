@@ -1,0 +1,39 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: google-drive
+description: Search and read Google Drive files via Google's remote MCP.
+source: https://developers.google.com/workspace/drive/api/reference/mcp
+
+# Pre-registered Google Cloud OAuth client required (no DCR). Enable
+# drive.googleapis.com + drivemcp.googleapis.com.
+transport:
+  type: http
+  url: https://drivemcp.googleapis.com/mcp/v1
+
+auth:
+  type: oauth
+  redirect_port: 18703
+  env:
+    - name: GOOGLE_DRIVE_MCP_CLIENT_ID
+      prompt: "Google OAuth Client ID (Web application)"
+      required: true
+      secret: false
+    - name: GOOGLE_DRIVE_MCP_CLIENT_SECRET
+      prompt: "Google OAuth Client Secret"
+      required: true
+      secret: true
+
+post_install: |
+  One-time Google Cloud setup (if you have not already):
+    1. Enable APIs: drive.googleapis.com and drivemcp.googleapis.com
+    2. OAuth consent scopes: drive.readonly, drive.file
+    3. Create OAuth Client ID type "Web application"
+    4. Add Authorized redirect URI:
+         http://127.0.0.1:18703/callback
+
+  Docs: https://developers.google.com/workspace/guides/configure-mcp-servers
+
+  After browser consent, restart Hermes to load Drive tools.
+  Reconfigure tools with: hermes mcp configure google-drive

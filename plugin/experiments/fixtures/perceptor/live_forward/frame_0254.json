@@ -1,0 +1,498 @@
+{
+  "frame": 254,
+  "captured_at": "2026-08-02T16:15:50",
+  "screenshot": "frame_0254.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 15,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "forward_search",
+          "kind": "search_input",
+          "text": "Tanmay",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            580,
+            330
+          ]
+        },
+        {
+          "id": "contact_1",
+          "kind": "contact",
+          "text": "Tanmay <> Artha",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            580,
+            390
+          ]
+        },
+        {
+          "id": "contact_2",
+          "kind": "contact",
+          "text": "Tanmay Saurabh Connect",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            580,
+            430
+          ]
+        },
+        {
+          "id": "contact_3",
+          "kind": "contact",
+          "text": "Tanmay <> Murali",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            580,
+            470
+          ]
+        },
+        {
+          "id": "contact_4",
+          "kind": "contact",
+          "text": "Tanmay <> Piyush",
+          "matches_goal": true,
+          "seen_on_frame": 15,
+          "point": [
+            580,
+            820
+          ]
+        },
+        {
+          "id": "forward_btn",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 15,
+          "point": [
+            590,
+            900
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "forward_picker_open",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Send to dialog visible with contact list"
+          ],
+          "confirmed_on_frame": 15
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "1 Selected shown at bottom toolbar"
+          ],
+          "confirmed_on_frame": 15
+        },
+        {
+          "predicate": "search_executed",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Search field contains 'Tanmay' with filtered results"
+          ],
+          "confirmed_on_frame": 15
+        }
+      ],
+      "progress": {
+        "phase": "select_destination",
+        "objective": "Select Tanmay contact from filtered list",
+        "notes": "Forward picker open with Tanmay search results displayed. Need to select the appropriate Tanmay contact from the list."
+      },
+      "attempts": [
+        {
+          "frame": 10,
+          "action": "invoke_affordance",
+          "target": "forward_btn",
+          "result": "ok: Forward clicked, context menu opened"
+        },
+        {
+          "frame": 11,
+          "action": "invoke_affordance",
+          "target": "forward_btn",
+          "result": "ok: Forward clicked in bottom toolbar"
+        },
+        {
+          "frame": 12,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: forward picker now open"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed Tanmay but went to wrong search field"
+        },
+        {
+          "frame": 13,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: Forward clicked again"
+        },
+        {
+          "frame": 14,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: forward picker now correctly open"
+        },
+        {
+          "frame": 14,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed 'Tanmay' into search field"
+        },
+        {
+          "frame": 15,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi zarooratwala' into search field label='Tanmay' AXValue='Pallavi zarooratwala' open='Cmd+F search shor"
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 16,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "Type",
+      "family": "type_query",
+      "target": "Search",
+      "text": "Pallavi zarooratwala",
+      "result": {
+        "ok": true,
+        "message": "typed 'Pallavi zarooratwala' into search field label='Tanmay' AXValue='Pallavi zarooratwala' open='Cmd+F search shortcut' evidence=\"AXTextField value='Pallavi z"
+      },
+      "you_predicted": {
+        "surface": "forward_picker",
+        "likely_controls": [
+          "selected_contact_indicator",
+          "forward_button_enabled"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 16,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "forward_search",
+          "kind": "search_input",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 16,
+          "point": [
+            585,
+            325
+          ]
+        },
+        {
+          "id": "clear_search",
+          "kind": "button",
+          "text": "Clear search",
+          "matches_goal": false,
+          "seen_on_frame": 16,
+          "point": [
+            655,
+            325
+          ]
+        },
+        {
+          "id": "no_results",
+          "kind": "label",
+          "text": "No results",
+          "matches_goal": false,
+          "seen_on_frame": 16,
+          "point": [
+            585,
+            525
+          ]
+        },
+        {
+          "id": "forward_btn",
+          "kind": "button",
+          "text": "Forward",
+          "matches_goal": false,
+          "seen_on_frame": 16,
+          "point": [
+            590,
+            900
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "forward_picker_open",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Send to dialog visible"
+          ],
+          "confirmed_on_frame": 16
+        },
+        {
+          "predicate": "message_selected",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "1 Selected shown at bottom toolbar"
+          ],
+          "confirmed_on_frame": 16
+        },
+        {
+          "predicate": "search_wrong_query",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": [
+            "Search field contains 'Pallavi zarooratwala' instead of destination 'Tanmay'"
+          ],
+          "confirmed_on_frame": 16
+        }
+      ],
+      "progress": {
+        "phase": "select_destination",
+        "objective": "Search for Tanmay contact in forward picker",
+        "notes": "Wrong search query was entered. Need to clear and search for 'Tanmay' instead of 'Pallavi zarooratwala'."
+      },
+      "attempts": [
+        {
+          "frame": 11,
+          "action": "invoke_affordance",
+          "target": "forward_btn",
+          "result": "ok: Forward clicked in bottom toolbar"
+        },
+        {
+          "frame": 12,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: forward picker now open"
+        },
+        {
+          "frame": 12,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed Tanmay but went to wrong search field"
+        },
+        {
+          "frame": 13,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: Forward clicked again"
+        },
+        {
+          "frame": 14,
+          "action": "invoke_affordance",
+          "target": "",
+          "result": "ok: forward picker now correctly open"
+        },
+        {
+          "frame": 14,
+          "action": "type_query",
+          "target": "",
+          "result": "ok: typed 'Tanmay' into search field"
+        },
+        {
+          "frame": 15,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed wrong query 'Pallavi zarooratwala' into forward picker search"
+        },
+        {
+          "frame": 16,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: search shows no results due to wrong query"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "target_object_visible": false,
+      "target_object_id": null
+    },
+    "belief_updates": [
+      {
+        "predicate": "forward_picker_open",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "Send to dialog visible"
+        ],
+        "confirmed_on_frame": 16
+      },
+      {
+        "predicate": "message_selected",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "1 Selected shown at bottom toolbar"
+        ],
+        "confirmed_on_frame": 16
+      },
+      {
+        "predicate": "search_wrong_query",
+        "value": true,
+        "confidence": 0.99,
+        "evidence": [
+          "Search field contains 'Pallavi zarooratwala' instead of destination 'Tanmay'"
+        ],
+        "confirmed_on_frame": 16
+      }
+    ],
+    "next_action": {
+      "family": "compose_search_query",
+      "target_id": null,
+      "target_point": null,
+      "text": "Tanmay",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "forward_picker",
+      "likely_controls": [
+        "contact_results",
+        "forward_button_enabled"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "forward_search",
+        "kind": "search_input",
+        "text": "Pallavi zarooratwala",
+        "matches_goal": false,
+        "seen_on_frame": 16,
+        "point": [
+          585,
+          325
+        ]
+      },
+      {
+        "id": "clear_search",
+        "kind": "button",
+        "text": "Clear search",
+        "matches_goal": false,
+        "seen_on_frame": 16,
+        "point": [
+          655,
+          325
+        ]
+      },
+      {
+        "id": "no_results",
+        "kind": "label",
+        "text": "No results",
+        "matches_goal": false,
+        "seen_on_frame": 16,
+        "point": [
+          585,
+          525
+        ]
+      },
+      {
+        "id": "forward_btn",
+        "kind": "button",
+        "text": "Forward",
+        "matches_goal": false,
+        "seen_on_frame": 16,
+        "point": [
+          590,
+          900
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "scene_summary": "Forward picker dialog is open with wrong search query 'Pallavi zarooratwala' showing no results. Need to clear this and search for destination contact 'Tanmay' instead.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 16.913
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "SEARCH_RESULTS"
+  }
+}

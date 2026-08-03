@@ -1,0 +1,44 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: hubspot
+description: Query HubSpot CRM contacts, companies, and deals via remote MCP.
+source: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server
+
+# HubSpot's remote MCP requires a user-level MCP auth app on the new
+# Developer Platform (pre-registered OAuth client — no DCR). Create the app
+# in HubSpot, copy client ID/secret, paste at install time.
+transport:
+  type: http
+  url: https://mcp.hubspot.com
+
+auth:
+  type: oauth
+  redirect_port: 18705
+  env:
+    - name: HUBSPOT_MCP_CLIENT_ID
+      prompt: "HubSpot MCP app Client ID"
+      required: true
+      secret: false
+    - name: HUBSPOT_MCP_CLIENT_SECRET
+      prompt: "HubSpot MCP app Client Secret"
+      required: true
+      secret: true
+
+post_install: |
+  One-time HubSpot setup:
+    1. On the new HubSpot Developer Platform, create an MCP auth app
+    2. Grant read scopes for the CRM objects you need
+    3. Set the app redirect URL to:
+         http://127.0.0.1:18705/callback
+    4. Copy Client ID + Client Secret into the install prompts (or
+       ~/.hermes/.env as HUBSPOT_MCP_CLIENT_ID / HUBSPOT_MCP_CLIENT_SECRET)
+
+  Docs: https://developers.hubspot.com/ai-tools/mcp
+
+  On first connection Hermes opens a browser for HubSpot consent. After
+  auth, restart your Hermes session so the HubSpot tools are loaded.
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure hubspot

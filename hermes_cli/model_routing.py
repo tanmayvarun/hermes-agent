@@ -126,7 +126,14 @@ TASK_PROFILES: dict[str, TaskModelProfile] = {
         prefer_structured_output=True,
         prefer_vision=True,
         prefer_local=False,
-        preferred_models=("qwen3.5:cloud", "kimi-k3:cloud", "gemma4:cloud"),
+        # Every model here MUST be included-plan. A single extra-usage model that
+        # 402s ("extra usage balance empty") marks the whole ollama-cloud provider
+        # unhealthy for 600s, poisoning the working vision model on every later
+        # cycle. kimi-k3 is extra-usage-only AND text-only (rejects images), so it
+        # was pure downside in the vision chain — dropped. qwen3.5 is the proven
+        # included-plan vision model; gemma4 is an included-plan safety net (worst
+        # case a 500, which does not poison the provider like a 402 does).
+        preferred_models=("qwen3.5:cloud", "gemma4:cloud"),
     ),
 }
 

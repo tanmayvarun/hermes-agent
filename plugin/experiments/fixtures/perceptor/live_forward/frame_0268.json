@@ -1,0 +1,459 @@
+{
+  "frame": 268,
+  "captured_at": "2026-08-02T18:11:47",
+  "screenshot": "frame_0268.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 6,
+      "surface": "chat_list",
+      "open_conversation": "Dev Delhi",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "search_field",
+          "kind": "search_input",
+          "text": "corrupted: rst Pallavi search result row to open conversation",
+          "matches_goal": false,
+          "seen_on_frame": 6,
+          "point": [
+            175,
+            85
+          ]
+        },
+        {
+          "id": "clear_button",
+          "kind": "button",
+          "text": "x clear search",
+          "matches_goal": false,
+          "seen_on_frame": 6,
+          "point": [
+            265,
+            85
+          ]
+        },
+        {
+          "id": "no_results",
+          "kind": "status_text",
+          "text": "No results",
+          "matches_goal": false,
+          "seen_on_frame": 6,
+          "point": [
+            175,
+            550
+          ]
+        },
+        {
+          "id": "dev_delhi_chat",
+          "kind": "open_conversation",
+          "text": "Dev Delhi conversation showing messages about GPU/meetings",
+          "matches_goal": false,
+          "seen_on_frame": 6,
+          "point": [
+            550,
+            400
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "search_corrupted",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Search field contains instruction text instead of query",
+            "Sidebar shows 'No results'"
+          ],
+          "confirmed_on_frame": 6
+        },
+        {
+          "predicate": "pallavi_conversation_not_opened",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Main chat pane still shows Dev Delhi"
+          ],
+          "confirmed_on_frame": 6
+        }
+      ],
+      "progress": {
+        "phase": "recover_search",
+        "objective": "Clear corrupted search and enter proper zarooratwala query",
+        "notes": "Search field corrupted with instruction text. Need to compose proper search query to find Pallavi's zarooratwala message."
+      },
+      "attempts": [
+        {
+          "frame": 2,
+          "action": "search_completed",
+          "target": "sidebar",
+          "result": "ok: search results displayed with Pallavi zarooratwala messages"
+        },
+        {
+          "frame": 2,
+          "action": "open_entity",
+          "target": "Click first Pallavi search result with zarooratwala.com link",
+          "result": "failed: conversation still shows Dev Delhi, Pallavi not opened"
+        },
+        {
+          "frame": 3,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(270.0, 330.0) via entity bounds"
+        },
+        {
+          "frame": 4,
+          "action": "open_entity",
+          "target": "Click Pallavi search result",
+          "result": "failed: conversation still shows Dev Delhi"
+        },
+        {
+          "frame": 4,
+          "action": "type_query",
+          "target": "Search",
+          "result": "failed: typed instruction text instead of query, corrupted search"
+        },
+        {
+          "frame": 5,
+          "action": "compose_search_query",
+          "target": "Search",
+          "result": "pending: will restore correct query"
+        },
+        {
+          "frame": 5,
+          "action": "open_entity",
+          "target": "zarooratwala",
+          "result": "ok: substrate=addressable_entity but screen unchanged"
+        },
+        {
+          "frame": 6,
+          "action": "open_entity",
+          "target": "zarooratwala",
+          "result": "ok: substrate=addressable_entity label=zarooratwala entity_id=None had_bounds=True; click 'zarooratwala' center=(262.0, "
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 7,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            984
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "OpenEntity",
+      "family": "open_entity",
+      "target": "zarooratwala",
+      "text": "zarooratwala",
+      "result": {
+        "ok": true,
+        "message": "substrate=addressable_entity label=zarooratwala entity_id=None had_bounds=True; click 'zarooratwala' center=(262.0, 128.0) via entity bounds"
+      },
+      "you_predicted": {
+        "surface": "chat_list",
+        "likely_controls": [
+          "search_results",
+          "pallavi_entries",
+          "message_previews"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 7,
+      "surface": "chat_list",
+      "open_conversation": "Dev Delhi",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "search_field",
+          "kind": "search_input",
+          "text": "corrupted: rst Pallavi search result row to open conversation",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            175,
+            85
+          ]
+        },
+        {
+          "id": "clear_button",
+          "kind": "button",
+          "text": "x clear search",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            265,
+            85
+          ]
+        },
+        {
+          "id": "no_results",
+          "kind": "status_text",
+          "text": "No results",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            175,
+            550
+          ]
+        },
+        {
+          "id": "dev_delhi_chat",
+          "kind": "open_conversation",
+          "text": "Dev Delhi conversation showing messages about GPU/meetings",
+          "matches_goal": false,
+          "seen_on_frame": 7,
+          "point": [
+            550,
+            400
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "search_corrupted",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "Search field contains instruction text instead of query",
+            "Sidebar shows 'No results'"
+          ],
+          "confirmed_on_frame": 7
+        },
+        {
+          "predicate": "pallavi_conversation_not_opened",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Main chat pane still shows Dev Delhi"
+          ],
+          "confirmed_on_frame": 7
+        }
+      ],
+      "progress": {
+        "phase": "recover_search",
+        "objective": "Clear corrupted search field and enter proper query",
+        "notes": "Search field corrupted with instruction text. Must clear it first before typing proper search query."
+      },
+      "attempts": [
+        {
+          "frame": 2,
+          "action": "open_entity",
+          "target": "Click first Pallavi search result with zarooratwala.com link",
+          "result": "failed: conversation still shows Dev Delhi, Pallavi not opened"
+        },
+        {
+          "frame": 3,
+          "action": "open_contact",
+          "target": "",
+          "result": "ok: click 'target' center=(270.0, 330.0) via entity bounds"
+        },
+        {
+          "frame": 4,
+          "action": "open_entity",
+          "target": "Click Pallavi search result",
+          "result": "failed: conversation still shows Dev Delhi"
+        },
+        {
+          "frame": 4,
+          "action": "type_query",
+          "target": "Search",
+          "result": "failed: typed instruction text instead of query, corrupted search"
+        },
+        {
+          "frame": 5,
+          "action": "compose_search_query",
+          "target": "Search",
+          "result": "pending: will restore correct query"
+        },
+        {
+          "frame": 5,
+          "action": "open_entity",
+          "target": "zarooratwala",
+          "result": "ok: substrate=addressable_entity but screen unchanged"
+        },
+        {
+          "frame": 6,
+          "action": "open_entity",
+          "target": "zarooratwala",
+          "result": "ok: substrate=addressable_entity label=zarooratwala entity_id=None had_bounds=True; click 'zarooratwala' center=(262.0, "
+        },
+        {
+          "frame": 7,
+          "action": "click",
+          "target": "clear_button",
+          "result": "pending: will clear corrupted search text"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "chat_list",
+      "open_conversation": "Dev Delhi",
+      "target_object_visible": false,
+      "target_object_id": null,
+      "focused_field_role": "sidebar_search"
+    },
+    "belief_updates": [
+      {
+        "predicate": "search_corrupted",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Search field contains instruction text instead of query",
+          "Sidebar shows 'No results'"
+        ],
+        "confirmed_on_frame": 7
+      },
+      {
+        "predicate": "pallavi_conversation_not_opened",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "Main chat pane still shows Dev Delhi"
+        ],
+        "confirmed_on_frame": 7
+      }
+    ],
+    "next_action": {
+      "family": "click",
+      "target_id": null,
+      "target_point": [
+        265,
+        85
+      ],
+      "text": "click clear button to remove corrupted search text",
+      "confidence": 0.95
+    },
+    "expected_transition": {
+      "surface": "chat_list",
+      "likely_controls": [
+        "empty_search_field",
+        "recent_chats_list"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "search_field",
+        "kind": "search_input",
+        "text": "corrupted: rst Pallavi search result row to open conversation",
+        "matches_goal": false,
+        "seen_on_frame": 7,
+        "point": [
+          175,
+          85
+        ]
+      },
+      {
+        "id": "clear_button",
+        "kind": "button",
+        "text": "x clear search",
+        "matches_goal": false,
+        "seen_on_frame": 7,
+        "point": [
+          265,
+          85
+        ]
+      },
+      {
+        "id": "no_results",
+        "kind": "status_text",
+        "text": "No results",
+        "matches_goal": false,
+        "seen_on_frame": 7,
+        "point": [
+          175,
+          550
+        ]
+      },
+      {
+        "id": "dev_delhi_chat",
+        "kind": "open_conversation",
+        "text": "Dev Delhi conversation showing messages about GPU/meetings",
+        "matches_goal": false,
+        "seen_on_frame": 7,
+        "point": [
+          550,
+          400
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "scene_summary": "WhatsApp shows Dev Delhi conversation with corrupted search field containing instruction text. Sidebar shows 'No results'. Clicking the clear button (x) at the search field to remove the corrupted text before entering a proper search query for zarooratwala.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 14.477
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "LIST"
+  }
+}

@@ -1,0 +1,512 @@
+{
+  "frame": 376,
+  "captured_at": "2026-08-03T10:39:24",
+  "screenshot": "frame_0376.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 28,
+      "surface": "search",
+      "open_conversation": "",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "pallavi_search_result",
+          "kind": "search_result_row",
+          "text": "Pallavi - You: https://www.zarooratwala.com/...",
+          "matches_goal": true,
+          "seen_on_frame": 28,
+          "point": [
+            190,
+            200
+          ]
+        },
+        {
+          "id": "search_field",
+          "kind": "search_field",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 28,
+          "point": [
+            190,
+            85
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "zarooratwala_message_found",
+          "value": true,
+          "confidence": 0.98,
+          "evidence": [
+            "Search result shows zarooratwala link message from Pallavi"
+          ],
+          "confirmed_on_frame": 28
+        },
+        {
+          "predicate": "pallavi_chat_visible",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Pallavi row visible in search results"
+          ],
+          "confirmed_on_frame": 28
+        }
+      ],
+      "progress": {
+        "phase": "open_source_conversation",
+        "objective": "Click the Pallavi search result row to open the conversation",
+        "notes": "resolve_entity exhausted after 27 attempts. Switching to open_entity to click the visible search result row directly."
+      },
+      "attempts": [
+        {
+          "frame": 22,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 23,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 24,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 25,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi candidates=['Pallavi - You: https://www.zarooratwala.com/...'] ranked=["
+        },
+        {
+          "frame": 26,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 26,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi candidates=['Pallavi - You: https://www.zarooratwala.com/...'] ranked=["
+        },
+        {
+          "frame": 27,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi candidates=['Pallavi - You: https://www.zarooratwala.com/...'] ranked=["
+        },
+        {
+          "frame": 28,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi candidates=['Pallavi - You: https://www.zarooratwala.com/...'] ranked=["
+        }
+      ],
+      "exhausted": [
+        "resolve_entity_on_search_result"
+      ]
+    },
+    "observation": {
+      "frame": 29,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 900000,
+          "role": "AXStaticText",
+          "label": "Pallavi - You: https://www.zarooratwala.com/...",
+          "bounds": [
+            261,
+            276,
+            48,
+            48
+          ],
+          "description": "Pallavi - You: https://www.zarooratwala.com/..."
+        },
+        {
+          "id": 900001,
+          "role": "AXStaticText",
+          "label": "Pallavi zarooratwala",
+          "bounds": [
+            261,
+            104,
+            48,
+            48
+          ],
+          "description": "Pallavi zarooratwala"
+        },
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            984
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "resolve_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "affordance_frontier": {
+      "surface": "search",
+      "observed_actions": [],
+      "latent_actions": [],
+      "probe_actions": [],
+      "known_transition_edges": [
+        {
+          "from_action": "open_entity",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "compose_search_query",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "open_entity",
+          "to_surface": "conversation",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "locate_content",
+          "to_surface": "conversation",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "dialog",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "commit_irreversible",
+          "to_surface": "dialog",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        }
+      ],
+      "excluded_actions": []
+    },
+    "last_action": {
+      "action": "ResolveEntity",
+      "family": "resolve_entity",
+      "target": "Pallavi",
+      "text": "Pallavi",
+      "result": {
+        "ok": false,
+        "message": "substrate=candidate_set referent=Pallavi candidates=['Pallavi - You: https://www.zarooratwala.com/...'] ranked=[{'label': 'Pallavi - You: https://www.zarooratwa"
+      },
+      "you_predicted": {
+        "surface": "conversation",
+        "likely_controls": [
+          "message_list",
+          "input_field",
+          "chat_header",
+          "message_actions"
+        ]
+      }
+    },
+    "identical_readings_in_a_row": 27
+  },
+  "response": {
+    "world_model": {
+      "frame": 29,
+      "surface": "search",
+      "open_conversation": "",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "pallavi_search_result",
+          "kind": "search_result_row",
+          "text": "Pallavi - You: https://www.zarooratwala.com/...",
+          "matches_goal": true,
+          "seen_on_frame": 29,
+          "point": [
+            190,
+            200
+          ]
+        },
+        {
+          "id": "search_field",
+          "kind": "search_field",
+          "text": "Pallavi zarooratwala",
+          "matches_goal": false,
+          "seen_on_frame": 29,
+          "point": [
+            190,
+            85
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "zarooratwala_message_found",
+          "value": true,
+          "confidence": 0.98,
+          "evidence": [
+            "Search result shows zarooratwala link message from Pallavi"
+          ],
+          "confirmed_on_frame": 29
+        },
+        {
+          "predicate": "pallavi_chat_visible",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "Pallavi row visible in search results"
+          ],
+          "confirmed_on_frame": 29
+        }
+      ],
+      "progress": {
+        "phase": "open_source_conversation",
+        "objective": "Click the Pallavi search result row to open the conversation",
+        "notes": "resolve_entity exhausted after 28 attempts. Using open_entity to click the visible search result row directly."
+      },
+      "attempts": [
+        {
+          "frame": 22,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 23,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 24,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 25,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 26,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 26,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 27,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        },
+        {
+          "frame": 28,
+          "action": "resolve_entity",
+          "target": "Pallavi",
+          "result": "failed: substrate=candidate_set referent=Pallavi"
+        }
+      ],
+      "exhausted": [
+        "resolve_entity_on_search_result"
+      ]
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "search",
+      "open_conversation": "",
+      "target_object_visible": true,
+      "target_object_id": "pallavi_search_result",
+      "focused_field_role": "sidebar_search"
+    },
+    "belief_updates": [
+      {
+        "predicate": "zarooratwala_message_found",
+        "value": true,
+        "confidence": 0.98,
+        "evidence": [
+          "Search result shows zarooratwala link message from Pallavi"
+        ],
+        "confirmed_on_frame": 29
+      },
+      {
+        "predicate": "pallavi_chat_visible",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "Pallavi row visible in search results"
+        ],
+        "confirmed_on_frame": 29
+      }
+    ],
+    "next_action": {
+      "family": "open_entity",
+      "text": "Pallavi - You: https://www.zarooratwala.com/...",
+      "confidence": 0.95,
+      "target_point": [
+        190,
+        200
+      ],
+      "target_label": "Pallavi - You: https://www.zarooratwala.com/..."
+    },
+    "next_actions": [
+      {
+        "rank": 1,
+        "family": "open_entity",
+        "target_id": null,
+        "target_point": [
+          190,
+          200
+        ],
+        "text": "Pallavi search result row",
+        "confidence": 0.95,
+        "expected_progress": 0.4,
+        "expected_information_gain": 0.3,
+        "risk": 0.1,
+        "reason": "resolve_entity exhausted; clicking the visible Pallavi search result row directly to open the conversation containing the zarooratwala link"
+      },
+      {
+        "rank": 2,
+        "family": "click",
+        "target_id": null,
+        "target_point": [
+          190,
+          200
+        ],
+        "text": "Pallavi search result row",
+        "confidence": 0.9,
+        "expected_progress": 0.4,
+        "expected_information_gain": 0.3,
+        "risk": 0.15,
+        "reason": "Alternative: direct click on the search result row if open_entity doesn't work"
+      }
+    ],
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "message_list",
+        "input_field",
+        "chat_header",
+        "message_actions"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "pallavi_search_result",
+        "kind": "search_result_row",
+        "text": "Pallavi - You: https://www.zarooratwala.com/...",
+        "matches_goal": true,
+        "seen_on_frame": 29,
+        "point": [
+          190,
+          200
+        ]
+      },
+      {
+        "id": "search_field",
+        "kind": "search_field",
+        "text": "Pallavi zarooratwala",
+        "matches_goal": false,
+        "seen_on_frame": 29,
+        "point": [
+          190,
+          85
+        ]
+      }
+    ],
+    "missing_evidence": [],
+    "evidence_gaps": [],
+    "coverage": 0.9,
+    "missing_affordance_information": [
+      "Whether the search result row is clickable via open_entity vs click"
+    ],
+    "recommended_probe": {},
+    "scene_summary": "WhatsApp search results showing Pallavi conversation with zarooratwala link. The main conversation area is empty. Need to click the Pallavi search result row to open the conversation.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 14.26
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "SEARCH_RESULTS"
+  }
+}

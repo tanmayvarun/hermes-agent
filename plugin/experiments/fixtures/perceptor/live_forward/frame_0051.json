@@ -1,0 +1,219 @@
+{
+  "frame": 51,
+  "captured_at": "2026-08-02T11:17:28",
+  "screenshot": "frame_0051.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "task_state": {
+      "phase": "FIND_LINK",
+      "local_objective": "resolve source object matching query",
+      "source_conversation_open": true,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "current_observation": {
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "screen": "CONVERSATION",
+      "search_visible": false,
+      "search_query": "",
+      "open_conversation": "Pallavi",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    "recent_transition": {
+      "previous_action": {
+        "action": "Observe",
+        "family": "observe",
+        "target": "",
+        "text": ""
+      },
+      "previous_result": {
+        "ok": true,
+        "message": "observe"
+      },
+      "previous_observed_state": {
+        "surface": "conversation",
+        "open_conversation": "Pallavi",
+        "target_object_visible": false
+      },
+      "expected": {
+        "surface": "search",
+        "likely_controls": [
+          "search_input",
+          "clear_button",
+          "search_results"
+        ]
+      },
+      "observed_delta": "you have read this same screen 5 times in a row — the last action did not move the task forward, so try a different action or a different target"
+    },
+    "exploration": {
+      "attempted_in_current_state": [
+        "scroll||up",
+        "click||"
+      ],
+      "recent_failures": [
+        "no_progress_watchdog",
+        "semantic_repeat_replan",
+        "no_progress_watchdog",
+        "semantic_repeat_replan"
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence"
+    ]
+  },
+  "response": {
+    "observed_state": {
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "target_object_visible": false,
+      "target_object_id": null
+    },
+    "belief_updates": [
+      {
+        "predicate": "search_needed",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "zarooratwala link not visible in current conversation view",
+          "multiple scroll attempts failed to find target",
+          "search field visible at top of chat list"
+        ]
+      },
+      {
+        "predicate": "conversation_loaded",
+        "value": true,
+        "confidence": 0.9,
+        "evidence": [
+          "Pallavi conversation is open and displaying messages",
+          "messages visible from 6:31 PM and 10:26 PM"
+        ]
+      }
+    ],
+    "next_action": {
+      "family": "click",
+      "target_id": null,
+      "target_point": [
+        185,
+        82
+      ],
+      "text": "",
+      "confidence": 0.85
+    },
+    "expected_transition": {
+      "surface": "search",
+      "likely_controls": [
+        "search_input",
+        "clear_button",
+        "search_results"
+      ]
+    },
+    "visible_objects": [
+      {
+        "kind": "search_field",
+        "text": "Pallavi",
+        "point": [
+          185,
+          82
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "Don't share your OTP with anyone",
+        "point": [
+          400,
+          250
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "JAY JAGANNATH CARTOO...",
+        "point": [
+          400,
+          500
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "Lucky girl",
+        "point": [
+          850,
+          720
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "First customer to get otp 1000",
+        "point": [
+          850,
+          750
+        ],
+        "matches_goal": false
+      },
+      {
+        "kind": "message",
+        "text": "my sis is special",
+        "point": [
+          850,
+          780
+        ],
+        "matches_goal": false
+      }
+    ],
+    "missing_evidence": [
+      "zarooratwala link message",
+      "search_within_conversation_control"
+    ],
+    "scene_summary": "WhatsApp is open with the Pallavi conversation displayed. The zarooratwala link is not visible in the current view. The search field at the top shows 'Pallavi' which filters the chat list. I will click on this search field to modify the search query to find the zarooratwala link across conversations.",
+    "confidence": 0.85,
+    "model": "qwen3.5:397b",
+    "latency_s": 21.862
+  }
+}

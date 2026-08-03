@@ -1,0 +1,23 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: asana
+description: Manage Asana tasks, projects, goals, and portfolios.
+source: https://developers.asana.com/docs/using-asanas-mcp-server
+
+# Asana's official V2 MCP (Streamable HTTP). V1 SSE was deprecated — use
+# /v2/mcp only.
+transport:
+  type: http
+  url: https://mcp.asana.com/v2/mcp
+
+auth:
+  type: oauth
+
+post_install: |
+  On first connection, Hermes will open a browser to authenticate with Asana.
+  After auth, restart your Hermes session so the Asana tools are loaded.
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure asana

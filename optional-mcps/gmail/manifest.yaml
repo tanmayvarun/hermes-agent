@@ -1,0 +1,54 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: gmail
+description: Search, read, and draft Gmail messages via Google's remote MCP.
+source: https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server
+
+# Google Workspace MCP servers require a pre-registered OAuth client in your
+# Google Cloud project (no Dynamic Client Registration). Create a Web
+# application OAuth client, enable gmail.googleapis.com + gmailmcp.googleapis.com,
+# then paste the client ID/secret at install time.
+transport:
+  type: http
+  url: https://gmailmcp.googleapis.com/mcp/v1
+
+auth:
+  type: oauth
+  # Fixed callback port so the redirect URI is stable in Google Cloud Console.
+  redirect_port: 18701
+  env:
+    - name: GMAIL_MCP_CLIENT_ID
+      prompt: "Google OAuth Client ID (Web application)"
+      required: true
+      secret: false
+    - name: GMAIL_MCP_CLIENT_SECRET
+      prompt: "Google OAuth Client Secret"
+      required: true
+      secret: true
+
+post_install: |
+  IMPORTANT — Google's hosted Gmail MCP (gmailmcp.googleapis.com) is still
+  Developer Preview. Personal @gmail.com accounts typically get
+  "The caller does not have permission" on every tool call even when the
+  classic Gmail API works. Prefer the bundled `google-workspace` skill
+  (Gmail REST via Desktop OAuth) for consumer Gmail; use browser /
+  computer-use for UI-only tasks. Revisit this MCP when Google opens it
+  more broadly (Workspace Developer Preview enrollment may be required).
+
+  One-time Google Cloud setup (if you have not already):
+    1. Enable APIs: gmail.googleapis.com and gmailmcp.googleapis.com
+    2. Configure OAuth consent screen + scopes (gmail.readonly, gmail.compose)
+    3. Create OAuth Client ID type "Web application"
+    4. Add Authorized redirect URI:
+         http://127.0.0.1:18701/callback
+       (and http://localhost:18701/callback if your IdP prefers localhost)
+
+  Docs: https://developers.google.com/workspace/guides/configure-mcp-servers
+
+  On first Hermes connection a browser opens for Google consent. After auth,
+  restart your Hermes session so the Gmail tools are loaded.
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure gmail

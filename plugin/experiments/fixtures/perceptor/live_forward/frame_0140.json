@@ -1,0 +1,331 @@
+{
+  "frame": 140,
+  "captured_at": "2026-08-02T15:00:26",
+  "screenshot": "frame_0140.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 2,
+      "surface": "search",
+      "open_conversation": "",
+      "objects": [
+        {
+          "id": "search_field",
+          "kind": "search_field",
+          "text": "Links Pallavi WhatsApp",
+          "matches_goal": false,
+          "seen_on_frame": 2,
+          "point": [
+            180,
+            80
+          ]
+        },
+        {
+          "id": "search_result_1",
+          "kind": "search_result",
+          "text": "Godrej Nurture - Care & Share - pallavi... WhatsApp link",
+          "matches_goal": false,
+          "seen_on_frame": 2,
+          "point": [
+            190,
+            200
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "current_search_wrong",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": [
+            "search shows Godrej Nurture message, not zarooratwala link"
+          ],
+          "confirmed_on_frame": 2
+        },
+        {
+          "predicate": "pallavi_conversation_exists",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "visible in chat list at frame 1"
+          ],
+          "confirmed_on_frame": 1
+        }
+      ],
+      "progress": {
+        "phase": "locate_content",
+        "objective": "Search for zarooratwala message to find the link",
+        "notes": "Current search results don't show zarooratwala - need to search for it specifically"
+      },
+      "attempts": [
+        {
+          "frame": 1,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi WhatsApp' into search field"
+        },
+        {
+          "frame": 2,
+          "action": "observe",
+          "target": "",
+          "result": "search results show Godrej Nurture, not zarooratwala"
+        },
+        {
+          "frame": 2,
+          "action": "compose_search_query",
+          "target": "",
+          "result": "ok: substrate=task_evidence chosen=zarooratwala Pallavi queries=[{'q': 'zarooratwala Pallavi', 'why': \"Prior search for "
+        }
+      ],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 3,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 2,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [
+            105,
+            25,
+            1710,
+            988
+          ]
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "image_size": [
+        1280,
+        720
+      ]
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "commit_irreversible"
+    ],
+    "last_action": {
+      "action": "ComposeSearchQuery",
+      "family": "compose_search_query",
+      "target": "",
+      "text": "zarooratwala",
+      "result": {
+        "ok": true,
+        "message": "substrate=task_evidence chosen=zarooratwala Pallavi queries=[{'q': 'zarooratwala Pallavi', 'why': \"Prior search for 'Pallavi WhatsApp' returned unrelated result"
+      },
+      "you_predicted": {
+        "surface": "search",
+        "likely_controls": [
+          "search_results",
+          "message_preview"
+        ]
+      }
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 3,
+      "surface": "search",
+      "open_conversation": "",
+      "objects": [
+        {
+          "id": "search_field",
+          "kind": "search_field",
+          "text": "Pallavi WhatsAppzarooratwala Pallavi",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            180,
+            80
+          ]
+        },
+        {
+          "id": "no_results",
+          "kind": "status_text",
+          "text": "No results",
+          "matches_goal": false,
+          "seen_on_frame": 3,
+          "point": [
+            190,
+            550
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "search_query_malformed",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "search field shows concatenated queries: 'Pallavi WhatsAppzarooratwala Pallavi'"
+          ],
+          "confirmed_on_frame": 3
+        },
+        {
+          "predicate": "pallavi_conversation_exists",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "visible in chat list at frame 1"
+          ],
+          "confirmed_on_frame": 1
+        }
+      ],
+      "progress": {
+        "phase": "locate_content",
+        "objective": "Fix search query to find zarooratwala message",
+        "notes": "Search query got concatenated - need to clear and search for just 'zarooratwala'"
+      },
+      "attempts": [
+        {
+          "frame": 1,
+          "action": "type_query",
+          "target": "Search",
+          "result": "ok: typed 'Pallavi WhatsApp' into search field"
+        },
+        {
+          "frame": 2,
+          "action": "observe",
+          "target": "",
+          "result": "search results show Godrej Nurture, not zarooratwala"
+        },
+        {
+          "frame": 2,
+          "action": "compose_search_query",
+          "target": "",
+          "result": "ok: substrate=task_evidence chosen=zarooratwala Pallavi"
+        },
+        {
+          "frame": 3,
+          "action": "observe",
+          "target": "",
+          "result": "No results - query malformed with concatenated text"
+        }
+      ],
+      "exhausted": []
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "search",
+      "open_conversation": "",
+      "target_object_visible": false,
+      "target_object_id": null
+    },
+    "belief_updates": [
+      {
+        "predicate": "search_query_malformed",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "search field shows concatenated queries: 'Pallavi WhatsAppzarooratwala Pallavi'"
+        ],
+        "confirmed_on_frame": 3
+      },
+      {
+        "predicate": "pallavi_conversation_exists",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "visible in chat list at frame 1"
+        ],
+        "confirmed_on_frame": 1
+      }
+    ],
+    "next_action": {
+      "family": "compose_search_query",
+      "target_id": null,
+      "target_point": null,
+      "text": "zarooratwala",
+      "confidence": 0.9
+    },
+    "expected_transition": {
+      "surface": "search",
+      "likely_controls": [
+        "search_results",
+        "message_preview"
+      ]
+    },
+    "visible_objects": [
+      {
+        "id": "search_field",
+        "kind": "search_field",
+        "text": "Pallavi WhatsAppzarooratwala Pallavi",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          180,
+          80
+        ]
+      },
+      {
+        "id": "no_results",
+        "kind": "status_text",
+        "text": "No results",
+        "matches_goal": false,
+        "seen_on_frame": 3,
+        "point": [
+          190,
+          550
+        ]
+      }
+    ],
+    "missing_evidence": [
+      "actual zarooratwala message content"
+    ],
+    "scene_summary": "Search field contains malformed concatenated query 'Pallavi WhatsAppzarooratwala Pallavi' showing 'No results'. Need to compose a clean search query for just 'zarooratwala' to find the link message.",
+    "confidence": 0.9,
+    "model": "qwen3.5:397b",
+    "latency_s": 12.089
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "SEARCH_RESULTS"
+  }
+}

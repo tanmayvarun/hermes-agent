@@ -72,6 +72,10 @@ class AuthSpec:
     provider: Optional[str] = None
     scopes: List[str] = field(default_factory=list)
     env_var: Optional[str] = None
+    # Fixed loopback callback port for pre-registered OAuth clients
+    # (Google Workspace, HubSpot, …) that reject Dynamic Client Registration
+    # and require an exact redirect URI. 0 / unset = auto-pick (DCR-friendly).
+    redirect_port: Optional[int] = None
 
 
 @dataclass
@@ -222,12 +226,27 @@ def _parse_manifest(path: Path) -> CatalogEntry:
     if not isinstance(env_list_raw, list):
         raise CatalogError(f"{path}: auth.env must be a list")
     env_list = [_parse_env_spec(e) for e in env_list_raw]
+    redirect_port_raw = auth_raw.get("redirect_port")
+    redirect_port: Optional[int] = None
+    if redirect_port_raw is not None:
+        try:
+            redirect_port = int(redirect_port_raw)
+        except (TypeError, ValueError) as exc:
+            raise CatalogError(
+                f"{path}: auth.redirect_port must be an integer"
+            ) from exc
+        if redirect_port < 0 or redirect_port > 65535:
+            raise CatalogError(
+                f"{path}: auth.redirect_port must be in 0..65535"
+            )
+
     auth = AuthSpec(
         type=a_type,
         env=env_list,
         provider=auth_raw.get("provider"),
         scopes=list(auth_raw.get("scopes") or []),
         env_var=auth_raw.get("env_var"),
+        redirect_port=redirect_port,
     )
 
     tools_raw = data.get("tools") or {}
@@ -490,6 +509,32 @@ def _build_server_config(
         cfg["url"] = t.url
         if entry.auth.type == "oauth":
             cfg["auth"] = "oauth"
+            oauth_block: Dict[str, Any] = {}
+            if entry.auth.scopes:
+                oauth_block["scope"] = " ".join(entry.auth.scopes)
+            if entry.auth.redirect_port:
+                oauth_block["redirect_port"] = entry.auth.redirect_port
+            # Pre-registered OAuth clients (Google Workspace, HubSpot, …):
+            # auth.env entries named *_CLIENT_ID / *_CLIENT_SECRET are
+            # prompted into ~/.hermes/.env and referenced here via ${VAR}
+            # interpolation (same pattern as bearer headers).
+            for spec in entry.auth.env:
+                upper = spec.name.upper()
+                if upper.endswith("CLIENT_ID") or upper == "CLIENT_ID":
+                    oauth_block["client_id"] = f"${{{spec.name}}}"
+                elif upper.endswith("CLIENT_SECRET") or upper == "CLIENT_SECRET":
+                    oauth_block["client_secret"] = f"${{{spec.name}}}"
+            if oauth_block:
+                cfg["oauth"] = oauth_block
+        elif entry.auth.type == "api_key":
+            # HTTP + api_key → Authorization: Bearer ${ENV} using the first
+            # secret env var (Stripe restricted keys, personal API tokens, …).
+            for spec in entry.auth.env:
+                if spec.secret:
+                    cfg["headers"] = {
+                        "Authorization": f"Bearer ${{{spec.name}}}",
+                    }
+                    break
     return cfg
 
 
@@ -719,6 +764,12 @@ def install_entry(entry: CatalogEntry, *, enable: bool = True) -> None:
         print(color("  Configure credentials:", Colors.CYAN))
         _prompt_env_vars(entry.auth.env)
     elif entry.auth.type == "oauth":
+        # Pre-registered OAuth clients prompt for client_id/secret first
+        # (Google Workspace, HubSpot). Native DCR servers leave auth.env empty.
+        if entry.auth.env:
+            print()
+            print(color("  Configure OAuth client credentials:", Colors.CYAN))
+            _prompt_env_vars(entry.auth.env)
         if entry.auth.provider:
             # Case 2: provider-mediated (Google, GitHub, etc.). We rely on
             # the existing `hermes auth <provider>` flow. Surface guidance
@@ -732,7 +783,7 @@ def install_entry(entry: CatalogEntry, *, enable: bool = True) -> None:
             ))
         else:
             print(color(
-                "  This MCP uses native OAuth 2.1; tokens will be acquired "
+                "  This MCP uses OAuth 2.1; tokens will be acquired "
                 "on first connection (browser flow).",
                 Colors.DIM,
             ))

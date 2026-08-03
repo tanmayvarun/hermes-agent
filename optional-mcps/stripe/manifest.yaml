@@ -1,0 +1,34 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: stripe
+description: Query Stripe customers, charges, subscriptions, and more.
+source: https://docs.stripe.com/mcp
+
+# Stripe MCP accepts OAuth OR a static restricted API key as Bearer.
+# For an agent / unattended Hermes gateway, OAuth grants get revoked on a
+# recurring basis (see optional-skills/mcp/mcp-oauth-remote-gateway). Prefer
+# a restricted key — no session, no refresh, no expiry until you revoke it.
+transport:
+  type: http
+  url: https://mcp.stripe.com
+
+auth:
+  type: api_key
+  env:
+    - name: MCP_STRIPE_API_KEY
+      prompt: "Stripe restricted API key (rk_live_… or rk_test_…)"
+      required: true
+      secret: true
+
+post_install: |
+  Create a Restricted key in Stripe Dashboard → Developers → API keys.
+  Grant only the scopes this agent needs (e.g. read on Customers/Charges/
+  Subscriptions; add write scopes only if you want mutating tools).
+
+  Hermes stores the key in ~/.hermes/.env as MCP_STRIPE_API_KEY and sends it
+  as Authorization: Bearer on every request.
+
+  Start a new Hermes session to load the Stripe tools.
+  Reconfigure tools with: hermes mcp configure stripe

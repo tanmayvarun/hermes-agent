@@ -1,0 +1,29 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: figma
+description: Read Figma design files, components, and comments via Figma's remote MCP.
+source: https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/
+
+# Figma's hosted remote MCP. NOTE: Figma currently allowlists MCP clients
+# (VS Code, Cursor, Claude Code, …). Hermes may need to be added to that
+# allowlist / waitlist before the OAuth flow succeeds — see post_install.
+transport:
+  type: http
+  url: https://mcp.figma.com/mcp
+
+auth:
+  type: oauth
+
+post_install: |
+  On first connection, Hermes will open a browser to authenticate with Figma.
+
+  IMPORTANT: Figma's remote MCP currently only accepts clients listed in the
+  Figma MCP Catalog. If OAuth fails with a client-not-allowed error, request
+  Hermes access via Figma's developer waitlist, or use Figma's desktop MCP
+  server instead (local, via the Figma desktop app).
+
+  After auth, restart your Hermes session so the Figma tools are loaded.
+  You can re-run the tool checklist any time with:
+    hermes mcp configure figma

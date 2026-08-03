@@ -1,0 +1,24 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: notion
+description: Search, read, and write Notion pages and databases.
+source: https://developers.notion.com/guides/mcp/get-started-with-mcp
+
+# Notion ships a hosted remote MCP server (Streamable HTTP) with native
+# OAuth. The open-source notion-mcp-server is soft-deprecated; use this
+# hosted endpoint instead.
+transport:
+  type: http
+  url: https://mcp.notion.com/mcp
+
+auth:
+  type: oauth
+
+post_install: |
+  On first connection, Hermes will open a browser to authenticate with Notion.
+  After auth, restart your Hermes session so the Notion tools are loaded.
+
+  You can re-run the tool checklist any time with:
+    hermes mcp configure notion
