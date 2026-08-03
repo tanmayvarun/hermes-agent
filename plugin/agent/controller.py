@@ -69,19 +69,20 @@ def _meta_perception_enabled() -> bool:
     return str(os.getenv("HERMES_META_PERCEPTION", "")).strip().lower() in _TRUE_ENV
 
 
-# Attribution signatures that mean the last action did not do what we expected:
-# either the world did not move, moved backwards, or moved in a way we could not
-# confirm. These raise a "surprise" the executive reacts to (verify / re-perceive
-# before blindly re-acting) instead of the old always-forward march.
+# Attribution signatures that mean the last action moved the world in a way we
+# did NOT predict: it went backwards, landed somewhere unexpected, or a
+# transition happened that we could not confirm. These raise a "surprise" the
+# executive reacts to (verify / re-perceive to re-understand before re-acting).
+#
+# A plain no-op (no_transition / no_effect, change_score 0) is deliberately NOT
+# a surprise here: re-perceiving an identical world tells us nothing. That is the
+# stale case, handled by backtrack, not by looking again.
 _SURPRISE_EFFECTS = {
-    "no_transition",
     "regression",
-    "transition_not_perceived",
-    "missing_geometry",
     "unexpected_transition",
+    "transition_not_perceived",
 }
 _SURPRISE_OUTCOMES = {
-    TransitionOutcome.NO_EFFECT.value,
     TransitionOutcome.REGRESSION.value,
     TransitionOutcome.UNCERTAIN.value,
 }
