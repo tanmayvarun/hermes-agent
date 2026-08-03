@@ -16,6 +16,7 @@ from plugin.agent.whatsapp_view import (
     resolve_contact_entity,
 )
 from plugin.agent.conversation_reasoning import rank_conversation_messages
+from plugin.agent.capabilities.locate_content import MACOS_FIND as _MACOS_FIND
 from plugin.perception.representation import build_perception_result, structured_perception_bridge
 from plugin.worldmodel.entities.entity import Entity
 from plugin.worldmodel.entities.normalize import _clean_label
@@ -736,6 +737,10 @@ def _infer_forward_phase(
 
 class WhatsAppOverlay:
     app_names: List[str] = ["whatsapp", "WhatsApp"]
+    # WhatsApp exposes the standard macOS find chord for in-conversation search;
+    # declaring it (rather than scripting a search) lets locate_content pick the
+    # native find realization before falling back to a scroll scan.
+    find_affordance = _MACOS_FIND
 
     def _view(self, world: WorldModel) -> WhatsAppWorldView:
         hint = str((getattr(world, "overlay_hints", None) or {}).get("search_query") or "")
