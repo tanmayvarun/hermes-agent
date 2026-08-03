@@ -59,6 +59,11 @@ class WorldPatch:
 class WorldModel:
     active_app: str = ""
     last_window_name: str = ""
+    # Latest screenshot path seen by the world model. The multimodal perceptor
+    # reasons over pixels; making the world model remember the current screenshot
+    # means every perception consumer (decision synthesis, unified cognition) can
+    # attach it without each call site having to thread the path through.
+    last_screenshot_path: str = ""
     current_screen: Optional[Screen] = None
     entities: Dict[int, Entity] = field(default_factory=dict)
     transitions: TransitionStore = field(default_factory=TransitionStore)
@@ -172,6 +177,8 @@ class WorldModel:
         """Observation (or FusedFrame projection) → belief update + identity track."""
         self.active_app = obs.app_name or self.active_app
         self.last_window_name = obs.window_name or self.last_window_name
+        if getattr(obs, "screenshot_path", ""):
+            self.last_screenshot_path = obs.screenshot_path
 
         if self._should_hold_last_good_world(obs):
             screen = self.current_screen or self.screens.detect(

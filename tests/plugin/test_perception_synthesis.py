@@ -366,12 +366,15 @@ def test_screen_understanding_ignores_legacy_non_cloud_override(monkeypatch):
     )
 
     targets = _perception_task_targets({"provider": "ollama-remote", "model": "qwen2.5:32b", "base_url": "http://ollama.test/v1"}, task_name="screen_understanding")
-    assert [(t["provider"], t["model"]) for t in targets[:3]] == [
+    # kimi-k3 was dropped from the vision chain: it is extra-usage-only (402s and
+    # poisons the whole ollama-cloud provider) and text-only (rejects images).
+    # The chain is now included-plan models only: qwen3.5 (vision) + gemma4 (safety net).
+    assert [(t["provider"], t["model"]) for t in targets[:2]] == [
         ("ollama-cloud", "qwen3.5:cloud"),
-        ("ollama-cloud", "kimi-k3:cloud"),
         ("ollama-cloud", "gemma4:cloud"),
     ]
-    assert all(t["provider"] == "ollama-cloud" for t in targets[:3])
+    assert "kimi-k3:cloud" not in [t["model"] for t in targets]
+    assert all(t["provider"] == "ollama-cloud" for t in targets[:2])
 
 
 def test_synthesize_perception_fails_hard_without_llm(monkeypatch):

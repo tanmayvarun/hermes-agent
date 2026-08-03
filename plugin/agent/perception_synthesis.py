@@ -740,6 +740,20 @@ def _perception_task_targets(
                         return i
                 return len(preferred)
 
+            # Screen understanding is a vision task: a text/code model cannot read
+            # the screenshot, so keeping it in the chain only wastes a call — and
+            # kimi-k3 in particular is extra-usage-only, whose 402 marks the whole
+            # ollama-cloud provider unhealthy and poisons the working vision model.
+            # The shared router still surfaces those models as ollama-cloud
+            # candidates, so reordering is not enough: drop everything outside the
+            # curated vision families (keeping any explicit rank-0 task override).
+            preferred_present = any(_preference_rank(t) < len(preferred) for t in targets)
+            if preferred_present:
+                targets = [
+                    t
+                    for t in targets
+                    if _preference_rank(t) < len(preferred) or int(t.get("rank", -1)) == 0
+                ]
             targets.sort(key=_preference_rank)
 
     if targets:
@@ -1103,6 +1117,7 @@ def _build_prompt(
                         and (data_url := _screenshot_to_data_url(
                             str((features.extras if isinstance(features.extras, dict) else {}).get("screenshot_path")
                                 or view.get("screenshot_path")
+                                or getattr(world, "last_screenshot_path", "")
                                 or "")
                         ))
                         else []
