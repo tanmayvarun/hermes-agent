@@ -925,6 +925,11 @@ def _coerce_state_features(features: Any) -> tuple[StateFeatures, Optional[Dict[
 @dataclass
 class PerceptionSynthesis:
     screen_type: str = "unknown"
+    # The application the eyes actually see in the pixels (e.g. "WhatsApp",
+    # "Safari", "Finder"). This is the object-permanence anchor: the executive
+    # compares it to the task's app to know whether it is still looking at the
+    # task surface or has drifted onto a foreign window.
+    application: str = ""
     active_surface: str = ""
     likely_next_family: str = "observe"
     likely_next_target: str = ""
@@ -939,6 +944,7 @@ class PerceptionSynthesis:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "screen_type": self.screen_type,
+            "application": self.application,
             "active_surface": self.active_surface,
             "likely_next_family": self.likely_next_family,
             "likely_next_target": self.likely_next_target,
@@ -1065,9 +1071,12 @@ def _build_prompt(
     if task_name == _SCREEN_UNDERSTANDING_TASK:
         payload["instructions"] = (
             "Infer screen meaning from the screenshot and AX evidence together. "
-            "Return strict JSON with screen_type, active_surface, likely_next_family, "
-            "likely_next_target, likely_next_text, confidence, avoid_families, "
-            "supporting_evidence, contradictions, needs_followup_observe."
+            "Report application: the name of the app/program actually shown in the "
+            "pixels (e.g. WhatsApp, Safari, Finder), independent of any window that "
+            "may overlap it. "
+            "Return strict JSON with screen_type, application, active_surface, "
+            "likely_next_family, likely_next_target, likely_next_text, confidence, "
+            "avoid_families, supporting_evidence, contradictions, needs_followup_observe."
         )
     elif _goal_needs_timeline_projection(goal):
         payload["instructions"] = (
@@ -1147,6 +1156,7 @@ def _parse_summary(parsed: Dict[str, Any], goal: Goal, view: Dict[str, Any], fea
     evidence = parsed.get("supporting_evidence") or parsed.get("evidence") or []
     contradictions = parsed.get("contradictions") or []
     screen_type = str(parsed.get("screen_type") or parsed.get("screen") or view.get("screen") or features.screen_bucket or "unknown").strip().lower() or "unknown"
+    application = str(parsed.get("application") or parsed.get("app") or "").strip()
     active_surface = str(parsed.get("active_surface") or parsed.get("surface") or features.extras.get("active_surface") or "").strip().lower()
     likely_next_family = str(parsed.get("likely_next_family") or parsed.get("next_family") or parsed.get("choice_family") or "observe").strip().lower() or "observe"
     likely_next_target = str(parsed.get("likely_next_target") or parsed.get("target") or "").strip()
@@ -1158,6 +1168,7 @@ def _parse_summary(parsed: Dict[str, Any], goal: Goal, view: Dict[str, Any], fea
         confidence = 0.0
     return PerceptionSynthesis(
         screen_type=screen_type,
+        application=application,
         active_surface=active_surface,
         likely_next_family=likely_next_family,
         likely_next_target=likely_next_target,

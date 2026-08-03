@@ -329,16 +329,42 @@ def build_view_features(
             worldview=wv,
         )
         if perception is not None:
+            # The eyes' focus reading: which app/layer/region/object the action
+            # centres on, with the object-permanence anchor (belongs_to_task /
+            # presence). Computed here so the audit log carries the full human
+            # reading, not just a flat surface label — and so a developer sees
+            # when the task surface has vanished behind a foreign app.
+            focus = None
+            focus_dict: Dict[str, Any] = {}
+            focus_summary = ""
+            try:
+                from plugin.agent.focus_of_action import focus_of_action_from_perception
+
+                focus = focus_of_action_from_perception(
+                    goal=goal,
+                    world=runtime.world_model,
+                    view=view,
+                    execution_state=getattr(runtime, "execution_state", None),
+                    application=getattr(perception, "application", "") or "",
+                )
+                focus_dict = focus.to_dict()
+                focus_summary = focus.summary
+            except Exception:
+                pass
+
             extras = feats.setdefault("extras", {})
             if isinstance(extras, dict):
                 extras["perception_llm"] = perception.to_dict()
                 extras["perception_summary"] = {
                     "screen_type": perception.screen_type,
+                    "application": getattr(perception, "application", "") or "",
                     "active_surface": perception.active_surface,
                     "likely_next_family": perception.likely_next_family,
                     "likely_next_target": perception.likely_next_target,
                     "confidence": round(float(perception.confidence or 0.0), 4),
                 }
+                if focus_dict:
+                    extras["focus_of_action"] = focus_dict
             summary_text = _format_perception_human_readable(
                 perception,
                 task_name=str((feats.get("extras") or {}).get("perception_task") or ""),
@@ -347,14 +373,18 @@ def build_view_features(
                 else None,
                 cache_hit=False,
             )
+            # The developer-facing audit text: the flat one-liner plus the
+            # thorough focus reading (app/presence, layer stack, region, object).
+            audit_text = summary_text + ("\n" + focus_summary if focus_summary else "")
             if log_fn is not None:
                 log_fn(
                     phase="perception_summary",
                     payload={
-                        "message": summary_text,
-                        "detail": summary_text,
-                        "text": summary_text,
+                        "message": audit_text,
+                        "detail": audit_text,
+                        "text": audit_text,
                         "screen_type": perception.screen_type,
+                        "application": getattr(perception, "application", "") or "",
                         "active_surface": perception.active_surface,
                         "likely_next_family": perception.likely_next_family,
                         "likely_next_target": perception.likely_next_target,
@@ -362,6 +392,8 @@ def build_view_features(
                         "confidence": round(float(perception.confidence or 0.0), 4),
                         "avoid_families": list(perception.avoid_families or []),
                         "needs_followup_observe": bool(perception.needs_followup_observe),
+                        "focus_of_action": focus_dict,
+                        "focus_summary": focus_summary,
                     },
                     status="ok",
                     iteration=0,
