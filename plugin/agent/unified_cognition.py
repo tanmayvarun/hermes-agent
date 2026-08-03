@@ -628,6 +628,21 @@ def build_decision_packet(
     unconfirmed = stale_beliefs(document, frame=frame)
     if unconfirmed:
         packet["unconfirmed_beliefs"] = unconfirmed
+
+    # The executive's perception objective for this look: the concrete questions
+    # it needs answered, where to focus, and how deep. A look is not a blank
+    # refresh — it carries what the executive is trying to learn, so the model
+    # prioritises resolving those questions (and reports them as evidence_gaps
+    # when it cannot). Derived from the prior frame's sufficiency judgement.
+    query = getattr(execution_state, "last_perception_query", None) if execution_state is not None else None
+    if isinstance(query, dict) and (query.get("questions") or query.get("objective")):
+        packet["perception_objective"] = {
+            "questions": [str(q) for q in (query.get("questions") or [])][:6],
+            "focus": str(query.get("focus") or ""),
+            "depth": str(query.get("depth") or "shallow"),
+            "objective": str(query.get("objective") or ""),
+            "completion_condition": str(query.get("completion_condition") or ""),
+        }
     return packet
 
 
@@ -821,6 +836,13 @@ _SYSTEM_PROMPT = (
     "fully legible, low when it is occluded, mid-scroll, or AX-starved. The "
     "executive uses both to decide whether to look again before it acts, so "
     "under-report coverage rather than overclaim.\n\n"
+    "perception_objective, when present, is what the executive needs this look "
+    "to establish: its questions are the uncertainties blocking progress, focus "
+    "is where to look, and completion_condition is what would end the look. "
+    "Prioritise resolving those questions -- answer them in your beliefs and "
+    "next_action, and if you cannot, name exactly what is missing in "
+    "evidence_gaps. A look that ignores the objective and returns a generic "
+    "refresh is wasted.\n\n"
     "world_model is carried forward verbatim, so it is the only memory you "
     "have. Return the whole updated document every time, not a diff. Keep what "
     "is still true, revise what the new evidence contradicts, and drop what no "

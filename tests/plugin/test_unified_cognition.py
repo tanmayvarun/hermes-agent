@@ -64,6 +64,37 @@ def test_packet_carries_ax_ids_and_bounds_for_grounding():
     assert packet["goal"]["destination"] == "Tanmay"
 
 
+def test_packet_carries_the_executive_perception_objective():
+    """A look is not a blank refresh: when the executive has a perception query,
+    its questions/focus/depth reach the perceptor so the look is objective-driven."""
+    world, _ = _world_with_entity()
+    state = ExecutionState()
+    state.last_perception_query = {
+        "questions": ["is the target message below the fold?"],
+        "focus": "conversation timeline",
+        "depth": "deep",
+        "objective": "locate the ZarooratWala link",
+        "completion_condition": "target row visible",
+    }
+    packet = build_decision_packet(_goal(), world, StateFeatures(app="WhatsApp"), state)
+
+    obj = packet.get("perception_objective")
+    assert obj is not None, "the executive's perception query must reach the packet"
+    assert obj["questions"] == ["is the target message below the fold?"]
+    assert obj["focus"] == "conversation timeline"
+    assert obj["depth"] == "deep"
+
+
+def test_packet_omits_perception_objective_when_the_look_is_generic():
+    """No query, no objective section — an empty query is a generic refresh."""
+    world, _ = _world_with_entity()
+    state = ExecutionState()
+    state.last_perception_query = {"questions": [], "objective": ""}
+    packet = build_decision_packet(_goal(), world, StateFeatures(app="WhatsApp"), state)
+
+    assert "perception_objective" not in packet
+
+
 def test_packet_carries_no_runtime_derived_task_state():
     """The runtime must not ship its own guess about the world.
 
