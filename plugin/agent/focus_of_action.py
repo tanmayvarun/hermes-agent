@@ -5,11 +5,12 @@ faculties live here, both about staying anchored to the task instead of merely
 narrating whatever pixels are on screen:
 
 * Foreground awareness (:func:`foreground_app_name`,
-  :func:`foreground_matches_task`). A human operator interrupted mid-task — a
-  call comes in, someone switches to YouTube — does not keep clicking blindly;
-  they wait until they are back in the right window. These helpers give the brain
-  that awareness so it can hold, persist its goal, and resume, rather than act on
-  the wrong surface (where keystrokes would land in the foreign app anyway).
+  :func:`foreground_matches_task`). Keeping the task app usable is the agent's
+  job, not the user's. Perception runs in the background (window-scoped capture
+  sees the app regardless of z-order), and before acting the agent uses these
+  helpers to notice its app is not frontmost and bring it forward itself,
+  persistently — keystrokes and clicks land in the frontmost window, so the agent
+  raises its own app rather than waiting for the user to do it.
 
 * Focus-of-action hierarchy (:class:`FocusOfAction`, added in a later pass): the
   structured ``app → layer → region → focus object`` reading with object
