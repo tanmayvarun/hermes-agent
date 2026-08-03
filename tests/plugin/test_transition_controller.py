@@ -386,6 +386,13 @@ def test_resolve_goal_no_progress_timeout_uses_config_and_goal_default(monkeypat
 
 
 def test_controller_honors_step_budget_without_early_termination(monkeypatch):
+    # This asserts the controller's raw budget mechanic: one executed step per
+    # loop turn until the step budget is reached. The executive-driver layer
+    # (on by default) legitimately spends some turns on non-executing THINK/PROBE
+    # moves, which decouples executed steps from loop turns; that behaviour is
+    # covered elsewhere. Gate it off here so the budget mechanic is tested in
+    # isolation and deterministically.
+    monkeypatch.setenv("HERMES_META_PERCEPTION", "0")
     runtime = RuntimeState(active_task="observe loop")
     goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
 
@@ -600,6 +607,10 @@ def test_controller_no_progress_watchdog_forces_replan(monkeypatch):
 
 
 def test_controller_stops_when_goal_wall_clock_budget_expires(monkeypatch):
+    # See the step-budget test: this checks the wall-clock budget mechanic in
+    # isolation from the executive-driver layer, where non-executing THINK/PROBE
+    # turns would otherwise decouple executed steps from loop turns.
+    monkeypatch.setenv("HERMES_META_PERCEPTION", "0")
     runtime = RuntimeState(active_task="observe loop")
     goal = Goal(kind="whatsapp_forward_message", contact="Pallavi", target_contact="Kulvinder")
 
