@@ -658,8 +658,13 @@ def test_exhausted_backtracks_commit_when_a_move_exists_else_escalate():
     ).action is MetaAction.ACT
 
 
-def test_executive_judgement_is_recorded_with_gate_off(tmp_path):
-    """The judgement is always-on even when it does not drive perception."""
+def test_executive_judgement_is_recorded_with_gate_off(tmp_path, monkeypatch):
+    """The judgement is always-on even when it does not drive perception.
+
+    The executive drives the loop by default now, so opting out (the legacy
+    always-perceive loop) requires setting the flag off explicitly.
+    """
+    monkeypatch.setenv("HERMES_META_PERCEPTION", "0")
     app = _call_app()
     log = EventLogger(tmp_path / "judge.jsonl", also_console=False, run_id="judge")
     runtime = RuntimeState()

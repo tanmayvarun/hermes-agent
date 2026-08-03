@@ -2,9 +2,7 @@
   "decision_families": [
     "open_contact",
     "select_content",
-    "observe",
-    "observe",
-    ""
+    "observe"
   ],
   "executed": [
     {
@@ -72,19 +70,27 @@
       ]
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 3,
       "observations": 1,
       "outcomes": []
     },
     {
+      "decisions": [],
+      "executions": [],
+      "iteration": 4,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 5,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
       "decisions": [
         {
           "action": "Observe",
@@ -93,27 +99,28 @@
         }
       ],
       "executions": [],
-      "iteration": 4,
+      "iteration": 6,
       "observations": 1,
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "",
-          "family": "",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
-      "iteration": 5,
+      "iteration": 7,
+      "observations": 1,
+      "outcomes": []
+    },
+    {
+      "decisions": [],
+      "executions": [],
+      "iteration": 8,
       "observations": 1,
       "outcomes": []
     }
   ],
   "result": {
-    "iterations": 5,
+    "iterations": 8,
     "ok": false,
-    "reason": "DecisionEngine produced no valid action"
+    "reason": "Maximum step count reached"
   }
 }

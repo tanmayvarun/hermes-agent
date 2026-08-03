@@ -65,15 +65,22 @@ _TRUE_ENV = {"1", "true", "yes", "on"}
 
 
 def _meta_perception_enabled() -> bool:
-    """Whether the executive's meta-action may gate top-of-loop re-perception.
+    """Whether the executive's meta-action drives control flow.
 
-    Off by default: the executive judgement is always *computed and recorded*
-    for observability, but it only drives control flow (skipping a re-perceive
-    on a stable world) when this flag is on.
+    On by default: the executive is the driver, not an observer. Its meta-action
+    (VERIFY / BACKTRACK / ASK_USER / THINK / PROBE) governs the loop — gating the
+    top-of-loop re-perceive and pre-empting this frame's grounded decision when
+    the move is a control-flow move rather than a plain act. Set
+    ``HERMES_META_PERCEPTION`` to ``0``/``false``/``no``/``off`` to fall back to
+    the legacy always-perceive loop (the judgement is still computed and
+    recorded for observability either way).
     """
     import os
 
-    return str(os.getenv("HERMES_META_PERCEPTION", "")).strip().lower() in _TRUE_ENV
+    raw = os.getenv("HERMES_META_PERCEPTION")
+    if raw is None or not raw.strip():
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
 # Attribution signatures that mean the last action moved the world in a way we
@@ -158,11 +165,18 @@ def _consume_surprise(execution_state: Any) -> None:
         execution_state.last_attribution = updated
 
 
-# Meta-actions that pre-empt executing this frame's grounded decision. THINK /
-# PERCEIVE / PROBE / ACT fall through to the normal decide -> execute path (the
-# re-perceive they want is gated at the top of the loop); these three are real
-# control-flow moves the executive takes instead of acting.
+# Meta-actions that unconditionally pre-empt this frame's grounded decision.
+# VERIFY/BACKTRACK/ASK_USER are terminal-ish control moves. THINK and PROBE are
+# deliberate detours handled separately (they are bounded and may fall through
+# to acting/observing). PERCEIVE/ACT fall through to the normal decide -> execute
+# path (the re-perceive PERCEIVE wants is gated at the top of the loop).
 _META_PREEMPTS = {MetaAction.VERIFY, MetaAction.BACKTRACK, MetaAction.ASK_USER}
+
+# THINK forces the next decision onto the deliberative path; PROBE steers it
+# toward a reveal. Both are bounded so a persistently ambiguous world escalates
+# (falls through to act/observe) instead of thinking or probing forever.
+_MAX_CONSECUTIVE_THINKS = 2
+_MAX_CONSECUTIVE_PROBES = 3
 
 # Backtracking retreats the branch to explore elsewhere. If it repeats this many
 # times with no real move in between, the branch space is exhausted and looking/
@@ -1622,14 +1636,35 @@ def run_goal_closed_loop(
         # than the old always-full-view assumption).
         perceptor_gaps: List[str] = []
         perceptor_coverage = coverage
+        probe_available = False
         _uni = getattr(runtime.execution_state, "last_unified_proposal", None)
         if isinstance(_uni, dict) and int(_uni.get("frame", -1)) == iteration:
             perceptor_gaps = [str(g) for g in (_uni.get("evidence_gaps") or []) if str(g).strip()]
+            probe_available = bool(_uni.get("probe_available"))
             if _uni.get("coverage") is not None:
                 try:
                     perceptor_coverage = float(_uni.get("coverage"))
                 except (TypeError, ValueError):
                     perceptor_coverage = coverage
+        # Ambiguity is the THINK trigger: an unresolved contradiction in the
+        # workspace, or being genuinely stuck (no grounded move, a look would not
+        # help, and the branch is not yet stale enough to backtrack). Consulting
+        # the reasoning model is the right move there, not another blind look.
+        _ws_now = workspace_of(runtime.execution_state)
+        contradiction_count = 0
+        if _ws_now is not None:
+            try:
+                contradiction_count = len(_ws_now.unresolved_contradictions)
+            except Exception:
+                contradiction_count = 0
+        stuck_without_route = (
+            not has_grounded_action
+            and not action_surprised
+            and not blocking_uncertainties
+            and not backtrack_exhausted
+        )
+        ambiguous = contradiction_count > 0 or stuck_without_route
+        steps_remaining = max(0, step_budget - iteration + 1)
         sufficiency, meta = assess_executive_judgement(
             runtime.execution_state,
             blocking_uncertainties=blocking_uncertainties,
@@ -1640,6 +1675,9 @@ def run_goal_closed_loop(
             last_action_surprised=action_surprised,
             awaiting_verification=awaiting_verification,
             hard_block=hard_block,
+            probe_available=probe_available,
+            ambiguous=ambiguous,
+            steps_remaining=steps_remaining,
         )
         # Backtracks exhausted: stop retreating (commit or escalate). Without this
         # the executive prefers BACKTRACK (higher value than a thin ACT) forever,
@@ -1743,15 +1781,93 @@ def run_goal_closed_loop(
                 _consume_surprise(runtime.execution_state)
                 # Verifying is a real move, not a retreat: the backtrack run ends.
                 runtime.execution_state.consecutive_backtracks = 0
+            # A terminal control move is neither a think nor a probe streak.
+            runtime.execution_state.consecutive_thinks = 0
+            runtime.execution_state.consecutive_probes = 0
             # Both VERIFY and BACKTRACK want a fresh look next iteration — never
             # let the perception gate reuse the prior snapshot after a meta move.
             prev_meta_suppress = False
             _wait(settle_s, f"executive {meta.action.value}")
             continue
 
+        # --- THINK / PROBE: deliberate detours that steer the next decision ---
+        # Unlike the terminal preempts these are bounded: a world that stays
+        # ambiguous or unreveal-able escalates to acting/observing rather than
+        # thinking or probing in place forever (the re-search failure class).
+        if meta_perception_enabled and meta.action == MetaAction.THINK:
+            runtime.execution_state.consecutive_backtracks = 0
+            runtime.execution_state.consecutive_probes = 0
+            think_n = int(getattr(runtime.execution_state, "consecutive_thinks", 0) or 0) + 1
+            runtime.execution_state.consecutive_thinks = think_n
+            if think_n <= _MAX_CONSECUTIVE_THINKS:
+                # Force the next decision onto the deliberative path (skip the
+                # multimodal fast path so the enumerate/score/consult reasoner runs).
+                runtime.execution_state.force_deliberation = True
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_think",
+                    payload={"meta_action": meta.to_dict(), "consecutive_thinks": think_n},
+                )
+                prev_meta_suppress = False
+                _wait(settle_s, "executive think")
+                continue
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="meta_think",
+                payload={
+                    "meta_action": meta.to_dict(),
+                    "consecutive_thinks": think_n,
+                    "handling": "exhausted_fall_through",
+                },
+                status="warn",
+            )
+            runtime.execution_state.consecutive_thinks = 0
+        elif meta_perception_enabled and meta.action == MetaAction.PROBE:
+            runtime.execution_state.consecutive_backtracks = 0
+            runtime.execution_state.consecutive_thinks = 0
+            probe_n = int(getattr(runtime.execution_state, "consecutive_probes", 0) or 0) + 1
+            runtime.execution_state.consecutive_probes = probe_n
+            if probe_n <= _MAX_CONSECUTIVE_PROBES:
+                # Steer the next decision toward a reveal: invalidate the current
+                # frontier so the model re-explores what a reversible action would
+                # expose, and force the deliberative path to pick it.
+                branch_hint = _invalidate_stale_frontier(
+                    runtime, reason="executive_probe", fallback="observe"
+                )
+                runtime.execution_state.force_deliberation = True
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_probe",
+                    payload={
+                        "meta_action": meta.to_dict(),
+                        "branch_hint": branch_hint,
+                        "consecutive_probes": probe_n,
+                    },
+                )
+                prev_meta_suppress = False
+                _wait(settle_s, "executive probe")
+                continue
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="meta_probe",
+                payload={
+                    "meta_action": meta.to_dict(),
+                    "consecutive_probes": probe_n,
+                    "handling": "exhausted_fall_through",
+                },
+                status="warn",
+            )
+            runtime.execution_state.consecutive_probes = 0
+
         # Any non-preempting frame (we are about to observe/act normally) breaks a
-        # backtrack run: the branch is no longer being retreated.
+        # backtrack / think / probe run: the branch is no longer being retreated.
         runtime.execution_state.consecutive_backtracks = 0
+        runtime.execution_state.consecutive_thinks = 0
+        runtime.execution_state.consecutive_probes = 0
 
         # Low resolution confidence: observe to refine; ask only after attempts
         policy = str(feats.extras.get("resolution_policy") or "")

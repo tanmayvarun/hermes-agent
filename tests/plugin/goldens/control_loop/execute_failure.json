@@ -1,11 +1,7 @@
 {
   "decision_families": [
     "type_query",
-    "observe",
-    "observe",
-    "observe",
-    "type_query",
-    "observe"
+    "type_query"
   ],
   "executed": [
     {
@@ -49,39 +45,21 @@
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 2,
       "observations": 1,
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 3,
       "observations": 1,
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 4,
       "observations": 1,
@@ -108,13 +86,7 @@
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 6,
       "observations": 1,

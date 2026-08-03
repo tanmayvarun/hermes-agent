@@ -2,10 +2,8 @@
   "decision_families": [
     "type_query",
     "open_search",
-    "observe",
     "type_query",
-    "open_search",
-    "observe"
+    "open_search"
   ],
   "executed": [
     {
@@ -83,13 +81,7 @@
       ]
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 3,
       "observations": 1,
@@ -140,13 +132,7 @@
       ]
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 6,
       "observations": 1,

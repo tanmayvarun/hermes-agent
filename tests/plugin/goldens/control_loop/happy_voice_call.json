@@ -2,8 +2,6 @@
   "decision_families": [
     "type_query",
     "open_contact",
-    "observe",
-    "observe",
     "start_call"
   ],
   "executed": [
@@ -77,28 +75,9 @@
       ]
     },
     {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
+      "decisions": [],
       "executions": [],
       "iteration": 3,
-      "observations": 1,
-      "outcomes": []
-    },
-    {
-      "decisions": [
-        {
-          "action": "Observe",
-          "family": "observe",
-          "target": ""
-        }
-      ],
-      "executions": [],
-      "iteration": 4,
       "observations": 1,
       "outcomes": []
     },
@@ -118,7 +97,7 @@
           "target": "Call"
         }
       ],
-      "iteration": 5,
+      "iteration": 4,
       "observations": 2,
       "outcomes": [
         "goal_satisfied"
@@ -126,7 +105,7 @@
     }
   ],
   "result": {
-    "iterations": 5,
+    "iterations": 4,
     "ok": true,
     "reason": "goal succeeded"
   }

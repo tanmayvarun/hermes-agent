@@ -680,6 +680,13 @@ class DecisionEngine:
 
         if not unified_cognition_enabled():
             return None
+        # The executive asked to deliberate (meta-action THINK, or a PROBE that
+        # wants a fresh reveal). Skip the multimodal fast path this once so the
+        # enumerate/score/consult reasoner runs instead, then clear the request.
+        if getattr(execution_state, "force_deliberation", False):
+            execution_state.force_deliberation = False
+            features.extras["forced_deliberation"] = True
+            return None
         try:
             proposal = consult_unified_cognition(goal, world, features, execution_state)
         except Exception as exc:  # never let cognition failure kill the loop
@@ -729,6 +736,10 @@ class DecisionEngine:
                     "coverage": proposal.coverage,
                     "confidence": float(proposal.confidence or 0.0),
                     "surface": str((proposal.observed_state or {}).get("surface") or "").strip(),
+                    # A reversible reveal move the perceptor thinks is worth taking
+                    # to expose latent affordances. Lets the executive choose PROBE
+                    # when a look would not help but an action could reveal.
+                    "probe_available": bool(getattr(proposal, "recommended_probe", None)),
                     # The model's belief patch is the perceptor's read of the
                     # scene. It must reach the one authoritative workspace, not
                     # only features.extras — that is what lets the workspace
