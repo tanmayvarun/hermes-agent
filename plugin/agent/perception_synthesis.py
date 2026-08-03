@@ -705,6 +705,32 @@ def _perception_task_targets(
             rank=idx + 1,
         )
 
+    # For screen understanding, lead with the profile's preferred vision models.
+    # The built-in ranking can float text/code models (kimi-k3, kimi-k2.7-code)
+    # ahead of the vision model; those reject the screenshot and waste a call
+    # each before the loop reaches a model that can actually see. Honouring the
+    # declared preference puts the proven multimodal model (qwen3.5) first.
+    if task_name == _SCREEN_UNDERSTANDING_TASK and len(targets) > 1:
+        try:
+            from hermes_cli.model_routing import get_task_profile
+
+            preferred = [
+                str(m).split(":", 1)[0].strip().lower()
+                for m in (get_task_profile(task_name).preferred_models or ())
+                if str(m).strip()
+            ]
+        except Exception:
+            preferred = []
+        if preferred:
+            def _preference_rank(t: Dict[str, Any]) -> int:
+                family = str(t.get("model") or "").split(":", 1)[0].strip().lower()
+                for i, pref in enumerate(preferred):
+                    if family == pref or family.startswith(pref) or pref.startswith(family):
+                        return i
+                return len(preferred)
+
+            targets.sort(key=_preference_rank)
+
     if targets:
         return targets
     return [_perception_task_target(main_runtime, task_name=task_name)]
@@ -1270,27 +1296,49 @@ def synthesize_perception(
                     str(target.get("source") or ""),
                 )
                 start = time.time()
-                consultation = consult_reasoning(
-                    task_name,
-                    prompt_messages,
-                    caller=lambda **kwargs: _call_llm_hard_timeout(
-                        _perception_timeout_seconds(),
-                        **kwargs,
-                    ),
-                    call_kwargs={
-                        "task": task_name,
-                        "provider": target.get("provider") or None,
-                        "model": target.get("model") or None,
-                        "base_url": target.get("base_url") or None,
-                        "api_key": target.get("api_key") or None,
-                        "timeout": _perception_timeout_seconds(),
-                        "main_runtime": main_runtime,
-                        "extra_body": _perception_extra_body(main_runtime),
-                        "reasoning_config": _perception_reasoning_config(target),
-                    },
-                    temperature=0.0,
-                    max_tokens=max_tokens,
-                )
+                try:
+                    consultation = consult_reasoning(
+                        task_name,
+                        prompt_messages,
+                        caller=lambda **kwargs: _call_llm_hard_timeout(
+                            _perception_timeout_seconds(),
+                            **kwargs,
+                        ),
+                        call_kwargs={
+                            "task": task_name,
+                            "provider": target.get("provider") or None,
+                            "model": target.get("model") or None,
+                            "base_url": target.get("base_url") or None,
+                            "api_key": target.get("api_key") or None,
+                            "timeout": _perception_timeout_seconds(),
+                            "main_runtime": main_runtime,
+                            "extra_body": _perception_extra_body(main_runtime),
+                            "reasoning_config": _perception_reasoning_config(target),
+                        },
+                        temperature=0.0,
+                        max_tokens=max_tokens,
+                    )
+                except Exception as exc:
+                    # One target failing must not kill perception: a text-only
+                    # model in the chain rejects the image ("does not support
+                    # image input"), a provider times out, etc. Advance to the
+                    # next target/shape exactly like unified cognition does, so
+                    # the vision-capable model further down the chain gets its
+                    # turn instead of the whole run crashing on the first reject.
+                    from agent.auxiliary_client import LLMProviderExhaustedError
+
+                    if isinstance(exc, LLMProviderExhaustedError):
+                        raise
+                    logger.warning(
+                        "Perception LLM call failed on target %d/%d (%s/%s) shape=%s: %s — advancing",
+                        target_index,
+                        len(targets),
+                        str(target.get("provider") or ""),
+                        str(target.get("model") or ""),
+                        shape,
+                        exc,
+                    )
+                    continue
                 elapsed = time.time() - start
                 logger.info("Perception LLM completed in %.2fs", elapsed)
                 raw_text = consultation.raw_response
