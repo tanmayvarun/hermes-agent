@@ -530,8 +530,15 @@ def _forward_value_delta(
             return 0.96 + stage_bias
         if features.extras.get("source_conversation_visible") or features.extras.get("latent_conversation_open"):
             return 0.82 + stage_bias
-        if features.query_matches_goal or features.has_named_entity:
-            return 0.58 + stage_bias
+        # Past OPEN_SOURCE the source conversation is, by definition, already
+        # open. A named entity on screen here is the conversation header, not a
+        # list row — reopening a contact makes no progress. Only a genuine
+        # result/list surface (handled above) justifies open_contact now; a bare
+        # named-entity/query match must be demoted, not rewarded.
+        if features.extras.get("result_surface_visible") and (
+            features.query_matches_goal or features.has_named_entity
+        ):
+            return 0.5 + stage_bias
         return -0.55 + stage_bias
 
     if fam == "type_query":
