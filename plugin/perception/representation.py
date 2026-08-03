@@ -692,6 +692,16 @@ def structured_perception_bridge(
     if features is not None:
         extras = _features_extras(features)
     legacy = dict(extras.get("perception_summary") or {}) if isinstance(extras.get("perception_summary"), dict) else {}
+    # The screen-understanding recommendation (likely_next_family/target/text)
+    # lives on the world's synthesis summary, not in the typed structure. Feature
+    # builders make a fresh StateFeatures every cycle, so if the bridge only read
+    # features.extras the recommendation would vanish on rebuild and the decision
+    # engine would fall back to Observe forever. Recover it from the world.
+    synthesis_summary: Dict[str, Any] = {}
+    if world is not None:
+        cached = getattr(world, "last_perception_synthesis", None)
+        if isinstance(cached, dict) and isinstance(cached.get("summary"), dict):
+            synthesis_summary = dict(cached["summary"])
     structured = _load_previous_result(world or WorldModel(), result) if result is not None or world is not None else None
     if structured is None and result is not None:
         if isinstance(result, Mapping):
@@ -702,7 +712,10 @@ def structured_perception_bridge(
         elif isinstance(result, PerceptionResult):
             structured = result
     if structured is None:
-        return legacy
+        # No typed structure yet — still surface the recommendation so it
+        # survives a feature rebuild. Fresh per-cycle features win over the
+        # cached synthesis summary.
+        return {**synthesis_summary, **legacy}
     sensor_kinds = [sensor.kind for sensor in structured.sensors if sensor.kind]
     sensor_sources = [sensor.source for sensor in structured.sensors if sensor.source]
     bridge: Dict[str, Any] = {
@@ -727,6 +740,11 @@ def structured_perception_bridge(
         "app": structured.app,
         "world_id": structured.world_id,
     }
+    # The recommendation keys are not produced by the typed structure, so fold
+    # the synthesis summary in first (without clobbering typed fields), then let
+    # fresh per-cycle features win.
+    for key, value in synthesis_summary.items():
+        bridge.setdefault(key, value)
     bridge.update(legacy)
     return bridge
 
