@@ -476,6 +476,79 @@ def run_forward_message_live(
                         message="compose_search_query produced no query",
                     )
                 return ax_type(APP, chosen, into=target or "Search", submit=False)
+            if fam == "resolve_entity" or act == "resolveentity":
+                # ResolveEntity is semantic judgment over the candidate_set, not
+                # a motor primitive: decide which visible row is the goal
+                # referent, then open it (open_entity is the mechanism). The
+                # skill owns its own confidence and escalation — a confident
+                # deterministic pick, an LLM tiebreak, or an abstain when an
+                # irreversible choice stays ambiguous. An abstain surfaces as a
+                # non-ok result so the loop re-plans instead of guessing.
+                import types as _types
+
+                from plugin.agent.capabilities.resolve_entity import (
+                    brief_from_context,
+                )
+                from plugin.agent.capabilities.resolve_entity import (
+                    resolve_entity as _resolve_entity_cap,
+                )
+
+                try:
+                    view_now, feats_now, _ = build_view_features(runtime, goal_obj)
+                except Exception:
+                    view_now, feats_now = {}, {}
+                extras_now = feats_now.get("extras") if isinstance(feats_now, dict) else {}
+                feats_shim = _types.SimpleNamespace(extras=extras_now or {})
+
+                referent = (target or "").strip()
+                dest = (getattr(goal_obj, "target_contact", "") or "").strip()
+                src = (getattr(goal_obj, "contact", "") or "").strip()
+                # Role fixes the consequence class the skill gates on: opening
+                # the source conversation is reversible, choosing a forward
+                # destination is irreversible. Infer it from which goal contact
+                # the referent names; when the referent is blank/other, fall
+                # back to the surface (an unopened source resolves the source).
+                if referent and src and referent.lower() == src.lower():
+                    role = "source"
+                elif referent and dest and referent.lower() == dest.lower():
+                    role = "destination"
+                else:
+                    view_obj = WhatsAppWorldView.from_world_model(runtime.world_model)
+                    open_c = (view_obj.open_conversation or "").lower()
+                    src_open = bool(src) and (
+                        src.lower() in open_c
+                        or any(t in open_c for t in src.lower().split() if len(t) > 2)
+                    )
+                    role = "destination" if src_open else "source"
+
+                brief = brief_from_context(
+                    goal_obj,
+                    referent=referent,
+                    role=role,
+                    features=feats_shim,
+                    world_document=view_now if isinstance(view_now, dict) else None,
+                )
+                outcome = _resolve_entity_cap(brief)
+                if not outcome.ok:
+                    return ExecResult(
+                        ok=False,
+                        backend="none",
+                        message=(outcome.message or "resolve_entity did not resolve a candidate"),
+                    )
+                chosen = str(outcome.evidence.get("chosen") or "").strip()
+                if not chosen:
+                    return ExecResult(ok=False, backend="none", message="resolve_entity chose nothing")
+                ent = resolve_whatsapp_target(
+                    runtime.world_model,
+                    chosen,
+                    action="click",
+                    action_family="open_entity",
+                    target_entity_id=outcome.evidence.get("id"),
+                )
+                if ent is not None:
+                    runtime.execution_state.last_target_id = ent.id
+                    return ax_click(APP, ent.label or chosen, bounds=ent.bounds)
+                return ax_click(APP, chosen)
             if act == "type":
                 return ax_type(APP, step.text or "", into=target or "Search", submit=False)
             if fam == "end_call" or target.lower() in {"end call", "decline"}:
