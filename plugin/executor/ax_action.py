@@ -709,6 +709,12 @@ def ax_context_click(
             center = _bounds_center(bounds)
         if center is None:
             return ExecResult(ok=False, backend="ax", message=f"context click target not found for {target!r}", command=f"ax_context_click {app} {target}")
+        # Move the pointer onto the target and let the app register the hover
+        # before right-clicking. Apps like WhatsApp only build the row's context
+        # menu for the element under the cursor; a cold right-click at a point
+        # the pointer never visited opens an empty/wrong menu (or nothing).
+        _mouse_move(center[0], center[1])
+        time.sleep(0.08)
         _mouse_right_click(center[0], center[1])
         return ExecResult(
             ok=True,
