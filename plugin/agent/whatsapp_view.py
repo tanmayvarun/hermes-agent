@@ -12,6 +12,30 @@ from plugin.worldmodel.entities.normalize import _clean_label
 from plugin.worldmodel.model import WorldModel
 from plugin.agent.system_signals import detect_system_warning_evidence
 
+# Vision-derived entities are materialised above the AX id range so the two
+# perception sources never collide. Kept in sync with unified_cognition's
+# _VISION_ENTITY_ID_BASE; the ``source`` marker is the primary signal and the
+# id range is the invariant fallback.
+_VISION_ENTITY_ID_BASE = 900_000
+
+
+def is_vision_entity(entity: Any) -> bool:
+    """True when an entity was materialised from the perceptor's vision reading.
+
+    Vision entities carry ``attributes["source"] == "vision"`` and live above
+    the AX id range. Either signal alone identifies them; checking both keeps
+    the predicate robust if one is ever dropped.
+    """
+    if entity is None:
+        return False
+    attrs = getattr(entity, "attributes", None)
+    if isinstance(attrs, dict) and str(attrs.get("source") or "").strip().lower() == "vision":
+        return True
+    try:
+        return int(getattr(entity, "id", 0) or 0) >= _VISION_ENTITY_ID_BASE
+    except (TypeError, ValueError):
+        return False
+
 _DIALOG_HINTS = (
     "update available",
     "new version",
@@ -853,7 +877,13 @@ class WhatsAppWorldView:
     ) -> "WhatsAppWorldView":
         app_active = "whatsapp" in _clean_label(world.active_app).lower()
         window_name = _clean_label(getattr(world, "last_window_name", "") or "")
-        visible_entities = [e for e in world.entities.values() if e.visible]
+        # Vision-materialised entities are the perceptor's reading, not AX nodes.
+        # They must never run through the label/geometry heuristics below (which
+        # would, e.g., mistake a message body for a conversation header); the
+        # synthesized ``from_world_model`` folds them in through the reading.
+        visible_entities = [
+            e for e in world.entities.values() if e.visible and not is_vision_entity(e)
+        ]
         scene_graph = getattr(world, "last_scene_graph", None) or {}
         scene_region_kinds = {
             str(r.get("kind") or "").lower()
@@ -1200,7 +1230,16 @@ class WhatsAppWorldView:
                         view.screen = "DIALOG"
                     elif screen_type == "search":
                         view.screen = "SEARCH_RESULTS" if view.visible_contacts else "SEARCH"
-                    elif screen_type == "conversation" and view.composer_visible:
+                    elif screen_type == "conversation" and (
+                        view.composer_visible
+                        or raw.get("open_conversation")
+                        or raw.get("visible_objects")
+                    ):
+                        # The reading is authoritative for the conversation
+                        # surface. On apps whose AX tree is window chrome only
+                        # (WhatsApp) there is no composer entity to key off, so
+                        # the perceptor's open_conversation / visible messages are
+                        # the only evidence — and they are enough.
                         view.screen = "CONVERSATION"
                     elif screen_type == "dialog":
                         # Do not let a weak synthesized dialog override a strong
@@ -1230,6 +1269,25 @@ class WhatsAppWorldView:
                 and screen_type in {"conversation", "list", "search", "unknown"}
             ):
                 view.open_conversation = likely_target
+
+            # The reading names the open conversation directly and lists the
+            # messages it saw. Fold both in — this is the vision bridge that lets
+            # a chrome-only AX tree still see which chat is open and what it holds.
+            syn_open = _clean_label(str(raw.get("open_conversation") or "")).strip()
+            if syn_open and _is_contact_name(syn_open):
+                view.open_conversation = syn_open
+            syn_objects = raw.get("visible_objects")
+            if isinstance(syn_objects, list) and syn_objects and not view.conversation_messages:
+                rows: List[Dict[str, Any]] = []
+                for obj in syn_objects:
+                    if not isinstance(obj, dict):
+                        continue
+                    text = str(obj.get("text") or obj.get("label") or "").strip()
+                    if not text:
+                        continue
+                    rows.append({"text": text, "matches_goal": bool(obj.get("matches_goal"))})
+                if rows:
+                    view.conversation_messages = rows
         if view.open_conversation and not _is_contact_name(view.open_conversation):
             view.open_conversation = None
         return view

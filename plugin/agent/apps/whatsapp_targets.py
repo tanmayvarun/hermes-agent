@@ -154,6 +154,14 @@ def in_composer_band(e: Entity, entities: Sequence[Entity], *, scene_graph: Opti
 
 
 def in_sidebar_band(e: Entity, entities: Sequence[Entity], *, scene_graph: Optional[dict] = None) -> bool:
+    # Vision-materialised entities are the perceptor's reading of main-pane
+    # content, not AX sidebar rows. The geometric left-rail heuristic is
+    # meaningless for them (on a chrome-only AX tree the bounding box is built
+    # from the vision points themselves, so "left 30%" catches everything), so
+    # exempt them outright: a message the perceptor saw is never a sidebar row.
+    attrs = getattr(e, "attributes", None)
+    if isinstance(attrs, dict) and str(attrs.get("source") or "").strip().lower() == "vision":
+        return False
     kind = _scene_region_kind(e, scene_graph)
     if kind in {"sidebar", "navigation"}:
         return True
