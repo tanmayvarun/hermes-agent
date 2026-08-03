@@ -1569,11 +1569,26 @@ def run_goal_closed_loop(
                     "notes": [str(n) for n in (_attrib.get("notes") or []) if str(n).strip()][:3],
                 }
             )
+        # The perceptor's own account of what it could not establish this frame,
+        # and how much of the surface it actually saw. Sourced from the unified
+        # proposal when it ran this frame; otherwise the executive falls back to
+        # the worldview coverage and no declared gaps (best-effort, never worse
+        # than the old always-full-view assumption).
+        perceptor_gaps: List[str] = []
+        perceptor_coverage = coverage
+        _uni = getattr(runtime.execution_state, "last_unified_proposal", None)
+        if isinstance(_uni, dict) and int(_uni.get("frame", -1)) == iteration:
+            perceptor_gaps = [str(g) for g in (_uni.get("evidence_gaps") or []) if str(g).strip()]
+            if _uni.get("coverage") is not None:
+                try:
+                    perceptor_coverage = float(_uni.get("coverage"))
+                except (TypeError, ValueError):
+                    perceptor_coverage = coverage
         sufficiency, meta = assess_executive_judgement(
             runtime.execution_state,
             blocking_uncertainties=blocking_uncertainties,
-            evidence_gaps=[],
-            coverage=coverage,
+            evidence_gaps=perceptor_gaps,
+            coverage=perceptor_coverage,
             has_grounded_action=has_grounded_action,
             previously_suppressed=prev_meta_suppress,
             last_action_surprised=action_surprised,
@@ -1612,7 +1627,9 @@ def run_goal_closed_loop(
                 "cognitive_mode": getattr(runtime.execution_state, "last_cognitive_mode", None),
                 "perception_query": getattr(runtime.execution_state, "last_perception_query", None),
                 "meta_perception_enabled": meta_perception_enabled,
-                "coverage": round(coverage, 3),
+                "coverage": round(perceptor_coverage, 3),
+                "worldview_coverage": round(coverage, 3),
+                "perceptor_evidence_gaps": perceptor_gaps[:6],
                 "has_grounded_action": has_grounded_action,
                 "last_action_surprised": action_surprised,
                 "awaiting_verification": awaiting_verification,

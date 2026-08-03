@@ -712,6 +712,18 @@ class DecisionEngine:
             if action is None:
                 proposal.next_action = original_head
             self._apply_belief_updates(proposal, features)
+            # Persist the perceptor's own honest account of what it could not
+            # establish (evidence_gaps) and how much of the surface it saw
+            # (coverage), stamped with this frame. The executive reads these when
+            # judging sufficiency instead of assuming a full, gap-free view — the
+            # perceptor names the gap, the executive decides what to do about it.
+            if execution_state is not None:
+                execution_state.last_unified_proposal = {
+                    "frame": int(getattr(execution_state, "iteration", 0) or 0),
+                    "evidence_gaps": [str(g) for g in (proposal.evidence_gaps or []) if str(g).strip()],
+                    "coverage": proposal.coverage,
+                    "confidence": float(proposal.confidence or 0.0),
+                }
 
         escalate, escalate_reason = should_escalate(
             proposal, features, admissible=action is not None
