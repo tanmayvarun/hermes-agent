@@ -294,6 +294,10 @@ def assess_executive_judgement(
     last_action_surprised: bool = False,
     awaiting_verification: bool = False,
     hard_block: bool = False,
+    probe_available: bool = False,
+    ambiguous: bool = False,
+    steps_remaining: Optional[int] = None,
+    goal_complete: bool = False,
 ):
     """Compute this frame's sufficiency and meta-action, and record them.
 
@@ -303,8 +307,16 @@ def assess_executive_judgement(
     old always-perceive default. Whether it *drives* control flow is decided by
     the caller; this function only computes and records.
     """
-    from plugin.agent.executive.hierarchy import ModeContext, cognitive_mode
-    from plugin.agent.executive.meta_action import MetaContext, select_meta_action
+    from plugin.agent.executive.hierarchy import (
+        ModeContext,
+        cognitive_mode,
+        decision_ladder,
+    )
+    from plugin.agent.executive.meta_action import (
+        MetaAction,
+        MetaContext,
+        select_meta_action,
+    )
     from plugin.agent.executive.perception_query import from_sufficiency
     from plugin.agent.executive.sufficiency import SufficiencyInputs, assess_sufficiency
 
@@ -332,17 +344,37 @@ def assess_executive_judgement(
         and all(question_already_settled(execution_state, q) for q in blocking)
     )
 
-    meta = select_meta_action(
-        MetaContext(
-            sufficiency=sufficiency,
-            has_grounded_action=bool(has_grounded_action),
-            awaiting_verification=bool(awaiting_verification),
-            last_action_surprised=bool(last_action_surprised),
-            branch_stale=branch_stale,
-            question_settled=question_settled,
-            hard_block=bool(hard_block),
-        )
+    meta_ctx = MetaContext(
+        sufficiency=sufficiency,
+        has_grounded_action=bool(has_grounded_action),
+        awaiting_verification=bool(awaiting_verification),
+        last_action_surprised=bool(last_action_surprised),
+        branch_stale=branch_stale,
+        question_settled=question_settled,
+        hard_block=bool(hard_block),
+        probe_available=bool(probe_available),
+        ambiguous=bool(ambiguous),
+        steps_remaining=int(steps_remaining) if steps_remaining is not None else 99,
     )
+    # Two expressions of the same policy: the value scorer weighs moves, the
+    # ladder states the precedence plainly. The ladder is authoritative for the
+    # live loop (explicit precedence is what the runtime should walk), but we
+    # keep the scorer's value breakdown for the trace and defer to it on the
+    # ladder's terminal fallback so we never escalate to the user spuriously.
+    scored = select_meta_action(meta_ctx)
+    ladder = decision_ladder(meta_ctx, goal_complete=bool(goal_complete))
+    meta = ladder
+    if (
+        ladder.action == MetaAction.ASK_USER
+        and not hard_block
+        and str(ladder.reason or "").startswith("fallback")
+    ):
+        meta = scored
+    # Carry the value breakdown so the trace shows *why* each move scored as it
+    # did, even when the ladder (not the scorer) chose.
+    merged_scores = dict(scored.scores)
+    merged_scores.update({f"ladder_{k}": v for k, v in (ladder.scores or {}).items()})
+    meta.scores = merged_scores
 
     contradictions = 0
     workspace = workspace_of(execution_state)

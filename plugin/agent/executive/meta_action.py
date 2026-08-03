@@ -86,12 +86,23 @@ class MetaChoice:
 
 
 def select_meta_action(ctx: MetaContext) -> MetaChoice:
-    """Score each move and take the best. Order encodes hard precedence.
+    """Score each admissible move with the one canonical value function.
 
-    The precedence is deliberate rather than purely numeric: a hard block can
-    only be answered by asking the user, and a just-executed action must be
-    verified before the agent decides anything new. Below those, value decides.
+    Every move's number now comes from ``action_value(ValueInputs(...))`` -- the
+    same progress/information/reversibility/risk/cost/repeat trade-off the rest
+    of the executive uses to rank concrete actions -- rather than a bespoke
+    constant per branch. PERCEIVE/PROBE/THINK are information moves (they buy a
+    reduction in blocking uncertainty), BACKTRACK is a retreat that still makes
+    progress toward a viable route, and ACT is a progress move whose probability
+    is the sufficiency verdict. Admissibility gates below decide *whether* a move
+    is a candidate at all; the value function decides which candidate wins.
+
+    Order still encodes hard precedence: a hard block can only be answered by
+    asking the user, and a just-executed action must be verified before the
+    agent decides anything new. Below those, value decides.
     """
+    from plugin.agent.executive.value import ValueInputs, action_value
+
     scores: Dict[str, float] = {}
 
     if ctx.hard_block:
@@ -103,55 +114,99 @@ def select_meta_action(ctx: MetaContext) -> MetaChoice:
     suff = ctx.sufficiency
 
     # A look/probe that only re-tests an already-settled question is the
-    # re-search failure class; apply the info-value repeat penalty so it cannot
-    # win over acting or backtracking.
-    from plugin.agent.executive.value import EPSILON_REPEAT
+    # re-search failure class; the value function's repeat penalty
+    # (EPSILON_REPEAT) drives it below acting/backtracking.
+    reask = bool(ctx.question_settled)
 
-    reask_penalty = EPSILON_REPEAT if ctx.question_settled else 0.0
-
-    # PERCEIVE is worth it only when a look could close a gap that matters.
-    perceive = 0.0
+    # PERCEIVE is worth it only when a look could close a gap that matters. It is
+    # a pure information move: no direct progress, fully reversible, cheap.
     if suff is not None and suff.observe_has_value:
-        perceive = 0.8 if suff.blocking_uncertainties else 0.6
-    scores["perceive"] = round(perceive - reask_penalty, 4)
+        scores["perceive"] = action_value(
+            ValueInputs(
+                progress_probability=0.0,
+                information_gain=0.9 if suff.blocking_uncertainties else 0.7,
+                reversibility=1.0,
+                cost="low",
+                repeated=reask,
+            )
+        )
+    else:
+        scores["perceive"] = 0.0
 
     # PROBE when we cannot see what we need but looking again would not help --
-    # a reversible action that changes the surface may reveal it.
-    probe = 0.0
+    # a reversible action that changes the surface may reveal it. Higher
+    # information gain than a passive look, still reversible and cheap.
     if (
         ctx.probe_available
         and suff is not None
         and not suff.sufficient_to_act
         and not suff.observe_has_value
     ):
-        probe = 0.7
-    scores["probe"] = round(probe - reask_penalty, 4)
+        scores["probe"] = action_value(
+            ValueInputs(
+                progress_probability=0.3,
+                information_gain=0.85,
+                reversibility=1.0,
+                cost="low",
+                repeated=reask,
+            )
+        )
+    else:
+        scores["probe"] = 0.0
 
     # BACKTRACK when exploration has gone stale and nothing blocks that a look
-    # would resolve.
-    backtrack = 0.0
+    # would resolve. Retreating is not zero-progress: broadening the search is
+    # how a viable route is eventually reached, so it carries real progress plus
+    # the information a fresh branch reveals.
     if ctx.branch_stale and (suff is None or not suff.observe_has_value):
-        backtrack = 0.65
-    scores["backtrack"] = backtrack
+        scores["backtrack"] = action_value(
+            ValueInputs(
+                progress_probability=0.5,
+                progress_value=1.0,
+                information_gain=0.3,
+                reversibility=1.0,
+                cost="low",
+            )
+        )
+    else:
+        scores["backtrack"] = 0.0
 
     # THINK when the situation is ambiguous and we are not merely short of a look.
-    think = 0.0
+    # Consulting the model buys information at a higher (medium) cost.
     if ctx.ambiguous and (suff is None or not suff.observe_has_value):
-        think = 0.55
-    scores["think"] = think
+        scores["think"] = action_value(
+            ValueInputs(
+                progress_probability=0.3,
+                information_gain=0.6,
+                reversibility=1.0,
+                cost="medium",
+            )
+        )
+    else:
+        scores["think"] = 0.0
 
-    # ACT when we have a grounded move and enough evidence to trust it.
-    act = 0.0
-    if ctx.has_grounded_action and (suff is None or suff.sufficient_to_act):
-        act = 0.75
-    elif ctx.has_grounded_action:
-        act = 0.4  # can act, but evidence is thin; other moves may beat it
-    scores["act"] = act
+    # ACT when we have a grounded move. Its progress probability is exactly the
+    # sufficiency verdict: high when the evidence is sufficient, thin otherwise.
+    if ctx.has_grounded_action:
+        sufficient = suff is None or suff.sufficient_to_act
+        scores["act"] = action_value(
+            ValueInputs(
+                progress_probability=0.85 if sufficient else 0.5,
+                progress_value=1.0,
+                reversibility=1.0,
+                cost="low",
+            )
+        )
+    else:
+        scores["act"] = 0.0
 
-    # Running out of budget: prefer committing to the best action over more looking.
+    # Running out of budget: prefer committing to the best action over more
+    # looking. This is precedence, not value -- with the turn about to end, a
+    # grounded action beats any further information gathering.
     if ctx.steps_remaining <= 1 and ctx.has_grounded_action:
-        scores["act"] = max(scores["act"], 0.95)
+        scores["act"] = max(scores["act"], 0.99)
 
+    scores = {k: round(v, 4) for k, v in scores.items()}
     best_key = max(scores, key=lambda k: scores[k]) if scores else "act"
     best_val = scores.get(best_key, 0.0)
     if best_val <= 0.0:
