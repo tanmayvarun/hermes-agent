@@ -587,39 +587,48 @@ class ObjectDiscoveryEngine:
         top_score = float(ranked[0].score or 0.0) if ranked else 0.0
         second_score = float(ranked[1].score or 0.0) if len(ranked) > 1 else 0.0
         gap = top_score - second_score
-        # Singletons should stay deterministic even if the caller sets
-        # ``force_llm``. There is nothing to arbitrate when only one visible
-        # candidate survives projection, and consulting the LLM here only adds
-        # provider fragility without improving the decision.
+        # An explicit ``force_llm`` from the caller always consults the model:
+        # the caller (e.g. conversation ranking) has decided it wants semantic
+        # arbitration, and the prompt carries context the deterministic scorer
+        # cannot use. The *heuristic* escalation (a low or ambiguous score) is
+        # what stays gated on having more than one candidate to arbitrate — a
+        # lone survivor has nothing to disambiguate against.
         should_rerank = bool(
-            len(ranked) > 1
-            and (
-                force_llm
-                or (context.use_llm and (top_score < _LLM_SCORE_THRESHOLD or gap < 0.18))
+            force_llm
+            or (
+                len(ranked) > 1
+                and context.use_llm
+                and (top_score < _LLM_SCORE_THRESHOLD or gap < 0.18)
             )
         )
         if should_rerank:
-            consultation = consult_reasoning(
-                "content_object_resolution",
-                _build_prompt(query, context, [item.object or visible[0] for item in ranked], window=min(8, len(ranked))),
-                call_kwargs={
-                    "task": "content_object_resolution",
-                    "main_runtime": _main_runtime_snapshot(),
-                },
-                temperature=0.1,
-                max_tokens=256,
-            )
-            parsed = consultation.parsed
-            if not parsed:
-                raise RuntimeError("Object discovery LLM returned non-JSON response")
-            resolution = _parse_llm_resolution(parsed, visible)
-            resolution.raw = {
-                **_json_safe(resolution.raw),
-                "consultation": consultation.to_dict(),
-            }
-            if world is not None:
-                setattr(world, _CACHE_ATTR, {"cache_key": cache_key, "summary": resolution.to_dict()})
-            return resolution
+            consultation = None
+            try:
+                consultation = consult_reasoning(
+                    "content_object_resolution",
+                    _build_prompt(query, context, [item.object or visible[0] for item in ranked], window=min(8, len(ranked))),
+                    call_kwargs={
+                        "task": "content_object_resolution",
+                        "main_runtime": _main_runtime_snapshot(),
+                    },
+                    temperature=0.1,
+                    max_tokens=256,
+                )
+            except Exception:
+                consultation = None
+            parsed = consultation.parsed if consultation is not None else None
+            if parsed:
+                resolution = _parse_llm_resolution(parsed, visible)
+                resolution.raw = {
+                    **_json_safe(resolution.raw),
+                    "consultation": consultation.to_dict(),
+                }
+                if world is not None:
+                    setattr(world, _CACHE_ATTR, {"cache_key": cache_key, "summary": resolution.to_dict()})
+                return resolution
+            # The model was unavailable or returned no usable JSON. The caller
+            # asked for arbitration; when the model cannot answer we degrade to
+            # the deterministic ranked pick below rather than crashing the loop.
 
         if not ranked:
             resolution = ObjectResolution(status="not_found", confidence=0.0, raw={"reason": "no_ranked_candidates"})
