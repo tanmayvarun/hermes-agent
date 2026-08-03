@@ -814,6 +814,30 @@ class WhatsAppOverlay:
     # (destination picking, done) the source object no longer gates progress.
     _SOURCE_HUNT_PHASES = {"FIND_LINK", "OPEN_FORWARD"}
 
+    def affordance_priors(self, surface: str) -> List[Dict[str, Any]]:
+        """Latent actions the app knows exist on a surface before any object proves it.
+
+        A declaration, not a code path: the affordance frontier turns these into
+        latent actions the model can plan toward, and the core never learns
+        WhatsApp's menu tree. The forward picker's Send is the canonical case —
+        it only appears once a recipient is chosen, so no object prior on the
+        empty picker could know it, yet the model must be able to say it before
+        it does. It is irreversible and gated behind resolving the recipient.
+        """
+        s = str(surface or "").strip().lower()
+        if s == "forward_picker":
+            return [
+                {
+                    "id": "picker_send",
+                    "label": "Send",
+                    "family": "commit_irreversible",
+                    "available_after": "resolve_entity",
+                    "probability": 0.9,
+                    "basis": "the forward picker's Send commits once a recipient is chosen",
+                }
+            ]
+        return []
+
     def observe_blocking_uncertainties(self, forward_task: Optional[Dict[str, Any]]) -> List[str]:
         """Domain-general blocking uncertainty distilled from the forward task.
 
