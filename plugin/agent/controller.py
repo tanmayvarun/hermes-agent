@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -500,6 +501,24 @@ def resolve_goal_no_progress_timeout_seconds(
     if timeout <= 0:
         return float("inf")
     return max(5.0, timeout)
+
+
+def resolve_foreground_wait_cap_seconds() -> float:
+    """How long the agent may wait for its app to return to the foreground.
+
+    Waiting for the user to return to the task app is *free* — it does not spend
+    the step budget or trip the no-progress watchdog — but it is capped so a task
+    left permanently backgrounded ends instead of hanging forever. Overridable
+    via ``HERMES_FOREGROUND_WAIT_CAP_SECONDS`` (<= 0 waits indefinitely).
+    """
+    raw = os.getenv("HERMES_FOREGROUND_WAIT_CAP_SECONDS", "")
+    try:
+        cap = float(raw) if str(raw).strip() else 240.0
+    except (TypeError, ValueError):
+        cap = 240.0
+    if cap <= 0:
+        return float("inf")
+    return cap
 
 
 def parse_typed_query_evidence(message: str, expected: str = "") -> str:
@@ -1201,7 +1220,84 @@ def run_goal_closed_loop(
     prev_state_sig: Optional[str] = None
     static_streak = 0
 
+    # Persistence gate. The agent owns a goal and must be robust to the user
+    # taking the machine back mid-task (switching to YouTube, answering a call).
+    # When a foreign app is frontmost, acting would send keystrokes to the wrong
+    # window and fight the user, so the agent *holds*: it keeps its goal and
+    # world, actuates nothing, narrates nothing, and resumes when the task app
+    # returns. Waiting is free — the run and no-progress clocks are advanced by
+    # the waited time so a hold neither burns the step budget nor looks like a
+    # stall — but it is capped so a permanently-backgrounded task ends.
+    from plugin.agent.focus_of_action import (
+        foreground_app_name,
+        foreground_gate_enabled,
+        foreground_matches_task,
+        task_anchor_app,
+    )
+
+    foreground_wait_cap_s = resolve_foreground_wait_cap_seconds()
+    foreground_gate_on = foreground_gate_enabled()
+
+    def _await_task_foreground(iteration: int) -> tuple[bool, float]:
+        nonlocal goal_run_started_at, goal_last_progress_at
+        if not foreground_gate_on or foreground_matches_task(goal):
+            return True, 0.0
+        waited = 0.0
+        poll = 3.0
+        resumed = True
+        while True:
+            fg = foreground_app_name()
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="waiting_for_foreground",
+                payload={
+                    "foreground_app": fg,
+                    "task_app": task_anchor_app(goal),
+                    "waited_s": round(waited, 1),
+                    "wait_cap_s": foreground_wait_cap_s,
+                    "reason": "task app is not frontmost; holding to avoid acting on the wrong window",
+                },
+                status="warn",
+            )
+            if foreground_matches_task(goal, foreground=fg):
+                break
+            if waited >= foreground_wait_cap_s:
+                resumed = False
+                break
+            _wait(poll, reason="task app not in foreground")
+            waited += poll
+        # The whole wait was free: advance both clocks so the elapsed baselines
+        # are unchanged (whether we resumed or timed out on the cap).
+        goal_run_started_at += waited
+        goal_last_progress_at += waited
+        return resumed, waited
+
     for iteration in range(1, step_budget + 1):
+        resumed, foreground_waited_s = _await_task_foreground(iteration)
+        if not resumed:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="foreground_wait_timeout",
+                payload={
+                    "foreground_app": foreground_app_name(),
+                    "task_app": task_anchor_app(goal),
+                    "waited_s": round(foreground_waited_s, 1),
+                    "wait_cap_s": foreground_wait_cap_s,
+                    "reason": "task app did not return to the foreground within the wait cap",
+                },
+                status="fail",
+            )
+            return _finish_failure(
+                "task app did not return to the foreground within the wait cap",
+                {
+                    "foreground_app": foreground_app_name(),
+                    "task_app": task_anchor_app(goal),
+                    "waited_s": round(foreground_waited_s, 1),
+                },
+                iterations=iteration - 1,
+            )
         if _goal_run_budget_exceeded():
             elapsed = _goal_run_elapsed_s()
             _log_cycle(

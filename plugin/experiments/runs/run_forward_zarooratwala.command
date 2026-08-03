@@ -62,6 +62,13 @@ export HERMES_META_PERCEPTION
 export HERMES_UNIFIED_COGNITION
 export HERMES_LAYERED_PERCEPTION
 export HERMES_PERCEPTION_OCR
+# Persistence gate: hold (don't act) while a foreign app is frontmost. The user
+# may take the machine back mid-task (switch to YouTube, take a call); the agent
+# keeps its goal and world and resumes when WhatsApp is frontmost again, rather
+# than sending keystrokes to the wrong window. Off by default in code so the
+# headless control-loop tests never engage it.
+: "${HERMES_FOREGROUND_GATE:=1}"
+export HERMES_FOREGROUND_GATE
 export HERMES_FORWARD_STRICT_PERCEPTION
 export HERMES_FORWARD_PERCEPTION_SOURCE_TIMEOUT_SECONDS
 export HERMES_FORWARD_STRICT_PERCEPTION_RETRIES
