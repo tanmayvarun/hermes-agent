@@ -264,6 +264,37 @@ def _press(el: Any) -> Any:
     return AXUIElementPerformAction(el, "AXPress")
 
 
+def _action_names(el: Any) -> List[str]:
+    """The AX actions an element advertises (e.g. AXPress, AXConfirm)."""
+    try:
+        from ApplicationServices import AXUIElementCopyActionNames
+    except Exception:
+        return []
+    try:
+        result = AXUIElementCopyActionNames(el, None)
+        names = result[1] if isinstance(result, tuple) and len(result) >= 2 else result
+        return [str(n) for n in (names or [])]
+    except Exception:
+        return []
+
+
+def _supports_press(el: Any) -> bool:
+    """Whether the element can be invoked programmatically via AXPress.
+
+    This is the gate for *background* actuation: if the app exposes an AXPress
+    action on the target, the agent can invoke it directly — no activation, no
+    mouse movement, nothing the user sees. AX-blind apps (WhatsApp/Electron)
+    advertise no actions, so this returns False and the caller falls back to a
+    foreground synthetic click.
+    """
+    return "AXPress" in _action_names(el)
+
+
+def _press_ok(err: Any) -> bool:
+    """kAXErrorSuccess is 0; PyObjC may return None on success."""
+    return err in (0, None)
+
+
 def _unpack_point(val: Any) -> Optional[Tuple[float, float]]:
     if val is None:
         return None
@@ -609,6 +640,28 @@ def ax_click(
     if not ax_available():
         return ExecResult(ok=False, backend="ax", message="PyObjC ApplicationServices unavailable")
     try:
+        # Background-first: if the target resolves to an element that advertises
+        # AXPress, invoke it directly — no activation, no mouse movement, nothing
+        # the user sees. This is how an AX-rich app is driven while the user works
+        # in another window. AX-blind apps (WhatsApp) resolve nothing pressable
+        # here and fall through to the foreground synthetic-click path below.
+        if _clean(target).lower() != "search":
+            el_bg = _find_element(
+                app,
+                target,
+                prefer_roles=["AXButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXPopUpButton"],
+            )
+            if el_bg is not None and _supports_press(el_bg):
+                err_bg = _press(el_bg)
+                if _press_ok(err_bg):
+                    time.sleep(0.2)
+                    return ExecResult(
+                        ok=True,
+                        backend="ax_bg",
+                        message=f"AXPress {_clean(target)!r} in background (no foreground)",
+                        command=f"ax_click {app} {target}",
+                    )
+
         _activate_app(app)
         prefer = ["AXButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXPopUpButton", "AXStaticText"]
         if _clean(target).lower() == "search":
@@ -847,6 +900,44 @@ def ax_type(
         field_label = ""
         open_how = ""
         value_now = ""
+
+        # Background-first: set the field's value via AX without activating the
+        # app. AX-rich apps accept AXValue writes invisibly; WhatsApp/Electron
+        # ignore them, so we verify the write actually took and only then claim a
+        # background success — otherwise we fall through to the foreground
+        # click+keystroke path below (which does bring the app forward).
+        field_bg, field_bg_label = _find_search_text_field(app)
+        if field_bg is None and into:
+            cand = _find_element(app, into, prefer_roles=["AXTextField", "AXSearchField", "AXComboBox"])
+            if cand is not None and _is_editable_text_target(cand):
+                field_bg, field_bg_label = cand, (into or "")
+        if field_bg is not None:
+            try:
+                AXUIElementSetAttributeValue(field_bg, "AXFocused", True)
+                AXUIElementSetAttributeValue(field_bg, "AXValue", "")
+                AXUIElementSetAttributeValue(field_bg, "AXValue", text)
+                time.sleep(0.15)
+            except Exception:
+                pass
+            got = _clean(_ax_str(field_bg, "AXValue") or "")
+            want = _clean(text)
+            if want and (got == want or want in got):
+                if submit:
+                    # AXConfirm submits the field without a keystroke — still
+                    # background. If the app does not implement it, the live
+                    # results still filter on the value we set.
+                    try:
+                        from ApplicationServices import AXUIElementPerformAction
+
+                        AXUIElementPerformAction(field_bg, "AXConfirm")
+                    except Exception:
+                        pass
+                return ExecResult(
+                    ok=True,
+                    backend="ax_bg",
+                    message=f"set {field_bg_label or into or 'field'!r} via AXValue in background value={got!r}",
+                    command=f"ax_type {app}",
+                )
 
         for attempt in range(2):
             _activate_app(app)

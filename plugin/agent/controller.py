@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -501,24 +500,6 @@ def resolve_goal_no_progress_timeout_seconds(
     if timeout <= 0:
         return float("inf")
     return max(5.0, timeout)
-
-
-def resolve_foreground_wait_cap_seconds() -> float:
-    """How long the agent may wait for its app to return to the foreground.
-
-    Waiting for the user to return to the task app is *free* — it does not spend
-    the step budget or trip the no-progress watchdog — but it is capped so a task
-    left permanently backgrounded ends instead of hanging forever. Overridable
-    via ``HERMES_FOREGROUND_WAIT_CAP_SECONDS`` (<= 0 waits indefinitely).
-    """
-    raw = os.getenv("HERMES_FOREGROUND_WAIT_CAP_SECONDS", "")
-    try:
-        cap = float(raw) if str(raw).strip() else 240.0
-    except (TypeError, ValueError):
-        cap = 240.0
-    if cap <= 0:
-        return float("inf")
-    return cap
 
 
 def parse_typed_query_evidence(message: str, expected: str = "") -> str:
@@ -1220,82 +1201,14 @@ def run_goal_closed_loop(
     prev_state_sig: Optional[str] = None
     static_streak = 0
 
-    # Foreground ownership. The agent owns its goal, so keeping the task app
-    # usable is the agent's job, never the user's. Two faculties make that work:
-    # perception runs in the *background* (window-scoped capture sees the app
-    # regardless of z-order, so a look never needs the app frontmost), and
-    # actuation *brings the app to the foreground itself* — keystrokes and clicks
-    # land in the frontmost window, so before acting the agent activates its own
-    # app, persistently, rather than waiting for the user to do it. The only
-    # thing it cannot overcome is a surface it genuinely cannot raise (a locked
-    # screen); that is capped so a truly unusable machine ends the run instead of
-    # hanging, and the activation time is free (it does not burn the step budget
-    # or trip the stall watchdog).
-    from plugin.agent.focus_of_action import (
-        foreground_app_name,
-        foreground_gate_enabled,
-        foreground_matches_task,
-        task_anchor_app,
-    )
-
-    foreground_wait_cap_s = resolve_foreground_wait_cap_seconds()
-    foreground_gate_on = foreground_gate_enabled()
-    # Families that read/reason only: they use window-scoped capture and the AX
-    # tree, neither of which needs the app frontmost, so they never foreground.
-    _NON_ACTUATING_FAMILIES = {"observe", "think", "wait", "noop"}
-
-    def _ensure_task_foreground(iteration: int, *, action_family: str) -> tuple[bool, float]:
-        """Bring the task app frontmost so the agent can act — the agent's job.
-
-        A no-op for background-capable families and when the app is already
-        frontmost. Otherwise the agent activates its own app and retries,
-        persistently, until it is frontmost or the cap is hit (a surface it
-        cannot raise, e.g. a locked screen). The elapsed time is free.
-        """
-        nonlocal goal_run_started_at, goal_last_progress_at
-        if not foreground_gate_on:
-            return True, 0.0
-        if str(action_family or "").strip().lower() in _NON_ACTUATING_FAMILIES:
-            return True, 0.0
-        if foreground_matches_task(goal):
-            return True, 0.0
-        task_app = task_anchor_app(goal)
-        waited = 0.0
-        poll = 2.0
-        raised = True
-        while True:
-            # Bringing the app forward is the agent's responsibility: activate it.
-            try:
-                recover_obscured_target_app(task_app)
-            except Exception:
-                pass
-            _wait(poll, reason="bringing task app to foreground")
-            waited += poll
-            fg = foreground_app_name()
-            _log_cycle(
-                log,
-                iteration=iteration,
-                phase="foregrounding_task_app",
-                payload={
-                    "foreground_app": fg,
-                    "task_app": task_app,
-                    "action_family": str(action_family or ""),
-                    "waited_s": round(waited, 1),
-                    "wait_cap_s": foreground_wait_cap_s,
-                    "reason": "activating the task app so the agent can act (the agent owns this, not the user)",
-                },
-                status="warn",
-            )
-            if foreground_matches_task(goal, foreground=fg):
-                break
-            if waited >= foreground_wait_cap_s:
-                raised = False
-                break
-        # Activation time is free: advance both clocks so the baselines are
-        # unchanged whether or not the app could be raised.
-        goal_run_started_at += waited
-        goal_last_progress_at += waited
-        return raised, waited
+    # Foreground ownership lives in the actuation capability, not here. The agent
+    # owns keeping its app usable, but *how* depends on the app: perception always
+    # runs in the background (window-scoped capture sees the app regardless of
+    # z-order), and actuation prefers background AX actions (AXPress / AXValue,
+    # invisible) and brings the app to the foreground *itself* only when it must
+    # fall back to synthetic clicks/keystrokes on an AX-blind app. The executor
+    # makes that choice per action, so the control loop no longer foregrounds
+    # preemptively (doing so would defeat background actuation for AX-rich apps).
 
     for iteration in range(1, step_budget + 1):
         if _goal_run_budget_exceeded():
@@ -2218,37 +2131,6 @@ def run_goal_closed_loop(
                 predicted_affordances=list(pred.get("expected_affordances") or []),
             )
             continue
-
-        # About to actuate: keystrokes/clicks land in the frontmost window, so
-        # ensure the task app is frontmost first — the agent raises its own app
-        # rather than waiting for the user. Background-capable families skip this.
-        fg_raised, fg_waited_s = _ensure_task_foreground(
-            iteration, action_family=decision.action_family
-        )
-        if not fg_raised:
-            _log_cycle(
-                log,
-                iteration=iteration,
-                phase="foreground_unavailable",
-                payload={
-                    "foreground_app": foreground_app_name(),
-                    "task_app": task_anchor_app(goal),
-                    "action_family": decision.action_family,
-                    "waited_s": round(fg_waited_s, 1),
-                    "wait_cap_s": foreground_wait_cap_s,
-                    "reason": "could not raise the task app to act (screen locked or activation blocked)",
-                },
-                status="fail",
-            )
-            return _finish_failure(
-                "could not bring the task app to the foreground to act",
-                {
-                    "foreground_app": foreground_app_name(),
-                    "task_app": task_anchor_app(goal),
-                    "waited_s": round(fg_waited_s, 1),
-                },
-                iterations=iteration - 1,
-            )
 
         execution = execute.execute(decision)
         runtime.execution_state.record(decision, execution.__dict__)
