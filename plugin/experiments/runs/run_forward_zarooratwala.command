@@ -44,6 +44,11 @@ export HERMES_AUXILIARY_PROVIDER_POLICY=ollama-only
 : "${HERMES_DECISION_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_DECISION_HIGH_RISK_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_SELECTOR_STRICT:=1}"
+# Let the executive drive the loop: meta-action selection gates perception and
+# dispatches VERIFY/BACKTRACK/ASK_USER as real phases (workspace population is
+# always on regardless). Overridable via the environment.
+: "${HERMES_META_PERCEPTION:=1}"
+export HERMES_META_PERCEPTION
 export HERMES_FORWARD_STRICT_PERCEPTION
 export HERMES_FORWARD_PERCEPTION_SOURCE_TIMEOUT_SECONDS
 export HERMES_FORWARD_STRICT_PERCEPTION_RETRIES
