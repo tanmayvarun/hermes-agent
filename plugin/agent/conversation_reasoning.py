@@ -137,11 +137,18 @@ def rank_conversation_messages(
     world: Any = None,
     force: bool = False,
 ) -> Optional[ConversationMessageRelevance]:
-    """LLM-assisted ranking of visible conversation rows.
+    """Deterministic ranking of visible conversation rows.
 
     The compatibility wrapper converts rows into generic content objects and
-    asks the core object-discovery engine which one is most relevant. There is
-    still no deterministic fallback once we enter the LLM path.
+    asks the core object-discovery engine to score them.
+
+    The engine can escalate to a second model to arbitrate which row matches
+    the goal, but that judgement belongs to unified cognition, which already
+    reports ``matches_goal`` against the same rows. Consulting another model
+    here produces a rival answer and, when the auxiliary route stalls, blocks
+    the control loop for minutes behind a call whose result is discarded on
+    failure anyway. The scores below stay as ranking evidence; relevance is
+    decided upstream.
     """
 
     rows = [row for row in rows if isinstance(row, dict) and row.get("entity_id") is not None]
@@ -161,7 +168,7 @@ def rank_conversation_messages(
         window_name=str(view.get("window_name") or ""),
         conversation_window=window,
         visible_object_count=len(rows),
-        use_llm=True,
+        use_llm=False,
         active_subgraph=dict(
             getattr(world, "last_active_subgraph", None) or view.get("active_cognitive_subgraph") or {}
         ),
@@ -174,7 +181,7 @@ def rank_conversation_messages(
         container_type=context.container_type,
         context=context,
         world=world,
-        force_llm=True,
+        force_llm=False,
     )
     result = _parse_resolution(goal, rows, resolution)
     if world is not None:

@@ -11,8 +11,19 @@ from plugin.perception.observation import Observation
 logger = logging.getLogger(__name__)
 
 
-def _ocr_enabled() -> bool:
+def ocr_enabled() -> bool:
+    """Whether the OCR source may run at all.
+
+    Public because the perception packet has to *declare* which inputs the model
+    is being given. A model told nothing about OCR cannot distinguish "there is
+    no text on this surface" from "nobody read the text", and it answers those
+    two situations very differently.
+    """
     return str(os.getenv("HERMES_PERCEPTION_OCR", "1")).strip().lower() not in {"0", "false", "no", "off"}
+
+
+# Retained for callers that predate the public name.
+_ocr_enabled = ocr_enabled
 
 COVERAGE_THRESHOLD = 0.80
 

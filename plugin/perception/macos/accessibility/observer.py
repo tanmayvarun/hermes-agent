@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
+from plugin.perception.capture_frame import IDENTITY_KEY as CAPTURE_FRAME_KEY, CaptureFrame
 from plugin.perception.macos.accessibility.tree_parse import observation_from_tree
 from plugin.perception.observation import Observation
 
@@ -27,6 +28,55 @@ def _normalize_owner(name: Any) -> str:
     text = str(name or "")
     cleaned = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
     return cleaned.strip().lower()
+
+
+def _window_frame_for_app(app_name: str) -> Optional[tuple[int, tuple[float, float, float, float]]]:
+    """The window id *and* its bounds in screen points, for the same window.
+
+    The bounds must come from the same lookup as the id: resolving them
+    separately invites a capture scoped to one window and coordinates measured
+    against another if the app raises a second window in between.
+    """
+    target = _normalize_owner(app_name)
+    if not target:
+        return None
+    try:
+        from Quartz import (
+            CGWindowListCopyWindowInfo,
+            kCGNullWindowID,
+            kCGWindowListOptionOnScreenOnly,
+        )
+    except Exception:
+        return None
+    try:
+        infos = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID) or []
+    except Exception:
+        return None
+    best: Optional[tuple[int, tuple[float, float, float, float]]] = None
+    best_area = 0.0
+    for info in infos:
+        owner = _normalize_owner(info.get("kCGWindowOwnerName"))
+        if owner != target and target not in owner and owner not in target:
+            continue
+        layer = info.get("kCGWindowLayer")
+        if layer not in (0, None):
+            continue
+        bounds = info.get("kCGWindowBounds") or {}
+        try:
+            x = float(bounds.get("X", 0.0))
+            y = float(bounds.get("Y", 0.0))
+            w = float(bounds.get("Width", 0.0))
+            h = float(bounds.get("Height", 0.0))
+        except (TypeError, ValueError):
+            continue
+        area = w * h
+        if area > best_area:
+            num = info.get("kCGWindowNumber")
+            if num is None:
+                continue
+            best_area = area
+            best = (int(num), (x, y, w, h))
+    return best
 
 
 def _window_id_for_app(app_name: str) -> Optional[int]:
@@ -102,13 +152,38 @@ def _raise_app(app_name: str) -> None:
     _time.sleep(0.6)
 
 
-def _capture_screen_screenshot(*, app_name: str = "WhatsApp") -> tuple[Optional[str], Optional[str]]:
+def _measure_capture_frame(
+    shot: Path, window_bounds: Optional[tuple[float, float, float, float]]
+) -> CaptureFrame:
+    """The transform from this capture's pixels to screen points.
+
+    Measured from the file rather than assumed, so a Retina window (2x) and a
+    window on a non-Retina second display (1x) each get the right scale.
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(shot) as im:
+            width_px = float(im.size[0])
+    except Exception:
+        return CaptureFrame()
+    return CaptureFrame.measure(width_px, window_bounds)
+
+
+def _capture_screen_screenshot(
+    *, app_name: str = "WhatsApp"
+) -> tuple[Optional[str], Optional[str], CaptureFrame]:
     """Capture the target app's window to a temp PNG, or return an explicit error.
 
     Prefers a window-scoped grab (``screencapture -l <id>``) so an occluding
     window cannot leak into perception. If the app has no on-screen window at all
     (minimized / another Space), the agent raises it and re-resolves rather than
     perceiving the wrong app; a full-screen grab is the last resort only.
+
+    Also returns the transform from the resulting image's pixels back to screen
+    points. A window-scoped Retina grab is offset by the window's origin and
+    doubled in scale, so anything measured on these pixels is unclickable until
+    it is converted -- see plugin/perception/capture_frame.
     """
     fd, path = tempfile.mkstemp(suffix=".png", prefix=f"{app_name.lower().replace(' ', '_')}_obs_")
     os.close(fd)
@@ -131,33 +206,47 @@ def _capture_screen_screenshot(*, app_name: str = "WhatsApp") -> tuple[Optional[
         return False, (proc.stderr or "").strip() or "screencapture produced an empty file"
 
     errors: list[str] = []
-    win_id = _window_id_for_app(app_name)
-    if win_id is None:
+    found = _window_frame_for_app(app_name)
+    if found is None:
         # No on-screen window for the task app: it is minimized or on another
         # Space, so there is nothing to scope a background grab to. Raise it and
         # re-resolve — capturing the whole screen here would perceive whatever
         # foreign app happens to be frontmost (the exact drift we must avoid).
         _raise_app(app_name)
-        win_id = _window_id_for_app(app_name)
-    if win_id is not None:
+        found = _window_frame_for_app(app_name)
+    if found is not None:
+        win_id, window_bounds = found
         # -l scopes to the window; -o drops the drop-shadow border. The window
         # server composites just this window, so z-order / occlusion is moot.
         ok, err = _run(["screencapture", "-x", "-o", "-l", str(win_id), str(shot)])
         if ok:
-            return str(shot), None
+            return str(shot), None, _measure_capture_frame(shot, window_bounds)
         if err:
             errors.append(f"window-scoped: {err}")
 
     ok, err = _run(["screencapture", "-x", str(shot)])
     if ok:
-        return str(shot), None
+        # Full-screen: the origin is the display's, but the scale still is not
+        # the identity on a Retina panel, so measure it against the main screen.
+        return str(shot), None, _measure_capture_frame(shot, _main_screen_bounds())
     if err:
         errors.append(f"full-screen: {err}")
     try:
         shot.unlink(missing_ok=True)
     except Exception:
         pass
-    return None, "; ".join(errors) or "screencapture failed"
+    return None, "; ".join(errors) or "screencapture failed", CaptureFrame()
+
+
+def _main_screen_bounds() -> Optional[tuple[float, float, float, float]]:
+    """The main display's frame in points, for scaling a full-screen grab."""
+    try:
+        from AppKit import NSScreen
+
+        frame = NSScreen.mainScreen().frame()
+        return (0.0, 0.0, float(frame.size.width), float(frame.size.height))
+    except Exception:
+        return None
 
 
 class Observer(Protocol):
@@ -289,11 +378,16 @@ def attach_screenshot_to_observation(
     """
     if obs.screenshot_path:
         return obs, None
-    screenshot_path, screenshot_error = _capture_screen_screenshot(app_name=app_name)
+    screenshot_path, screenshot_error, frame = _capture_screen_screenshot(app_name=app_name)
     if screenshot_path:
         obs.screenshot_path = screenshot_path
         obs.meta = dict(obs.meta or {})
         obs.meta["screenshot_source"] = "screencapture"
+        # Travel the transform with the pixels. Anything that measures a
+        # rectangle on this image (OCR, the vision model) owes a conversion back
+        # to screen points before the result can be clicked, and re-deriving it
+        # later would race the window being moved or resized in between.
+        obs.meta[CAPTURE_FRAME_KEY] = frame.as_dict()
         if screenshot_error:
             obs.meta["screenshot_error"] = screenshot_error
         return obs, screenshot_error

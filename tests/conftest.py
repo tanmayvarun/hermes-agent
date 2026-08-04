@@ -353,6 +353,23 @@ def _hermetic_environment(tmp_path, monkeypatch):
     # custom host resolution override/delete this explicitly.
     monkeypatch.setenv("HERMES_HONCHO_HOST", "hermes")
 
+    # Unified cognition is the production-default perceptor path (one multimodal
+    # pass per decision). In unit tests that would reach the reasoning provider,
+    # so pin it OFF by default for hermeticity; tests that exercise the unified
+    # loop opt back in with ``monkeypatch.setenv("HERMES_UNIFIED_COGNITION", "1")``
+    # (see tests/plugin/test_unified_cognition.py). This mirrors production, where
+    # the live launcher sets it explicitly.
+    monkeypatch.setenv("HERMES_UNIFIED_COGNITION", "0")
+
+    # The two faculties that read the *live* screen: the commit gate (re-reads the
+    # target rectangle before acting) and foreground reclaim (raises the task app
+    # when another holds the foreground). Both are meaningless and disruptive in a
+    # headless test — the frontmost app is the test runner and there is no target
+    # to read — so pin them off. Tests of these faculties call the units directly
+    # or opt back in explicitly; the live launcher sets both.
+    monkeypatch.setenv("HERMES_ACTION_GUARD", "0")
+    monkeypatch.setenv("HERMES_FOREGROUND_GATE", "0")
+
     # 3. Redirect HERMES_HOME to a per-test tempdir. Code that reads
     #    ``~/.hermes/*`` via ``get_hermes_home()`` now gets the tempdir.
     #

@@ -62,13 +62,35 @@ export HERMES_META_PERCEPTION
 export HERMES_UNIFIED_COGNITION
 export HERMES_LAYERED_PERCEPTION
 export HERMES_PERCEPTION_OCR
-# Persistence gate: hold (don't act) while a foreign app is frontmost. The user
-# may take the machine back mid-task (switch to YouTube, take a call); the agent
-# keeps its goal and world and resumes when WhatsApp is frontmost again, rather
-# than sending keystrokes to the wrong window. Off by default in code so the
-# headless control-loop tests never engage it.
+# Foreground persistence: take the app back, don't wait for it. A call or a
+# notification steals the foreground mid-task and every synthetic click after
+# that lands in whatever window took it, so the agent raises WhatsApp itself,
+# every iteration it finds it gone, uncapped — the interruptions this answers
+# recur by nature. Off by default in code so headless control-loop tests (whose
+# frontmost app is the test runner) never engage it.
 : "${HERMES_FOREGROUND_GATE:=1}"
 export HERMES_FOREGROUND_GATE
+# Commit gate: verify the target immediately before acting. Perception is ~60s
+# stale by the time an action lands (measured: 35-76s), so a coordinate resolved
+# from that frame is a claim about the past. This re-reads the target rectangle
+# and refuses the click when it no longer holds what the decision chose. Off by
+# default in code because it reads the live screen.
+: "${HERMES_ACTION_GUARD:=1}"
+export HERMES_ACTION_GUARD
+# World critic's appeal court. The deterministic rules settle the ordinary frame
+# for free; this is consulted only for a change they cannot account for — an
+# object inventory rewritten with no action to explain it, or a surface jump the
+# hand-written topology table does not know about. Off by default in code so no
+# offline test reaches for a model.
+: "${HERMES_CRITIC_COHERENCE:=1}"
+export HERMES_CRITIC_COHERENCE
+# Wall-clock budget for the whole goal. The machine config says 900s, which cut
+# the previous run off at 917s having just opened the source conversation — the
+# forward, destination pick and send never got a turn. A convergence test has to
+# be allowed to finish, otherwise the result measures the budget rather than the
+# agent.
+: "${HERMES_GOAL_RUN_TIMEOUT_SECONDS:=2700}"
+export HERMES_GOAL_RUN_TIMEOUT_SECONDS
 export HERMES_FORWARD_STRICT_PERCEPTION
 export HERMES_FORWARD_PERCEPTION_SOURCE_TIMEOUT_SECONDS
 export HERMES_FORWARD_STRICT_PERCEPTION_RETRIES

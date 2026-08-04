@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from plugin.perception.capture_frame import CaptureFrame
+
 from plugin.agent.action import Action
 from plugin.agent.capabilities.catalog import model_allowed_actions
 from plugin.agent.features import StateFeatures
@@ -56,7 +58,17 @@ logger = logging.getLogger(__name__)
 # parallel configuration surface.
 UNIFIED_TASK = "screen_understanding"
 
-MAX_AX_EVIDENCE = 24
+# A safety bound on a pathological tree, not a relevance filter. It was 24, with
+# entities *ranked by goal-term overlap* and the rest discarded — which withheld
+# exactly the controls a task needs and never names: the Forward menu item, the
+# composer, the New-chat button all score near zero against "zarooratwala" and
+# were dropped, while the affordance frontier went on telling the model those
+# actions existed. Redundant evidence costs a capable model nothing; missing
+# evidence costs it the inference. Measured, the saving was not worth having:
+# 24 entities is ~1.25k tokens and a full 120-entity window ~6.5k, against a
+# context two orders of magnitude larger. Scoring now decides *order* only, so
+# the goal-relevant items still arrive first where attention is cheapest.
+MAX_AX_EVIDENCE = 200
 
 # Motor primitives plus every *realized* general capability. Contract-only
 # catalog entries stay out until they have a realization.
@@ -144,12 +156,16 @@ CANONICAL_SURFACES: Tuple[str, ...] = (
 
 
 def unified_cognition_enabled() -> bool:
-    """Opt-in while the unified loop is proven on live tasks.
+    """Authoritative perceptor path: one multimodal pass is the primary loop.
 
-    Defaulting this on would silently reroute every existing decision path,
-    so the live experiment turns it on explicitly.
+    This is the perceptor -> world-critic -> brain loop the architecture targets:
+    it carries the prior world document plus the last action's predicted-vs-actual
+    outcome back into the model, so surprise forces a history-aware re-perception.
+    The split ``perception_synthesis`` path is retained only as a fallback for when
+    this declines or returns a low-confidence / inadmissible proposal. Set
+    ``HERMES_UNIFIED_COGNITION=0`` to A/B against the legacy split path.
     """
-    raw = os.getenv("HERMES_UNIFIED_COGNITION", "0").strip().lower()
+    raw = os.getenv("HERMES_UNIFIED_COGNITION", "1").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -170,6 +186,10 @@ class UnifiedProposal:
     # The document keeps the model's own coordinates so they stay consistent
     # with the pictures it sees; conversion happens only at execution.
     point_scale: float = 1.0
+    # Where the model's (0, 0) sits on screen, in points. Non-zero whenever the
+    # frame was scoped to a window rather than the whole display, which is the
+    # normal case: the capture deliberately excludes occluding windows.
+    point_origin: Tuple[float, float] = (0.0, 0.0)
     observed_state: Dict[str, Any] = field(default_factory=dict)
     belief_updates: List[Dict[str, Any]] = field(default_factory=list)
     next_action: Dict[str, Any] = field(default_factory=dict)
@@ -275,12 +295,113 @@ def _bounds_tuple(bounds: Any) -> Optional[List[int]]:
         return None
 
 
+# The whole read reaches the model. A cap here would drop lines the AX tree also
+# withheld -- the two sources are blind in different places, which is the reason
+# for having both -- and trimming the tail silently loses whatever sits at the
+# bottom of a list, where an unread message usually is.
+MAX_PACKET_OCR_LINES = 200
+
+
+def _enumerate_sources(
+    world: WorldModel, goal: Goal, features: StateFeatures
+) -> List[Dict[str, Any]]:
+    """Declare every perception input, whether it fired, and why.
+
+    One perceptor, all inputs enumerated. The model is the only party that can
+    sensibly decide whether a line of read text and an accessibility element are
+    the same control, so it is handed each source and told the state of each --
+    rather than the runtime reconciling them first and showing the model its
+    verdict.
+
+    Declaring a source that did *not* fire matters as much as one that did. A
+    model told nothing about OCR cannot tell "there is no text on this surface"
+    from "nobody read the text", and those call for opposite responses: trust the
+    empty reading, or look harder at the pixels. The same holds for a chrome-only
+    accessibility tree, which is not evidence that the screen is empty.
+    """
+    extras = features.extras if isinstance(features.extras, dict) else {}
+    node_count = int(extras.get("observation_node_count") or 0)
+    content_count = int(extras.get("app_content_node_count") or 0)
+    sources: List[Dict[str, Any]] = []
+
+    screenshot = str(getattr(world, "last_screenshot_path", "") or "")
+    sources.append(
+        {
+            "source": "screenshot",
+            "state": "on" if screenshot else "unavailable",
+            "why": (
+                "always supplied; the authoritative account of the screen"
+                if screenshot
+                else "no capture this frame — reason with the other sources only"
+            ),
+        }
+    )
+
+    if content_count > 0:
+        ax_state, ax_why = "on", f"{content_count} content nodes exposed"
+    elif node_count > 0:
+        ax_state, ax_why = (
+            "chrome_only",
+            "window chrome only, no content — absence here is not evidence the "
+            "screen is empty; read the pixels",
+        )
+    else:
+        ax_state, ax_why = "empty", "the app exposed no accessibility tree this frame"
+    sources.append(
+        {
+            "source": "accessibility",
+            "state": ax_state,
+            "why": ax_why,
+            "node_count": node_count,
+            "content_node_count": content_count,
+        }
+    )
+
+    ocr_lines = [
+        line for line in (getattr(world, "last_ocr_lines", None) or []) if isinstance(line, dict)
+    ]
+    try:
+        from plugin.perception.macos.fusion.coverage import ocr_enabled
+
+        ocr_allowed = ocr_enabled()
+    except Exception:
+        ocr_allowed = True
+    if not ocr_allowed:
+        ocr_entry: Dict[str, Any] = {
+            "source": "ocr",
+            "state": "off",
+            "why": "disabled for this run — no text was read, so do not treat "
+            "missing text as absent text",
+        }
+    elif ocr_lines:
+        ocr_entry = {
+            "source": "ocr",
+            "state": "on",
+            "why": "text read from the screenshot, bounds in screen points; "
+            "corroborates the pixels but may split or clip words",
+            "lines": ocr_lines[:MAX_PACKET_OCR_LINES],
+        }
+    else:
+        ocr_entry = {
+            "source": "ocr",
+            "state": "empty",
+            "why": "ran but read no text on this surface",
+        }
+    sources.append(ocr_entry)
+    return sources
+
+
 def _ax_evidence(world: WorldModel, goal: Goal, limit: int = MAX_AX_EVIDENCE) -> List[Dict[str, Any]]:
-    """Serialize visible entities with stable ids AND bounds.
+    """Serialize every visible entity with stable ids AND bounds.
 
     Bounds matter: without them the model can describe a control but cannot
     tell the runtime which pixel region it means, which is what forced the old
     label-matching guesswork.
+
+    The goal-term score orders the list; it does not decide who is in it. Ranking
+    by relevance and truncating is the runtime pre-judging what the model needs,
+    which is the judgement being moved *into* the model — and it withholds the
+    unnamed controls (Forward, the composer) that a task turns on.
     """
     goal_terms = {
         str(term).strip().lower()
@@ -380,7 +501,9 @@ def materialize_vision_entities(world: WorldModel, proposal: Optional["UnifiedPr
     for index, item in enumerate(objects):
         text = str(item.get("text") or "").strip()
         screen = _to_screen_point(
-            item.get("point") or item.get("target_point"), proposal.point_scale
+            item.get("point") or item.get("target_point"),
+            proposal.point_scale,
+            proposal.point_origin,
         )
         if screen is None or not text:
             continue
@@ -400,6 +523,13 @@ def materialize_vision_entities(world: WorldModel, proposal: Optional["UnifiedPr
                 "source": "vision",
                 "matches_goal": bool(item.get("matches_goal")),
                 "description": text,
+                # The model's own name for this object ("kulvinder_ji_row"). Its
+                # ids are strings and these entities are keyed by int, so without
+                # keeping it there is no way back from the id the model cites in
+                # target_id to the object it meant, and the runtime has to guess
+                # from the label instead — which is how a click aimed at a chat
+                # row landed on the search field echoing the same name.
+                "vision_object_id": str(item.get("id") or "").strip(),
             },
         )
         created += 1
@@ -481,6 +611,7 @@ def reproject_unified_reading(world: WorldModel, execution_state: Any) -> int:
         visible_objects=objects,
         confidence=float(doc.get("confidence") or 0.6),
         point_scale=float(getattr(execution_state, "unified_point_scale", 1.0) or 1.0),
+        point_origin=tuple(getattr(execution_state, "unified_point_origin", (0.0, 0.0)) or (0.0, 0.0)),
         model="reprojected",
     )
     created = materialize_vision_entities(world, proposal)
@@ -557,6 +688,129 @@ def _record_transition(
         pass
 
 
+def _norm_text(value: Any) -> str:
+    """Lowercased, whitespace-collapsed text for comparing names across sources."""
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def prediction_error(
+    expectation: Optional[Dict[str, Any]], document: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Compare what the last action was predicted to produce against what appeared.
+
+    The agent predicts a surface and the controls it expects to find there, and
+    that prediction is the only thing that makes a result informative: without it
+    a screen is just a screen, and with it an unchanged screen is evidence that
+    the agent's model of what a control does is wrong. Naming the mismatch is
+    what turns an execution into something to learn from.
+
+    Both halves already existed -- the model emitted expected_transition, the
+    runtime stored it and handed it back as you_predicted -- but nothing ever put
+    them side by side. The comparison was left implicit, for the model to notice
+    on its own while simultaneously perceiving the screen, updating its world
+    model and choosing a move. It did not notice: on a live run it predicted a
+    context menu, got the unchanged conversation, and re-issued the same
+    right-click three times.
+
+    Deliberately structural rather than task-specific: a predicted surface and a
+    set of expected controls describe a step in any application, so this reads
+    the same for a file dialog or a checkout page as for a chat.
+    """
+    if not isinstance(expectation, dict) or not expectation:
+        return {}
+    predicted_surface = _norm_text(expectation.get("surface"))
+    if not predicted_surface:
+        return {}
+
+    doc = document if isinstance(document, dict) else {}
+    observed_surface = _norm_text(doc.get("surface"))
+
+    # What the screen actually offers, by visible text and by the kind the model
+    # assigned. Both are consulted because a control is named either way: a menu
+    # item reads "Forward", while a composer is recognised as kind=input_field.
+    haystack: List[str] = []
+    for item in doc.get("objects") or []:
+        if not isinstance(item, dict):
+            continue
+        for key in ("text", "kind", "id"):
+            value = _norm_text(item.get(key))
+            if value:
+                haystack.append(value)
+
+    expected_controls = [
+        _norm_text(control)
+        for control in (expectation.get("likely_controls") or [])
+        if _norm_text(control)
+    ]
+    found = [c for c in expected_controls if any(c in text or text in c for text in haystack)]
+    missing = [c for c in expected_controls if c not in found]
+
+    surface_matched = bool(observed_surface) and (
+        observed_surface == predicted_surface
+        or predicted_surface in observed_surface
+        or observed_surface in predicted_surface
+    )
+    # A prediction is borne out when the surface arrived, or -- when the surface
+    # name differs but the controls are all there -- when the thing predicted is
+    # plainly present under another name. Surface vocabularies drift between
+    # frames ("context_menu" vs "message_actions") and punishing that would
+    # manufacture errors out of synonyms.
+    controls_matched = bool(expected_controls) and not missing
+    matched = surface_matched or controls_matched
+
+    if matched:
+        verdict = (
+            f"prediction held: expected {predicted_surface!r} and the screen reads "
+            f"{observed_surface or 'the same'!r}"
+        )
+    elif not observed_surface:
+        verdict = (
+            f"you predicted {predicted_surface!r}; this frame reports no surface at all, "
+            "so the prediction could not be checked"
+        )
+    else:
+        verdict = (
+            f"you predicted {predicted_surface!r} and the screen is {observed_surface!r}. "
+            + (
+                f"None of the controls you expected are present ({', '.join(expected_controls[:4])})."
+                if expected_controls and not found
+                else f"Missing: {', '.join(missing[:4])}."
+                if missing
+                else "The surface you expected did not appear."
+            )
+        )
+
+    out: Dict[str, Any] = {
+        "predicted_surface": predicted_surface,
+        "observed_surface": observed_surface,
+        "matched": matched,
+        "verdict": verdict,
+    }
+    if expected_controls:
+        out["controls_predicted"] = expected_controls[:8]
+        out["controls_present"] = found[:8]
+        out["controls_absent"] = missing[:8]
+    return out
+
+
+def note_prediction_error(execution_state: Any, proposal: Optional["UnifiedProposal"]) -> Dict[str, Any]:
+    """Score the standing prediction against this reading, before it is replaced.
+
+    Order matters: ``_remember_reading`` overwrites the stored expectation with
+    the *new* prediction, so the comparison has to happen while the previous one
+    is still there.
+    """
+    if execution_state is None or proposal is None:
+        return {}
+    expectation = getattr(execution_state, "unified_last_expectation", None)
+    error = prediction_error(expectation, proposal.world_model)
+    try:
+        execution_state.last_prediction_error = error
+    except Exception:
+        pass
+    return error
+
+
 def prior_document(execution_state: Any) -> Dict[str, Any]:
     """The world document the model produced last step, or an empty one."""
     document = getattr(execution_state, "unified_world_document", None)
@@ -577,8 +831,18 @@ def build_decision_packet(
     evidence and returns the update, instead of the runtime deriving state the
     runtime cannot see.
 
-    Deliberately compact: the full AX tree, every prior world and the whole
-    capability graph would reintroduce the context bloat this design avoids.
+    Complete over compact, where completeness is affordable. Redundancy between
+    the sources costs a capable model nothing — it can ignore an OCR line that
+    repeats an AX label — whereas an input withheld because the runtime judged it
+    irrelevant can cost the whole inference, and that judgement is precisely what
+    this design moves into the model. So sources are gated on *cost and
+    availability*, never on relevance, and a source that was withheld is declared
+    as such rather than silently omitted (see _enumerate_sources).
+
+    What stays out is bounded by measurement rather than instinct: every prior
+    world document and the whole capability graph are genuinely large, while the
+    visible entity list and the OCR read are a few thousand tokens against a
+    context two orders of magnitude bigger.
     """
     extras = features.extras if isinstance(features.extras, dict) else {}
     document = prior_document(execution_state)
@@ -591,6 +855,9 @@ def build_decision_packet(
         "ax_node_count": int(extras.get("observation_node_count") or 0),
         "ax_content_node_count": int(extras.get("app_content_node_count") or 0),
         "ax_evidence": _ax_evidence(world, goal),
+        # Every input, with its gate state. See _enumerate_sources: the model
+        # does the fusing, so it needs to know what it was and was not given.
+        "sources": _enumerate_sources(world, goal, features),
     }
 
     packet: Dict[str, Any] = {
@@ -624,6 +891,10 @@ def build_decision_packet(
     repeats = repeated_readings(execution_state)
     if repeats:
         packet["identical_readings_in_a_row"] = repeats + 1
+
+    stuck = _stuck_report(execution_state)
+    if stuck:
+        packet["stuck_signals"] = stuck
 
     unconfirmed = stale_beliefs(document, frame=frame)
     if unconfirmed:
@@ -676,7 +947,7 @@ def _frontier_for_packet(
     except Exception:
         overlay = None
     try:
-        return build_affordance_frontier(
+        frontier = build_affordance_frontier(
             surface=str(document.get("surface") or ""),
             goal_kind=str(goal.kind or ""),
             ax_evidence=ax_evidence,
@@ -687,6 +958,66 @@ def _frontier_for_packet(
     except Exception:
         # A missing frontier costs the model context; a raised one costs the run.
         return None
+    # The build is memoryless — it re-derives every control from this frame's
+    # evidence. The critic's accepted reality is what carries across frames:
+    # controls already measured inert are withdrawn, and controls a confirmed
+    # reveal put on screen stop being described as latent.
+    try:
+        from plugin.agent.world_critic import reconcile_frontier
+
+        step = getattr(execution_state, "last_plan_step", None)
+        frontier = reconcile_frontier(
+            frontier,
+            document=document,
+            execution_state=execution_state,
+            last_action_family=str(getattr(step, "action_family", "") or ""),
+        )
+    except Exception:
+        pass
+    return frontier
+
+
+def _stuck_report(execution_state: Any) -> Dict[str, Any]:
+    """How long nothing has advanced, and which moves have been tried repeatedly.
+
+    Facts the runtime measures and the model cannot: it sees one frame and its
+    own previous document, so it has no clock and no memory of a loop it has
+    been in. Reported as measurements, not as instructions — whether ten minutes
+    on one step means "keep going, this is a slow search" or "this branch is
+    dead" depends on the screen, which is the model's to read.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        since = float(getattr(execution_state, "seconds_since_progress", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        since = 0.0
+    budget = 0.0
+    try:
+        budget = float(getattr(execution_state, "no_progress_budget_s", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        budget = 0.0
+    if since > 0:
+        out["seconds_since_anything_advanced"] = round(since, 1)
+        if budget > 0:
+            out["seconds_before_this_counts_as_stalled"] = round(budget, 1)
+            out["stalled"] = since >= budget
+
+    ledger = getattr(execution_state, "action_attempts", None)
+    if isinstance(ledger, dict) and ledger:
+        tried = [
+            {
+                "family": str(entry.get("family") or ""),
+                "target": str(entry.get("target") or ""),
+                "attempts": int(entry.get("attempts") or 0),
+                "effects": [str(e) for e in (entry.get("effects") or [])][-3:],
+            }
+            for entry in ledger.values()
+            if isinstance(entry, dict) and int(entry.get("attempts") or 0) >= 2
+        ]
+        tried.sort(key=lambda item: item["attempts"], reverse=True)
+        if tried:
+            out["moves_already_tried_more_than_once"] = tried[:8]
+    return out
 
 
 def _last_action_report(features: StateFeatures, execution_state: Any) -> Dict[str, Any]:
@@ -713,6 +1044,16 @@ def _last_action_report(features: StateFeatures, execution_state: Any) -> Dict[s
     expectation = getattr(execution_state, "unified_last_expectation", None)
     if expectation:
         out["you_predicted"] = expectation
+
+    # The prediction scored against what actually appeared. Handing over the
+    # prediction and the screen separately and leaving the comparison implicit was
+    # not enough: the model has to perceive, update its world model and choose a
+    # move in the same call, and the check quietly went unmade — three identical
+    # right-clicks after three predictions of a menu that never opened. The
+    # mismatch is cheap for the runtime to compute and unambiguous once named.
+    error = getattr(execution_state, "last_prediction_error", None)
+    if isinstance(error, dict) and error:
+        out["prediction_error"] = error
 
     # Reflection substrate: the runtime alone measured what the last action
     # actually did to the world. Report that verdict as raw fact so the model
@@ -751,12 +1092,31 @@ def _last_action_report(features: StateFeatures, execution_state: Any) -> Dict[s
     if repeats >= 2:
         out["times_repeated_in_a_row"] = repeats
 
-    # Perception-history contract: the recent *pattern* of surprises, not just
-    # the last one. When the agent has been surprised more than once, feed the
-    # short history so the model can reason over the sequence (e.g. "twice a
-    # click on this row opened a link") and re-perceive at finer granularity.
+    # The same fact without the "in a row" qualifier, which is the one that
+    # matters. A stuck agent rarely repeats a move twice running: the failure
+    # prompts a different move, which fails too and leads back. So the
+    # consecutive counter stays at 1 through a loop that has burned ten minutes,
+    # and the model — told nothing — reads every attempt as its first. This is
+    # the total, so an alternating loop is visible as one.
+    try:
+        total = execution_state.attempts_for(
+            family=out.get("family") or out.get("action") or "",
+            target=str(getattr(step, "semantic_target", "") or getattr(step, "text", "") or ""),
+            surface=str(getattr(execution_state, "accepted_surface", "") or ""),
+        )
+    except Exception:
+        total = 0
+    if total >= 2:
+        out["times_tried_here_in_total"] = total
+
+    # Perception-history contract: the surprise history, fed from the *first*
+    # surprise. Withholding it until a second failure meant the one look that
+    # could diagnose the first failure was the one look that lacked the evidence
+    # to do it — the agent had to fail twice before it was allowed to reason
+    # about failing. The model needs the attempt that just failed in hand to
+    # infer why it failed and what to try instead.
     history = getattr(execution_state, "recent_surprises", None)
-    if isinstance(history, list) and len(history) >= 2:
+    if isinstance(history, list) and history:
         compact: List[Dict[str, Any]] = []
         for s in history[-4:]:
             if not isinstance(s, dict):
@@ -776,6 +1136,15 @@ _SYSTEM_PROMPT = (
     "goal. Reason over the image and the AX evidence jointly: AX is frequently "
     "incomplete or stale, so trust the pixels when they disagree, but prefer an "
     "AX id as an action target whenever one matches what you see.\n\n"
+    "observation.sources lists every input and the state of each, because you "
+    "are the one who reconciles them -- nothing upstream has decided which "
+    "source is right. Read the state before trusting an absence. accessibility "
+    "state chrome_only means the app exposed a window frame and no content: that "
+    "is not evidence the screen is empty, it means read the pixels. ocr state "
+    "off means nobody read the text this frame, so missing text is not absent "
+    "text. ocr state on carries lines with bounds already in screen points; they "
+    "corroborate what you see but may clip or split words, so treat a partial "
+    "match as support rather than contradiction.\n\n"
     "Return the updated world_model together with one action. Strict JSON only:\n"
     "{\n"
     '  "world_model": {\n'
@@ -890,8 +1259,16 @@ _SYSTEM_PROMPT = (
     "multiple rows could match (e.g. aliases, self markers). "
     "Skip a step when the screen already shows its result. "
     "dismiss_transient if the wrong menu/overlay is open.\n"
+    "Whenever the next action acts on something you can see, set "
+    "next_action.target_id to that object's id from world_model.objects, and "
+    "mark that object matches_goal. The id is how you say which one you mean: "
+    "a name alone is ambiguous on exactly the screens that matter, because a "
+    "search field holding the query reads as the same text as the row you typed "
+    "it to find, and without an id the choice falls back to text and takes the "
+    "field.\n"
     "compose_search_query: author the next search string. "
-    "resolve_entity: choose which visible candidate matches a goal referent. "
+    "resolve_entity: choose which visible candidate matches a goal referent — "
+    "name it with target_id. "
     "locate_content: text=query. open_entity: open a chat/channel/thread. "
     "select_content: focus a message/row inside an open surface. "
     "reveal_actions: expose Forward/Reply/etc on that object. "
@@ -924,9 +1301,17 @@ _SYSTEM_PROMPT = (
     "did not), world_change_score near 0 and open_before==open_after mean "
     "nothing changed, failure_domain and diagnosis_hints name the runtime's "
     "guess at why, and times_repeated_in_a_row counts how often you have already "
-    "issued this same move. Compare the screen you now see against you_predicted: "
-    "if they differ, that surprise is strong evidence your last move or your "
-    "world model was wrong.\n"
+    "issued this same move. you_predicted is what you said this action would "
+    "produce, and prediction_error is that prediction already scored against the "
+    "screen: matched=false with a verdict naming what you expected and what is "
+    "actually there. Treat a prediction_error as the most informative thing in "
+    "the packet. It does not merely say the move failed; it says your model of "
+    "what that control does is wrong, and that is what has to change. Before "
+    "choosing, state in progress.notes why you think the prediction failed — the "
+    "control was not where you thought, it needed a different gesture, something "
+    "intercepted it, the object you aimed at was not the one you meant — and let "
+    "that hypothesis pick your next move. Reissuing the move that produced the "
+    "error is never the answer.\n"
     "When the last action succeeded and the screen already shows the result you "
     "wanted, advance — do not repeat it (after focusing a search field, type the "
     "query). But when the last action did NOT produce what you predicted, or "
@@ -941,6 +1326,19 @@ _SYSTEM_PROMPT = (
     "return to the task surface (dismiss/close/go back), then retry the intended "
     "action corrected. Trying the same thing again and expecting a different "
     "result is the one move that is never allowed.\n"
+    "stuck_signals is the clock and the ledger, which you have no other way to "
+    "see: you get one frame and your own last document, so you cannot tell a "
+    "first attempt from a tenth, or ten seconds from ten minutes. "
+    "seconds_since_anything_advanced is real elapsed time with no measurable "
+    "progress, and moves_already_tried_more_than_once lists what you have "
+    "issued repeatedly with what came of it — including moves you alternated "
+    "with something else, which times_repeated_in_a_row cannot show. A move "
+    "listed there with no effect will not start working on this attempt: change "
+    "the target, the capability, or the branch. If minutes have passed on one "
+    "step, say in progress.notes what you believe is blocking it and act on a "
+    "different hypothesis. These are measurements, not orders — a long hunt "
+    "through a conversation is legitimately slow, and you can see whether the "
+    "screen is moving.\n"
     "last_action.recent_surprises, when present, is the short history of your "
     "recent failed moves — read it as a pattern, not isolated events. If the "
     "same kind of surprise recurs (e.g. clicking a conversation row keeps "
@@ -1017,14 +1415,23 @@ def _downscaled_data_url(screenshot_path: str) -> Tuple[str, Tuple[int, int]]:
         return "", (0, 0)
 
 
-def screen_point_scale(screenshot_path: str, image_width: int) -> float:
+def screen_point_scale(
+    screenshot_path: str, image_width: int, capture: Optional[CaptureFrame] = None
+) -> float:
     """Points on screen per unit in the image the model was shown.
 
-    The frame is downscaled before it is sent, so the model answers in the
-    picture's coordinates, not the screen's. Executing those numbers directly
-    put every pointer action off by the downscale ratio -- far enough to
+    Two reductions separate the model's picture from the screen. The frame is
+    downscaled before it is sent, so the model answers in the picture's
+    coordinates; and the capture itself is in backing pixels, which on a Retina
+    panel are half a point each. Executing the model's numbers unconverted put
+    every pointer action off by the product of the two -- far enough to
     right-click the message below the one that was chosen, which read as the
     model misidentifying the target rather than as a units bug.
+
+    The Retina half is taken from the measured capture transform rather than
+    from the main screen's width. The capture is scoped to a *window*, so
+    comparing its width to the whole display's answers a different question and
+    silently returns a plausible wrong number.
     """
     if image_width <= 0:
         return 1.0
@@ -1037,19 +1444,9 @@ def screen_point_scale(screenshot_path: str, image_width: int) -> float:
         return 1.0
     if captured_width <= 0:
         return 1.0
-
-    # A capture is in backing pixels; clicks are in points. On a 2x display the
-    # two differ, so go via the screen rather than assuming they match.
-    points_per_pixel = 1.0
-    try:
-        from AppKit import NSScreen
-
-        screen_width = float(NSScreen.mainScreen().frame().size.width)
-        if screen_width > 0 and abs(screen_width - captured_width) > 1:
-            points_per_pixel = screen_width / captured_width
-    except Exception:
-        points_per_pixel = 1.0
-    return (captured_width / float(image_width)) * points_per_pixel
+    frame = capture or CaptureFrame()
+    pixels_per_point = frame.scale if frame.scale > 0 else 1.0
+    return (captured_width / float(image_width)) / pixels_per_point
 
 
 def _build_messages(
@@ -1307,7 +1704,9 @@ def consult_unified_cognition(
     frame = _advance_frame(execution_state)
     packet = build_decision_packet(goal, world, features, execution_state)
     messages, image_size = _build_messages(packet, screenshot_path)
-    point_scale = screen_point_scale(screenshot_path, image_size[0])
+    capture = CaptureFrame.from_dict(getattr(world, "last_capture_frame", None))
+    point_scale = screen_point_scale(screenshot_path, image_size[0], capture)
+    point_origin = (capture.origin_x, capture.origin_y)
 
     main_runtime = _main_runtime_snapshot()
     targets = _perception_task_targets(main_runtime, task_name=UNIFIED_TASK)
@@ -1362,12 +1761,23 @@ def consult_unified_cognition(
         proposal = _parse_proposal(consultation.parsed, frame=frame)
         proposal.model = str(target.get("model") or "")
         proposal.latency_s = time.time() - start
+        # The single largest cost in an iteration, and previously visible only
+        # inside the decision trace, where nothing summarising the run would find
+        # it. The loop reports it per iteration so time spent is attributable.
+        if execution_state is not None:
+            try:
+                execution_state.last_perception_latency_s = float(proposal.latency_s)
+            except Exception:
+                pass
         proposal.point_scale = point_scale
-        # Carry the scale forward so the reading can be faithfully re-projected
-        # onto the world between model calls (see reproject_unified_reading).
+        proposal.point_origin = point_origin
+        # Carry the transform forward so the reading can be faithfully
+        # re-projected onto the world between model calls (see
+        # reproject_unified_reading).
         if execution_state is not None:
             try:
                 execution_state.unified_point_scale = point_scale
+                execution_state.unified_point_origin = point_origin
             except Exception:
                 pass
         logger.info(
@@ -1398,12 +1808,45 @@ def consult_unified_cognition(
                 proposal.backtrack.get("reason"),
                 proposal.backtrack.get("to"),
             )
+        # Score the standing prediction first: _remember_reading replaces it with
+        # this frame's prediction, and after that the previous one is gone.
+        error = note_prediction_error(execution_state, proposal)
+        if error:
+            logger.info(
+                "Prediction %s: %s",
+                "held" if error.get("matched") else "ERROR",
+                error.get("verdict"),
+            )
         _remember_reading(execution_state, proposal)
         persist_world_document(execution_state, proposal)
         # The critic has settled what is true; now decide what to do about it.
         consult_next_capability(proposal, goal, features, execution_state)
         materialize_vision_entities(world, proposal)
         publish_scene_to_world(world, proposal)
+        # Fill the perception extras the decision layer reads, from this reading
+        # rather than from a second perceptor's.
+        try:
+            if features is not None and isinstance(features.extras, dict):
+                verdict_obj = getattr(execution_state, "last_critic_verdict", None)
+                extras_payload = unified_perception_extras(proposal, verdict_obj)
+                if extras_payload:
+                    features.extras["perception_llm"] = extras_payload
+                    features.extras["perception_task"] = UNIFIED_TASK
+                    features.extras["perception_summary"] = {
+                        "screen_type": extras_payload.get("screen_type"),
+                        "application": extras_payload.get("application"),
+                        "active_surface": extras_payload.get("active_surface"),
+                        "likely_next_family": extras_payload.get("likely_next_family"),
+                        "likely_next_target": extras_payload.get("likely_next_target"),
+                        "confidence": extras_payload.get("confidence"),
+                    }
+                narration = str(
+                    getattr(execution_state, "last_perception_narration", "") or ""
+                )
+                if narration:
+                    features.extras["perception_human_readable"] = narration
+        except Exception:
+            pass
         if record_to:
             _record_frame(
                 packet,
@@ -1506,6 +1949,177 @@ def _apply_layer_permanence(
         proposal.visible_objects = flat_objects(merged)
 
 
+def _verdict_view(verdict: Any) -> Dict[str, Any]:
+    """Normalise a ``CriticVerdict`` or its serialized form into one shape.
+
+    The verdict is an object where it is produced and a dict where it is carried
+    on execution state. Accepting both spares every caller from having to know
+    which side of that boundary it is on.
+    """
+    if verdict is None:
+        return {"accepted_document": {}, "decisions": []}
+    if isinstance(verdict, dict):
+        raw_decisions = verdict.get("decisions") or []
+        accepted = verdict.get("accepted_document") or {}
+    else:
+        raw_decisions = list(getattr(verdict, "decisions", None) or [])
+        accepted = getattr(verdict, "accepted_document", None) or {}
+    decisions: List[Dict[str, Any]] = []
+    for item in raw_decisions:
+        if isinstance(item, dict):
+            decisions.append(item)
+            continue
+        decisions.append(
+            {
+                "field": str(getattr(item, "field", "") or ""),
+                "verdict": str(getattr(item, "verdict", "") or ""),
+                "reason": str(getattr(item, "reason", "") or ""),
+            }
+        )
+    return {
+        "accepted_document": dict(accepted) if isinstance(accepted, dict) else {},
+        "decisions": decisions,
+    }
+
+
+def unified_perception_extras(
+    proposal: Optional[UnifiedProposal],
+    verdict: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """The perception extras the decision layer reads, from the unified reading.
+
+    These keys originated with the legacy perceptor, but six places in the
+    decision layer read them -- candidate value scoring, both selector prompts,
+    storage-pressure recovery and the obscured-app check -- so they are
+    load-bearing no matter which perceptor produced them. Deriving them from the
+    unified reading is what makes the second perceptor *redundant* rather than
+    merely switched off; disabling it without this would silently drop the
+    family recommendation that decision promotion depends on.
+
+    Two mappings are worth naming. ``contradictions`` is the critic's override
+    list: a field the critic refused is, precisely, a contradiction between what
+    the model proposed and what the carried document can support. And
+    ``needs_followup_observe`` comes from the model's own declared coverage and
+    evidence gaps, which is the honest form of the question the old mechanical
+    source-agreement score was reaching for.
+    """
+    if proposal is None:
+        return {}
+    view = _verdict_view(verdict)
+    accepted = dict(view["accepted_document"] or proposal.world_model or {})
+    state = proposal.observed_state or {}
+    surface = str(accepted.get("surface") or state.get("surface") or "").strip().lower()
+    action = proposal.next_action or {}
+    gaps = [str(gap).strip() for gap in (proposal.evidence_gaps or []) if str(gap).strip()]
+    coverage = float(proposal.coverage if proposal.coverage is not None else 1.0)
+
+    contradictions: List[str] = []
+    for decision in view["decisions"]:
+        if str(decision.get("verdict") or "") == "accept":
+            continue
+        field_name = str(decision.get("field") or "?")
+        contradictions.append(f"{field_name}: {str(decision.get('reason') or '')[:140]}")
+
+    evidence = [str(item).strip() for item in (proposal.missing_evidence or []) if str(item).strip()]
+    summary = proposal.summary_text().strip()
+    return {
+        "source": "unified_cognition",
+        "screen_type": _SURFACE_TO_SCREEN_TYPE.get(surface, "unknown"),
+        "application": str(state.get("app") or ""),
+        "active_surface": surface,
+        "likely_next_family": str(action.get("family") or ""),
+        "likely_next_target": str(action.get("target_label") or action.get("target") or ""),
+        "likely_next_text": str(action.get("text") or ""),
+        "confidence": round(float(proposal.confidence or 0.0), 4),
+        "supporting_evidence": ([summary] if summary else []) + evidence[:4],
+        "contradictions": contradictions[:4],
+        "needs_followup_observe": bool(gaps) or coverage < 0.7,
+        "coverage": round(coverage, 3),
+        "evidence_gaps": gaps[:6],
+        # No source for this in the unified reading: the legacy perceptor named
+        # families to avoid, whereas the unified path withdraws dead controls
+        # through the affordance frontier instead. Left empty rather than
+        # invented, since value scoring turns it straight into a penalty.
+        "avoid_families": [],
+    }
+
+
+def narrate_perception(
+    proposal: Optional[UnifiedProposal],
+    verdict: Optional[Any] = None,
+    *,
+    frame: int = 0,
+) -> str:
+    """Render one perception frame as prose a developer can read mid-run.
+
+    Perception is the stage most in need of narration and the least able to
+    supply it: the model's reading is a nested JSON document and the critic's
+    judgement is a list of per-field verdicts, neither legible while a run is in
+    flight. Both are rendered together because the useful question is rarely
+    what the model saw on its own -- it is what the model saw and how much of
+    that the critic let through. A reading that was overruled and a reading that
+    was accepted look identical in the accepted document, and the difference is
+    usually the whole story.
+    """
+    if proposal is None:
+        return ""
+    view = _verdict_view(verdict)
+    accepted = dict(view["accepted_document"] or proposal.world_model or {})
+    surface = str(accepted.get("surface") or "").strip()
+    open_conversation = str(accepted.get("open_conversation") or "").strip()
+    head = f"Perception frame {frame}: surface={surface or 'unknown'}"
+    if open_conversation:
+        head += f" open={open_conversation!r}"
+    reading = proposal.summary_text().strip() or "no reading returned"
+    lines = [f"{head} — {reading}"]
+
+    objects = [item for item in (accepted.get("objects") or []) if isinstance(item, dict)]
+    if objects:
+        shown: List[str] = []
+        for item in objects[:6]:
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            kind = str(item.get("kind") or "").strip()
+            mark = " <-- matches goal" if item.get("matches_goal") else ""
+            shown.append(f"{text[:48]!r}{f' [{kind}]' if kind else ''}{mark}")
+        if shown:
+            more = len(objects) - len(shown)
+            noun = "object" if len(objects) == 1 else "objects"
+            lines.append(
+                f"  saw {len(objects)} {noun}: "
+                + ", ".join(shown)
+                + (f" (+{more} more)" if more > 0 else "")
+            )
+
+    coverage = float(proposal.coverage if proposal.coverage is not None else 1.0)
+    gaps = [str(gap).strip() for gap in (proposal.evidence_gaps or []) if str(gap).strip()]
+    if coverage < 0.999 or gaps:
+        note = f"  coverage {coverage:.2f}"
+        if gaps:
+            note += "; could not establish: " + "; ".join(gaps[:3])
+        lines.append(note)
+
+    # The critic's half. Only its interventions are worth spelling out: a run of
+    # accepts means the reading passed intact, which is one line rather than one
+    # line per field.
+    overrides: List[str] = []
+    accepted_fields = 0
+    for decision in view["decisions"]:
+        call = str(decision.get("verdict") or "")
+        if call == "accept":
+            accepted_fields += 1
+            continue
+        name = str(decision.get("field") or "?")
+        reason = str(decision.get("reason") or "")[:110]
+        overrides.append(f"{name} {call} ({reason})")
+    if overrides:
+        lines.append("  critic overrode: " + "; ".join(overrides[:4]))
+    elif accepted_fields:
+        lines.append(f"  critic accepted the update intact ({accepted_fields} fields)")
+    return "\n".join(lines)
+
+
 def persist_world_document(execution_state: Any, proposal: Optional[UnifiedProposal]) -> None:
     """Critique the model's proposal, then carry the *accepted* document.
 
@@ -1528,11 +2142,27 @@ def persist_world_document(execution_state: Any, proposal: Optional[UnifiedPropo
         observed = ""
         if isinstance(proposal.observed_state, dict):
             observed = str(proposal.observed_state.get("surface") or "")
+        # The judge is consulted only for a change the deterministic rules cannot
+        # account for, which on an ordinary frame is never. None when disabled,
+        # in which case the rules decide alone.
+        try:
+            from plugin.agent.critic_coherence import (
+                judge_for_critic,
+                surface_judge_for_critic,
+            )
+
+            judge = judge_for_critic()
+            surface_judge = surface_judge_for_critic()
+        except Exception:
+            judge = None
+            surface_judge = None
         verdict = critique_world_proposal(
             prior if isinstance(prior, dict) else {},
             dict(proposal.world_model),
             last_action=last_action,
             observed_surface=observed,
+            coherence_judge=judge,
+            surface_judge=surface_judge,
         )
         try:
             decisions = [d.to_dict() for d in verdict.decisions[:8]]
@@ -1549,6 +2179,47 @@ def persist_world_document(execution_state: Any, proposal: Optional[UnifiedPropo
         execution_state.unified_world_document = dict(verdict.accepted_document)
         execution_state.focused_field_role = verdict.focused_field_role
         execution_state.last_critic_verdict = verdict.to_dict()
+        # The completed perception, in prose. Stashed rather than logged here so
+        # the controller can put it in the run log next to the decision it
+        # produced; a developer reading a run needs the two adjacent.
+        narration = narrate_perception(
+            proposal, verdict, frame=int(getattr(execution_state, "unified_frame", 0) or 0)
+        )
+        if narration:
+            execution_state.last_perception_narration = narration
+            # Stamp the frame the prose describes. The narration outlives the call
+            # that produced it, so a frame where the perceptor did not run (no
+            # screenshot, a failed call) would otherwise re-log the previous
+            # reading as though it were current — the most misleading thing a
+            # perception log can do, since it reads as confirmation that the agent
+            # saw a screen it never looked at.
+            execution_state.last_perception_narration_frame = int(
+                getattr(execution_state, "unified_frame", 0) or 0
+            )
+            logger.info("%s", narration)
+        # The same measured outcome that settles what is true also settles what
+        # can be done: now that the accepted surface is known, record whether the
+        # last action proved its affordance inert. The next frontier withdraws it.
+        try:
+            from plugin.agent.world_critic import note_topology_evidence
+
+            attribution = getattr(execution_state, "last_attribution", None) or {}
+            step = getattr(execution_state, "last_plan_step", None)
+            condemned = note_topology_evidence(
+                execution_state,
+                last_action_family=last_action,
+                last_target=str(getattr(step, "semantic_target", "") or ""),
+                effect_kind=str(attribution.get("effect_kind") or ""),
+                surface=verdict.surface,
+            )
+            if condemned is not None:
+                logger.info(
+                    "World critic condemned affordance %s (%s)",
+                    condemned.get("key"),
+                    condemned.get("reason"),
+                )
+        except Exception:
+            pass
         # Keep proposal.world_model aligned with what control will obey.
         proposal.world_model = dict(verdict.accepted_document)
         if isinstance(proposal.observed_state, dict):
@@ -1693,37 +2364,103 @@ def _record_frame(
         logger.warning("Perceptor frame recording failed: %s", exc)
 
 
-def _to_screen_point(point: Any, scale: float) -> Optional[Tuple[int, int]]:
-    """Convert a point in the model's image into a point on the screen."""
+def _to_screen_point(
+    point: Any, scale: float, origin: Tuple[float, float] = (0.0, 0.0)
+) -> Optional[Tuple[int, int]]:
+    """Convert a point in the model's image into a point on the screen.
+
+    The origin matters as much as the scale: perception grabs the task app's
+    window, not the whole screen, so the model's (0, 0) is the window's corner
+    and not the display's. Scaling alone leaves every click short by the window
+    offset -- roughly the height of the menu bar vertically, which is enough to
+    land on the row above the one that was chosen.
+    """
     if not isinstance(point, (list, tuple)) or len(point) != 2:
         return None
     try:
         factor = float(scale) if scale and float(scale) > 0 else 1.0
-        return (round(float(point[0]) * factor), round(float(point[1]) * factor))
+        return (
+            round(float(origin[0]) + float(point[0]) * factor),
+            round(float(origin[1]) + float(point[1]) * factor),
+        )
     except (TypeError, ValueError):
         return None
 
 
 def _resolve_target_entity(world: WorldModel, target_id: Any) -> Any:
+    """Find the entity the model cited, by int key or by its own object id.
+
+    The model names its objects in words ("kulvinder_ji_row"); the entity table
+    is keyed by int. Accepting only the int form silently dropped every explicit
+    choice the model made and left the target to be re-derived from its label,
+    where an exact-string echo of the same name in a search field outscores the
+    row that was actually meant. The model's choice is the least ambiguous signal
+    available and should be the first thing consulted, not the discarded one.
+    """
     if target_id in (None, ""):
         return None
     try:
         key = int(target_id)
     except (TypeError, ValueError):
+        key = None
+    if key is not None:
+        entity = world.entities.get(key)
+        if entity is None or not getattr(entity, "visible", True):
+            return None
+        return entity
+
+    wanted = str(target_id).strip().lower()
+    if not wanted:
         return None
-    entity = world.entities.get(key)
-    if entity is None or not getattr(entity, "visible", True):
-        return None
-    return entity
+    for entity in world.entities.values():
+        if not getattr(entity, "visible", True):
+            continue
+        attrs = getattr(entity, "attributes", None)
+        if not isinstance(attrs, dict):
+            continue
+        if str(attrs.get("vision_object_id") or "").strip().lower() == wanted:
+            return entity
+    return None
 
 
 # Pointer families whose target must be a concrete perceived object. When the
 # model names one by label but gives no resolvable target_id, we ground the
 # label to a perceived entity so the decision carries geometry (an entity id +
 # bounds), not a bare string the runtime would have to re-resolve.
+#
+# resolve_entity belongs here even though it reads as bookkeeping: the protocol
+# offers it as "choose which visible candidate matches a goal referent", and the
+# runtime turns that choice into a click. Leaving it out meant the one step whose
+# entire purpose is picking between look-alike candidates was the only step that
+# threaded no geometry, so the pick was redone downstream from the label — and a
+# search field echoing the query beats the row it was typed to find.
 _GROUNDED_POINTER_FAMILIES = frozenset(
-    {"open_entity", "open_contact", "select_content", "reveal_actions"}
+    {"open_entity", "open_contact", "select_content", "reveal_actions", "resolve_entity"}
 )
+
+
+def _goal_matched_object(world: WorldModel) -> Any:
+    """The one object the model flagged as matching the goal, if it is unique.
+
+    ``matches_goal`` is the model's own verdict on task relevance, formed while
+    looking at the screen. It outranks label similarity, which cannot tell a
+    chat row from a search field containing the same characters — and reliably
+    prefers the wrong one, since the echo matches the query exactly while the
+    row carries extra words. Uniqueness is required: two claimed matches is the
+    ambiguity resolve_entity exists to settle, and guessing between them here
+    would just relocate the coin toss.
+    """
+    if world is None:
+        return None
+    matched = [
+        entity
+        for entity in getattr(world, "entities", {}).values()
+        if getattr(entity, "visible", True)
+        and isinstance(getattr(entity, "attributes", None), dict)
+        and bool(entity.attributes.get("matches_goal"))
+        and str(entity.attributes.get("source") or "") == "vision"
+    ]
+    return matched[0] if len(matched) == 1 else None
 
 
 def _entity_has_bounds(entity: Any) -> bool:
@@ -1819,7 +2556,12 @@ def proposal_to_action(
     # where the perceptor saw the target instead of re-resolving a noisy-OCR
     # string downstream (which grabbed the search-box echo / a call affordance).
     if entity is None and family in _GROUNDED_POINTER_FAMILIES:
-        grounded = _ground_label_to_entity(world, semantic_target or text)
+        # The model's own relevance verdict first, its label second. Reversing
+        # these grounds the click on whichever perceived text reads most like the
+        # query, and the query's own echo in the search field always wins that.
+        grounded = _goal_matched_object(world) or _ground_label_to_entity(
+            world, semantic_target or text
+        )
         if grounded is not None:
             entity = grounded
             if not semantic_target:
@@ -1846,6 +2588,31 @@ def proposal_to_action(
         frontier_score=round(confidence, 4),
         reversible=family != "commit_irreversible",
     )
+    # The prediction, in the shape the transition and experience layers read. It
+    # was empty on every model-chosen action, so record_outcome() compared each
+    # result against nothing and the capability memory learned nothing from the
+    # whole fast path — the agent executed thousands of steps without
+    # accumulating what any of its controls actually do. The model already states
+    # this prediction; it only needed carrying.
+    expectation = proposal.expected_transition or {}
+    predicted_surface = str(expectation.get("surface") or "").strip()
+    if predicted_surface or expectation.get("likely_controls"):
+        action.prediction = {
+            "action_family": family,
+            "semantic_target": semantic_target,
+            "predicted_outcome": predicted_surface,
+            "expected_surface": predicted_surface,
+            "expected_affordances": [
+                str(c).strip()
+                for c in (expectation.get("likely_controls") or [])
+                if str(c).strip()
+            ][:8],
+            "expected_progress": round(float(confidence or 0.0), 4),
+            "confidence": round(float(confidence or 0.0), 4),
+            "reversible": family != "commit_irreversible",
+            "source": "unified_multimodal",
+        }
+
     if family == "scroll_content":
         action.scroll_direction = str(proposal.next_action.get("direction") or "down")
         action.scroll_amount = int(proposal.next_action.get("amount") or 3)
@@ -1854,7 +2621,9 @@ def proposal_to_action(
     # an AX entity, a screen point, or at minimum a label to search for.
     if family not in _KEYBOARD_FAMILIES and entity is None:
         action.target_point = _to_screen_point(
-            proposal.next_action.get("target_point"), proposal.point_scale
+            proposal.next_action.get("target_point"),
+            proposal.point_scale,
+            proposal.point_origin,
         )
         if action.target_point is None and not semantic_target:
             return None, "pointer_action_without_target"

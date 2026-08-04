@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol
@@ -10,8 +12,18 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 from plugin.agent.action import Action
 from plugin.agent.apps.registry import get_overlay
 from plugin.agent.decision import DecisionEngine, get_decision_engine
+from plugin.agent.focus_of_action import (
+    clean_app_display,
+    foreground_app_name,
+    foreground_gate_enabled,
+    foreground_matches_task,
+)
 from plugin.agent.executive.hierarchy import DELIBERATIVE as _DELIBERATIVE
-from plugin.agent.executive.meta_action import MetaAction, MetaChoice
+from plugin.agent.executive.meta_action import (
+    MetaAction,
+    MetaChoice,
+    reperception_exhausted,
+)
 from plugin.agent.executive.sync import (
     assess_executive_judgement,
     bind_goal,
@@ -28,6 +40,7 @@ from plugin.agent.executive.sync import (
 )
 from plugin.agent.goal import Goal, GoalStatus, evaluate_goal
 from plugin.agent.policy.events import log_policy_event
+from plugin.agent.runtime import inflight
 from plugin.agent.runtime.state import RuntimeState
 from plugin.agent.trajectory_memory import TrajectoryStepRecord, get_trajectory_memory
 from plugin.agent.task_binding import ForwardTaskState
@@ -39,6 +52,7 @@ from plugin.agent.perception_cycle import (
     refresh_perception,
 )
 from plugin.agent.transition import (
+    EffectKind,
     ExplorationBranch,
     FailureDomain,
     TransitionEvaluator,
@@ -58,6 +72,7 @@ from plugin.agent.transition.post_perceive import (
 from plugin.agent.transition.types import TransitionSummary
 from plugin.worldmodel.entities.normalize import _clean_label
 from plugin.agent.whatsapp_view import entities_matching
+from plugin.executor.ax_action import STALE_PRECONDITION_BACKEND, bypass_next_gate
 from plugin.executor.ghost import ExecResult
 from plugin.experiments.logger import EventLogger
 from plugin.perception.observation import Observation
@@ -91,10 +106,6 @@ def _meta_perception_enabled() -> bool:
 # did NOT predict: it went backwards, landed somewhere unexpected, or a
 # transition happened that we could not confirm. These raise a "surprise" the
 # executive reacts to (verify / re-perceive to re-understand before re-acting).
-#
-# A plain no-op (no_transition / no_effect, change_score 0) is deliberately NOT
-# a surprise here: re-perceiving an identical world tells us nothing. That is the
-# stale case, handled by backtrack, not by looking again.
 _SURPRISE_EFFECTS = {
     "regression",
     "unexpected_transition",
@@ -105,15 +116,115 @@ _SURPRISE_OUTCOMES = {
     TransitionOutcome.UNCERTAIN.value,
 }
 
+# "Nothing moved" signatures. On their own these are the stale case; paired with
+# a prediction that the world *would* move they are the sharpest surprise we get.
+_NO_MOVEMENT_EFFECTS = {EffectKind.NO_TRANSITION.value}
+_NO_MOVEMENT_OUTCOMES = {TransitionOutcome.NO_EFFECT.value}
 
-def _last_action_surprised(execution_state: Any) -> bool:
-    """Did the most recent non-observe action fail to produce the expected world?"""
+
+def _predicted_a_transition(execution_state: Any) -> bool:
+    """Did the last action carry a concrete prediction that the world would move?"""
+    expectation = getattr(execution_state, "unified_last_expectation", None)
+    if isinstance(expectation, dict) and str(expectation.get("surface") or "").strip():
+        return True
+    last_transition = getattr(execution_state, "last_transition", None)
+    if not isinstance(last_transition, dict):
+        return False
+    # A recorded prediction error is already the expected-vs-observed mismatch.
+    error = last_transition.get("prediction_error")
+    if isinstance(error, dict) and error:
+        return True
+    prediction = last_transition.get("prediction")
+    if isinstance(prediction, dict):
+        for key in ("predicted_outcome", "expected_surface"):
+            if str(prediction.get(key) or "").strip():
+                return True
+    return False
+
+
+def _expected_transition_absent(execution_state: Any) -> bool:
+    """The predicted transition simply did not happen — a silent no-op.
+
+    A no-op is only informative when we predicted the world would move. Then its
+    absence *is* the evidence: our picture of what that control does is wrong,
+    and only a fresh look carrying the failed attempt can say why. This is the
+    dominant failure on an AX-blind app, where a press reports success and
+    nothing opens — previously invisible to the executive, so the agent re-tried
+    the same dead click forever. A no-op with nothing predicted stays
+    un-surprising (the stale case, which backtrack handles), so we never
+    re-perceive an identical world for no reason.
+    """
     attrib = getattr(execution_state, "last_attribution", None)
     if not isinstance(attrib, dict) or not attrib:
         return False
     effect = str(attrib.get("effect_kind") or "").strip().lower()
     outcome = str(attrib.get("outcome") or "").strip().lower()
-    return effect in _SURPRISE_EFFECTS or outcome in _SURPRISE_OUTCOMES
+    # The effect is the precise reading and wins when present: an action that
+    # never reached the app (missing geometry, a failed actuator) also reports
+    # no_effect, but it says nothing about the world and must not be read as one.
+    if effect:
+        if effect not in _NO_MOVEMENT_EFFECTS:
+            return False
+    elif outcome not in _NO_MOVEMENT_OUTCOMES:
+        return False
+    return _predicted_a_transition(execution_state)
+
+
+# Effects that mean the screen genuinely changed (forwards or backwards). Any of
+# them makes another look worthwhile again.
+_WORLD_MOVED_EFFECTS = {
+    EffectKind.GOAL_SATISFIED.value,
+    EffectKind.PROGRESS.value,
+    EffectKind.PROMISING_UNRESOLVED.value,
+    EffectKind.REGRESSION.value,
+    "unexpected_transition",
+}
+
+
+def _world_moved(attribution: Any, attempt: Any = None) -> bool:
+    """Did the last action actually change the world?"""
+    if isinstance(attribution, dict) and attribution:
+        if str(attribution.get("effect_kind") or "").strip().lower() in _WORLD_MOVED_EFFECTS:
+            return True
+    if attempt is not None:
+        if bool(getattr(attempt, "observed_change", False)):
+            return True
+        try:
+            if float(getattr(attempt, "change_score", 0.0) or 0.0) > 0.0:
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
+def _prediction_was_contradicted(execution_state: Any) -> bool:
+    """The agent's own prediction was scored against the screen and failed.
+
+    The most direct form of surprise there is, and the only one stated in the
+    agent's own terms rather than inferred from how much the world moved. The
+    effect-based signals below are proxies: they catch a world that went
+    backwards or did not move, but a move that lands somewhere plausible and
+    entirely wrong reads as ordinary progress to them, while the prediction says
+    plainly that it was not what was expected.
+    """
+    error = getattr(execution_state, "last_prediction_error", None)
+    if not isinstance(error, dict) or not error:
+        return False
+    return error.get("matched") is False
+
+
+def _last_action_surprised(execution_state: Any) -> bool:
+    """Did the most recent non-observe action fail to produce the expected world?"""
+    if _prediction_was_contradicted(execution_state):
+        return True
+    attrib = getattr(execution_state, "last_attribution", None)
+    if not isinstance(attrib, dict) or not attrib:
+        return False
+    effect = str(attrib.get("effect_kind") or "").strip().lower()
+    outcome = str(attrib.get("outcome") or "").strip().lower()
+    if effect in _SURPRISE_EFFECTS or outcome in _SURPRISE_OUTCOMES:
+        return True
+    return _expected_transition_absent(execution_state)
 
 
 def _awaiting_verification(execution_state: Any) -> bool:
@@ -145,7 +256,12 @@ def _resolve_exhausted_backtrack(
     because there is nothing left to ground. Returns ``meta`` unchanged when
     backtracks are not exhausted or the move is not a backtrack.
     """
-    if backtrack_exhausted and meta.action == MetaAction.BACKTRACK:
+    if backtrack_exhausted and meta.action in {
+        MetaAction.BACKTRACK,
+        # Re-aiming the search is a retreat too, and re-planning branches
+        # forever is the same thrash by another name.
+        MetaAction.INFORMATION_GATHERING,
+    }:
         if has_grounded_action:
             return MetaChoice(MetaAction.ACT, "backtracks exhausted; commit the grounded action")
         return MetaChoice(MetaAction.ASK_USER, "backtracks exhausted; nothing can be grounded")
@@ -194,11 +310,18 @@ def _observe_capability_reliability(decision: Any, ok: bool) -> None:
 
 
 # Meta-actions that unconditionally pre-empt this frame's grounded decision.
-# VERIFY/BACKTRACK/ASK_USER are terminal-ish control moves. THINK and PROBE are
-# deliberate detours handled separately (they are bounded and may fall through
-# to acting/observing). PERCEIVE/ACT fall through to the normal decide -> execute
-# path (the re-perceive PERCEIVE wants is gated at the top of the loop).
-_META_PREEMPTS = {MetaAction.VERIFY, MetaAction.BACKTRACK, MetaAction.ASK_USER}
+# VERIFY/BACKTRACK/ASK_USER are terminal-ish control moves, and
+# INFORMATION_GATHERING joins them because re-aiming the search is exactly what
+# must happen *instead of* committing this frame's stale-branch action. THINK and
+# PROBE are deliberate detours handled separately (they are bounded and may fall
+# through to acting/observing). PERCEIVE/ACT fall through to the normal decide ->
+# execute path (the re-perceive PERCEIVE wants is gated at the top of the loop).
+_META_PREEMPTS = {
+    MetaAction.VERIFY,
+    MetaAction.BACKTRACK,
+    MetaAction.INFORMATION_GATHERING,
+    MetaAction.ASK_USER,
+}
 
 # THINK forces the next decision onto the deliberative path; PROBE steers it
 # toward a reveal. Both are bounded so a persistently ambiguous world escalates
@@ -430,7 +553,17 @@ def resolve_goal_run_timeout_seconds(
     cfg = config if isinstance(config, dict) else {}
     agent_cfg = cfg.get("agent") if isinstance(cfg.get("agent"), dict) else {}
     raw = None
-    if isinstance(agent_cfg, dict):
+    # Env first, so a supervised experiment can widen the budget for one run
+    # without editing the machine's global config. A convergence test needs to be
+    # allowed to finish: a run cut off mid-task tells you the budget was small,
+    # not whether the agent would have got there.
+    env_raw = os.getenv("HERMES_GOAL_RUN_TIMEOUT_SECONDS", "").strip()
+    if env_raw:
+        try:
+            raw = float(env_raw)
+        except (TypeError, ValueError):
+            raw = None
+    if raw is None and isinstance(agent_cfg, dict):
         raw = agent_cfg.get("goal_run_timeout_seconds")
     if raw is None:
         try:
@@ -550,6 +683,58 @@ def _log_cycle(
     if log is None:
         return
     log.log(phase, payload, status=status, step=iteration)
+
+
+# A call is worth naming once it has blocked longer than a perception call
+# normally takes, and worth repeating on this cadence for as long as it hangs.
+_STALL_AFTER_S = 45.0
+_STALL_REPEAT_S = 30.0
+_STALL_POLL_S = 5.0
+
+
+def _start_stall_watchdog(
+    log: Optional[EventLogger],
+    iteration_ref: Dict[str, int],
+) -> tuple[threading.Event, Optional[threading.Thread]]:
+    """Report the call the loop is blocked inside, while it is still blocked.
+
+    ``iteration_cost`` can only be written once an iteration ends, so a call
+    that hangs produces silence for exactly as long as it is the problem. This
+    watchdog runs beside the loop and names the in-flight call on a fixed
+    cadence, so a stalled run says what it is waiting on in real time.
+    """
+    stop = threading.Event()
+    if log is None:
+        return stop, None
+
+    def _watch() -> None:
+        reported_at = 0.0
+        while not stop.wait(_STALL_POLL_S):
+            active = inflight.current()
+            if active is None:
+                reported_at = 0.0
+                continue
+            label, waiting_s = active
+            if waiting_s < _STALL_AFTER_S:
+                continue
+            if reported_at and waiting_s - reported_at < _STALL_REPEAT_S:
+                continue
+            reported_at = waiting_s
+            _log_cycle(
+                log,
+                iteration=int(iteration_ref.get("iteration") or 0),
+                phase="stalled",
+                payload={
+                    "in_flight": label,
+                    "waiting_s": round(waiting_s, 1),
+                    "message": f"still waiting on {label} after {waiting_s:.0f}s",
+                },
+                status="warn",
+            )
+
+    thread = threading.Thread(target=_watch, name="hermes-stall-watchdog", daemon=True)
+    thread.start()
+    return stop, thread
 
 
 def _perception_log_fn(log: Optional[EventLogger], iteration: int):
@@ -885,6 +1070,34 @@ def _invalidate_stale_frontier(
     return hint or fallback
 
 
+def _note_no_progress_replan(runtime: RuntimeState) -> int:
+    """Count one replan forced by a branch that stopped making progress.
+
+    ``should_escalate`` reads this counter to decide a branch is exhausted, but
+    nothing incremented it, so that escalation could never fire however long the
+    agent thrashed. Every retreat driven by absent progress is one of these.
+    """
+    count = int(getattr(runtime.execution_state, "no_progress_replans", 0) or 0) + 1
+    runtime.execution_state.no_progress_replans = count
+    return count
+
+
+def _plan_next_branches(runtime: RuntimeState, goal: Goal, features: Any) -> Any:
+    """Strategic search: which branches remain worth trying, and in what order."""
+    from plugin.agent.executive.strategic_search import BranchPlan, plan_branches
+
+    try:
+        return plan_branches(
+            goal,
+            runtime.world_model,
+            features,
+            runtime.execution_state,
+        )
+    except Exception as exc:
+        logger.debug("branch planning failed: %s", exc)
+        return BranchPlan()
+
+
 def _merge_affordance_hints(existing: List[str], additions: List[str]) -> List[str]:
     merged: List[str] = []
     seen = set()
@@ -1147,11 +1360,17 @@ def run_goal_closed_loop(
             return False
         return _goal_progress_elapsed_s() >= float(goal_no_progress_timeout_s)
 
+    # Every GoalResult leaves through _finish_success or _finish_failure, so
+    # stopping the watchdog in both covers all exits from the loop body.
+    watchdog_iteration: Dict[str, int] = {"iteration": 0}
+    watchdog_stop, _watchdog_thread = _start_stall_watchdog(log, watchdog_iteration)
+
     def _finish_success(
         evidence: Optional[Dict[str, Any]],
         *,
         iterations: int,
     ) -> GoalResult:
+        watchdog_stop.set()
         result = GoalResult.success(
             evidence or {},
             iterations=iterations,
@@ -1172,6 +1391,7 @@ def run_goal_closed_loop(
         *,
         iterations: int,
     ) -> GoalResult:
+        watchdog_stop.set()
         result = GoalResult.failure(
             reason,
             evidence or {},
@@ -1210,7 +1430,41 @@ def run_goal_closed_loop(
     # makes that choice per action, so the control loop no longer foregrounds
     # preemptively (doing so would defeat background actuation for AX-rich apps).
 
+    # Wall-clock of the previous iteration, so each one can report its own cost.
+    # Reconstructing this by diffing adjacent event timestamps was the only way to
+    # see that iterations were taking 200s, and it does not attribute the time to
+    # anything — a run whose dominant cost is invisible cannot be made faster.
+    iteration_started_at = time.monotonic()
+
     for iteration in range(1, step_budget + 1):
+        # Reported for the iteration just finished, at the top of the next one, so
+        # that every exit path from the body is covered — the body has a dozen
+        # `continue`s and a summary at the bottom would silently miss exactly the
+        # iterations that took an unusual route.
+        if iteration > 1:
+            spent = time.monotonic() - iteration_started_at
+            perception_s = float(
+                getattr(runtime.execution_state, "last_perception_latency_s", 0.0) or 0.0
+            )
+            _log_cycle(
+                log,
+                iteration=iteration - 1,
+                phase="iteration_cost",
+                payload={
+                    "iteration_s": round(spent, 1),
+                    "perception_model_s": round(perception_s, 1),
+                    "unaccounted_s": round(max(0.0, spent - perception_s), 1),
+                    "seconds_since_anything_advanced": round(_goal_progress_elapsed_s(), 1),
+                    "elapsed_s": round(_goal_run_elapsed_s(), 1),
+                    "message": (
+                        f"iteration {iteration - 1} took {spent:.0f}s "
+                        f"({perception_s:.0f}s in the perception model)"
+                    ),
+                },
+                status="warn" if spent >= 120 else "ok",
+            )
+        iteration_started_at = time.monotonic()
+        watchdog_iteration["iteration"] = iteration
         if _goal_run_budget_exceeded():
             elapsed = _goal_run_elapsed_s()
             _log_cycle(
@@ -1232,6 +1486,15 @@ def run_goal_closed_loop(
             )
         progress_elapsed = _goal_progress_elapsed_s()
         no_progress_budget_exceeded = _goal_no_progress_budget_exceeded()
+        # Put the clock where the decider can read it. The loop has always known
+        # how long it has been since anything advanced, and logged it, but the
+        # number never reached the model — so a run could spend thirteen minutes
+        # reissuing one move while the only party able to choose a different one
+        # had no idea any time had passed at all.
+        runtime.execution_state.seconds_since_progress = round(progress_elapsed, 1)
+        runtime.execution_state.no_progress_budget_s = (
+            0.0 if goal_no_progress_timeout_s == float("inf") else float(goal_no_progress_timeout_s)
+        )
         _log_cycle(
             log,
             iteration=iteration,
@@ -1252,6 +1515,7 @@ def run_goal_closed_loop(
                 reason="no_progress_watchdog",
                 fallback="observe",
             )
+            replans = _note_no_progress_replan(runtime)
             _log_cycle(
                 log,
                 iteration=iteration,
@@ -1261,10 +1525,25 @@ def run_goal_closed_loop(
                     "goal_no_progress_timeout_s": goal_no_progress_timeout_s,
                     "branch_hint": branch_hint,
                     "branch": runtime.execution_state.exploration_branch.to_dict(),
+                    "no_progress_replans": replans,
                 },
                 status="warn",
             )
         runtime.execution_state.tick_search_query_hint()
+
+        # Keeping the task app usable is the agent's job, not the user's. A call
+        # or a notification steals the foreground mid-task, and every synthetic
+        # click and keystroke after that lands in whatever window took it — so
+        # the agent takes the foreground back itself, every iteration it finds it
+        # gone, without a cap. The interruptions this answers recur by nature, so
+        # a budget would just mean surrendering the task to the third phone call.
+        #
+        # This sits *before* perception deliberately. Raising a window changes the
+        # screen; doing it after the photograph would invalidate the very frame
+        # the decision is about to be made from, and the commit gate below would
+        # then abort every turn on a disturbance the agent caused itself.
+        _reclaim_foreground(runtime, goal, log=log, iteration=iteration)
+
         # Meta-perception gate: reuse the prior snapshot instead of paying for a
         # re-perceive that cannot tell us more. Two conditions must both hold:
         #  - the world is provably static (the last action moved nothing), so
@@ -1274,15 +1553,27 @@ def run_goal_closed_loop(
         # This is the executive driving perception rather than the old
         # always-perceive default, without the risk of reusing a stale view
         # after an action that actually changed the world.
+        # A surprise means our model of what happened is wrong, so a fresh look —
+        # carrying the failed attempt — is the only thing that can diagnose it.
+        # That look is bought on a budget: once several of them have gone by with
+        # the world still not moving, re-reading the same screen has stopped
+        # paying and the reuse gate opens again while the executive broadens the
+        # search instead.
+        surprise_demands_relook = _last_action_surprised(
+            runtime.execution_state
+        ) and not reperception_exhausted(runtime.execution_state)
         skip_reperception = (
             meta_perception_enabled
             and prev_snap_pre is not None
             and prev_static_streak >= 1
             and prev_meta_suppress
-            # A surprise from the last action means our model of what happened is
-            # wrong — always re-perceive to re-understand, never reuse.
-            and not _last_action_surprised(runtime.execution_state)
+            and not surprise_demands_relook
         )
+        if surprise_demands_relook:
+            # This is where a surprise actually spends one of its re-looks.
+            runtime.execution_state.consecutive_surprise_relooks = (
+                int(getattr(runtime.execution_state, "consecutive_surprise_relooks", 0) or 0) + 1
+            )
         if skip_reperception:
             snap_pre = prev_snap_pre
             _log_cycle(
@@ -1850,7 +2141,39 @@ def run_goal_closed_loop(
                     },
                     iterations=iteration,
                 )
-            if meta.action == MetaAction.BACKTRACK:
+            if meta.action == MetaAction.INFORMATION_GATHERING:
+                # The branch has stopped converging. Before retreating anywhere,
+                # gather information about the action space itself: which
+                # branches are still worth trying, and in what order. The plan's
+                # head becomes the direction of the retreat, so the agent moves
+                # somewhere it reasoned about rather than to whichever untried
+                # family happened to sit nearest on the frontier.
+                plan = _plan_next_branches(runtime, goal, feats)
+                runtime.execution_state.consecutive_backtracks = (
+                    int(getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0) + 1
+                )
+                branch_hint = _invalidate_stale_frontier(
+                    runtime,
+                    reason="strategic_search",
+                    fallback=plan.head or "observe",
+                )
+                if plan.head:
+                    runtime.execution_state.state_experience.pending_backtrack_family = plan.head
+                    branch_hint = plan.head
+                _note_no_progress_replan(runtime)
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_information_gathering",
+                    payload={
+                        "branch_plan": plan.to_dict(),
+                        "branch_hint": branch_hint,
+                        "branch": runtime.execution_state.exploration_branch.to_dict(),
+                        "consecutive_backtracks": runtime.execution_state.consecutive_backtracks,
+                    },
+                    status="warn",
+                )
+            elif meta.action == MetaAction.BACKTRACK:
                 # The branch has gone stale. Retreat by invalidating the current
                 # frontier so the next decision explores elsewhere, instead of
                 # committing this frame's stale-branch action.
@@ -1860,6 +2183,7 @@ def run_goal_closed_loop(
                 branch_hint = _invalidate_stale_frontier(
                     runtime, reason="executive_backtrack", fallback="observe"
                 )
+                _note_no_progress_replan(runtime)
                 _log_cycle(
                     log,
                     iteration=iteration,
@@ -1881,9 +2205,17 @@ def run_goal_closed_loop(
             # A terminal control move is neither a think nor a probe streak.
             runtime.execution_state.consecutive_thinks = 0
             runtime.execution_state.consecutive_probes = 0
-            # Both VERIFY and BACKTRACK want a fresh look next iteration — never
-            # let the perception gate reuse the prior snapshot after a meta move.
-            prev_meta_suppress = False
+            # These control moves want a fresh look next iteration, so the gate
+            # must not reuse the prior snapshot after one. The exception is a
+            # retreat taken *because* re-looking has stopped paying: none of
+            # these phases executes anything, so the world cannot have moved,
+            # and forcing a re-read of it would contradict the very judgement
+            # that produced the retreat.
+            retreat_on_spent_budget = meta.action in {
+                MetaAction.BACKTRACK,
+                MetaAction.INFORMATION_GATHERING,
+            } and reperception_exhausted(runtime.execution_state)
+            prev_meta_suppress = retreat_on_spent_budget
             _wait(settle_s, f"executive {meta.action.value}")
             continue
 
@@ -2002,6 +2334,67 @@ def run_goal_closed_loop(
                 )
         elif policy == "auto":
             runtime.execution_state.ambiguous_observe_count = 0  # type: ignore[attr-defined]
+
+        # The completed perception, in prose, immediately before the decision it
+        # produced. Without this a run log records what the agent *did* with no
+        # account of what it understood, which is the first thing anyone
+        # diagnosing a wrong move needs. Written by the critic (perception's last
+        # stage), so it reflects the accepted document rather than the raw
+        # proposal.
+        # Prediction against outcome, as its own line in the run. A developer
+        # reading a wrong move needs to see what the agent thought would happen
+        # before seeing what it did next; previously the prediction existed only
+        # inside a decision trace and its scoring nowhere at all.
+        pred_error = getattr(runtime.execution_state, "last_prediction_error", None)
+        if isinstance(pred_error, dict) and pred_error:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="prediction_error" if pred_error.get("matched") is False else "prediction_held",
+                payload={
+                    "message": str(pred_error.get("verdict") or ""),
+                    "detail": str(pred_error.get("verdict") or ""),
+                    **{k: v for k, v in pred_error.items() if k != "verdict"},
+                },
+                status="warn" if pred_error.get("matched") is False else "ok",
+            )
+
+        narration = str(getattr(runtime.execution_state, "last_perception_narration", "") or "")
+        if narration:
+            critic = getattr(runtime.execution_state, "last_critic_verdict", None)
+            # Say so when the prose belongs to an earlier frame. The narration
+            # survives a frame the perceptor did not run, and logging it plainly
+            # reads as a fresh look at a screen nobody looked at — which sent one
+            # diagnosis of a wrong click down the wrong path entirely.
+            narration_frame = int(
+                getattr(runtime.execution_state, "last_perception_narration_frame", 0) or 0
+            )
+            current_frame = int(getattr(runtime.execution_state, "unified_frame", 0) or 0)
+            carried_over = bool(narration_frame and current_frame and narration_frame < current_frame)
+            if carried_over:
+                narration = (
+                    f"[carried over from frame {narration_frame}; no fresh perception this "
+                    f"iteration] {narration}"
+                )
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="perception_summary",
+                payload={
+                    "message": narration,
+                    "detail": narration,
+                    "text": narration,
+                    "narration_frame": narration_frame,
+                    "carried_over": carried_over,
+                    "surface": str(getattr(runtime.execution_state, "accepted_surface", "") or "")
+                    or str((getattr(runtime.execution_state, "unified_world_document", None) or {}).get("surface") or ""),
+                    "focused_field_role": str(
+                        getattr(runtime.execution_state, "focused_field_role", "") or ""
+                    ),
+                    "critic_decisions": (critic or {}).get("decisions") if isinstance(critic, dict) else None,
+                },
+                status="ok",
+            )
 
         trace = eng.last_trace
         selector_timeout_s = 0.0
@@ -2133,13 +2526,78 @@ def run_goal_closed_loop(
             continue
 
         execution = execute.execute(decision)
+
+        # The continuity gate refused this click: the target rectangle no longer
+        # held what the decision asked for, so the actuator declined rather than
+        # clicking whatever had taken its place. Nothing reached the app.
+        #
+        # That is deliberately not an outcome. Recording it would tell the
+        # transition machinery the action produced no effect, and the world critic
+        # would condemn an affordance that was never invoked — the agent would
+        # teach itself that a working control is dead because the screen moved
+        # while it was thinking. The only correct response is to look again.
+        if str(getattr(execution, "backend", "")) == STALE_PRECONDITION_BACKEND:
+            aborts = _note_stale_abort(runtime)
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="stale_precondition",
+                payload={
+                    "action": decision.action,
+                    "action_family": decision.action_family,
+                    "target": decision.semantic_target,
+                    "message": execution.message,
+                    "consecutive_stale_aborts": aborts,
+                    "budget": MAX_CONSECUTIVE_STALE_ABORTS,
+                },
+                status="warn",
+            )
+            if aborts <= MAX_CONSECUTIVE_STALE_ABORTS:
+                # Force a fresh look: the world demonstrably moved, so the
+                # meta-perception gate must not hand back the stale snapshot.
+                prev_meta_suppress = False
+                prev_snap_pre = None
+                continue
+            # The target will not settle (a live-updating list, a playing video).
+            # Re-looking has stopped paying, and an agent that never commits is no
+            # better than one that commits wrongly, so let the next attempt through
+            # and let the ordinary transition machinery judge a real outcome.
+            runtime.execution_state.consecutive_stale_aborts = 0
+            bypass_next_gate()
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="stale_precondition_budget_spent",
+                payload={"aborts": aborts, "reason": "target never settled; committing next attempt"},
+                status="warn",
+            )
+            prev_meta_suppress = False
+            prev_snap_pre = None
+            continue
+
+        runtime.execution_state.consecutive_stale_aborts = 0
         runtime.execution_state.record(decision, execution.__dict__)
+        # Ledger the attempt the moment it lands, before any judgement of it. The
+        # count is what tells the next decision that this move has been tried
+        # here before, which the consecutive-repeat counter cannot say about a
+        # loop that alternates between two moves.
+        attempt = runtime.execution_state.note_attempt(
+            family=decision.action_family or decision.action,
+            target=decision.semantic_target or decision.text,
+            surface=str(getattr(runtime.execution_state, "accepted_surface", "") or ""),
+            iteration=iteration,
+        )
         _observe_capability_reliability(decision, execution.ok)
         _log_cycle(
             log,
             iteration=iteration,
             phase="execution",
-            payload={**execution.__dict__, "plan_step": decision.__dict__, "world_id": before_world_id},
+            payload={
+                **execution.__dict__,
+                "plan_step": decision.__dict__,
+                "world_id": before_world_id,
+                "attempts_on_this_move": int(attempt.get("attempts", 1) or 1),
+            },
             status="ok" if execution.ok else "fail",
         )
 
@@ -2389,6 +2847,11 @@ def run_goal_closed_loop(
         runtime.execution_state.last_transition = attempt.to_dict()
         attrib_dict = attempt.attribution or {}
         runtime.execution_state.last_attribution = attrib_dict
+        # The world moved, so a further look has something new to read: the
+        # diagnostic re-look budget is restored. Only a run of moves that leave
+        # the world untouched should exhaust it.
+        if _world_moved(attrib_dict, attempt):
+            runtime.execution_state.consecutive_surprise_relooks = 0
         attempt_progress_delta = float(getattr(attempt, "progress_delta", 0.0) or 0.0)
         belief_updates_raw = attrib_dict.get("belief_updates") or []
         if belief_updates_raw:
@@ -3228,6 +3691,68 @@ def target_app_obscured(features: Any, view: Optional[Dict[str, Any]] = None) ->
     if "background" in surface and "whatsapp" in surface:
         return True
     return False
+
+
+# How many consecutive refusals before the gate yields. A target that never
+# settles would otherwise abort forever, and an agent that never commits is no
+# better than one that commits wrongly.
+MAX_CONSECUTIVE_STALE_ABORTS = 3
+
+
+def _note_stale_abort(runtime: RuntimeState) -> int:
+    """Count one click the continuity gate refused because the screen had moved on."""
+    count = int(getattr(runtime.execution_state, "consecutive_stale_aborts", 0) or 0) + 1
+    runtime.execution_state.consecutive_stale_aborts = count
+    return count
+
+
+def _reclaim_foreground(runtime: RuntimeState, goal: Goal, *, log: Any, iteration: int) -> bool:
+    """Take the foreground back when a foreign app holds it. Returns whether it acted.
+
+    Ground truth from ``NSWorkspace`` rather than inference from pixels: asking
+    the window server who is frontmost is free and exact, where reading it out of
+    a screenshot means hoping the vision model emits the right screen-type string.
+    The old path did the latter and only recovered when perception happened to
+    describe the obstruction correctly.
+
+    Fails open throughout — an undeterminable foreground or an unknown task app is
+    never treated as evidence of a takeover, so a missing signal cannot start the
+    agent fighting for a foreground nobody took.
+    """
+    if not foreground_gate_enabled():
+        return False
+    app_name = str(goal.app or runtime.world_model.active_app or "").strip()
+    if not app_name:
+        return False
+    holder = foreground_app_name()
+    if not holder or foreground_matches_task(goal, foreground=holder):
+        return False
+
+    try:
+        from plugin.executor.ax_action import _activate_app
+
+        _activate_app(app_name)
+        reclaimed = True
+    except Exception as exc:
+        logger.debug("foreground reclaim failed: %s", exc)
+        reclaimed = False
+
+    count = int(getattr(runtime.execution_state, "foreground_reclaims", 0) or 0) + 1
+    runtime.execution_state.foreground_reclaims = count
+    _log_cycle(
+        log,
+        iteration=iteration,
+        phase="foreground_reclaim",
+        payload={
+            "app": app_name,
+            "taken_by": clean_app_display(holder),
+            "reclaimed": reclaimed,
+            "reclaims_this_run": count,
+            "reason": "a foreign app held the foreground the agent needs to act in",
+        },
+        status="ok" if reclaimed else "warn",
+    )
+    return reclaimed
 
 
 def recover_obscured_target_app(app_name: str) -> bool:

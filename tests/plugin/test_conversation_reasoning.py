@@ -65,30 +65,21 @@ def _world() -> WorldModel:
     return wm
 
 
-def test_rank_conversation_messages_ranks_context_and_caches(monkeypatch):
+def test_rank_conversation_messages_ranks_without_consulting_a_second_model(monkeypatch):
+    """Relevance belongs to unified cognition, which reads the same rows.
+
+    Ranking here is evidence for that judgement, not a rival to it, so this
+    path must reach its answer without spending another model call.
+    """
     from agent import auxiliary_client
 
     calls = {"count": 0}
 
-    def fake_call_llm(**kwargs):
+    def fail_call_llm(**kwargs):  # noqa: ARG001
         calls["count"] += 1
-        return _response(
-            {
-                "summary": "The shared-link row is the source message.",
-                "confidence": 0.91,
-                "ranked_messages": [
-                    {"entity_id": 10, "score": 0.98, "reason": "contains the share link preview"},
-                    {"entity_id": 11, "score": 0.12, "reason": "reply-only noise"},
-                ],
-                "likely_source_message_ids": [10],
-                "likely_source_message_text": "Shared link",
-                "supporting_evidence": ["goal matches the link preview, not the reply"],
-                "contradictions": [],
-                "needs_followup_observe": False,
-            }
-        )
+        raise AssertionError("conversation ranking must not consult a second model")
 
-    monkeypatch.setattr(auxiliary_client, "call_llm", fake_call_llm)
+    monkeypatch.setattr(auxiliary_client, "call_llm", fail_call_llm)
 
     wm = _world()
     view = {
@@ -120,11 +111,12 @@ def test_rank_conversation_messages_ranks_context_and_caches(monkeypatch):
     assert result is not None
     assert result.likely_source_message_ids == [10]
     assert result.ranked_messages[0]["entity_id"] == 10
-    assert calls["count"] == 1
+    assert calls["count"] == 0
 
     cached = rank_conversation_messages(_goal(), view, rows, world=wm, force=True)
     assert cached is not None
-    assert calls["count"] == 1
+    assert cached.likely_source_message_ids == [10]
+    assert calls["count"] == 0
 
 
 def test_rank_conversation_messages_skips_when_conversation_not_open(monkeypatch):
@@ -161,22 +153,11 @@ def test_rank_conversation_messages_accepts_search_results_when_conversation_is_
 
     calls = {"count": 0}
 
-    def fake_call_llm(**kwargs):
+    def fail_call_llm(**kwargs):  # noqa: ARG001
         calls["count"] += 1
-        return _response(
-            {
-                "summary": "The visible conversation row is relevant.",
-                "confidence": 0.88,
-                "ranked_messages": [{"entity_id": 10, "score": 0.97, "reason": "source row"}],
-                "likely_source_message_ids": [10],
-                "likely_source_message_text": "Shared link",
-                "supporting_evidence": ["search sidebar is still open, but the chat pane is active"],
-                "contradictions": [],
-                "needs_followup_observe": False,
-            }
-        )
+        raise AssertionError("conversation ranking must not consult a second model")
 
-    monkeypatch.setattr(auxiliary_client, "call_llm", fake_call_llm)
+    monkeypatch.setattr(auxiliary_client, "call_llm", fail_call_llm)
 
     wm = _world()
     view = {
@@ -209,7 +190,7 @@ def test_rank_conversation_messages_accepts_search_results_when_conversation_is_
     result = rank_conversation_messages(_goal(), view, rows, world=wm, force=True)
     assert result is not None
     assert result.likely_source_message_ids == [10]
-    assert calls["count"] == 1
+    assert calls["count"] == 0
 
 
 def test_forward_binding_uses_llm_ranked_message_when_deterministic_match_is_absent(monkeypatch):

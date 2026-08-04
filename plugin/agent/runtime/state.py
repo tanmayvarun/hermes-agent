@@ -16,6 +16,11 @@ from plugin.worldmodel.capability import CapabilityMemory
 from plugin.worldmodel.model import WorldModel, WorldPatch
 from plugin.agent.executive.workspace import AttemptRecord, ExecutiveWorkspace, WorkspaceProposal
 
+# Distinct moves whose attempt history is kept. Generous — a run makes far fewer
+# distinct moves than iterations — but bounded, so a long run cannot turn its own
+# history into unbounded context.
+MAX_TRACKED_ATTEMPTS = 48
+
 
 @dataclass
 class ExecutionState:
@@ -30,6 +35,9 @@ class ExecutionState:
     repeated_action_count: int = 0
     unchanged_world_count: int = 0
     semantic_repeat_count: int = 0
+    # Cumulative ledger of every move tried, keyed by family+target+surface.
+    # See note_attempt() for why the consecutive counter above is not enough.
+    action_attempts: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     planner_invocations: int = 0
     recent_action_state_pairs: Deque[Tuple[str, str]] = field(
         default_factory=lambda: deque(maxlen=8)
@@ -75,6 +83,29 @@ class ExecutionState:
     # long the branch space is exhausted and the executive escalates instead of
     # thrashing. Reset whenever a non-backtrack move is taken.
     consecutive_backtracks: int = 0
+    # Consecutive diagnostic re-looks spent on surprises without the world moving.
+    # A surprise buys a look carrying the failed attempt, which is how the model
+    # works out why its move did nothing. But looking again at a world that keeps
+    # not moving stops paying: past the cap the executive broadens the search
+    # instead of re-reading the same screen. Reset the moment the world moves.
+    consecutive_surprise_relooks: int = 0
+    # Affordances the runtime measured as inert (invoked, app did not move). The
+    # frontier is rebuilt from scratch each frame, so without this record a
+    # control already proven dead is offered to the perceptor as a live option
+    # again on the very next look. Written by the world critic.
+    dead_affordances: List[Dict[str, Any]] = field(default_factory=list)
+    # Branches abandoned for making no progress. Read by should_escalate() to
+    # call branch exhaustion and send the next decision to the deep reasoner.
+    no_progress_replans: int = 0
+    # Consecutive commits refused because the screen had moved on since it was
+    # perceived. Bounded: a target that never settles (a live-updating list, a
+    # playing video) would otherwise abort forever, and an agent that never
+    # commits is no better than one that commits wrongly. Reset on any commit.
+    consecutive_stale_aborts: int = 0
+    # Times the agent took the foreground back from another app mid-task. Purely
+    # diagnostic — the reclaim itself is unconditional and uncapped, because the
+    # interruptions it answers (a call, a notification) recur by nature.
+    foreground_reclaims: int = 0
     active_action_world_id: str = ""
     # World-uncertainty flag: prefer re-observe + fresh affordances; never revise intent
     world_exploration_needed: bool = False
@@ -288,6 +319,66 @@ class ExecutionState:
 
     def record_failure(self, reason: str) -> None:
         self.failures.append(reason)
+
+    def note_attempt(
+        self,
+        *,
+        family: str,
+        target: str,
+        surface: str = "",
+        effect: str = "",
+        iteration: int = 0,
+    ) -> Dict[str, Any]:
+        """Record that this move was tried here, and what came of it.
+
+        A cumulative ledger, unlike ``repeated_action_count``, which resets the
+        moment anything else is executed. That counter therefore says nothing
+        about a loop that alternates -- and alternating is the normal shape of a
+        stuck agent, because each failure prompts a different next move which
+        then leads back. Observed live: right_click(message) → resolve_entity(
+        same message) → right_click(message), for thirteen minutes, with the
+        consecutive counter sitting at 1 the whole time and the model told
+        nothing, so every attempt arrived looking like its first.
+        """
+        fam = " ".join(str(family or "").strip().lower().split())
+        tgt = " ".join(str(target or "").strip().lower().split())[:60]
+        if not fam:
+            return {}
+        key = f"{fam}|{tgt}|{' '.join(str(surface or '').strip().lower().split())}"
+        entry = self.action_attempts.get(key)
+        if entry is None:
+            entry = {
+                "family": fam,
+                "target": tgt,
+                "surface": str(surface or "").strip().lower(),
+                "attempts": 0,
+                "effects": [],
+            }
+            self.action_attempts[key] = entry
+        entry["attempts"] = int(entry.get("attempts", 0)) + 1
+        entry["last_iteration"] = int(iteration or 0)
+        eff = str(effect or "").strip().lower()
+        if eff:
+            effects = entry.setdefault("effects", [])
+            if isinstance(effects, list):
+                effects.append(eff)
+                del effects[:-4]
+        # Bounded: a long run must not turn its own history into context bloat.
+        if len(self.action_attempts) > MAX_TRACKED_ATTEMPTS:
+            for stale in sorted(
+                self.action_attempts,
+                key=lambda k: int(self.action_attempts[k].get("last_iteration", 0)),
+            )[: len(self.action_attempts) - MAX_TRACKED_ATTEMPTS]:
+                self.action_attempts.pop(stale, None)
+        return dict(entry)
+
+    def attempts_for(self, *, family: str, target: str, surface: str = "") -> int:
+        """How many times this exact move has been tried here, ever."""
+        fam = " ".join(str(family or "").strip().lower().split())
+        tgt = " ".join(str(target or "").strip().lower().split())[:60]
+        key = f"{fam}|{tgt}|{' '.join(str(surface or '').strip().lower().split())}"
+        entry = self.action_attempts.get(key) or {}
+        return int(entry.get("attempts", 0) or 0)
 
     def note_world_signature(self, signature: str, step: Optional[PlanStep]) -> None:
         if self.last_world_signature is not None and signature == self.last_world_signature:

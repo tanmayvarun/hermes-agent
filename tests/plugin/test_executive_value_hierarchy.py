@@ -96,7 +96,13 @@ def test_ladder_asks_user_on_a_hard_block():
     assert choice.action == MetaAction.ASK_USER
 
 
-def test_ladder_backtracks_on_a_stale_branch():
+def test_ladder_plans_a_new_branch_on_a_stale_branch():
+    """A stale branch asks *where* to go next, not merely that it should retreat.
+
+    Retreating without a direction is what let the agent fall back on whichever
+    untried family sat nearest on the frontier; rung 4 now gathers information
+    about the action space (strategic search) and the retreat follows its plan.
+    """
     suff = DecisionSufficiency(sufficient_to_act=False, observe_has_value=False)
     choice = decision_ladder(MetaContext(sufficiency=suff, branch_stale=True))
-    assert choice.action == MetaAction.BACKTRACK
+    assert choice.action == MetaAction.INFORMATION_GATHERING

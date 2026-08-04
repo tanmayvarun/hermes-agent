@@ -527,6 +527,17 @@ def test_happy_forward_path(tmp_path):
 
 
 def test_no_progress_watchdog(tmp_path):
+    """A frozen world must stop the agent, not keep it busy.
+
+    The golden was re-blessed when silent no-ops became surprises. It used to
+    record ``type_query -> open_search -> type_query -> open_search``, every one
+    returning ``no_effect``: the agent could not see that its moves were landing
+    on a world that never changed, so it kept issuing them. It now spends one
+    action, reads the absent transition as a surprise, re-looks with that failure
+    in hand, and once those re-looks stop paying broadens the search instead of
+    re-issuing the pair. Hence one execution rather than four, and one
+    observation per iteration rather than two.
+    """
     app = _frozen_app()
     trace = _run_scenario(app, _call_goal(), tmp_path, max_iterations=6)
     _assert_golden("no_progress", trace)
@@ -587,13 +598,17 @@ def test_meta_perception_gate_skips_a_reperceive_without_crashing(tmp_path, monk
     assert skipped, "a static world with the gate on should skip at least one re-perceive"
 
 
-def test_meta_action_backtrack_is_dispatched_as_a_loop_phase(tmp_path, monkeypatch):
-    """Under the flag, a stale branch makes the executive BACKTRACK, and that
+def test_meta_action_retreat_is_dispatched_as_a_loop_phase(tmp_path, monkeypatch):
+    """Under the flag, a stale branch makes the executive retreat, and that
     verdict pre-empts acting: a ``meta_action_phase`` is emitted and the frontier
     is invalidated, rather than the loop blindly committing the frame's action.
 
     This is what "meta-action drives the loop" means — the executive's choice of
     move is control flow, not just a perception gate.
+
+    The retreat now arrives as INFORMATION_GATHERING: before falling back it asks
+    which branch is worth trying next, so the move has a direction rather than
+    being a bare undo.
     """
     monkeypatch.setenv("HERMES_META_PERCEPTION", "1")
     app = _frozen_app()
@@ -615,10 +630,13 @@ def test_meta_action_backtrack_is_dispatched_as_a_loop_phase(tmp_path, monkeypat
     handlings = {str(e.get("handling") or "") for e in phase_events}
     # The executive elected a pre-empting move and it was dispatched as a phase.
     assert phase_events, "a stale branch under the flag should dispatch a meta-action phase"
-    assert handlings <= {"verify", "backtrack", "ask_user"}
-    assert "backtrack" in handlings
-    # The backtrack phase actually invalidated the frontier (not a no-op log line).
-    assert any(e.get("kind") == "meta_backtrack" for e in events)
+    assert handlings <= {"verify", "backtrack", "information_gathering", "ask_user"}
+    assert "information_gathering" in handlings
+    # The retreat actually invalidated the frontier (not a no-op log line), and
+    # it carries the branch plan it reasoned out rather than a bare hint.
+    gathering = [e for e in events if e.get("kind") == "meta_information_gathering"]
+    assert gathering
+    assert gathering[0].get("branch_plan") is not None
 
 
 def test_exhausted_backtracks_commit_when_a_move_exists_else_escalate():

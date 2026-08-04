@@ -681,12 +681,20 @@ class DecisionEngine:
         if not unified_cognition_enabled():
             return None
         # The executive asked to deliberate (meta-action THINK, or a PROBE that
-        # wants a fresh reveal). Skip the multimodal fast path this once so the
-        # enumerate/score/consult reasoner runs instead, then clear the request.
-        if getattr(execution_state, "force_deliberation", False):
+        # wants a fresh reveal). That is a request about how to *decide*, not
+        # about whether to *look*: perception still has to happen, because
+        # consulting the perceptor is also what refreshes the world document, the
+        # critic's verdict and the materialised entity geometry. Skipping the
+        # whole call left the deliberative path reasoning over the previous
+        # frame's world and the enumerate/score machinery acting on it. Observed
+        # live: a forced-deliberation frame worked from a reading taken before
+        # the query was typed, "found" the contact in it, and clicked the search
+        # field it had actually landed in rather than the result row that by then
+        # existed. So perceive first and withhold only the model's *action*.
+        deliberate = bool(getattr(execution_state, "force_deliberation", False))
+        if deliberate:
             execution_state.force_deliberation = False
             features.extras["forced_deliberation"] = True
-            return None
         try:
             proposal = consult_unified_cognition(goal, world, features, execution_state)
         except Exception as exc:  # never let cognition failure kill the loop
@@ -766,8 +774,9 @@ class DecisionEngine:
             "escalation_reason": escalate_reason,
             "action_rank": action_rank,
             "rejected_siblings": rejected_siblings,
+            "withheld_for_deliberation": deliberate,
         }
-        if action is None or escalate:
+        if action is None or escalate or deliberate:
             return None
 
         # A prohibition is the runtime's cycle detector, which cannot tell
@@ -1554,6 +1563,12 @@ class DecisionEngine:
             features.extras["perception_stall_reason"] = str(
                 getattr(execution_state, "perception_stall_reason", "") or ""
             )
+        # How many times a branch had to be abandoned for making no progress.
+        # should_escalate() reads this to call branch exhaustion, so it has to
+        # reach the feature layer the escalation check actually sees.
+        replans = int(getattr(execution_state, "no_progress_replans", 0) or 0)
+        if replans:
+            features.extras["no_progress_replans"] = replans
 
         # Trajectory / latent context — keep call path alive across overlays
         ctx = getattr(execution_state, "interaction_context", None)

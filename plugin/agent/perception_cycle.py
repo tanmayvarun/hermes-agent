@@ -19,6 +19,7 @@ from plugin.agent.perception_synthesis import (
 )
 from plugin.agent.procedure import current_procedure_stage
 from plugin.agent.runtime.state import RuntimeState
+from plugin.agent.unified_cognition import unified_cognition_enabled
 from plugin.agent.transition.post_perceive import (
     PerceptionAssessment,
     assess_post_action_perception,
@@ -321,13 +322,26 @@ def build_view_features(
                 "screenshot_error"
             )
     try:
-        perception = synthesize_perception(
-            goal,
-            runtime.world_model,
-            view,
-            feats,
-            worldview=wv,
-        )
+        # One perceptor. Unified cognition reads the screen for this run, so this
+        # second vision call is not a fallback but a duplicate: it forms its own
+        # beliefs from the same pixels, costs a full multimodal round trip every
+        # cycle (measured at roughly 17 of 42 model calls on an 11-action run),
+        # and gives the decision layer a rival account of the same screen. What
+        # the decision layer actually reads from it -- the family recommendation,
+        # the screen type, the contradictions -- is derived from the unified
+        # reading instead, in unified_cognition.unified_perception_extras.
+        #
+        # The genuine fallback lives in DecisionEngine.decide, which calls this
+        # only when unified cognition returns no usable proposal.
+        perception = None
+        if not unified_cognition_enabled():
+            perception = synthesize_perception(
+                goal,
+                runtime.world_model,
+                view,
+                feats,
+                worldview=wv,
+            )
         if perception is not None:
             # The eyes' focus reading: which app/layer/region/object the action
             # centres on, with the object-permanence anchor (belongs_to_task /

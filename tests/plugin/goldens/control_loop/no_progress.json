@@ -1,29 +1,11 @@
 {
   "decision_families": [
-    "type_query",
-    "open_search",
-    "type_query",
-    "open_search"
+    "type_query"
   ],
   "executed": [
     {
       "action": "Type",
       "family": "type_query",
-      "target": "Search"
-    },
-    {
-      "action": "Click",
-      "family": "open_search",
-      "target": "Search"
-    },
-    {
-      "action": "Type",
-      "family": "type_query",
-      "target": "Search"
-    },
-    {
-      "action": "Click",
-      "family": "open_search",
       "target": "Search"
     }
   ],
@@ -59,26 +41,11 @@
       ]
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_search",
-          "target": "Search"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_search",
-          "ok": true,
-          "target": "Search"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 2,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
       "decisions": [],
@@ -88,48 +55,18 @@
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Type",
-          "family": "type_query",
-          "target": "Search"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Type",
-          "family": "type_query",
-          "ok": true,
-          "target": "Search"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 4,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_search",
-          "target": "Search"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_search",
-          "ok": true,
-          "target": "Search"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 5,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
       "decisions": [],

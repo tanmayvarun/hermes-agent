@@ -92,7 +92,15 @@ def decision_ladder(ctx: MetaContext, *, goal_complete: bool = False) -> MetaCho
     if ctx.hard_block:
         return MetaChoice(MetaAction.ASK_USER, "rung 6: no self-serve route; ask user", {"ask_user": 1.0})
 
-    if ctx.awaiting_verification and ctx.last_action_surprised:
+    # A surprise buys a look that carries the failed attempt — but only while
+    # looking can still tell us something. Once those re-looks are spent on a
+    # world that will not move, this rung yields so the ladder reaches the
+    # retreat that broadens the search (rung 4).
+    if (
+        ctx.awaiting_verification
+        and ctx.last_action_surprised
+        and not ctx.reperception_exhausted
+    ):
         return MetaChoice(MetaAction.VERIFY, "rung 1: last action surprised us; verify first", {"verify": 1.0})
 
     suff = ctx.sufficiency
@@ -109,9 +117,16 @@ def decision_ladder(ctx: MetaContext, *, goal_complete: bool = False) -> MetaCho
         if ctx.probe_available:
             return MetaChoice(MetaAction.PROBE, "rung 3: blocking uncertainty a probe can reveal", {"probe": 1.0})
 
-    # Rung 4: local exploration exhausted -> retreat / broaden.
+    # Rung 4: local exploration exhausted. Retreating is only half the move —
+    # the other half is knowing where to retreat *to*, which is a question about
+    # the action space rather than this screen. Gather that information first;
+    # the plain retreat remains the fallback when no plan can be formed.
     if ctx.branch_stale:
-        return MetaChoice(MetaAction.BACKTRACK, "rung 4: branch exhausted; retreat and broaden", {"backtrack": 1.0})
+        return MetaChoice(
+            MetaAction.INFORMATION_GATHERING,
+            "rung 4: branch exhausted; plan which branch to try next",
+            {"information_gathering": 1.0},
+        )
 
     # Rung 5: no clear strategy -> consult the reasoning model.
     if ctx.ambiguous:

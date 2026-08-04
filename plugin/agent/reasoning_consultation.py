@@ -18,6 +18,8 @@ import re
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
+from plugin.agent.runtime import inflight
+
 logger = logging.getLogger(__name__)
 
 
@@ -134,13 +136,14 @@ def consult_reasoning(
         timeout_s,
         int(max_tokens or 0),
     )
-    response = caller(
-        task=task,
-        messages=materialized_messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        **effective_call_kwargs,
-    )
+    with inflight.mark(f"reasoning:{task}"):
+        response = caller(
+            task=task,
+            messages=materialized_messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **effective_call_kwargs,
+        )
     raw_text = _extract_text(response)
     parsed = _extract_json_block(raw_text) or {}
     confidence = 0.0

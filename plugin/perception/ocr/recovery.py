@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from plugin.perception.capture_frame import CaptureFrame, frame_from_meta
 from plugin.perception.observation import AxNode, Observation
 from plugin.worldmodel.entities.normalize import _clean_label
 
@@ -37,13 +38,30 @@ def _dedupe_spans(spans: Sequence[OCRSpan]) -> List[OCRSpan]:
     return out
 
 
-def _spans_to_nodes(spans: Sequence[OCRSpan], *, engine_id: str = "") -> List[AxNode]:
+def _spans_to_nodes(
+    spans: Sequence[OCRSpan],
+    *,
+    engine_id: str = "",
+    frame: Optional[CaptureFrame] = None,
+) -> List[AxNode]:
+    """Turn OCR spans into nodes, in the coordinate space the pointer speaks.
+
+    OCR measures the screenshot, so its boxes are in captured pixels relative to
+    that image's corner. The world model's bounds are clicked directly, and the
+    pointer speaks screen points. Converting here — at the one place OCR
+    geometry becomes world geometry — keeps every downstream consumer honest;
+    the alternative, an entity whose bounds mean something different depending
+    on which source produced it, is how a click ends up on empty screen while
+    the log reports it landed on a chat row.
+    """
+    transform = frame or CaptureFrame()
     nodes: List[AxNode] = []
     for i, span in enumerate(spans):
         label = _clean_label(span.text)
         if not label:
             continue
         span_engine = span.engine or engine_id
+        bbox = transform.bbox_to_screen(span.bbox) if not transform.is_identity else span.bbox
         nodes.append(
             AxNode(
                 role="AXStaticText",
@@ -51,7 +69,7 @@ def _spans_to_nodes(spans: Sequence[OCRSpan], *, engine_id: str = "") -> List[Ax
                 description=label,
                 value=None,
                 enabled=True,
-                bbox=span.bbox,
+                bbox=bbox,
                 raw_id=f"ocr:{span_engine}:{i}",
                 attributes={
                     "ocr": True,
@@ -62,6 +80,51 @@ def _spans_to_nodes(spans: Sequence[OCRSpan], *, engine_id: str = "") -> List[Ax
             )
         )
     return nodes
+
+
+# A bound against a pathological read, not a relevance filter: a dense chat list
+# runs well past sixty lines, and the ones past the cut are the recent messages
+# at the bottom of the timeline.
+MAX_OCR_LINES = 200
+
+
+def _spans_to_lines(
+    spans: Sequence[OCRSpan],
+    *,
+    frame: Optional[CaptureFrame] = None,
+    limit: int = MAX_OCR_LINES,
+) -> List[Dict[str, Any]]:
+    """The OCR read as text, for the perceptor to reason over directly.
+
+    OCR is an *input to* perception, not a competing account of it. Turning
+    spans into pseudo-accessibility nodes (``_spans_to_nodes``) hands the runtime
+    a second inventory of the screen that it must then reconcile against the real
+    AX tree, which is the adjudication this design removes. The model is the only
+    party that can sensibly decide whether a line of read text and an AX element
+    are the same thing, so it should see the text.
+
+    Bounds are converted to screen points here for the same reason as in
+    ``_spans_to_nodes``: a rectangle that means captured pixels in one consumer
+    and screen points in another is how a click lands on empty screen while the
+    log claims it hit a chat row.
+    """
+    transform = frame or CaptureFrame()
+    lines: List[Dict[str, Any]] = []
+    for span in spans:
+        label = _clean_label(span.text)
+        if not label:
+            continue
+        bbox = transform.bbox_to_screen(span.bbox) if not transform.is_identity else span.bbox
+        lines.append(
+            {
+                "text": label[:120],
+                "bounds": [round(float(v), 1) for v in tuple(bbox)[:4]],
+                "confidence": round(float(span.confidence), 3),
+            }
+        )
+        if len(lines) >= limit:
+            break
+    return lines
 
 
 def _existing_text_key(node: AxNode) -> str:
@@ -143,7 +206,14 @@ def recover_observation_with_ocr(
         }
         return obs
 
-    ocr_nodes = _spans_to_nodes(_dedupe_spans(chosen.spans), engine_id=chosen.engine_id)
+    deduped = _dedupe_spans(chosen.spans)
+    capture = frame_from_meta(obs.meta)
+    ocr_nodes = _spans_to_nodes(
+        deduped,
+        engine_id=chosen.engine_id,
+        frame=capture,
+    )
+    ocr_lines = _spans_to_lines(deduped, frame=capture)
     merged_nodes = _merge_nodes(obs.nodes or [], ocr_nodes)
     score = chosen.score()
     return Observation(
@@ -166,6 +236,10 @@ def recover_observation_with_ocr(
                 "score": round(score, 4),
                 "mean_confidence": round(chosen.mean_confidence(), 4),
                 "candidate_runs": [r.to_dict() for r in runs],
+                # The read itself, for the perceptor. Travels with the
+                # observation so the packet does not have to re-derive it and
+                # race the window moving in between.
+                "lines": ocr_lines,
             },
         },
     )

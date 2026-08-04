@@ -4,9 +4,28 @@ The multimodal perceptor does heavy sensor fusion and *proposes* a world
 document. This module accepts or rejects structural deltas against the prior
 accepted document, last runtime result, and a small navigation graph.
 
-It is intentionally mostly rule/structure based. Soft content hypotheses can
-pass through; illegal surface / field-role jumps cannot quietly rewrite the
-document that remaps and motors will obey.
+Structure first, judgement on appeal. Cheap deterministic rules settle the
+ordinary frame -- a legal surface transition, an inventory that drifted by a row
+-- at no cost. What they cannot account for is escalated to a model (see
+``plugin.agent.critic_coherence``), because a hand-written table can tell that a
+change is unexplained but not whether *this* change makes sense, which requires
+knowing what the action meant. Without a judge the rules decide alone, which is
+what every offline caller and eval relies on.
+
+The residual applies to the object inventory as well as the scalar fields. It
+originally did not, and the inventory is the part carrying the geometry the agent
+clicks: a reading that replaced every visible row was waved through with the
+reason "proposal provided soft content", which is precisely the delta capable of
+sending a click somewhere that does not exist.
+
+The critic owns two halves of the same judgement. ``critique_world_proposal``
+settles *what is true* (the accepted document). ``note_topology_evidence`` and
+``reconcile_frontier`` settle *what can be done about it* (the action topology):
+an affordance the runtime measured as inert stops being offered, and controls a
+confirmed reveal put on screen stop being described as latent. Without this the
+frontier was rebuilt from scratch every frame with no memory of what had already
+been proven not to work, so the perceptor kept being handed a dead control as a
+live option and kept choosing it.
 """
 
 from __future__ import annotations
@@ -79,6 +98,136 @@ NO_SIDEBAR_SEARCH_SURFACES: Set[str] = {
 }
 
 SIDEBAR_SEARCH_ROLES: Set[str] = {"sidebar_search"}
+
+
+# --- object inventory residual ------------------------------------------------
+#
+# The document's scalar fields (surface, open_conversation, field role) were the
+# only ones held to the residual discipline; ``objects`` was accepted wholesale.
+# That is backwards. The inventory carries the geometry the agent clicks, so a
+# frame whose objects are entirely different from the last one is the delta that
+# can actually do damage — and it was the one nothing examined.
+#
+# Between two consecutive micro-actions the visible inventory cannot turn over
+# completely unless something made it: the surface changed, the viewport moved,
+# or a filter was applied. A total replacement with none of those is far more
+# likely a misread than a real screen.
+
+# Actions that move the viewport without changing surface, so a largely new
+# inventory on the same surface is exactly what they are for.
+VIEWPORT_ACTIONS: Set[str] = {
+    "scroll",
+    "scroll_conversation",
+    "scroll_to",
+    "locate_content",
+    "page_down",
+    "page_up",
+}
+
+# Actions that re-filter what a surface lists, which legitimately replaces the
+# inventory in place.
+FILTER_ACTIONS: Set[str] = {"type_query", "compose_search_query", "clear_query", "type_text"}
+
+# Fraction of the prior inventory that must vanish *and* of the new inventory
+# that must be unfamiliar before a same-surface reading counts as a wholesale
+# rewrite rather than ordinary drift. Deliberately high: the cost of examining a
+# real change is a held-back frame, while the cost of waving through a fabricated
+# one is the agent acting on furniture that is not there.
+RADICAL_CHURN = 0.7
+
+# A handful of objects is too small a sample for a ratio to mean anything: going
+# from two rows to two different rows is 100% churn and says nothing.
+MIN_INVENTORY_FOR_CHURN = 4
+
+
+@dataclass
+class ObjectDelta:
+    """What changed between two object inventories."""
+
+    persisted: List[str] = field(default_factory=list)
+    appeared: List[str] = field(default_factory=list)
+    disappeared: List[str] = field(default_factory=list)
+    prior_count: int = 0
+    proposed_count: int = 0
+
+    @property
+    def churn(self) -> float:
+        """Fraction of the prior inventory that is no longer reported."""
+        if not self.prior_count:
+            return 0.0
+        return len(self.disappeared) / float(self.prior_count)
+
+    @property
+    def replacement(self) -> float:
+        """Fraction of the proposed inventory that was not there before."""
+        if not self.proposed_count:
+            return 0.0
+        return len(self.appeared) / float(self.proposed_count)
+
+    def summary(self) -> str:
+        return (
+            f"{len(self.persisted)} kept, {len(self.appeared)} new, "
+            f"{len(self.disappeared)} gone (churn {self.churn:.2f})"
+        )
+
+
+def _object_texts(objects: Any) -> List[str]:
+    out: List[str] = []
+    for item in objects or []:
+        if not isinstance(item, dict):
+            continue
+        text = _norm_label(item.get("text"))
+        if text:
+            out.append(text)
+    return out
+
+
+def diff_object_inventories(prior: Any, proposed: Any) -> ObjectDelta:
+    """Compare two inventories by the text the user would read.
+
+    Identity is the visible text rather than the model's ids, because the ids are
+    regenerated every frame and carry no continuity — comparing them would report
+    a total rewrite on every look.
+    """
+    prior_texts = _object_texts(prior)
+    proposed_texts = _object_texts(proposed)
+    prior_set, proposed_set = set(prior_texts), set(proposed_texts)
+    return ObjectDelta(
+        persisted=sorted(prior_set & proposed_set),
+        appeared=sorted(proposed_set - prior_set),
+        disappeared=sorted(prior_set - proposed_set),
+        prior_count=len(prior_set),
+        proposed_count=len(proposed_set),
+    )
+
+
+def inventory_rewrite_is_explained(
+    delta: ObjectDelta,
+    *,
+    surface_changed: bool,
+    last_action: str,
+) -> tuple[bool, str]:
+    """Whether a wholesale change of inventory has an account of itself.
+
+    Returns explained=True for anything that is not a wholesale rewrite, so the
+    ordinary frame costs nothing. Only the unexplained rewrite is held back for
+    judgement.
+    """
+    if delta.prior_count < MIN_INVENTORY_FOR_CHURN:
+        return True, "no prior inventory worth comparing"
+    if delta.churn < RADICAL_CHURN or delta.replacement < RADICAL_CHURN:
+        return True, f"ordinary drift: {delta.summary()}"
+    if surface_changed:
+        return True, "surface changed; a new inventory is expected"
+    action = _norm_label(last_action)
+    if any(token in action for token in VIEWPORT_ACTIONS):
+        return True, f"{last_action!r} moves the viewport; new items are expected"
+    if any(token in action for token in FILTER_ACTIONS):
+        return True, f"{last_action!r} refilters the surface; a new list is expected"
+    return False, (
+        f"inventory rewritten on an unchanged surface with no action to explain it "
+        f"({delta.summary()}, last={last_action or 'none'!r})"
+    )
 
 
 @dataclass
@@ -178,8 +327,12 @@ def _surface_transition_ok(
         return True, "same or initial surface"
     parents = SURFACE_PARENTS.get(proposed_surface, set())
     if prior_surface in parents:
-        # While hunting/acting inside a conversation, do not silently fall into
-        # sidebar search — that is the zarooratwala drift class.
+        # A prior, not a law: while hunting inside a conversation, falling into
+        # sidebar search is usually a misread rather than a real move. It is
+        # app-and-task-specific knowledge, so it refuses rather than decides —
+        # the surface judge in critic_coherence can overturn it when the action
+        # really does explain the jump. Left here as remaining debt: this belongs
+        # with the WhatsApp overlay, not in the general coherence layer.
         if (
             prior_surface == "conversation"
             and proposed_surface == "search"
@@ -218,8 +371,18 @@ def critique_world_proposal(
     *,
     last_action: str = "",
     observed_surface: str = "",
+    coherence_judge: Optional[Any] = None,
+    surface_judge: Optional[Any] = None,
 ) -> CriticVerdict:
-    """Merge ``proposal`` into ``prior`` with structural accept/reject reasons."""
+    """Merge ``proposal`` into ``prior`` with structural accept/reject reasons.
+
+    ``coherence_judge`` is an optional callable consulted only when the
+    deterministic rules find a change they cannot account for. It exists because
+    the rules can detect that an inventory was rewritten without cause but cannot
+    know whether *this* rewrite makes sense, which requires understanding what the
+    action meant. Absent a judge the rules decide alone, which is the behaviour
+    every offline caller and eval depends on.
+    """
     prior_doc = dict(prior or {})
     prop = dict(proposal or {})
     decisions: List[CriticDecision] = []
@@ -231,6 +394,29 @@ def critique_world_proposal(
     ok, reason = _surface_transition_ok(
         prior_surface, proposed_surface, last_action=action
     )
+    # SURFACE_PARENTS is one application's topology typed out by hand, so its
+    # refusals conflate "this cannot happen" with "nobody wrote this edge down".
+    # Only the first is a real incoherence; the second discards a correct reading
+    # and cannot generalise past the app it was written for. Route the refusal to
+    # judgement and let the table keep only its cheap accepts. Vocabulary is not
+    # appealable: a surface outside the enum has no field role, no revealed-surface
+    # semantics and no phase mapping downstream, so it stays refused.
+    if (
+        not ok
+        and surface_judge is not None
+        and proposed_surface in CANONICAL_SURFACES
+        and prior_surface
+    ):
+        try:
+            ok, judged_reason = surface_judge(
+                prior_surface=prior_surface,
+                proposed_surface=proposed_surface,
+                last_action=action,
+                rule_reason=reason,
+            )
+            reason = judged_reason or reason
+        except Exception:
+            pass
     if ok and proposed_surface:
         surface = proposed_surface
         decisions.append(
@@ -346,8 +532,63 @@ def critique_world_proposal(
     accepted["open_conversation"] = open_conversation
     accepted["focused_field_role"] = field_role
 
+    # The object inventory is held to the same residual discipline as the scalar
+    # fields. It used to be waved through with the other soft bags, which meant
+    # the one delta carrying clickable geometry was the one nothing checked.
+    if "objects" in prop and prop.get("objects") not in (None, "", [], {}):
+        delta = diff_object_inventories(prior_doc.get("objects"), prop.get("objects"))
+        explained, why = inventory_rewrite_is_explained(
+            delta,
+            surface_changed=surface != prior_surface,
+            last_action=action,
+        )
+        if not explained and coherence_judge is not None:
+            # Deterministic rules can tell that a rewrite is unaccounted for, but
+            # not whether this particular one makes sense — that needs to know
+            # what the action means. Ask, and let the answer overrule the rule.
+            try:
+                explained, judged_why = coherence_judge(
+                    prior=prior_doc,
+                    proposed=prop,
+                    delta=delta,
+                    surface=surface,
+                    prior_surface=prior_surface,
+                    last_action=action,
+                )
+                why = judged_why or why
+            except Exception:
+                pass
+        if explained:
+            accepted["objects"] = prop.get("objects")
+            decisions.append(
+                CriticDecision(
+                    field="objects",
+                    verdict="accept",
+                    reason=why,
+                    prior=delta.prior_count,
+                    proposed=delta.proposed_count,
+                    accepted="(set)",
+                )
+            )
+        else:
+            # Keep the carried inventory. x survives; this Δx has not earned the
+            # right to replace it. The reading is not discarded — it reaches the
+            # log through the narration, and the next frame gets another chance
+            # with an action history that may explain it.
+            accepted["objects"] = prior_doc.get("objects") or []
+            decisions.append(
+                CriticDecision(
+                    field="objects",
+                    verdict="reject",
+                    reason=why,
+                    prior=delta.prior_count,
+                    proposed=delta.proposed_count,
+                    accepted="(kept prior)",
+                )
+            )
+
     # Soft bags: prefer proposal when present.
-    for key in ("objects", "progress", "attempts", "exhausted"):
+    for key in ("progress", "attempts", "exhausted"):
         if key in prop and prop.get(key) not in (None, "", [], {}):
             accepted[key] = prop.get(key)
             decisions.append(
@@ -407,3 +648,172 @@ def sidebar_search_forbidden(execution_state: Any = None, *, surface: str = "", 
     surf = surface or (accepted_surface(execution_state) if execution_state is not None else "")
     field = role or (accepted_field_role(execution_state) if execution_state is not None else "")
     return surf in NO_SIDEBAR_SEARCH_SURFACES or field == "destination_filter"
+
+
+# --- action topology ---------------------------------------------------------
+#
+# The document says what is true; the frontier says what can be done. Both are
+# the critic's to settle, because the same measured outcome updates both: an
+# ``open_entity`` that moved nothing is evidence about the world *and* proof
+# that this particular control is not the one that opens that conversation.
+
+# Effects that prove the action reached the app and the app did nothing. These
+# are the ones that condemn an affordance. Effects where the action never landed
+# (missing geometry, a failed actuator) say nothing about the control itself, so
+# they must not condemn it.
+_INERT_EFFECTS: Set[str] = {"no_transition"}
+
+# Surfaces that only exist because something was revealed onto them.
+_REVEALED_SURFACES: Set[str] = {"context_menu", "forward_picker", "dialog"}
+
+MAX_DEAD_AFFORDANCES = 12
+
+
+def _norm_label(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def affordance_key(surface: str, family: str, target: str) -> str:
+    """Stable identity for 'this control, on this surface'."""
+    return f"{_norm_surface(surface)}|{_norm_label(family)}|{_norm_label(target)}"
+
+
+def note_topology_evidence(
+    execution_state: Any,
+    *,
+    last_action_family: str,
+    last_target: str,
+    effect_kind: str,
+    surface: str,
+) -> Optional[Dict[str, str]]:
+    """Record what the last action proved about the action topology.
+
+    Called on the critic step, once the accepted document has settled what
+    surface we are actually on. An action that reached the app and moved nothing
+    condemns the affordance it used: offering it again as a live option is how
+    the agent ends up re-clicking a control that has already been measured inert.
+    Returns the record it added, or None when the outcome proves nothing.
+    """
+    family = _norm_label(last_action_family)
+    target = _norm_label(last_target)
+    if not family or _norm_label(effect_kind) not in _INERT_EFFECTS:
+        return None
+    record = {
+        "key": affordance_key(surface, family, target),
+        "surface": _norm_surface(surface),
+        "family": family,
+        "target": target,
+        "reason": "measured inert: the app did not move when this was invoked",
+    }
+    dead = list(getattr(execution_state, "dead_affordances", None) or [])
+    if any(item.get("key") == record["key"] for item in dead if isinstance(item, dict)):
+        return None
+    dead.append(record)
+    if len(dead) > MAX_DEAD_AFFORDANCES:
+        del dead[0 : len(dead) - MAX_DEAD_AFFORDANCES]
+    try:
+        execution_state.dead_affordances = dead
+    except Exception:
+        return None
+    return record
+
+
+def _grounded_from_objects(document: Dict[str, Any]) -> List[Any]:
+    """The document's own objects, shaped as grounded reveal actions.
+
+    After a confirmed reveal the perceptor reports the menu entries it can now
+    see, each with the point it would click. That is exactly the grounding
+    ``ground_revealed`` consumes, so the controls a probe exposed stop being
+    described to the model as latent.
+    """
+    from types import SimpleNamespace
+
+    out: List[Any] = []
+    for obj in document.get("objects") or []:
+        if not isinstance(obj, dict):
+            continue
+        label = str(obj.get("text") or obj.get("label") or "").strip()
+        point = obj.get("point")
+        if not label or not point:
+            continue
+        target: Dict[str, Any] = {"point": list(point)}
+        if obj.get("id") is not None:
+            target["entity_id"] = obj.get("id")
+        out.append(SimpleNamespace(label=label, is_grounded=True, target=target))
+    return out
+
+
+def reconcile_frontier(
+    frontier: Any,
+    *,
+    document: Optional[Dict[str, Any]] = None,
+    execution_state: Any = None,
+    last_action_family: str = "",
+) -> Any:
+    """Apply the critic's accepted reality to a freshly built action topology.
+
+    Two moves, both driven by evidence the runtime measured rather than by the
+    model's say-so: controls proven inert are withdrawn from the live set (and
+    reported as excluded, with the reason, so the perceptor learns rather than
+    silently loses an option), and a confirmed reveal promotes the latent
+    controls it put on screen to observed.
+    """
+    if frontier is None:
+        return frontier
+    document = document if isinstance(document, dict) else {}
+    surface = _norm_surface(document.get("surface") or getattr(frontier, "surface", ""))
+
+    # A reveal that landed on an action surface has grounded its controls.
+    if (
+        _norm_label(last_action_family) == "reveal_actions"
+        and surface in _REVEALED_SURFACES
+    ):
+        grounded = _grounded_from_objects(document)
+        if grounded:
+            try:
+                from plugin.agent.affordance_frontier import ground_revealed
+                from types import SimpleNamespace
+
+                ground_revealed(frontier, SimpleNamespace(actions=grounded))
+            except Exception:
+                pass
+
+    dead = [
+        item
+        for item in (getattr(execution_state, "dead_affordances", None) or [])
+        if isinstance(item, dict) and item.get("key")
+    ]
+    if not dead:
+        return frontier
+    dead_keys = {str(item["key"]) for item in dead}
+
+    def _is_dead(affordance: Any) -> Optional[Dict[str, str]]:
+        key = affordance_key(
+            surface,
+            getattr(affordance, "family", ""),
+            getattr(affordance, "target_label", ""),
+        )
+        if key not in dead_keys:
+            return None
+        for item in dead:
+            if str(item["key"]) == key:
+                return item
+        return None
+
+    excluded = list(getattr(frontier, "excluded_actions", None) or [])
+    for bucket in ("observed_actions", "latent_actions", "probe_actions"):
+        keep = []
+        for affordance in list(getattr(frontier, bucket, None) or []):
+            record = _is_dead(affordance)
+            if record is None:
+                keep.append(affordance)
+                continue
+            excluded.append(
+                {
+                    "action": f"{record['family']}:{record['target']}" if record["target"] else record["family"],
+                    "reason": record["reason"],
+                }
+            )
+        setattr(frontier, bucket, keep)
+    frontier.excluded_actions = excluded
+    return frontier

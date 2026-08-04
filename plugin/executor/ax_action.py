@@ -655,6 +655,79 @@ def _focus_field(app: str, el: Any, bounds: Optional[Tuple[float, float, float, 
     time.sleep(0.3)
 
 
+# Backend marker for a click the continuity gate refused. The controller keys on
+# it to re-perceive instead of judging the action: nothing was attempted, so the
+# affordance is not inert, the plan is not wrong, and recording an outcome here
+# would let the world critic condemn a control that was never invoked.
+STALE_PRECONDITION_BACKEND = "stale_precondition"
+
+
+_bypass_gate_once = False
+
+
+def bypass_next_gate() -> None:
+    """Let the next gated click through unchecked.
+
+    The escape hatch for a target that never settles — a live-updating list, a
+    playing video. Refusing forever is its own failure mode: an agent that never
+    commits is no better than one that commits wrongly, and at least a real
+    attempt produces an outcome the transition machinery can learn from.
+    """
+    global _bypass_gate_once
+    _bypass_gate_once = True
+
+
+# Sizes of the boxes the system *synthesises* around an estimated point: 24 from
+# open_entity's point target, 48 from a materialised vision entity. Neither is a
+# measurement of a real control, and the difference matters to the commit gate —
+# see TargetExpectation.estimated.
+_SYNTHETIC_BOX_SIZES = (24.0, 48.0)
+
+
+def _is_estimated_box(bounds: Optional[Tuple[float, float, float, float]]) -> bool:
+    """Whether this rectangle was invented around a point rather than measured."""
+    if not bounds or len(bounds) < 4:
+        return False
+    try:
+        w, h = float(bounds[2]), float(bounds[3])
+    except (TypeError, ValueError):
+        return False
+    return w == h and w in _SYNTHETIC_BOX_SIZES
+
+
+def _refuse_stale_click(
+    app: str,
+    target: str,
+    bounds: Optional[Tuple[float, float, float, float]],
+) -> Optional[ExecResult]:
+    """Refuse a bounds click whose target no longer reads as what was asked for."""
+    global _bypass_gate_once
+    if _bypass_gate_once:
+        _bypass_gate_once = False
+        return None
+    try:
+        from plugin.agent.capabilities.invoke_affordance import is_irreversible_affordance
+        from plugin.perception.continuity import guard_click
+
+        verdict = guard_click(
+            app,
+            _clean(target),
+            bounds,
+            irreversible=is_irreversible_affordance(_clean(target)),
+            estimated=_is_estimated_box(bounds),
+        )
+    except Exception:
+        return None
+    if verdict is None or verdict.may_commit:
+        return None
+    return ExecResult(
+        ok=False,
+        backend=STALE_PRECONDITION_BACKEND,
+        message=f"refused stale click on {_clean(target)!r}: {verdict.reason}",
+        command=f"ax_click {app} {target}",
+    )
+
+
 def ax_click(
     app: str,
     target: str,
@@ -722,6 +795,17 @@ def ax_click(
         # search-mirror AXStaticText title=<query> that steals name-based lookup.
         bounds_center = _bounds_center(bounds)
         if bounds_center is not None and bounds_center[0] >= 0 and bounds_center[1] >= 0:
+            # These bounds came from a screenshot taken ~60s ago (measured 35-76s
+            # on live runs), so they are a claim about the past. This is the last
+            # moment the live screen can still be consulted, and the first at
+            # which the rectangle is final — the decision upstream frequently
+            # carries no geometry, leaving resolution to the branch above. Read
+            # the target back and refuse the click if it no longer holds what was
+            # asked for; a reordered chat list would otherwise open the wrong
+            # conversation, and at the Send step, message the wrong person.
+            refusal = _refuse_stale_click(app, target, bounds)
+            if refusal is not None:
+                return refusal
             _mouse_click(bounds_center[0], bounds_center[1])
             time.sleep(0.25)
             return ExecResult(

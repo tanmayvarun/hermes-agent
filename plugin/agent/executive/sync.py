@@ -316,6 +316,7 @@ def assess_executive_judgement(
     from plugin.agent.executive.meta_action import (
         MetaAction,
         MetaContext,
+        reperception_exhausted,
         select_meta_action,
     )
     from plugin.agent.executive.perception_query import from_sufficiency
@@ -338,7 +339,13 @@ def assess_executive_judgement(
     # A blocking question that the workspace has already settled, with no world
     # change since (a stale streak / prior suppression), must not trigger yet
     # another look — that is the re-search failure the executive is built to end.
-    branch_stale = previously_suppressed or streak >= 2
+    #
+    # A run of surprises that each bought a look and still left the world
+    # unmoved is the same condition reached by a different road: this branch has
+    # stopped converging, so it is stale and the executive should broaden rather
+    # than re-read the screen again.
+    relooks_exhausted = reperception_exhausted(execution_state)
+    branch_stale = previously_suppressed or streak >= 2 or relooks_exhausted
     question_settled = bool(
         blocking
         and branch_stale
@@ -352,6 +359,7 @@ def assess_executive_judgement(
         last_action_surprised=bool(last_action_surprised),
         branch_stale=branch_stale,
         question_settled=question_settled,
+        reperception_exhausted=relooks_exhausted,
         hard_block=bool(hard_block),
         probe_available=bool(probe_available),
         ambiguous=bool(ambiguous),

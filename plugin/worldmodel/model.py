@@ -64,6 +64,17 @@ class WorldModel:
     # means every perception consumer (decision synthesis, unified cognition) can
     # attach it without each call site having to thread the path through.
     last_screenshot_path: str = ""
+    # How to get from that screenshot's pixels back to the screen the pointer
+    # acts on. A window-scoped Retina grab is offset by the window origin and
+    # doubled in scale, so anything measured on those pixels is unclickable
+    # until converted. Carried with the path because it describes that exact
+    # capture: re-deriving it later races the window being moved or resized.
+    last_capture_frame: Dict[str, float] = field(default_factory=dict)
+    # The OCR read of that screenshot, as text with screen-point bounds. Held so
+    # the perceptor can be *given* the read rather than the runtime turning it
+    # into a second inventory of the screen and reconciling that against the AX
+    # tree behind the model's back. Empty when OCR is gated off for the surface.
+    last_ocr_lines: List[Dict[str, Any]] = field(default_factory=list)
     current_screen: Optional[Screen] = None
     entities: Dict[int, Entity] = field(default_factory=dict)
     transitions: TransitionStore = field(default_factory=TransitionStore)
@@ -179,6 +190,21 @@ class WorldModel:
         self.last_window_name = obs.window_name or self.last_window_name
         if getattr(obs, "screenshot_path", ""):
             self.last_screenshot_path = obs.screenshot_path
+            meta = getattr(obs, "meta", None)
+            if isinstance(meta, dict) and isinstance(meta.get("capture_frame"), dict):
+                self.last_capture_frame = dict(meta["capture_frame"])
+            if isinstance(meta, dict):
+                ocr_meta = meta.get("ocr")
+                if isinstance(ocr_meta, dict):
+                    lines = ocr_meta.get("lines")
+                    # Only an applied read replaces the held one. A frame where
+                    # OCR was skipped or found nothing says nothing about the
+                    # screen, and clearing on it would blank the read on every
+                    # AX-only cycle.
+                    if isinstance(lines, list) and lines:
+                        self.last_ocr_lines = [
+                            dict(line) for line in lines if isinstance(line, dict)
+                        ]
 
         if self._should_hold_last_good_world(obs):
             screen = self.current_screen or self.screens.detect(

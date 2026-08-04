@@ -619,10 +619,24 @@ def test_controller_stops_when_goal_wall_clock_budget_expires(monkeypatch):
         lambda: {"agent": {"goal_run_timeout_seconds": 5.0, "max_stepcount": 10}},
     )
 
+    # The clock advances once per loop turn, not once per read. A double that moved
+    # whenever it was observed made the trip point a function of how many times the
+    # controller happens to consult the clock, so adding a timing log to the loop
+    # registered here as a budget regression rather than as more instrumentation.
+    class _FakeClock:
+        def __init__(self):
+            self.t = 0.0
+
+        def monotonic(self):
+            return self.t
+
+    clock = _FakeClock()
+
     class _Eng:
         last_trace = None
 
         def decide(self, goal, world, execution_state, **kwargs):
+            clock.t += 3.0
             return Action(action="Observe", action_family="observe", rationale="keep going")
 
     def _observe() -> Observation:
@@ -695,16 +709,6 @@ def test_controller_stops_when_goal_wall_clock_budget_expires(monkeypatch):
         lambda g, w: GoalStatus(succeeded=False, reason="not yet", evidence={}),
     )
 
-    class _FakeClock:
-        def __init__(self):
-            self.t = 0.0
-
-        def monotonic(self):
-            val = self.t
-            self.t += 0.6
-            return val
-
-    clock = _FakeClock()
     monkeypatch.setattr("plugin.agent.controller.time.monotonic", clock.monotonic)
 
     result = run_goal_closed_loop(

@@ -483,6 +483,7 @@ def observed_from_objects(
     *,
     goal_kind: str = "forward_message",
     point_scale: float = 1.0,
+    point_origin: Tuple[float, float] = (0.0, 0.0),
 ) -> List[Affordance]:
     """Affordances on things only the model can see.
 
@@ -508,9 +509,11 @@ def observed_from_objects(
         point = None
         if isinstance(raw_point, (list, tuple)) and len(raw_point) >= 2:
             try:
+                # Window-relative model coordinates -> screen points: the origin
+                # is as load-bearing as the scale (see _to_screen_point).
                 point = (
-                    int(float(raw_point[0]) * float(point_scale)),
-                    int(float(raw_point[1]) * float(point_scale)),
+                    int(float(point_origin[0]) + float(raw_point[0]) * float(point_scale)),
+                    int(float(point_origin[1]) + float(raw_point[1]) * float(point_scale)),
                 )
             except (TypeError, ValueError):
                 point = None
@@ -861,6 +864,7 @@ def build_affordance_frontier(
     overlay: Any = None,
     memory: Optional[TransitionMemory] = None,
     point_scale: float = 1.0,
+    point_origin: Tuple[float, float] = (0.0, 0.0),
 ) -> AffordanceFrontier:
     """Assemble the frontier for the active surface and one action beyond it.
 
@@ -871,7 +875,7 @@ def build_affordance_frontier(
     surface = _norm(surface)
     ax_actions, excluded = observed_from_ax(ax_evidence or (), goal_kind=goal_kind)
     object_actions = observed_from_objects(
-        objects or (), goal_kind=goal_kind, point_scale=point_scale
+        objects or (), goal_kind=goal_kind, point_scale=point_scale, point_origin=point_origin
     )
     observed = object_actions + ax_actions
 

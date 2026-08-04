@@ -11,10 +11,20 @@ value rather than by position in a fixed sequence:
 - THINK      consult the reasoning model; cheap-ish, resolves genuine ambiguity
 - PERCEIVE   look again; only worth it when a look could close a real gap
 - PROBE      take a cheap reversible action to *reveal* information
+- INFORMATION_GATHERING
+             the branch has stopped converging, so gather information about the
+             *action space* rather than the screen: consult for an ordered plan
+             over the branches still worth trying (strategic search)
 - ACT        commit to the best grounded action toward the goal
 - VERIFY     confirm the last action produced the predicted world
 - BACKTRACK  undo / retreat when the branch has gone stale
 - ASK_USER   stop and ask, when nothing the agent can do resolves the block
+
+PERCEIVE, PROBE, THINK and INFORMATION_GATHERING are all information moves; they
+differ in what they interrogate. PERCEIVE re-reads the surface, PROBE acts to
+expose what a look cannot, THINK reasons over the current situation, and
+INFORMATION_GATHERING asks the strategically prior question: whether this region
+of the action space is the right one to be searching at all.
 
 The selection is a pure function of what the executive already knows, so it is
 testable in isolation and reusable across domains.
@@ -29,10 +39,31 @@ from typing import Dict, List, Optional
 from plugin.agent.executive.sufficiency import DecisionSufficiency
 
 
+# How many consecutive diagnostic re-looks a run of unmoving worlds may spend
+# before the executive stops looking and broadens the search instead.
+REPERCEPTION_RELOOK_CAP = 2
+
+
+def reperception_exhausted(execution_state) -> bool:
+    """Has the run of unmoving worlds used up its diagnostic re-looks?
+
+    A surprise earns a look that carries the failed attempt, which is how the
+    model works out why its move did nothing. Looking again at a world that keeps
+    not moving stops paying, so past the cap the executive broadens the search
+    rather than re-reading the same screen forever. The runtime keeps the count
+    and resets it the moment the world moves.
+    """
+    return (
+        int(getattr(execution_state, "consecutive_surprise_relooks", 0) or 0)
+        >= REPERCEPTION_RELOOK_CAP
+    )
+
+
 class MetaAction(str, Enum):
     THINK = "think"
     PERCEIVE = "perceive"
     PROBE = "probe"
+    INFORMATION_GATHERING = "information_gathering"
     ACT = "act"
     VERIFY = "verify"
     BACKTRACK = "backtrack"
@@ -61,6 +92,10 @@ class MetaContext:
     # The blocking question a look/probe would test is already settled with
     # unchanged evidence — re-asking it is redundant and must not win.
     question_settled: bool = False
+    # The diagnostic re-looks bought by recent surprises are spent and the world
+    # still has not moved. Verifying again would re-read an unchanged screen, so
+    # VERIFY stops out-ranking the retreat that broadens the search.
+    reperception_exhausted: bool = False
 
 
 @dataclass
@@ -108,7 +143,7 @@ def select_meta_action(ctx: MetaContext) -> MetaChoice:
     if ctx.hard_block:
         return MetaChoice(MetaAction.ASK_USER, "hard block: no self-serve move resolves it", {"ask_user": 1.0})
 
-    if ctx.awaiting_verification and ctx.last_action_surprised:
+    if ctx.awaiting_verification and ctx.last_action_surprised and not ctx.reperception_exhausted:
         return MetaChoice(MetaAction.VERIFY, "last action surprised us; confirm the world", {"verify": 1.0})
 
     suff = ctx.sufficiency
@@ -227,6 +262,7 @@ def _reason_for(action: MetaAction, suff: Optional[DecisionSufficiency]) -> str:
         MetaAction.PERCEIVE: "a look could close a real gap",
         MetaAction.PROBE: "reveal information a look cannot",
         MetaAction.BACKTRACK: "branch stale; retreat and repair",
+        MetaAction.INFORMATION_GATHERING: "branch stale; plan which branch to try next",
         MetaAction.THINK: "ambiguous; consult reasoning",
         MetaAction.ACT: "evidence sufficient; commit",
         MetaAction.VERIFY: "confirm predicted world",

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO
@@ -29,6 +30,9 @@ class EventLogger:
         self._seq = 0
         self._steps_ok = 0
         self._steps_fail = 0
+        # The stall watchdog writes from its own thread while the control loop
+        # is blocked inside a call, so sequence numbers and appends are guarded.
+        self._write_lock = threading.Lock()
         self._run_started_at_wall = time.time()
         self._run_started_at_monotonic = time.monotonic()
         try:
@@ -79,31 +83,32 @@ class EventLogger:
         status: str = "ok",
         step: Optional[int] = None,
     ) -> Dict[str, Any]:
-        self._seq += 1
-        if status == "ok":
-            self._steps_ok += 1
-        elif status in {"fail", "error"}:
-            self._steps_fail += 1
-        try:
-            elapsed_s = float(payload["run_elapsed_s"]) if "run_elapsed_s" in payload else self._run_elapsed_s()
-        except (TypeError, ValueError):
-            elapsed_s = self._run_elapsed_s()
-        rec: Dict[str, Any] = {
-            "ts": time.time(),
-            "run_elapsed_s": round(elapsed_s, 6),
-            "run_elapsed_ms": int(round(elapsed_s * 1000.0)),
-            "seq": self._seq,
-            "run_id": self.run_id,
-            "kind": kind,
-            "status": status,
-            **payload,
-        }
-        if step is not None:
-            rec["step"] = step
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, default=str) + "\n")
-        if self.also_console:
-            self._print(rec)
+        with self._write_lock:
+            self._seq += 1
+            if status == "ok":
+                self._steps_ok += 1
+            elif status in {"fail", "error"}:
+                self._steps_fail += 1
+            try:
+                elapsed_s = float(payload["run_elapsed_s"]) if "run_elapsed_s" in payload else self._run_elapsed_s()
+            except (TypeError, ValueError):
+                elapsed_s = self._run_elapsed_s()
+            rec: Dict[str, Any] = {
+                "ts": time.time(),
+                "run_elapsed_s": round(elapsed_s, 6),
+                "run_elapsed_ms": int(round(elapsed_s * 1000.0)),
+                "seq": self._seq,
+                "run_id": self.run_id,
+                "kind": kind,
+                "status": status,
+                **payload,
+            }
+            if step is not None:
+                rec["step"] = step
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, default=str) + "\n")
+            if self.also_console:
+                self._print(rec)
         return rec
 
     def _print(self, rec: Dict[str, Any]) -> None:
