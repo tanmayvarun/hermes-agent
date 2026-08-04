@@ -76,15 +76,30 @@ def resolve_addressable(
     bounds = extras.get("bounds")
     world = extras.get("world")
 
-    if world is not None and hasattr(overlay, "resolve_target") and (label or entity_id is not None):
+    if world is not None and (label or entity_id is not None):
         try:
-            # Prefer the overlay's semantic resolution when the world is present.
-            entity = overlay.resolve_target(world, label, "click")
-            if entity is None and entity_id is not None:
-                for candidate in getattr(world, "entities", None) or []:
-                    if getattr(candidate, "id", None) == entity_id:
-                        entity = candidate
-                        break
+            entity = None
+            # Geometry-first: a caller-supplied entity_id is the decision's already
+            # grounded target (the perceptor/reference-resolver picked *this*
+            # perceived object). Honour it directly and click its exact bounds.
+            # Re-resolving by label here is what threw the choice away and let the
+            # noisy-OCR shortest-label match grab the search-box echo or a
+            # "…- Video call" row instead of the chat row.
+            if entity_id is not None:
+                entities = getattr(world, "entities", None)
+                if isinstance(entities, dict):
+                    cand = entities.get(int(entity_id)) if str(entity_id).lstrip("-").isdigit() else None
+                    if cand is not None and getattr(cand, "visible", True):
+                        entity = cand
+                if entity is None:
+                    for cand in (entities.values() if isinstance(entities, dict) else (entities or [])):
+                        if getattr(cand, "id", None) == entity_id and getattr(cand, "visible", True):
+                            entity = cand
+                            break
+            # Only fall back to overlay semantic resolution when no grounded id
+            # was supplied (an AX-rich app, or the model gave a bare label).
+            if entity is None and hasattr(overlay, "resolve_target") and label:
+                entity = overlay.resolve_target(world, label, "click")
             if entity is not None:
                 label = str(getattr(entity, "label", "") or label)
                 bounds = getattr(entity, "bounds", None) or bounds

@@ -1717,6 +1717,59 @@ def _resolve_target_entity(world: WorldModel, target_id: Any) -> Any:
     return entity
 
 
+# Pointer families whose target must be a concrete perceived object. When the
+# model names one by label but gives no resolvable target_id, we ground the
+# label to a perceived entity so the decision carries geometry (an entity id +
+# bounds), not a bare string the runtime would have to re-resolve.
+_GROUNDED_POINTER_FAMILIES = frozenset(
+    {"open_entity", "open_contact", "select_content", "reveal_actions"}
+)
+
+
+def _entity_has_bounds(entity: Any) -> bool:
+    bounds = getattr(entity, "bounds", None)
+    try:
+        return bool(bounds) and float(bounds[2]) > 0 and float(bounds[3]) > 0
+    except (TypeError, ValueError, IndexError):
+        return False
+
+
+def _ground_label_to_entity(world: WorldModel, label: str) -> Any:
+    """Ground a model target *label* to a perceived entity with real bounds.
+
+    Routes through the vision-aware reference resolver, which scores candidates by
+    name match — so 'Kulvinder Ji' resolves to the chat row, not the search-box
+    OCR echo or a '…- Video call' affordance the downstream shortest-label rescan
+    would grab. Returns None when nothing resolves confidently, leaving the
+    existing label path untouched.
+    """
+    lbl = str(label or "").strip()
+    if not lbl:
+        return None
+    try:
+        from plugin.agent.resolver import get_reference_resolver
+
+        res = get_reference_resolver().resolve(world, lbl)
+    except Exception:
+        return None
+    winner = getattr(res, "winner", None)
+    if winner is not None and _entity_has_bounds(winner):
+        return winner
+    for cand in getattr(res, "candidates", None) or []:
+        ent = getattr(cand, "entity", None)
+        if ent is None:
+            eid = getattr(cand, "entity_id", None)
+            ent = world.entities.get(eid) if eid is not None else None
+        if (
+            ent is not None
+            and getattr(ent, "visible", True)
+            and _entity_has_bounds(ent)
+            and float(getattr(cand, "name_similarity", 0.0) or 0.0) >= 0.6
+        ):
+            return ent
+    return None
+
+
 def proposal_to_action(
     proposal: UnifiedProposal,
     goal: Goal,
@@ -1760,6 +1813,17 @@ def proposal_to_action(
     # Entity-shaped capabilities: models often put the name in text.
     if family in {"open_entity", "select_content", "reveal_actions"} and not semantic_target:
         semantic_target = text
+    # Geometry-first grounding: the model named a pointer target but gave no
+    # resolvable target_id. Ground the label to a *perceived* entity now so the
+    # decision carries an entity id + bounds — the runtime then clicks exactly
+    # where the perceptor saw the target instead of re-resolving a noisy-OCR
+    # string downstream (which grabbed the search-box echo / a call affordance).
+    if entity is None and family in _GROUNDED_POINTER_FAMILIES:
+        grounded = _ground_label_to_entity(world, semantic_target or text)
+        if grounded is not None:
+            entity = grounded
+            if not semantic_target:
+                semantic_target = str(getattr(entity, "label", "") or "").strip()
 
     confidence = proposal.confidence
     rationale_family = raw_family
