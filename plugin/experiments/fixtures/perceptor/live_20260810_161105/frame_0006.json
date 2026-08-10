@@ -1,0 +1,2293 @@
+{
+  "frame": 6,
+  "captured_at": "2026-08-10T16:17:08",
+  "screenshot": "frame_0006.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 12,
+      "surface": "conversation",
+      "open_conversation": "agent_memo",
+      "focused_field_role": "in_chat_or_composer",
+      "objects": [
+        {
+          "id": "obj_msg_zarooratwala",
+          "kind": "text_label",
+          "text": "Atter tnat, I woula run Zarooratwala again ratner tnan continuing arcnitecture work in the apstract.",
+          "point": [
+            1075,
+            127
+          ],
+          "matches_goal": true,
+          "owner_surface": "conversation"
+        },
+        {
+          "id": "obj_msg_discipline",
+          "kind": "text_label",
+          "text": "That epistemic discipline is far more important to general-purpose agency than making this particular",
+          "point": [
+            1073,
+            406
+          ],
+          "matches_goal": false,
+          "owner_surface": "conversation"
+        },
+        {
+          "id": "obj_msg_capability",
+          "kind": "text_label",
+          "text": "since we are building general purpose agent, waste cleanup, storage mgmt is an expected capability",
+          "point": [
+            1087,
+            956
+          ],
+          "matches_goal": false,
+          "owner_surface": "conversation"
+        }
+      ],
+      "layers": [
+        {
+          "role": "container",
+          "name": "ChatGPT Conversation (agent_memo)",
+          "state": "active",
+          "objects": [
+            {
+              "id": "obj_msg_zarooratwala",
+              "kind": "text_label",
+              "text": "Atter tnat, I woula run Zarooratwala again ratner tnan continuing arcnitecture work in the apstract.",
+              "point": [
+                1075,
+                127
+              ],
+              "matches_goal": true,
+              "owner_surface": "conversation"
+            },
+            {
+              "id": "obj_msg_discipline",
+              "kind": "text_label",
+              "text": "That epistemic discipline is far more important to general-purpose agency than making this particular",
+              "point": [
+                1073,
+                406
+              ],
+              "matches_goal": false,
+              "owner_surface": "conversation"
+            },
+            {
+              "id": "obj_msg_capability",
+              "kind": "text_label",
+              "text": "since we are building general purpose agent, waste cleanup, storage mgmt is an expected capability",
+              "point": [
+                1087,
+                956
+              ],
+              "matches_goal": false,
+              "owner_surface": "conversation"
+            }
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "wrong_application_context",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "URL is chatgpt.com",
+            "UI shows ChatGPT sidebar and conversation",
+            "Task requires WhatsApp"
+          ],
+          "confirmed_on_frame": 11,
+          "owner_surface": "conversation",
+          "semantic_role": "context_mismatch"
+        },
+        {
+          "predicate": "target_keyword_found_in_wrong_app",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": [
+            "OCR line contains 'Zarooratwala'",
+            "Text matches goal query"
+          ],
+          "confirmed_on_frame": 11,
+          "owner_surface": "conversation",
+          "semantic_role": "content_match"
+        }
+      ],
+      "progress": {
+        "phase": "context_recovery",
+        "objective": "Switch from ChatGPT to WhatsApp",
+        "notes": "The agent is viewing a ChatGPT conversation containing the keyword 'Zarooratwala', but the task requires forwarding a message from WhatsApp to Tanmay. The previous belief about AWS was corrected; now "
+      },
+      "attempts": [
+        {
+          "frame": 5,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 6,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 7,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 8,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 9,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 10,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 11,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 7,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        }
+      ],
+      "exhausted": [],
+      "task_surface": {
+        "app": "WhatsApp",
+        "window_bounds": null,
+        "window_id": null,
+        "display_index": null,
+        "display_count": 2,
+        "displays": [
+          {
+            "index": 0,
+            "bounds": [
+              0.0,
+              0.0,
+              1920.0,
+              1080.0
+            ],
+            "backing_scale": 1.0,
+            "is_main": true
+          },
+          {
+            "index": 1,
+            "bounds": [
+              1920.0,
+              -27.0,
+              1710.0,
+              1107.0
+            ],
+            "backing_scale": 2.0,
+            "is_main": false
+          }
+        ],
+        "capture_origin": [
+          134.0,
+          0.0
+        ],
+        "capture_scale": 1.0,
+        "point_scale": 1.05,
+        "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+      }
+    },
+    "observation": {
+      "frame": 13,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 0,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 8,
+          "role": "AXStaticText",
+          "label": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another",
+          "bounds": [
+            706,
+            371,
+            728,
+            17
+          ],
+          "description": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another"
+        },
+        {
+          "id": 1,
+          "role": "AXStaticText",
+          "label": "0 Projects",
+          "bounds": [
+            16,
+            228,
+            80,
+            17
+          ],
+          "description": "0 Projects"
+        },
+        {
+          "id": 2,
+          "role": "AXStaticText",
+          "label": "10 Library",
+          "bounds": [
+            16,
+            300,
+            72,
+            17
+          ],
+          "description": "10 Library"
+        },
+        {
+          "id": 3,
+          "role": "AXStaticText",
+          "label": "executive should suspend G",
+          "bounds": [
+            725,
+            674,
+            195,
+            19
+          ],
+          "description": "executive should suspend G"
+        },
+        {
+          "id": 4,
+          "role": "AXStaticText",
+          "label": "• agent_memo X",
+          "bounds": [
+            418,
+            13,
+            119,
+            17
+          ],
+          "description": "• agent_memo X"
+        },
+        {
+          "id": 5,
+          "role": "AXStaticText",
+          "label": "• Ask Gemini",
+          "bounds": [
+            1811,
+            13,
+            92,
+            14
+          ],
+          "description": "• Ask Gemini"
+        },
+        {
+          "id": 6,
+          "role": "AXStaticText",
+          "label": "D All Bookmarks",
+          "bounds": [
+            1797,
+            94,
+            111,
+            17
+          ],
+          "description": "D All Bookmarks"
+        },
+        {
+          "id": 7,
+          "role": "AXStaticText",
+          "label": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix",
+          "bounds": [
+            703,
+            275,
+            759,
+            17
+          ],
+          "description": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix"
+        },
+        {
+          "id": 9,
+          "role": "AXStaticText",
+          "label": "Recents",
+          "bounds": [
+            13,
+            454,
+            58,
+            16
+          ],
+          "description": "Recents"
+        },
+        {
+          "id": 10,
+          "role": "AXStaticText",
+          "label": "Verify that it's you",
+          "bounds": [
+            1724,
+            55,
+            139,
+            17
+          ],
+          "description": "Verify that it's you"
+        },
+        {
+          "id": 11,
+          "role": "AXStaticText",
+          "label": "Q GPTS",
+          "bounds": [
+            16,
+            407,
+            61,
+            17
+          ],
+          "description": "Q GPTS"
+        },
+        {
+          "id": 12,
+          "role": "AXStaticText",
+          "label": "specifically \"disk is full!\" It is:",
+          "bounds": [
+            700,
+            460,
+            214,
+            26
+          ],
+          "description": "specifically \"disk is full!\" It is:"
+        },
+        {
+          "id": 13,
+          "role": "AXStaticText",
+          "label": "• Scheduled",
+          "bounds": [
+            16,
+            262,
+            97,
+            20
+          ],
+          "description": "• Scheduled"
+        },
+        {
+          "id": 14,
+          "role": "AXStaticText",
+          "label": "6 cannot progress until B is resolved",
+          "bounds": [
+            722,
+            591,
+            281,
+            33
+          ],
+          "description": "6 cannot progress until B is resolved"
+        },
+        {
+          "id": 15,
+          "role": "AXStaticText",
+          "label": "Instantv",
+          "bounds": [
+            1300,
+            1018,
+            120,
+            22
+          ],
+          "description": "Instantv"
+        },
+        {
+          "id": 16,
+          "role": "AXStaticText",
+          "label": "@ Plugins",
+          "bounds": [
+            16,
+            334,
+            75,
+            17
+          ],
+          "description": "@ Plugins"
+        },
+        {
+          "id": 17,
+          "role": "AXStaticText",
+          "label": "choose c*",
+          "bounds": [
+            722,
+            736,
+            72,
+            39
+          ],
+          "description": "choose c*"
+        },
+        {
+          "id": 18,
+          "role": "AXStaticText",
+          "label": "+ Ask ChatGPT",
+          "bounds": [
+            711,
+            1018,
+            145,
+            25
+          ],
+          "description": "+ Ask ChatGPT"
+        },
+        {
+          "id": 19,
+          "role": "AXStaticText",
+          "label": "223 (223) Discor X ® Discord",
+          "bounds": [
+            1141,
+            13,
+            214,
+            17
+          ],
+          "description": "223 (223) Discor X ® Discord"
+        },
+        {
+          "id": 20,
+          "role": "AXStaticText",
+          "label": "•- chatgpt.com/c/6a1462dd-0d64-83ab-b7fe-dbb3bfb467eb",
+          "bounds": [
+            128,
+            55,
+            421,
+            17
+          ],
+          "description": "•- chatgpt.com/c/6a1462dd-0d64-83ab-b7fe-dbb3bfb467eb"
+        },
+        {
+          "id": 21,
+          "role": "AXStaticText",
+          "label": "live-compare X A CodeHumanF X",
+          "bounds": [
+            142,
+            16,
+            248,
+            11
+          ],
+          "description": "live-compare X A CodeHumanF X"
+        },
+        {
+          "id": 22,
+          "role": "AXStaticText",
+          "label": "Request to cl X",
+          "bounds": [
+            563,
+            13,
+            120,
+            17
+          ],
+          "description": "Request to cl X"
+        },
+        {
+          "id": 23,
+          "role": "AXStaticText",
+          "label": "* Bills Billing : X Labelbox",
+          "bounds": [
+            706,
+            16,
+            220,
+            11
+          ],
+          "description": "* Bills Billing : X Labelbox"
+        },
+        {
+          "id": 24,
+          "role": "AXStaticText",
+          "label": "Al Leveraged EV Charger",
+          "bounds": [
+            13,
+            703,
+            164,
+            22
+          ],
+          "description": "Al Leveraged EV Charger"
+        },
+        {
+          "id": 25,
+          "role": "AXStaticText",
+          "label": "ChatGPT",
+          "bounds": [
+            19,
+            139,
+            75,
+            17
+          ],
+          "description": "ChatGPT"
+        },
+        {
+          "id": 26,
+          "role": "AXStaticText",
+          "label": "Show morev",
+          "bounds": [
+            948,
+            200,
+            97,
+            17
+          ],
+          "description": "Show morev"
+        },
+        {
+          "id": 27,
+          "role": "AXStaticText",
+          "label": "instance.",
+          "bounds": [
+            700,
+            903,
+            75,
+            22
+          ],
+          "description": "instance."
+        },
+        {
+          "id": 28,
+          "role": "AXStaticText",
+          "label": "must be freed before the aoo can continuel",
+          "bounds": [
+            706,
+            1062,
+            309,
+            14
+          ],
+          "description": "must be freed before the aoo can continuel"
+        },
+        {
+          "id": 29,
+          "role": "AXStaticText",
+          "label": "vertry o resoived",
+          "bounds": [
+            719,
+            777,
+            134,
+            55
+          ],
+          "description": "vertry o resoived"
+        },
+        {
+          "id": 30,
+          "role": "AXStaticText",
+          "label": "resume 6",
+          "bounds": [
+            722,
+            828,
+            66,
+            28
+          ],
+          "description": "resume 6"
+        },
+        {
+          "id": 31,
+          "role": "AXStaticText",
+          "label": "223",
+          "bounds": [
+            996,
+            13,
+            19,
+            16
+          ],
+          "description": "223"
+        },
+        {
+          "id": 32,
+          "role": "AXStaticText",
+          "label": "→",
+          "bounds": [
+            50,
+            55,
+            16,
+            16
+          ],
+          "description": "→"
+        },
+        {
+          "id": 33,
+          "role": "AXStaticText",
+          "label": "What appears to be working",
+          "bounds": [
+            700,
+            945,
+            242,
+            25
+          ],
+          "description": "What appears to be working"
+        },
+        {
+          "id": 34,
+          "role": "AXStaticText",
+          "label": "of simply \"hard meta force under storage_pressure.\"",
+          "bounds": [
+            706,
+            300,
+            399,
+            19
+          ],
+          "description": "of simply \"hard meta force under storage_pressure.\""
+        },
+        {
+          "id": 35,
+          "role": "AXStaticText",
+          "label": "That would probably make this run succeed, but it risks repeating the pattern we've been trying to",
+          "bounds": [
+            703,
+            342,
+            711,
+            20
+          ],
+          "description": "That would probably make this run succeed, but it risks repeating the pattern we've been trying to"
+        },
+        {
+          "id": 36,
+          "role": "AXStaticText",
+          "label": "© New chat",
+          "bounds": [
+            16,
+            192,
+            89,
+            17
+          ],
+          "description": "© New chat"
+        },
+        {
+          "id": 37,
+          "role": "AXStaticText",
+          "label": "That's a prerequisite/interruption architecture problem, with storage pressure merely being one",
+          "bounds": [
+            700,
+            876,
+            714,
+            28
+          ],
+          "description": "That's a prerequisite/interruption architecture problem, with storage pressure merely being one"
+        },
+        {
+          "id": 38,
+          "role": "AXStaticText",
+          "label": "IIULUVICUHUN BUVIIUIUIE",
+          "bounds": [
+            948,
+            119,
+            195,
+            8
+          ],
+          "description": "IIULUVICUHUN BUVIIUIUIE"
+        },
+        {
+          "id": 39,
+          "role": "AXStaticText",
+          "label": "From the coding agent's evidence, perception seems reasonably good here. The system apparently",
+          "bounds": [
+            700,
+            979,
+            725,
+            30
+          ],
+          "description": "From the coding agent's evidence, perception seems reasonably good here. The system apparently"
+        },
+        {
+          "id": 40,
+          "role": "AXStaticText",
+          "label": "AC to DC conversion",
+          "bounds": [
+            13,
+            808,
+            136,
+            20
+          ],
+          "description": "AC to DC conversion"
+        },
+        {
+          "id": 41,
+          "role": "AXStaticText",
+          "label": "sgenr a aty posoases roality c casabise dl resolvinge",
+          "bounds": [
+            721,
+            616,
+            445,
+            73
+          ],
+          "description": "sgenr a aty posoases roality c casabise dl resolvinge"
+        },
+        {
+          "id": 42,
+          "role": "AXStaticText",
+          "label": "ở Agents",
+          "bounds": [
+            16,
+            371,
+            72,
+            16
+          ],
+          "description": "ở Agents"
+        },
+        {
+          "id": 43,
+          "role": "AXStaticText",
+          "label": "(223) Discorc x",
+          "bounds": [
+            1018,
+            13,
+            100,
+            14
+          ],
+          "description": "(223) Discorc x"
+        },
+        {
+          "id": 44,
+          "role": "AXStaticText",
+          "label": "agent_memory",
+          "bounds": [
+            13,
+            488,
+            103,
+            16
+          ],
+          "description": "agent_memory"
+        },
+        {
+          "id": 45,
+          "role": "AXStaticText",
+          "label": "establish subgoal Resolve(B)",
+          "bounds": [
+            722,
+            711,
+            209,
+            22
+          ],
+          "description": "establish subgoal Resolve(B)"
+        },
+        {
+          "id": 46,
+          "role": "AXStaticText",
+          "label": "works; relieve_host_storage never runs.",
+          "bounds": [
+            951,
+            139,
+            315,
+            16
+          ],
+          "description": "works; relieve_host_storage never runs."
+        },
+        {
+          "id": 47,
+          "role": "AXStaticText",
+          "label": "Long Horizon Coding Task",
+          "bounds": [
+            13,
+            521,
+            175,
+            19
+          ],
+          "description": "Long Horizon Coding Task"
+        },
+        {
+          "id": 48,
+          "role": "AXStaticText",
+          "label": "EV Charging Market VC",
+          "bounds": [
+            11,
+            594,
+            159,
+            22
+          ],
+          "description": "EV Charging Market VC"
+        },
+        {
+          "id": 49,
+          "role": "AXStaticText",
+          "label": "Replace Logo with Plugin",
+          "bounds": [
+            13,
+            666,
+            167,
+            17
+          ],
+          "description": "Replace Logo with Plugin"
+        },
+        {
+          "id": 50,
+          "role": "AXStaticText",
+          "label": "ai_fundamentals",
+          "bounds": [
+            13,
+            557,
+            114,
+            22
+          ],
+          "description": "ai_fundamentals"
+        },
+        {
+          "id": 53,
+          "role": "AXStaticText",
+          "label": "x (23 (223) Discor X M GST Registra x | +",
+          "bounds": [
+            1395,
+            13,
+            337,
+            17
+          ],
+          "description": "x (23 (223) Discor X M GST Registra x | +"
+        },
+        {
+          "id": 55,
+          "role": "AXStaticText",
+          "label": "Kundli Analysis Summary",
+          "bounds": [
+            13,
+            736,
+            164,
+            22
+          ],
+          "description": "Kundli Analysis Summary"
+        },
+        {
+          "id": 56,
+          "role": "AXStaticText",
+          "label": "SAC Code in Invoices",
+          "bounds": [
+            11,
+            881,
+            145,
+            19
+          ],
+          "description": "SAC Code in Invoices"
+        },
+        {
+          "id": 58,
+          "role": "AXStaticText",
+          "label": "special-purpose agent.",
+          "bounds": [
+            703,
+            396,
+            173,
+            20
+          ],
+          "description": "special-purpose agent."
+        },
+        {
+          "id": 60,
+          "role": "AXStaticText",
+          "label": "Standalone calling earphones",
+          "bounds": [
+            16,
+            630,
+            195,
+            19
+          ],
+          "description": "Standalone calling earphones"
+        },
+        {
+          "id": 61,
+          "role": "AXStaticText",
+          "label": "utf8mb4 vs latint",
+          "bounds": [
+            13,
+            845,
+            114,
+            16
+          ],
+          "description": "utf8mb4 vs latint"
+        },
+        {
+          "id": 62,
+          "role": "AXStaticText",
+          "label": "Chargepe",
+          "bounds": [
+            47,
+            979,
+            66,
+            16
+          ],
+          "description": "Chargepe"
+        },
+        {
+          "id": 65,
+          "role": "AXStaticText",
+          "label": "environment presents blocking condition B",
+          "bounds": [
+            722,
+            552,
+            309,
+            25
+          ],
+          "description": "environment presents blocking condition B"
+        },
+        {
+          "id": 66,
+          "role": "AXStaticText",
+          "label": "—arousny ranare, veteuon",
+          "bounds": [
+            1146,
+            117,
+            217,
+            11
+          ],
+          "description": "—arousny ranare, veteuon"
+        },
+        {
+          "id": 67,
+          "role": "AXStaticText",
+          "label": "The screenshot is actually a very useful general-purpose-agent test. The important event is not",
+          "bounds": [
+            703,
+            437,
+            697,
+            25
+          ],
+          "description": "The screenshot is actually a very useful general-purpose-agent test. The important event is not"
+        },
+        {
+          "id": 68,
+          "role": "AXStaticText",
+          "label": "Indian EV Charging Markei ev m...",
+          "bounds": [
+            13,
+            773,
+            223,
+            22
+          ],
+          "description": "Indian EV Charging Markei ev m..."
+        },
+        {
+          "id": 72,
+          "role": "AXStaticText",
+          "label": "Agent pursuing Goal G",
+          "bounds": [
+            722,
+            513,
+            162,
+            31
+          ],
+          "description": "Agent pursuing Goal G"
+        },
+        {
+          "id": 74,
+          "role": "AXStaticText",
+          "label": "Curl for API Key Validity",
+          "bounds": [
+            11,
+            917,
+            159,
+            22
+          ],
+          "description": "Curl for API Key Validity"
+        },
+        {
+          "id": 75,
+          "role": "AXStaticText",
+          "label": "Best OS for Ollama",
+          "bounds": [
+            13,
+            953,
+            128,
+            17
+          ],
+          "description": "Best OS for Ollama"
+        },
+        {
+          "id": 76,
+          "role": "AXStaticText",
+          "label": "Business",
+          "bounds": [
+            44,
+            999,
+            55,
+            13
+          ],
+          "description": "Business"
+        },
+        {
+          "id": 77,
+          "role": "AXStaticText",
+          "label": "2y. Invite team members",
+          "bounds": [
+            58,
+            1040,
+            142,
+            8
+          ],
+          "description": "2y. Invite team members"
+        }
+      ],
+      "sources": [
+        {
+          "source": "screenshot",
+          "state": "on",
+          "why": "always supplied; the authoritative account of the screen"
+        },
+        {
+          "source": "accessibility",
+          "state": "empty",
+          "why": "the app exposed no accessibility tree this frame",
+          "node_count": 0,
+          "content_node_count": 0
+        },
+        {
+          "source": "ocr",
+          "state": "on",
+          "why": "text read from the screenshot, bounds in screen points; corroborates the pixels but may split or clip words",
+          "lines": [
+            {
+              "text": "→",
+              "bounds": [
+                50.2,
+                55.8,
+                16.7,
+                16.7
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "live-compare X A CodeHumanF X",
+              "bounds": [
+                142.3,
+                16.7,
+                248.4,
+                11.3
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "• agent_memo X",
+              "bounds": [
+                418.6,
+                14.0,
+                120.0,
+                17.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Request to cl X",
+              "bounds": [
+                563.7,
+                14.0,
+                120.0,
+                17.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "* Bills Billing : X Labelbox",
+              "bounds": [
+                706.0,
+                16.7,
+                220.5,
+                11.3
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "•- chatgpt.com/c/6a1462dd-0d64-83ab-b7fe-dbb3bfb467eb",
+              "bounds": [
+                128.4,
+                55.8,
+                421.4,
+                17.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "223",
+              "bounds": [
+                996.3,
+                14.0,
+                19.5,
+                16.7
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "(223) Discorc x",
+              "bounds": [
+                1018.6,
+                14.0,
+                100.5,
+                14.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "223 (223) Discor X ® Discord",
+              "bounds": [
+                1141.4,
+                14.0,
+                214.9,
+                17.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "x (23 (223) Discor X M GST Registra x | +",
+              "bounds": [
+                1395.3,
+                14.0,
+                337.7,
+                17.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "• Ask Gemini",
+              "bounds": [
+                1811.2,
+                14.0,
+                92.1,
+                14.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Verify that it's you",
+              "bounds": [
+                1724.7,
+                55.8,
+                139.5,
+                17.2
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "D All Bookmarks",
+              "bounds": [
+                1797.2,
+                94.9,
+                111.6,
+                17.1
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "IIULUVICUHUN BUVIIUIUIE",
+              "bounds": [
+                948.8,
+                120.0,
+                195.3,
+                8.4
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "—arousny ranare, veteuon",
+              "bounds": [
+                1147.0,
+                117.0,
+                217.7,
+                11.4
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "works; relieve_host_storage never runs.",
+              "bounds": [
+                951.6,
+                139.5,
+                315.3,
+                16.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "ChatGPT",
+              "bounds": [
+                19.5,
+                139.3,
+                75.4,
+                17.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "© New chat",
+              "bounds": [
+                16.7,
+                192.4,
+                89.4,
+                17.1
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "0 Projects",
+              "bounds": [
+                16.7,
+                228.8,
+                80.9,
+                17.2
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "• Scheduled",
+              "bounds": [
+                16.7,
+                262.0,
+                97.8,
+                20.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "10 Library",
+              "bounds": [
+                16.7,
+                301.0,
+                72.6,
+                17.1
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "@ Plugins",
+              "bounds": [
+                16.7,
+                334.9,
+                75.3,
+                17.1
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "ở Agents",
+              "bounds": [
+                16.7,
+                371.0,
+                72.6,
+                17.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Q GPTS",
+              "bounds": [
+                16.7,
+                407.0,
+                61.4,
+                17.2
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Recents",
+              "bounds": [
+                14.0,
+                454.9,
+                58.6,
+                16.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "agent_memory",
+              "bounds": [
+                14.0,
+                488.4,
+                103.3,
+                16.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Long Horizon Coding Task",
+              "bounds": [
+                14.0,
+                521.9,
+                175.8,
+                19.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "ai_fundamentals",
+              "bounds": [
+                13.9,
+                557.9,
+                114.5,
+                22.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "EV Charging Market VC",
+              "bounds": [
+                11.2,
+                594.0,
+                159.1,
+                23.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Standalone calling earphones",
+              "bounds": [
+                16.7,
+                630.7,
+                195.3,
+                19.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Replace Logo with Plugin",
+              "bounds": [
+                14.0,
+                667.0,
+                167.4,
+                17.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Al Leveraged EV Charger",
+              "bounds": [
+                14.0,
+                703.0,
+                164.7,
+                23.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Kundli Analysis Summary",
+              "bounds": [
+                14.0,
+                736.7,
+                164.7,
+                22.3
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Indian EV Charging Markei ev m...",
+              "bounds": [
+                14.0,
+                773.0,
+                223.3,
+                22.3
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "AC to DC conversion",
+              "bounds": [
+                14.0,
+                809.0,
+                136.7,
+                20.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "utf8mb4 vs latint",
+              "bounds": [
+                14.0,
+                845.6,
+                114.4,
+                16.7
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "SAC Code in Invoices",
+              "bounds": [
+                11.2,
+                881.9,
+                145.1,
+                19.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Curl for API Key Validity",
+              "bounds": [
+                11.2,
+                918.0,
+                159.1,
+                22.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Best OS for Ollama",
+              "bounds": [
+                14.0,
+                954.0,
+                128.4,
+                17.2
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Chargepe",
+              "bounds": [
+                47.4,
+                979.5,
+                67.0,
+                16.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Business",
+              "bounds": [
+                44.7,
+                999.1,
+                55.8,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "2y. Invite team members",
+              "bounds": [
+                58.6,
+                1040.9,
+                142.3,
+                8.4
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Show morev",
+              "bounds": [
+                948.8,
+                200.9,
+                97.7,
+                17.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix",
+              "bounds": [
+                703.3,
+                276.0,
+                759.1,
+                17.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "of simply \"hard meta force under storage_pressure.\"",
+              "bounds": [
+                706.0,
+                301.0,
+                399.1,
+                20.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "That would probably make this run succeed, but it risks repeating the pattern we've been trying to",
+              "bounds": [
+                703.3,
+                343.0,
+                711.6,
+                20.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another",
+              "bounds": [
+                706.0,
+                371.0,
+                728.4,
+                17.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "special-purpose agent.",
+              "bounds": [
+                703.3,
+                396.0,
+                173.0,
+                20.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "The screenshot is actually a very useful general-purpose-agent test. The important event is not",
+              "bounds": [
+                703.3,
+                438.0,
+                697.7,
+                25.3
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "specifically \"disk is full!\" It is:",
+              "bounds": [
+                700.5,
+                460.0,
+                214.9,
+                26.0
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Agent pursuing Goal G",
+              "bounds": [
+                722.7,
+                513.1,
+                162.0,
+                31.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "environment presents blocking condition B",
+              "bounds": [
+                722.8,
+                552.6,
+                309.8,
+                25.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "6 cannot progress until B is resolved",
+              "bounds": [
+                722.8,
+                591.6,
+                281.9,
+                33.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "sgenr a aty posoases roality c casabise dl resolvinge",
+              "bounds": [
+                721.4,
+                616.3,
+                445.9,
+                73.7
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "executive should suspend G",
+              "bounds": [
+                725.6,
+                675.0,
+                195.3,
+                20.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "establish subgoal Resolve(B)",
+              "bounds": [
+                722.8,
+                711.6,
+                209.3,
+                22.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "choose c*",
+              "bounds": [
+                722.8,
+                736.7,
+                72.6,
+                39.3
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "vertry o resoived",
+              "bounds": [
+                719.6,
+                777.6,
+                134.7,
+                55.1
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "resume 6",
+              "bounds": [
+                722.8,
+                828.8,
+                67.0,
+                28.2
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "That's a prerequisite/interruption architecture problem, with storage pressure merely being one",
+              "bounds": [
+                700.5,
+                876.0,
+                714.4,
+                28.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "instance.",
+              "bounds": [
+                700.4,
+                903.9,
+                75.5,
+                23.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "What appears to be working",
+              "bounds": [
+                700.5,
+                946.0,
+                242.8,
+                25.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "From the coding agent's evidence, perception seems reasonably good here. The system apparently",
+              "bounds": [
+                700.5,
+                979.5,
+                725.6,
+                30.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "+ Ask ChatGPT",
+              "bounds": [
+                711.6,
+                1018.6,
+                145.1,
+                25.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Instantv",
+              "bounds": [
+                1300.5,
+                1018.6,
+                120.0,
+                22.3
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "must be freed before the aoo can continuel",
+              "bounds": [
+                706.0,
+                1063.0,
+                309.8,
+                14.2
+              ],
+              "confidence": 1.0
+            }
+          ]
+        }
+      ],
+      "image_size": [
+        640,
+        1029
+      ],
+      "image_roi": [
+        134,
+        0,
+        806,
+        1080
+      ],
+      "encoded_bytes": 37902
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "resolve_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "revert_effects",
+      "relieve_host_storage",
+      "recover_blocked_app",
+      "commit_irreversible"
+    ],
+    "affordance_frontier": {
+      "surface": "conversation",
+      "observed_actions": [],
+      "latent_actions": [],
+      "probe_actions": [],
+      "known_transition_edges": [
+        {
+          "from_action": "observe",
+          "to_surface": "conversation",
+          "probability": 1.0,
+          "enumeration_status": "observed",
+          "basis": "seen 7/7 times this session"
+        },
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "forward_picker",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "forward_picker",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "context_menu",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "selection_mode",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "selection_mode",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "open_entity",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "compose_search_query",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        }
+      ],
+      "unknown_frontiers": [],
+      "excluded_actions": []
+    },
+    "last_action": {
+      "action": "Observe",
+      "family": "observe",
+      "target": "",
+      "text": "",
+      "result": {
+        "ok": true,
+        "message": "observe"
+      },
+      "you_predicted": {
+        "surface": "chat_list",
+        "likely_controls": [
+          "search_field",
+          "conversation_rows"
+        ]
+      },
+      "prediction_error": {
+        "predicted_surface": "chat_list",
+        "observed_surface": "conversation",
+        "matched": false,
+        "verdict": "you predicted 'chat_list' and the screen is 'conversation'. None of the controls you expected are present (search_field, conversation_rows).",
+        "controls_predicted": [
+          "search_field",
+          "conversation_rows"
+        ],
+        "controls_present": [],
+        "controls_absent": [
+          "search_field",
+          "conversation_rows"
+        ],
+        "action_family": "",
+        "attempt_id": "",
+        "target": "",
+        "effect_absent": true,
+        "consumed_by_reflect": true,
+        "suppressed_rearm": true,
+        "surprise_armed": false
+      },
+      "recent_surprises": [
+        {
+          "iteration": 3,
+          "action": "observe",
+          "predicted_surface": "system_settings",
+          "observed_surface": "dialog"
+        },
+        {
+          "iteration": 7,
+          "action": "observe",
+          "predicted_surface": "chat_list",
+          "observed_surface": "conversation"
+        },
+        {
+          "iteration": 9,
+          "action": "observe",
+          "predicted_surface": "blank",
+          "observed_surface": "conversation"
+        },
+        {
+          "iteration": 11,
+          "action": "observe",
+          "predicted_surface": "chat_list",
+          "observed_surface": "conversation"
+        }
+      ]
+    },
+    "identical_readings_in_a_row": 4,
+    "stuck_signals": {
+      "seconds_since_anything_advanced": 307.8,
+      "seconds_before_this_counts_as_stalled": 45.0,
+      "stalled": true
+    },
+    "perception_objective": {
+      "questions": [],
+      "focus": "",
+      "depth": "shallow",
+      "objective": "observation stale, no new evidence",
+      "completion_condition": ""
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 13,
+      "surface": "conversation",
+      "open_conversation": "agent_memo",
+      "focused_field_role": "in_chat_or_composer",
+      "objects": [
+        {
+          "id": "obj_msg_zarooratwala",
+          "kind": "text_label",
+          "text": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another",
+          "point": [
+            706,
+            371
+          ],
+          "matches_goal": true,
+          "owner_surface": "conversation"
+        },
+        {
+          "id": "obj_msg_context_1",
+          "kind": "text_label",
+          "text": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix",
+          "point": [
+            703,
+            275
+          ],
+          "matches_goal": false,
+          "owner_surface": "conversation"
+        },
+        {
+          "id": "obj_msg_context_2",
+          "kind": "text_label",
+          "text": "The screenshot is actually a very useful general-purpose-agent test. The important event is not",
+          "point": [
+            703,
+            438
+          ],
+          "matches_goal": false,
+          "owner_surface": "conversation"
+        }
+      ],
+      "layers": [
+        {
+          "role": "container",
+          "name": "ChatGPT Conversation (agent_memo)",
+          "state": "active",
+          "objects": [
+            {
+              "id": "obj_msg_zarooratwala",
+              "kind": "text_label",
+              "text": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another",
+              "point": [
+                706,
+                371
+              ],
+              "matches_goal": true,
+              "owner_surface": "conversation"
+            },
+            {
+              "id": "obj_msg_context_1",
+              "kind": "text_label",
+              "text": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix",
+              "point": [
+                703,
+                275
+              ],
+              "matches_goal": false,
+              "owner_surface": "conversation"
+            },
+            {
+              "id": "obj_msg_context_2",
+              "kind": "text_label",
+              "text": "The screenshot is actually a very useful general-purpose-agent test. The important event is not",
+              "point": [
+                703,
+                438
+              ],
+              "matches_goal": false,
+              "owner_surface": "conversation"
+            }
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "wrong_application_context",
+          "value": true,
+          "confidence": 1.0,
+          "evidence": [
+            "URL is chatgpt.com",
+            "UI shows ChatGPT sidebar and conversation",
+            "Task requires WhatsApp"
+          ],
+          "confirmed_on_frame": 13,
+          "owner_surface": "conversation",
+          "semantic_role": "context_mismatch"
+        },
+        {
+          "predicate": "target_keyword_found_in_wrong_app",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": [
+            "OCR line contains 'ZarooratWala'",
+            "Text matches goal query"
+          ],
+          "confirmed_on_frame": 13,
+          "owner_surface": "conversation",
+          "semantic_role": "content_match"
+        }
+      ],
+      "progress": {
+        "phase": "context_recovery",
+        "objective": "Switch from ChatGPT to WhatsApp",
+        "notes": "Repeatedly observing this ChatGPT conversation confirms the wrong app context. The keyword 'Zarooratwala' exists here but cannot be forwarded via WhatsApp from this screen. Must locate the actual What"
+      },
+      "attempts": [
+        {
+          "frame": 6,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 7,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 8,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 9,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 10,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 11,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 12,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        },
+        {
+          "frame": 13,
+          "action": "observe",
+          "target": "",
+          "result": "ok:observe"
+        }
+      ],
+      "exhausted": [],
+      "task_surface": {
+        "app": "WhatsApp",
+        "window_bounds": null,
+        "window_id": null,
+        "display_index": null,
+        "display_count": 2,
+        "displays": [
+          {
+            "index": 0,
+            "bounds": [
+              0.0,
+              0.0,
+              1920.0,
+              1080.0
+            ],
+            "backing_scale": 1.0,
+            "is_main": true
+          },
+          {
+            "index": 1,
+            "bounds": [
+              1920.0,
+              -27.0,
+              1710.0,
+              1107.0
+            ],
+            "backing_scale": 2.0,
+            "is_main": false
+          }
+        ],
+        "capture_origin": [
+          134.0,
+          0.0
+        ],
+        "capture_scale": 1.0,
+        "point_scale": 1.05,
+        "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+      }
+    },
+    "backtrack": {
+      "reason": "Stuck in wrong application (ChatGPT) for 300+ seconds. Repeated observation yields no progress toward WhatsApp forwarding task.",
+      "to": "application_switcher"
+    },
+    "observed_state": {
+      "surface": "conversation",
+      "open_conversation": "agent_memo",
+      "target_object_visible": true,
+      "target_object_id": "obj_msg_zarooratwala",
+      "layers": [
+        {
+          "role": "container",
+          "name": "ChatGPT Conversation (agent_memo)",
+          "state": "active",
+          "objects": [
+            {
+              "id": "obj_msg_zarooratwala",
+              "kind": "text_label",
+              "text": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another",
+              "point": [
+                706,
+                371
+              ],
+              "matches_goal": true,
+              "owner_surface": "conversation"
+            },
+            {
+              "id": "obj_msg_context_1",
+              "kind": "text_label",
+              "text": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix",
+              "point": [
+                703,
+                275
+              ],
+              "matches_goal": false,
+              "owner_surface": "conversation"
+            },
+            {
+              "id": "obj_msg_context_2",
+              "kind": "text_label",
+              "text": "The screenshot is actually a very useful general-purpose-agent test. The important event is not",
+              "point": [
+                703,
+                438
+              ],
+              "matches_goal": false,
+              "owner_surface": "conversation"
+            }
+          ]
+        }
+      ],
+      "focused_field_role": "in_chat_or_composer"
+    },
+    "belief_updates": [
+      {
+        "predicate": "wrong_application_context",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "URL is chatgpt.com",
+          "UI shows ChatGPT sidebar and conversation",
+          "Task requires WhatsApp"
+        ],
+        "confirmed_on_frame": 13,
+        "owner_surface": "conversation",
+        "semantic_role": "context_mismatch"
+      },
+      {
+        "predicate": "target_keyword_found_in_wrong_app",
+        "value": true,
+        "confidence": 0.9,
+        "evidence": [
+          "OCR line contains 'ZarooratWala'",
+          "Text matches goal query"
+        ],
+        "confirmed_on_frame": 13,
+        "owner_surface": "conversation",
+        "semantic_role": "content_match"
+      }
+    ],
+    "next_action": {},
+    "next_actions": [
+      {
+        "rank": 1,
+        "family": "recover_blocked_app",
+        "target_id": null,
+        "text": "Attempt to bring WhatsApp to foreground or switch application context",
+        "confidence": 0.95,
+        "why": "Current screen is definitively ChatGPT, not WhatsApp. Task requires WhatsApp. Repeated observation has confirmed this mismatch. Must change active window/app."
+      }
+    ],
+    "suggested_actions": [
+      {
+        "rank": 1,
+        "family": "recover_blocked_app",
+        "target_id": null,
+        "text": "Attempt to bring WhatsApp to foreground or switch application context",
+        "confidence": 0.95,
+        "why": "Current screen is definitively ChatGPT, not WhatsApp. Task requires WhatsApp. Repeated observation has confirmed this mismatch. Must change active window/app."
+      }
+    ],
+    "expected_transition": {
+      "surface": "chat_list",
+      "likely_controls": [
+        "search_field",
+        "conversation_rows"
+      ]
+    },
+    "surprise_explanation": {
+      "cause": "unknown",
+      "locus": "unknown",
+      "transition_class": "unknown",
+      "confidence": 0.0,
+      "detail": "",
+      "evidence": [],
+      "repair": {
+        "kind": "reperceive"
+      },
+      "do_not_repeat": [],
+      "recommended_next": "reperceive",
+      "source": "model"
+    },
+    "visible_objects": [
+      {
+        "id": "obj_msg_zarooratwala",
+        "kind": "text_label",
+        "text": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another",
+        "point": [
+          706,
+          371
+        ],
+        "matches_goal": true,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "obj_msg_context_1",
+        "kind": "text_label",
+        "text": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix",
+        "point": [
+          703,
+          275
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "obj_msg_context_2",
+        "kind": "text_label",
+        "text": "The screenshot is actually a very useful general-purpose-agent test. The important event is not",
+        "point": [
+          703,
+          438
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      }
+    ],
+    "missing_evidence": [
+      "Location of WhatsApp window on either display",
+      "Visual confirmation of 'Pallavi' conversation in WhatsApp"
+    ],
+    "evidence_gaps": [
+      "Is WhatsApp running but obscured?",
+      "Is WhatsApp on the secondary display?"
+    ],
+    "coverage": 0.1,
+    "missing_affordance_information": [
+      "WhatsApp window controls",
+      "Pallavi conversation entry"
+    ],
+    "recommended_probe": {
+      "family": "recover_blocked_app",
+      "target_id": null,
+      "may_reveal": [
+        "WhatsApp window",
+        "Application switcher UI"
+      ],
+      "reason": "Need to escape current ChatGPT context and locate the actual WhatsApp application to proceed with the task."
+    },
+    "affordance_qc": {
+      "expected_found": false,
+      "missing": [
+        "WhatsApp interface",
+        "Forward action",
+        "Recipient selection"
+      ],
+      "notes": "Critical affordances for the task are absent because the wrong application is active."
+    },
+    "affordance_stance": "explore_needed",
+    "scene_summary": "Screen shows a ChatGPT conversation titled 'agent_memo' containing text about 'ZarooratWala'. This is the wrong application; the task requires WhatsApp.",
+    "confidence": 1.0,
+    "model": "qwen3.5:397b",
+    "latency_s": 19.444
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": false,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "agent_memo",
+    "wa_screen": "CONVERSATION"
+  }
+}

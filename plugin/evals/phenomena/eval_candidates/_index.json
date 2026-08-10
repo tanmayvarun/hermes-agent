@@ -1,0 +1,24 @@
+{
+  "candidates": [
+    {
+      "id": "phenomenon_run_live_20260810_161105_step_0001",
+      "status": "needs_annotation",
+      "stamp": "20260810_161105",
+      "phenomena": [
+        "environmental_blocker",
+        "prerequisite_child",
+        "effect_verification"
+      ]
+    },
+    {
+      "id": "phenomenon_run_live_20260810_161105_step_0017",
+      "status": "needs_annotation",
+      "stamp": "20260810_161105",
+      "phenomena": [
+        "environmental_blocker",
+        "prerequisite_child",
+        "effect_verification"
+      ]
+    }
+  ]
+}

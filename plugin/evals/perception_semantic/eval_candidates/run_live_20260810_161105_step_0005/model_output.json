@@ -1,0 +1,322 @@
+{
+  "world_model": {
+    "frame": 5,
+    "surface": "conversation",
+    "open_conversation": "Gmail - Sent Items",
+    "focused_field_role": "email_body",
+    "objects": [
+      {
+        "id": "obj_email_header",
+        "kind": "text_label",
+        "text": "Plugin Support <support@plugin.earth>",
+        "point": [
+          480,
+          790
+        ]
+      },
+      {
+        "id": "obj_forward_btn",
+        "kind": "button",
+        "text": "Forward",
+        "point": [
+          820,
+          1020
+        ]
+      }
+    ],
+    "layers": [
+      {
+        "role": "container",
+        "name": "Gmail Web App",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_email_header",
+            "kind": "text_label",
+            "text": "Plugin Support <support@plugin.earth>",
+            "point": [
+              480,
+              790
+            ]
+          },
+          {
+            "id": "obj_forward_btn",
+            "kind": "button",
+            "text": "Forward",
+            "point": [
+              820,
+              1020
+            ]
+          }
+        ]
+      }
+    ],
+    "beliefs": [
+      {
+        "predicate": "app_blocked_by_system_dialog",
+        "value": false,
+        "confidence": 1.0,
+        "evidence": [
+          "Screenshot shows Gmail interface clearly",
+          "No 'Storage Full' dialog visible"
+        ],
+        "confirmed_on_frame": 5,
+        "owner_surface": "dialog",
+        "semantic_role": "blocking_condition",
+        "rejected_evidence": [
+          {
+            "text": "Storage is too full",
+            "reason": "Dialog dismissed or context switched; current frame shows unblocked Gmail.",
+            "owner_surface": ""
+          }
+        ]
+      },
+      {
+        "predicate": "wrong_application_context",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Visual evidence: Gmail interface (Compose, Inbox, Sent folders)",
+          "OCR: 'mail.google.com'",
+          "Task requires WhatsApp"
+        ],
+        "confirmed_on_frame": 5,
+        "owner_surface": "conversation",
+        "semantic_role": "context_mismatch"
+      }
+    ],
+    "progress": {
+      "phase": "context_recovery",
+      "objective": "Switch from Gmail to WhatsApp to locate the source message",
+      "notes": "The previous blocking dialog is gone, but the agent is now in Gmail instead of WhatsApp. The task requires finding a message in WhatsApp conversation 'Pallavi'."
+    },
+    "attempts": [
+      {
+        "frame": 1,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 2,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 3,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 4,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 5,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      }
+    ],
+    "exhausted": [],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": null,
+      "window_id": null,
+      "display_index": null,
+      "display_count": 2,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1920.0,
+            1080.0
+          ],
+          "backing_scale": 1.0,
+          "is_main": true
+        },
+        {
+          "index": 1,
+          "bounds": [
+            1920.0,
+            -27.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": false
+        }
+      ],
+      "capture_origin": [
+        134.0,
+        0.0
+      ],
+      "capture_scale": 1.0,
+      "point_scale": 1.05,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "backtrack": {},
+  "observed_state": {
+    "surface": "conversation",
+    "open_conversation": "Gmail - Sent Items",
+    "target_object_visible": true,
+    "target_object_id": "obj_forward_btn",
+    "layers": [
+      {
+        "role": "container",
+        "name": "Gmail Web App",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_email_header",
+            "kind": "text_label",
+            "text": "Plugin Support <support@plugin.earth>",
+            "point": [
+              480,
+              790
+            ]
+          },
+          {
+            "id": "obj_forward_btn",
+            "kind": "button",
+            "text": "Forward",
+            "point": [
+              820,
+              1020
+            ]
+          }
+        ]
+      }
+    ],
+    "focused_field_role": "email_body"
+  },
+  "belief_updates": [
+    {
+      "predicate": "app_blocked_by_system_dialog",
+      "value": false,
+      "confidence": 1.0,
+      "evidence": [
+        "Screenshot shows Gmail interface clearly",
+        "No 'Storage Full' dialog visible"
+      ],
+      "confirmed_on_frame": 5,
+      "owner_surface": "dialog",
+      "semantic_role": "blocking_condition",
+      "rejected_evidence": [
+        {
+          "text": "Storage is too full",
+          "reason": "Dialog dismissed or context switched; current frame shows unblocked Gmail.",
+          "owner_surface": ""
+        }
+      ]
+    },
+    {
+      "predicate": "wrong_application_context",
+      "value": true,
+      "confidence": 1.0,
+      "evidence": [
+        "Visual evidence: Gmail interface (Compose, Inbox, Sent folders)",
+        "OCR: 'mail.google.com'",
+        "Task requires WhatsApp"
+      ],
+      "confirmed_on_frame": 5,
+      "owner_surface": "conversation",
+      "semantic_role": "context_mismatch"
+    }
+  ],
+  "next_action": {},
+  "next_actions": [
+    {
+      "rank": 1,
+      "family": "recover_blocked_app",
+      "target_id": null,
+      "text": "Switch to WhatsApp Application",
+      "confidence": 0.95,
+      "why": "Current surface is Gmail, but goal requires WhatsApp. Must switch apps to find 'Pallavi' conversation."
+    }
+  ],
+  "suggested_actions": [
+    {
+      "rank": 1,
+      "family": "recover_blocked_app",
+      "target_id": null,
+      "text": "Switch to WhatsApp Application",
+      "confidence": 0.95,
+      "why": "Current surface is Gmail, but goal requires WhatsApp. Must switch apps to find 'Pallavi' conversation."
+    }
+  ],
+  "expected_transition": {
+    "surface": "chat_list",
+    "likely_controls": [
+      "Search Bar",
+      "Conversation List"
+    ]
+  },
+  "surprise_explanation": {
+    "cause": "unknown",
+    "locus": "unknown",
+    "transition_class": "unknown",
+    "confidence": 0.0,
+    "detail": "",
+    "evidence": [],
+    "repair": {
+      "kind": "reperceive"
+    },
+    "do_not_repeat": [],
+    "recommended_next": "reperceive",
+    "source": "model"
+  },
+  "visible_objects": [
+    {
+      "id": "obj_email_header",
+      "kind": "text_label",
+      "text": "Plugin Support <support@plugin.earth>",
+      "point": [
+        480,
+        790
+      ]
+    },
+    {
+      "id": "obj_forward_btn",
+      "kind": "button",
+      "text": "Forward",
+      "point": [
+        820,
+        1020
+      ]
+    }
+  ],
+  "missing_evidence": [
+    "Location of WhatsApp window",
+    "Visibility of 'Pallavi' conversation"
+  ],
+  "evidence_gaps": [
+    "Is WhatsApp running in background?",
+    "Which display holds the WhatsApp window?"
+  ],
+  "coverage": 0.4,
+  "missing_affordance_information": [
+    "WhatsApp specific controls"
+  ],
+  "recommended_probe": {},
+  "affordance_qc": {
+    "expected_found": false,
+    "missing": [
+      "WhatsApp chat list",
+      "Forward picker for Tanmay"
+    ],
+    "notes": "Critical affordances for the task are missing because the wrong application is active."
+  },
+  "affordance_stance": "explore_needed",
+  "scene_summary": "The screen displays the Gmail web interface with an open email in the 'Sent' folder. The macOS dock is visible at the bottom. There is no WhatsApp interface or storage dialog present.",
+  "confidence": 0.9,
+  "model": "qwen3.5:397b",
+  "latency_s": 16.329
+}

@@ -1,0 +1,29 @@
+{
+  "status": "needs_annotation",
+  "phenomena": [
+    "environmental_blocker",
+    "prerequisite_child",
+    "effect_verification"
+  ],
+  "app": "WhatsApp",
+  "note": "Auto-hint from storage dialog text; human must confirm before promote.",
+  "expected": {
+    "executability": "blocked_resolvable",
+    "spawn_child": true,
+    "expect_blocker": true,
+    "expect_warning": false
+  },
+  "forbidden": [
+    "continue_parent_search",
+    "duplicate_child"
+  ],
+  "families_to_promote": [
+    "warning_vs_blocker",
+    "executability",
+    "prerequisite_children",
+    "effect_resolution",
+    "effect_verification",
+    "resumption",
+    "trajectories"
+  ]
+}

@@ -1,0 +1,1440 @@
+{
+  "candidates": [
+    {
+      "id": "golden_whatsapp_forward_picker_source_1_dest_0",
+      "status": "promoted",
+      "phenomena": [
+        "nested_surfaces",
+        "cross_surface_selection",
+        "foreground_authority",
+        "selection_state_typing"
+      ],
+      "source": {
+        "kind": "golden",
+        "golden_path": "plugin/evals/perception_semantic/fixtures/cross_surface/whatsapp_forward_picker_source_1_dest_0.json",
+        "record_dir": "cross_surface_184742"
+      }
+    },
+    {
+      "id": "run_20260809_184742_step_0015",
+      "status": "draft_from_canonical_seed",
+      "phenomena": [
+        "nested_surfaces",
+        "cross_surface_selection",
+        "foreground_authority",
+        "selection_state_typing"
+      ],
+      "source": {
+        "kind": "live_run",
+        "run_dir": "/tmp/hermes-runs/20260809_184742",
+        "jsonl": "/tmp/hermes-runs/20260809_184742/forward_zarooratwala_live_20260809_184742.jsonl",
+        "step": 15,
+        "stamp": "20260809_184742",
+        "reason": "forward_picker_mentions_source_selected_chrome",
+        "harvest_quality": "best_effort_from_jsonl"
+      }
+    },
+    {
+      "id": "run_20260809_184742_step_0017",
+      "status": "needs_annotation",
+      "phenomena": [
+        "nested_surfaces",
+        "cross_surface_selection",
+        "foreground_authority",
+        "selection_state_typing"
+      ],
+      "source": {
+        "kind": "live_run",
+        "run_dir": "/tmp/hermes-runs/20260809_184742",
+        "jsonl": "/tmp/hermes-runs/20260809_184742/forward_zarooratwala_live_20260809_184742.jsonl",
+        "step": 17,
+        "stamp": "20260809_184742",
+        "reason": "forward_picker_mentions_source_selected_chrome",
+        "harvest_quality": "best_effort_from_jsonl"
+      }
+    },
+    {
+      "id": "run_20260809_184742_step_0019",
+      "status": "needs_annotation",
+      "phenomena": [
+        "nested_surfaces",
+        "cross_surface_selection",
+        "foreground_authority",
+        "selection_state_typing"
+      ],
+      "source": {
+        "kind": "live_run",
+        "run_dir": "/tmp/hermes-runs/20260809_184742",
+        "jsonl": "/tmp/hermes-runs/20260809_184742/forward_zarooratwala_live_20260809_184742.jsonl",
+        "step": 19,
+        "stamp": "20260809_184742",
+        "reason": "forward_picker_mentions_source_selected_chrome",
+        "harvest_quality": "best_effort_from_jsonl"
+      }
+    },
+    {
+      "id": "run_20260809_184742_step_0021",
+      "status": "needs_annotation",
+      "phenomena": [
+        "nested_surfaces",
+        "cross_surface_selection",
+        "foreground_authority",
+        "selection_state_typing"
+      ],
+      "source": {
+        "kind": "live_run",
+        "run_dir": "/tmp/hermes-runs/20260809_184742",
+        "jsonl": "/tmp/hermes-runs/20260809_184742/forward_zarooratwala_live_20260809_184742.jsonl",
+        "step": 21,
+        "stamp": "20260809_184742",
+        "reason": "forward_picker_mentions_source_selected_chrome",
+        "harvest_quality": "best_effort_from_jsonl"
+      }
+    },
+    {
+      "id": "run_20260809_200831_step_0040",
+      "status": "needs_annotation",
+      "phenomena": [
+        "latent_affordances",
+        "partial_observation",
+        "task_conditioning"
+      ],
+      "source": {
+        "kind": "live_run",
+        "run_dir": "/tmp/hermes-runs/20260809_200831",
+        "jsonl": "/tmp/hermes-runs/20260809_200831/forward_zarooratwala_live_20260809_200831.jsonl",
+        "step": 40,
+        "stamp": "20260809_200831",
+        "reason": "manual",
+        "harvest_quality": "best_effort_from_jsonl"
+      }
+    },
+    {
+      "id": "run_20260809_202457_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [
+        "task_conditioning",
+        "partial_observation"
+      ],
+      "source": {
+        "kind": "live_run",
+        "run_dir": "/tmp/hermes-runs/20260809_202457",
+        "jsonl": "/tmp/hermes-runs/20260809_202457/forward_zarooratwala_live_20260809_202457.jsonl",
+        "step": 1,
+        "stamp": "20260809_202457",
+        "reason": "manual",
+        "harvest_quality": "best_effort_from_jsonl"
+      }
+    },
+    {
+      "id": "run_live_20260809_202457_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_202457",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_202457_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_202457",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_202457_step_0003",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_202457",
+        "step": 3,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0004",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 4,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0006",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 6,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0007",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 7,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0008",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 8,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0009",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 9,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0010",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 10,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0011",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 11,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0012",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 12,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0013",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 13,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0014",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 14,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0015",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 15,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0016",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 16,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0017",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 17,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0018",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 18,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0019",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 19,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0020",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 20,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0021",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 21,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0022",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 22,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0023",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 23,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0024",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 24,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0025",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 25,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0026",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 26,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0027",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 27,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0028",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 28,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0029",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 29,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0030",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 30,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0031",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 31,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0032",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 32,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0033",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 33,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0034",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 34,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0035",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 35,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0036",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 36,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0037",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 37,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0038",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 38,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0039",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 39,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0040",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 40,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0041",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 41,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0042",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 42,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0043",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 43,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0044",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 44,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0045",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 45,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0046",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 46,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0047",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 47,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0048",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 48,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0049",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 49,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_203259_step_0050",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_203259",
+        "step": 50,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_210526_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_210526",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_210526_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_210526",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_210526_step_0005",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_210526",
+        "step": 5,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_210526_step_0047",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_210526",
+        "step": 47,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_213125_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_213125",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_213125_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_213125",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_213125_step_0006",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_213125",
+        "step": 6,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_213125_step_0007",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_213125",
+        "step": 7,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_213125_step_0008",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_213125",
+        "step": 8,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_213125_step_0009",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_213125",
+        "step": 9,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_213125_step_0010",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_213125",
+        "step": 10,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0006",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 6,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0007",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 7,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0008",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 8,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0009",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 9,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0010",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 10,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0011",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 11,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_214025_step_0012",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_214025",
+        "step": 12,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0003",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 3,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0004",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 4,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0005",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 5,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0006",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 6,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0007",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 7,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0008",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 8,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0009",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 9,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_225807_step_0010",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_225807",
+        "step": 10,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0003",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 3,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0004",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 4,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0005",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 5,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0006",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 6,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0007",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 7,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0008",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 8,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0009",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 9,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260809_230407_step_0010",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260809_230407",
+        "step": 10,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0003",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 3,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0004",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 4,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0005",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 5,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0006",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 6,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0007",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 7,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0008",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 8,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0009",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 9,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0010",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 10,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0012",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 12,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0014",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 14,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_143550_step_0028",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_143550",
+        "step": 28,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_160424_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_160424",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_160424_step_0002",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_160424",
+        "step": 2,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_160424_step_0004",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_160424",
+        "step": 4,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_160424_step_0006",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_160424",
+        "step": 6,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_160424_step_0010",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_160424",
+        "step": 10,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_160424_step_0011",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_160424",
+        "step": 11,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_160424_step_0012",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_160424",
+        "step": 12,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0001",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 1,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0005",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 5,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0007",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 7,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0009",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 9,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0011",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 11,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0013",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 13,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0015",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 15,
+        "harvest_quality": "production_packet"
+      }
+    },
+    {
+      "id": "run_live_20260810_161105_step_0017",
+      "status": "needs_annotation",
+      "phenomena": [],
+      "source": {
+        "kind": "live_record",
+        "stamp": "live_20260810_161105",
+        "step": 17,
+        "harvest_quality": "production_packet"
+      }
+    }
+  ],
+  "count": 126
+}

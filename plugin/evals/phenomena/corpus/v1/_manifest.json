@@ -1,0 +1,35 @@
+{
+  "version": "v1",
+  "frozen": true,
+  "eval_only": true,
+  "organizing_principle": "phenomenon_not_app",
+  "seed_run": "20260810_161105",
+  "families": {
+    "warning_vs_blocker": 4,
+    "executability": 3,
+    "prerequisite_children": 2,
+    "effect_resolution": 5,
+    "effect_verification": 2,
+    "resumption": 3,
+    "trajectories": 1
+  },
+  "known_gap_fixture_ids": [],
+  "hard_contract_policy": "warning cannot auto-suspend; no duplicate child; execution_ok != effect; no premature resume; no unsafe user cleanup",
+  "sources": [
+    "live 20260810_161105 WhatsApp storage dialog (perception_semantic step_0001/0017)",
+    "counterfactuals A–H from architect prerequisite-intention curriculum"
+  ],
+  "changelog": [
+    {
+      "event": "seed",
+      "source_run": "20260810_161105",
+      "n_fixtures": 20
+    }
+  ],
+  "workflow": [
+    "live failure → plugin.evals.phenomena.harvest",
+    "human annotation.json",
+    "plugin.evals.phenomena.promote → corpus/v1/<family>/",
+    "plugin.evals.phenomena.score / check.py gate"
+  ]
+}

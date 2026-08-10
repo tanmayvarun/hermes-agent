@@ -59,12 +59,18 @@ def relieve_host_storage(
     )
     disk = dict(result.disk_cleanup or {})
     headroom_met = bool(disk.get("headroom_met"))
+    free_after = int(disk.get("free_after", 0) or 0)
+    free_before = int(disk.get("free_before", 0) or 0)
+    freed = int(disk.get("freed", 0) or 0)
+    # Execution succeeded if cleanup ran; IntentionFrame judges whether the
+    # child's required_effect holds from world evidence (not this flag alone).
+    execution_ok = True
     return CapabilityOutcome(
-        ok=True,
+        ok=execution_ok,
         capability="relieve_host_storage",
         realization="staged_disk_cleanup",
         message=(
-            f"relieved storage; freed={disk.get('freed', 0)} "
+            f"relieved storage; freed={freed} "
             f"stages={len(disk.get('stages') or [])} "
             f"headroom_met={headroom_met} stop={disk.get('stop_reason')} "
             f"required_free={required}"
@@ -72,15 +78,23 @@ def relieve_host_storage(
         evidence={
             "substrate": "task_evidence",
             "app": app,
-            "freed": int(disk.get("freed", 0) or 0),
+            "execution_ok": execution_ok,
+            "observations": {
+                "free_before": free_before,
+                "free_after": free_after,
+                "bytes_reclaimed": freed,
+            },
+            "freed": freed,
             "stages": list(disk.get("stages") or []),
             "headroom_met": headroom_met,
             "stop_reason": str(disk.get("stop_reason") or ""),
-            "free_after": int(disk.get("free_after", 0) or 0),
-            "free_before": int(disk.get("free_before", 0) or 0),
+            "free_after": free_after,
+            "free_before": free_before,
             "target_free_bytes": int(disk.get("target_free_bytes", 0) or 0),
             "required_free_bytes": int(required) if required is not None else None,
             "environments_cleaned": int(result.environments_cleaned or 0),
             "analysis": dict(result.analysis or {}),
+            # Convenience stamp for world merge — judge still owns success.
+            "available_storage_bytes": free_after,
         },
     )

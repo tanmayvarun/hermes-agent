@@ -1,0 +1,277 @@
+{
+  "world_model": {
+    "frame": 1,
+    "surface": "dialog",
+    "open_conversation": "WhatsApp Main Window",
+    "focused_field_role": "dialog_field",
+    "objects": [
+      {
+        "id": "obj_storage_header",
+        "kind": "text_label",
+        "text": "Storage is too full",
+        "point": [
+          808,
+          224
+        ]
+      },
+      {
+        "id": "obj_exit_btn",
+        "kind": "button",
+        "text": "Exit WhatsApp",
+        "point": [
+          849,
+          967
+        ]
+      }
+    ],
+    "layers": [
+      {
+        "role": "container",
+        "name": "WhatsApp Main Window",
+        "state": "occluded",
+        "objects": []
+      },
+      {
+        "role": "dialog",
+        "name": "Storage Full Alert",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_storage_header",
+            "kind": "text_label",
+            "text": "Storage is too full",
+            "point": [
+              808,
+              224
+            ]
+          },
+          {
+            "id": "obj_exit_btn",
+            "kind": "button",
+            "text": "Exit WhatsApp",
+            "point": [
+              849,
+              967
+            ]
+          }
+        ]
+      }
+    ],
+    "beliefs": [
+      {
+        "predicate": "app_blocked_by_system_dialog",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "OCR: 'Storage is too full'",
+          "AX: 'To keep using WhatsApp... free up at least 175.81 MB'"
+        ],
+        "confirmed_on_frame": 1,
+        "owner_surface": "dialog",
+        "semantic_role": "blocking_condition"
+      }
+    ],
+    "progress": {
+      "phase": "blocked",
+      "objective": "Resolve system storage constraint to access WhatsApp interface",
+      "notes": "The application is currently unusable due to a blocking modal dialog regarding device storage."
+    },
+    "attempts": [],
+    "exhausted": [],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": [
+        110.0,
+        25.0,
+        1581.0,
+        979.0
+      ],
+      "window_id": 20793,
+      "display_index": 0,
+      "display_count": 2,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1920.0,
+            1080.0
+          ],
+          "backing_scale": 1.0,
+          "is_main": true
+        },
+        {
+          "index": 1,
+          "bounds": [
+            1920.0,
+            -27.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": false
+        }
+      ],
+      "capture_origin": [
+        220.0,
+        25.0
+      ],
+      "capture_scale": 1.0,
+      "point_scale": 1.0,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "backtrack": {},
+  "observed_state": {
+    "surface": "dialog",
+    "open_conversation": "WhatsApp Main Window",
+    "target_object_visible": false,
+    "target_object_id": null,
+    "layers": [
+      {
+        "role": "container",
+        "name": "WhatsApp Main Window",
+        "state": "occluded",
+        "objects": []
+      },
+      {
+        "role": "dialog",
+        "name": "Storage Full Alert",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_storage_header",
+            "kind": "text_label",
+            "text": "Storage is too full",
+            "point": [
+              808,
+              224
+            ]
+          },
+          {
+            "id": "obj_exit_btn",
+            "kind": "button",
+            "text": "Exit WhatsApp",
+            "point": [
+              849,
+              967
+            ]
+          }
+        ]
+      }
+    ],
+    "focused_field_role": "dialog_field"
+  },
+  "belief_updates": [
+    {
+      "predicate": "app_blocked_by_system_dialog",
+      "value": true,
+      "confidence": 1.0,
+      "evidence": [
+        "OCR: 'Storage is too full'",
+        "AX: 'To keep using WhatsApp... free up at least 175.81 MB'"
+      ],
+      "confirmed_on_frame": 1,
+      "owner_surface": "dialog",
+      "semantic_role": "blocking_condition"
+    }
+  ],
+  "next_action": {},
+  "next_actions": [
+    {
+      "rank": 1,
+      "family": "relieve_host_storage",
+      "target_id": null,
+      "text": "Free up device storage (System Settings)",
+      "confidence": 0.95,
+      "why": "The dialog explicitly instructs to free up 175.81 MB in System Settings to continue using the app. This is the only path to unblock the UI."
+    },
+    {
+      "rank": 2,
+      "family": "invoke_affordance",
+      "target_id": "obj_exit_btn",
+      "text": "Exit WhatsApp",
+      "confidence": 0.8,
+      "why": "Alternative action if storage cannot be freed immediately; closes the app but does not solve the root cause for the next launch."
+    }
+  ],
+  "suggested_actions": [
+    {
+      "rank": 1,
+      "family": "relieve_host_storage",
+      "target_id": null,
+      "text": "Free up device storage (System Settings)",
+      "confidence": 0.95,
+      "why": "The dialog explicitly instructs to free up 175.81 MB in System Settings to continue using the app. This is the only path to unblock the UI."
+    },
+    {
+      "rank": 2,
+      "family": "invoke_affordance",
+      "target_id": "obj_exit_btn",
+      "text": "Exit WhatsApp",
+      "confidence": 0.8,
+      "why": "Alternative action if storage cannot be freed immediately; closes the app but does not solve the root cause for the next launch."
+    }
+  ],
+  "expected_transition": {
+    "surface": "system_settings",
+    "likely_controls": [
+      "Storage Management",
+      "Applications List"
+    ]
+  },
+  "surprise_explanation": {
+    "cause": "unknown",
+    "locus": "unknown",
+    "transition_class": "unknown",
+    "confidence": 0.0,
+    "detail": "",
+    "evidence": [],
+    "repair": {
+      "kind": "reperceive"
+    },
+    "do_not_repeat": [],
+    "recommended_next": "reperceive",
+    "source": "model"
+  },
+  "visible_objects": [
+    {
+      "id": "obj_storage_header",
+      "kind": "text_label",
+      "text": "Storage is too full",
+      "point": [
+        808,
+        224
+      ]
+    },
+    {
+      "id": "obj_exit_btn",
+      "kind": "button",
+      "text": "Exit WhatsApp",
+      "point": [
+        849,
+        967
+      ]
+    }
+  ],
+  "missing_evidence": [],
+  "evidence_gaps": [],
+  "coverage": 1.0,
+  "missing_affordance_information": [],
+  "recommended_probe": {},
+  "affordance_qc": {
+    "expected_found": false,
+    "missing": [
+      "chat_list",
+      "conversation_view",
+      "forward_controls"
+    ],
+    "notes": "Standard WhatsApp controls are occluded by the storage dialog. No task-relevant affordances (search, chat rows) are accessible."
+  },
+  "affordance_stance": "ambiguous",
+  "scene_summary": "A modal dialog stating 'Storage is too full' blocks the WhatsApp interface. It offers instructions to free space in System Settings or an 'Exit WhatsApp' button.",
+  "confidence": 1.0,
+  "model": "qwen3.5:397b",
+  "latency_s": 10.889
+}

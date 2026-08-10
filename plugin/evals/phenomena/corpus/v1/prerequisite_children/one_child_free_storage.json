@@ -1,0 +1,64 @@
+{
+  "fixture_id": "one_child_free_storage",
+  "family": "prerequisite_children",
+  "phenomenon": "prerequisite_child",
+  "source_run": "20260810_161105",
+  "app": "WhatsApp",
+  "note": "",
+  "tags": [
+    "hard_contract",
+    "no_duplicate_child",
+    "from_live"
+  ],
+  "observation_texts": [
+    "Storage is too full",
+    "To keep using WhatsApp on this device, free up at least 175.81 MB of your device's",
+    "1. Go to System Settings, select General and then select Storage.",
+    "2. Delete any apps or documents like large files you no longer use.",
+    "3. Close and reopen WhatsApp.",
+    "Exit WhatsApp"
+  ],
+  "system_facts": {
+    "agent_owned_reclaimable_bytes": 3400000000
+  },
+  "view": {
+    "screen": "dialog",
+    "storage_pressure": true,
+    "surface": "dialog"
+  },
+  "features": {
+    "extras": {
+      "storage_pressure": true,
+      "screen_kind": "dialog",
+      "has_dialog": true,
+      "system_warnings": [
+        "Storage is too full",
+        "To keep using WhatsApp on this device, free up at least 175.81 MB of your device's"
+      ]
+    }
+  },
+  "parent_intention": {
+    "id": "i_parent",
+    "objective": "forward source message",
+    "success_predicate": "forward_affordance_grounded",
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
+  },
+  "world_before": {},
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "child_capability": "relieve_host_storage",
+    "spawn_child": true
+  },
+  "forbidden": [
+    "duplicate_child"
+  ],
+  "frames": []
+}

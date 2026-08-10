@@ -4389,6 +4389,163 @@ def _storage_pressure_routes_to_housekeeping_capability() -> Tuple[bool, str]:
     return True, f"housekeeping_meta_cases={len(cases)}; relieve_preferred"
 
 
+def _phenomenon_curriculum_hard_contracts() -> Tuple[bool, str]:
+    """Phenomenon goldens from live failures must stay green (zero-regression).
+
+    Covers warning≠blocker, executability interrupt, child dedupe, effect≠exec_ok,
+    no premature resume, no unsafe user cleanup — seeded from 20260810_161105.
+    """
+    from plugin.evals.phenomena.score import blocking_failures, score_all
+
+    report = score_all()
+    fails = blocking_failures(report)
+    if fails:
+        return False, f"{len(fails)} phenomenon fails: {fails[:3]}"
+    total = int(report.get("total") or 0)
+    if total < 10:
+        return False, f"phenomenon corpus too small: {total}"
+    return True, f"phenomena_pass={report.get('passed')}/{total}"
+
+
+def _prerequisite_intention_interrupts_on_blocking_condition() -> Tuple[bool, str]:
+    """BlockingCondition spawns a prereq child; warnings and unmet effects do not resume.
+
+    Covers the ZarooratWala storage-dialog class as a generic interruption:
+    detect → BLOCKED_RESOLVABLE → one child per semantic effect → IntentionFrame
+    judges success → parent resumes only after executability recheck.
+    """
+    from plugin.agent.executive.blocking import (
+        ExecutabilityStatus,
+        assess_executability,
+        detect_warnings_and_blockers,
+        resolve_methods_for_effect,
+    )
+    from plugin.agent.executive.intention_frame import (
+        Intention,
+        IntentionFrame,
+        IntentionOrigin,
+        ensure_child_for_precondition,
+        evaluate_intention_success,
+        push_intention_frame,
+        resume_parent_after_child,
+    )
+    from plugin.agent.runtime.state import ExecutionState
+
+    warns, blockers = detect_warnings_and_blockers(
+        observation_texts=[
+            "Storage is too full",
+            "To keep using WhatsApp, free up at least 175.81 MB of storage.",
+        ],
+        view={"screen": "dialog"},
+        features={"extras": {"storage_pressure": True, "has_dialog": True}},
+        intention_id="i_forward",
+    )
+    if warns:
+        return False, f"dialog misclassified as warning: {warns}"
+    if not any(b.kind == "insufficient_storage" for b in blockers):
+        return False, "missing insufficient_storage blocker"
+
+    weak_w, weak_b = detect_warnings_and_blockers(
+        observation_texts=["Storage almost full"],
+        view={"screen": "conversation"},
+        intention_id="i_forward",
+    )
+    if not weak_w or weak_b:
+        return False, "weak storage toast must warn without interrupting"
+
+    assessment = assess_executability(
+        intention_id="i_forward",
+        blockers=blockers,
+        world={"surface": "dialog", "storage_pressure": True},
+        facts={"agent_owned_reclaimable_bytes": 1, "storage_pressure": True},
+    )
+    if assessment.status != ExecutabilityStatus.BLOCKED_RESOLVABLE.value:
+        return False, f"expected blocked_resolvable, got {assessment.status}"
+    storage_bc = next(
+        (b for b in assessment.resolvable_conditions if b.required_effect.subject == "storage"),
+        None,
+    )
+    if storage_bc is None:
+        return False, "no storage resolvable condition"
+    methods = resolve_methods_for_effect(
+        storage_bc.required_effect, facts={"agent_owned_reclaimable_bytes": 1}
+    )
+    if not methods or methods[0].capability != "relieve_host_storage":
+        return False, f"wrong first method: {methods}"
+
+    state = ExecutionState()
+    parent = IntentionFrame(
+        intention=Intention(
+            id="i_forward",
+            objective="forward",
+            success_predicate="forward_affordance_grounded",
+            created_from=IntentionOrigin(kind="goal"),
+        )
+    )
+    push_intention_frame(state, parent)
+    key = storage_bc.semantic_key()
+    child = ensure_child_for_precondition(
+        state,
+        parent,
+        effect_key=key,
+        success_predicate=key,
+        methods=[(m.capability, m.capability) for m in methods],
+    )
+    dup = ensure_child_for_precondition(
+        state,
+        parent,
+        effect_key=key,
+        success_predicate=key,
+        methods=[(m.capability, m.capability) for m in methods],
+    )
+    if child is None or dup is None or child.intention.id != dup.intention.id:
+        return False, "semantic dedupe failed for same required_effect"
+    if not parent.suspended_by_child:
+        return False, "parent not suspended_by_child"
+
+    # Execution evidence without effect → do not resume.
+    unmet_world = {"available_storage_bytes": 1_000_000, "execution_ok": True}
+    if evaluate_intention_success(child, world=unmet_world):
+        return False, "child success_predicate true despite unmet free bytes"
+    stalled = resume_parent_after_child(state, world=unmet_world)
+    if stalled.get("resumed") or stalled.get("child_effect_met"):
+        return False, f"resumed/marked met while effect unmet: {stalled}"
+
+    # Effect met but parent still non-executable → no resume.
+    need = int(storage_bc.required_effect.value or 0)
+    met_world = {
+        "available_storage_bytes": need + 10,
+        "surface": "dialog",
+        "storage_pressure": True,
+    }
+    from plugin.agent.executive.blocking import BlockingCondition, EffectPredicate, IntentionRef
+
+    still = [
+        BlockingCondition(
+            kind="app_not_operational",
+            required_effect=EffectPredicate(
+                subject="app_operational", relation="is_true", value=True
+            ),
+            blocks=[IntentionRef(intention_id="i_forward")],
+        )
+    ]
+    after = resume_parent_after_child(
+        state,
+        world=met_world,
+        parent_blockers=still,
+        facts={
+            "available_storage_bytes": need + 10,
+            "app_operational": False,
+            "blocked_app_recoverable": True,
+        },
+    )
+    if not after.get("child_effect_met") or after.get("resumed"):
+        return False, f"parent resumed without executability clear: {after}"
+    if not after.get("parent_still_blocked"):
+        return False, "expected parent_still_blocked after child met"
+    return True, "prereq interrupt+dedupe+recheck ok"
+
+
 def _high_cost_wrong_action_area_impossible() -> Tuple[bool, str]:
     """Wrong-area grounding for high-cost writes must be refused before motor.
 
@@ -4624,6 +4781,16 @@ GATES: Tuple[Gate, ...] = (
         "storage_pressure_routes_to_housekeeping_capability",
         "Under storage-full, does meta chase goal search instead of housekeeping?",
         _storage_pressure_routes_to_housekeeping_capability,
+    ),
+    Gate(
+        "prerequisite_intention_interrupts_on_blocking_condition",
+        "Does a BlockingCondition spawn a prereq child and resume only after recheck?",
+        _prerequisite_intention_interrupts_on_blocking_condition,
+    ),
+    Gate(
+        "phenomenon_curriculum_hard_contracts",
+        "Do live-seeded phenomenon goldens regress (warning/blocker/child/effect/resume)?",
+        _phenomenon_curriculum_hard_contracts,
     ),
     Gate(
         "reveal_grounds_affordance_set_not_phash_skip",

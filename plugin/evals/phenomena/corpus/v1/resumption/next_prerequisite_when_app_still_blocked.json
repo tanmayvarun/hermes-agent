@@ -1,0 +1,50 @@
+{
+  "fixture_id": "next_prerequisite_when_app_still_blocked",
+  "family": "resumption",
+  "phenomenon": "resumption",
+  "source_run": "20260810_161105",
+  "app": "",
+  "note": "Counterfactual H: free space met but dialog remains → recover child.",
+  "tags": [
+    "hard_contract",
+    "no_premature_resume",
+    "from_live"
+  ],
+  "observation_texts": [],
+  "system_facts": {
+    "agent_owned_reclaimable_bytes": 1,
+    "storage_pressure": true
+  },
+  "view": {},
+  "features": {},
+  "parent_intention": {
+    "id": "i_parent",
+    "objective": "forward source message",
+    "success_predicate": "forward_affordance_grounded",
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
+  },
+  "world_before": {
+    "available_storage_bytes": 184350156,
+    "surface": "dialog",
+    "storage_pressure": true
+  },
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "required_bytes": 184350146,
+    "expect_resume": false,
+    "parent_still_blocked": true,
+    "expect_next_prerequisite": true
+  },
+  "forbidden": [
+    "premature_resume"
+  ],
+  "frames": []
+}

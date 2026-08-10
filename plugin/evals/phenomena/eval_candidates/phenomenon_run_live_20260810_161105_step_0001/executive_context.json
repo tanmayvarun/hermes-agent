@@ -1,0 +1,25 @@
+{
+  "goal": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay",
+  "goal_fields": {
+    "source_conversation": "Pallavi",
+    "destination": "Tanmay",
+    "source_query": "zarooratwala"
+  },
+  "current_intention": "",
+  "perception_objective": {
+    "questions": [],
+    "focus": "",
+    "depth": "shallow",
+    "objective": "evidence ready but no grounded action geometry yet",
+    "completion_condition": ""
+  },
+  "active_app": "WhatsApp",
+  "active_interaction_surface": "",
+  "known_bindings": {
+    "source_object": "zarooratwala",
+    "destination": "Tanmay",
+    "open_conversation": ""
+  },
+  "previous_action": {},
+  "step": 1
+}

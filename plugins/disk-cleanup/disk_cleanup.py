@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import shutil
 import stat
 import tempfile
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,7 +37,6 @@ from typing import Any, Dict, List, Optional, Tuple
 try:
     from hermes_constants import get_hermes_home
 except Exception:  # pragma: no cover — plugin may load before constants resolves
-    import os
 
     def get_hermes_home() -> Path:  # type: ignore[no-redef]
         val = (os.environ.get("HERMES_HOME") or "").strip()
@@ -332,6 +333,91 @@ def _dir_size(path: Path) -> int:
     return total
 
 
+def _newest_mtime(path: Path) -> float:
+    """Newest mtime in a file or shallow/recursive directory tree."""
+    try:
+        newest = path.stat().st_mtime
+    except OSError:
+        return 0.0
+    if not path.is_dir():
+        return float(newest)
+    try:
+        for child in path.rglob("*"):
+            try:
+                newest = max(newest, child.stat().st_mtime)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return float(newest)
+
+
+def _cleanup_hermes_live_run_roots() -> Dict[str, Any]:
+    """Reclaim /tmp/hermes-runs stamp dirs left by live forward/UI monitor.
+
+    Active stamps (newest mtime within ``HERMES_LIVE_RUN_KEEP_SECONDS``, default
+    20 minutes) are kept so a running agent is not amputated mid-log. Older
+    stamp trees are removed on each host_temp stage.
+    """
+    deleted = 0
+    freed = 0
+    errors: List[str] = []
+    try:
+        keep_s = float(os.environ.get("HERMES_LIVE_RUN_KEEP_SECONDS", "1200") or 1200)
+    except (TypeError, ValueError):
+        keep_s = 1200.0
+    keep_s = max(120.0, keep_s)
+    now = time.time()
+    roots: List[Path] = []
+    for base in _resolve_host_temp_roots():
+        roots.append(base / "hermes-runs")
+    env_root = str(os.environ.get("HERMES_LIVE_RUN_DIR") or "").strip()
+    if env_root:
+        try:
+            p = Path(env_root).expanduser().resolve()
+            if p.name.startswith("hermes-") or p.name.startswith("hermes_"):
+                roots.append(p)
+        except OSError:
+            pass
+    seen: set[str] = set()
+    for root in roots:
+        try:
+            key = str(root.resolve())
+        except OSError:
+            key = str(root)
+        if key in seen or not root.is_dir():
+            continue
+        seen.add(key)
+        try:
+            children = list(root.iterdir())
+        except OSError as e:
+            errors.append(f"{root}: {e}")
+            continue
+        for child in children:
+            try:
+                if child.is_symlink():
+                    continue
+                age_s = now - _newest_mtime(child)
+                if age_s < keep_s:
+                    continue
+                if child.is_dir():
+                    size_before = _dir_size(child)
+                    shutil.rmtree(child)
+                else:
+                    size_before = int(child.stat().st_size)
+                    child.unlink()
+                deleted += 1
+                freed += int(size_before)
+                _log(
+                    f"DELETED: {child} (hermes live-run artifact, "
+                    f"{fmt_size(size_before)}, age={age_s/60:.0f}m)"
+                )
+            except OSError as e:
+                errors.append(f"{child}: {e}")
+                _log(f"ERROR deleting hermes live-run artifact {child}: {e}")
+    return {"deleted": deleted, "empty_dirs": 0, "freed": freed, "errors": errors}
+
+
 def _cleanup_host_temp_roots() -> Dict[str, Any]:
     """Sweep obvious low-value temp/cache artifacts outside HERMES_HOME.
 
@@ -345,6 +431,14 @@ def _cleanup_host_temp_roots() -> Dict[str, Any]:
     freed = 0
     errors: List[str] = []
 
+    try:
+        live = _cleanup_hermes_live_run_roots()
+        deleted += int(live.get("deleted", 0) or 0)
+        freed += int(live.get("freed", 0) or 0)
+        errors.extend(list(live.get("errors") or []))
+    except Exception as exc:
+        errors.append(f"hermes_live_runs: {exc}")
+
     for root in _resolve_host_temp_roots():
         try:
             children = list(root.iterdir())
@@ -354,6 +448,9 @@ def _cleanup_host_temp_roots() -> Dict[str, Any]:
         for child in children:
             try:
                 if child.is_symlink():
+                    continue
+                # Dedicated shorter-keep sweep above.
+                if child.is_dir() and child.name == "hermes-runs":
                     continue
                 st = child.lstat()
                 age_days = _path_age_days(child)
@@ -500,6 +597,336 @@ def _cleanup_host_cache_roots() -> Dict[str, Any]:
         "empty_dirs": empty_dirs,
         "freed": freed,
         "errors": errors,
+    }
+
+
+# ---------------------------------------------------------------------------
+# cleanup.md — user preferences for the relieve escalation ladder
+# ---------------------------------------------------------------------------
+
+_DEFAULT_CLEANUP_MD = Path(__file__).resolve().parent / "cleanup.md"
+
+# Browser Application Support roots keyed by cleanup.md allow tokens.
+_BROWSER_SUPPORT_ROOTS: Dict[str, Tuple[Path, ...]] = {
+    "chrome": (Path.home() / "Library" / "Application Support" / "Google" / "Chrome",),
+    "chromium": (Path.home() / "Library" / "Application Support" / "Chromium",),
+    "brave": (
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "BraveSoftware"
+        / "Brave-Browser",
+    ),
+    "edge": (Path.home() / "Library" / "Application Support" / "Microsoft Edge",),
+    "firefox": (Path.home() / "Library" / "Application Support" / "Firefox" / "Profiles",),
+}
+
+# Library/Caches bundles (whole child dirs — recreatable).
+_BROWSER_LIBRARY_CACHE_GLOBS: Dict[str, Tuple[str, ...]] = {
+    "chrome": ("Google", "com.google.Chrome*", "Chrome"),
+    "chromium": ("Chromium", "org.chromium.Chromium*"),
+    "brave": ("BraveSoftware", "com.brave.Browser*"),
+    "edge": ("Microsoft Edge", "com.microsoft.edgemac*"),
+    "firefox": ("Firefox", "org.mozilla.firefox*"),
+    "slack": ("com.tinyspeck.slackmacgap*", "Slack"),
+    "discord": ("com.hnc.Discord*", "discord"),
+    "spotify": ("com.spotify.client*", "Spotify"),
+}
+
+# Relative cache-style folders under a Chromium profile (never Cookies/History/…).
+_CHROMIUM_PROFILE_CACHE_REL: Tuple[str, ...] = (
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "Media Cache",
+    "ShaderCache",
+    "GrShaderCache",
+    "DawnCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+    "GraphiteDawnCache",
+    "Service Worker/CacheStorage",
+    "Service Worker/ScriptCache",
+    "Shared Dictionary/cache",
+    "blob_storage",
+    "optimization_guide_hint_cache_store",
+    "AutofillAiModelCache",
+)
+
+_CHROMIUM_ROOT_CACHE_REL: Tuple[str, ...] = (
+    "ShaderCache",
+    "GrShaderCache",
+    "GraphiteDawnCache",
+    "GPUPersistentCache",
+    "component_crx_cache",
+    "Component Crx Cache",
+)
+
+_HARD_DENY_TOKENS = frozenset(
+    {
+        "downloads",
+        "docker",
+        "documents",
+        "photos",
+        "indexeddb",
+        "cookies",
+        "history",
+        "extensions",
+        "bookmarks",
+        "login_data",
+        "desktop",
+    }
+)
+
+
+def get_cleanup_md_path() -> Path:
+    """User-editable preferences: ``$HERMES_HOME/cleanup.md``."""
+    return get_hermes_home() / "cleanup.md"
+
+
+def ensure_cleanup_md() -> Path:
+    """Seed ``cleanup.md`` from the plugin default if the user has none yet."""
+    dest = get_cleanup_md_path()
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.is_file() and _DEFAULT_CLEANUP_MD.is_file():
+            dest.write_text(_DEFAULT_CLEANUP_MD.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError as exc:
+        _log(f"WARN: could not seed cleanup.md: {exc}")
+    return dest
+
+
+def load_cleanup_preferences() -> Dict[str, Any]:
+    """Parse ``cleanup.md`` into enabled stages + app_caches allow/deny lists."""
+    ensure_cleanup_md()
+    path = get_cleanup_md_path()
+    text = ""
+    try:
+        if path.is_file():
+            text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    if not text.strip() and _DEFAULT_CLEANUP_MD.is_file():
+        try:
+            text = _DEFAULT_CLEANUP_MD.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+
+    enabled_listed: List[str] = []
+    allow_listed: List[str] = []
+    deny_listed: List[str] = []
+    section = ""
+    subsection = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        low = line.lower()
+        # Headers first — "## foo" also starts with "#", so must not be
+        # treated as a comment.
+        if low.startswith("## "):
+            section = low[3:].strip()
+            subsection = ""
+            continue
+        if line.startswith("#"):
+            # Allow "# - slack" style comments to stay disabled.
+            continue
+        if section == "enabled" and line.startswith("-"):
+            tok = line.lstrip("-").strip().lower().split()[0]
+            if tok:
+                enabled_listed.append(tok)
+            continue
+        if section == "app_caches":
+            if low.startswith("allow:"):
+                subsection = "allow"
+                continue
+            if low.startswith("deny:"):
+                subsection = "deny"
+                continue
+            if line.startswith("-") and subsection in {"allow", "deny"}:
+                tok = line.lstrip("-").strip().lower().split()[0]
+                if not tok:
+                    continue
+                if subsection == "allow":
+                    allow_listed.append(tok)
+                else:
+                    deny_listed.append(tok)
+    enabled = set(enabled_listed) if enabled_listed else {
+        "tracked",
+        "host_temp",
+        "host_cache",
+        "app_caches",
+    }
+    allow = set(allow_listed) if allow_listed else {
+        "chrome",
+        "chromium",
+        "brave",
+        "edge",
+        "firefox",
+    }
+    deny = set(deny_listed) | set(_HARD_DENY_TOKENS)
+    allow -= deny
+    return {
+        "path": str(path),
+        "enabled": sorted(enabled),
+        "app_caches_allow": sorted(allow),
+        "app_caches_deny": sorted(deny),
+    }
+
+
+def _rm_tree_counted(path: Path) -> Tuple[int, int, Optional[str]]:
+    """Delete a file/dir; return (deleted_count, freed_bytes, error_or_none)."""
+    try:
+        if not path.exists() and not path.is_symlink():
+            return 0, 0, None
+        if path.is_symlink():
+            return 0, 0, None
+        if path.is_dir():
+            size = _dir_size(path)
+            shutil.rmtree(path)
+            return 1, int(size), None
+        size = int(path.stat().st_size)
+        path.unlink()
+        return 1, size, None
+    except OSError as exc:
+        return 0, 0, f"{path}: {exc}"
+
+
+def iter_app_cache_targets(
+    *,
+    allow: Optional[List[str]] = None,
+    home: Optional[Path] = None,
+) -> List[Path]:
+    """Resolve cache-style paths for allowed apps (no deletion)."""
+    home = home or Path.home()
+    allow_set = {str(a).strip().lower() for a in (allow or []) if str(a).strip()}
+    out: List[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: Path) -> None:
+        try:
+            key = str(p.resolve())
+        except OSError:
+            key = str(p)
+        if key in seen:
+            return
+        if p.exists():
+            seen.add(key)
+            out.append(p)
+
+    for app in sorted(allow_set):
+        # Chromium-family Application Support profile caches.
+        if app in _BROWSER_SUPPORT_ROOTS:
+            for root_tmpl in _BROWSER_SUPPORT_ROOTS[app]:
+                # Re-root under *home* for tests.
+                parts = root_tmpl.parts
+                try:
+                    idx = parts.index("Library")
+                    root = home.joinpath(*parts[idx:])
+                except ValueError:
+                    root = root_tmpl
+                if not root.is_dir():
+                    continue
+                for rel in _CHROMIUM_ROOT_CACHE_REL:
+                    _add(root / rel)
+                try:
+                    children = list(root.iterdir())
+                except OSError:
+                    children = []
+                for child in children:
+                    if not child.is_dir():
+                        continue
+                    name = child.name
+                    if name != "Default" and not name.startswith("Profile") and name != "System Profile":
+                        continue
+                    for rel in _CHROMIUM_PROFILE_CACHE_REL:
+                        # Prefer whole Service Worker tree once (covers CacheStorage).
+                        if rel.startswith("Service Worker/"):
+                            continue
+                        _add(child / rel)
+                    _add(child / "Service Worker")
+
+        # Firefox profile cache dirs.
+        if app == "firefox":
+            fx = home / "Library" / "Application Support" / "Firefox" / "Profiles"
+            if fx.is_dir():
+                try:
+                    profiles = list(fx.iterdir())
+                except OSError:
+                    profiles = []
+                for prof in profiles:
+                    if not prof.is_dir():
+                        continue
+                    for rel in ("cache2", "startupCache", "shader-cache", "thumbnails"):
+                        _add(prof / rel)
+
+        # ~/Library/Caches bundles.
+        caches_root = home / "Library" / "Caches"
+        if caches_root.is_dir():
+            patterns = _BROWSER_LIBRARY_CACHE_GLOBS.get(app, ())
+            try:
+                children = list(caches_root.iterdir())
+            except OSError:
+                children = []
+            for child in children:
+                for pat in patterns:
+                    # Simple glob-ish: trailing * prefix match.
+                    if pat.endswith("*"):
+                        if child.name.startswith(pat[:-1]):
+                            _add(child)
+                    elif child.name == pat:
+                        _add(child)
+    return out
+
+
+def _cleanup_app_caches() -> Dict[str, Any]:
+    """Escalate into browser/app cache-style folders per ``cleanup.md``.
+
+    Intentionally skips Downloads, Docker, Documents, and profile databases.
+    """
+    prefs = load_cleanup_preferences()
+    if "app_caches" not in set(prefs.get("enabled") or []):
+        return {"deleted": 0, "empty_dirs": 0, "freed": 0, "errors": [], "skipped": "disabled"}
+    allow = list(prefs.get("app_caches_allow") or [])
+    targets = iter_app_cache_targets(allow=allow)
+    deleted = 0
+    freed = 0
+    errors: List[str] = []
+    for path in targets:
+        # Belt-and-suspenders: never touch hard-deny path segments.
+        low = str(path).lower()
+        if any(
+            tok in low
+            for tok in (
+                "/downloads",
+                "/docker",
+                "containers/docker",
+                "/documents/",
+                "/desktop/",
+                "indexeddb",
+                "login data",
+                "/history",
+                "/cookies",
+                "/bookmarks",
+                "/extensions/",
+            )
+        ):
+            continue
+        d, f, err = _rm_tree_counted(path)
+        deleted += d
+        freed += f
+        if err:
+            errors.append(err)
+        elif d:
+            _log(f"DELETED: {path} (app_caches, {fmt_size(float(f))})")
+    _log(f"APP_CACHES_SUMMARY: {deleted} paths, {fmt_size(float(freed))} allow={allow}")
+    return {
+        "deleted": deleted,
+        "empty_dirs": 0,
+        "freed": freed,
+        "errors": errors,
+        "allow": allow,
+        "targets_considered": len(targets),
     }
 
 
@@ -666,12 +1093,17 @@ def analyze_low_risk_cleanup_targets(*, reason: str = "", evidence: Optional[Lis
             except OSError:
                 continue
 
-    candidates.sort(key=lambda c: (c.size, c.age_days), reverse=True)
+    # Low-importance destinations first; within a tier prefer larger reclaim.
+    candidates.sort(
+        key=lambda c: (_importance_rank(c.source, c.category, c.risk), -int(c.size), -float(c.age_days))
+    )
     total_size = sum(c.size for c in candidates)
     low_risk_count = len([c for c in candidates if c.eligible_now and c.risk == "low"])
     if not notes:
         notes.append("analysis-only: no paths were deleted")
-    notes.append("candidate ordering favors larger reclaimable space first")
+    notes.append(
+        "candidate ordering favors low-importance destinations first, then larger reclaim"
+    )
     if any(c.source == "tracked" for c in candidates):
         notes.append("tracked disposables are revalidated before acting")
 
@@ -948,6 +1380,206 @@ def quick_host_temp() -> Dict[str, Any]:
     }
 
 
+# Importance tiers for empathetic staged cleanup: low importance first.
+# Higher rank = more "important" / later in the cleanup sequence.
+_SOURCE_IMPORTANCE = {
+    "empty_dir": 0,
+    "tracked": 1,
+    "host_temp": 2,
+    "host_cache": 3,
+    "app_caches": 4,
+}
+
+# Default headroom when the UI does not name a specific free-space need.
+# Enough for typical app relaunch / media caches without aggressive sweeping.
+DEFAULT_HEADROOM_BYTES = 512 * 1024 * 1024
+
+
+def _importance_rank(source: str, category: str = "", risk: str = "low") -> int:
+    src = str(source or "").strip().lower()
+    cat = str(category or "").strip().lower()
+    if risk and str(risk).strip().lower() not in {"low", ""}:
+        return 9
+    if cat in {"empty-dir", "empty_dir"}:
+        return 0
+    if src == "tracked" and cat == "test":
+        return 1
+    if src == "tracked":
+        return 2
+    return int(_SOURCE_IMPORTANCE.get(src, 5))
+
+
+def free_bytes(path: str = "/") -> int:
+    """Current free bytes on the volume that holds *path*."""
+    try:
+        return int(shutil.disk_usage(path).free)
+    except OSError:
+        return 0
+
+
+def parse_required_free_bytes(evidence: Optional[List[str]] = None, text: str = "") -> Optional[int]:
+    """Extract an explicit free-space ask from UI/evidence text when present."""
+    import re
+
+    blob = " ".join(str(x) for x in (evidence or []) if str(x).strip())
+    if text:
+        blob = f"{blob} {text}".strip()
+    if not blob:
+        return None
+    # e.g. "free up at least 204.34 MB" / "need 2 GB"
+    m = re.search(
+        r"(?:free\s+up\s+)?(?:at\s+least\s+)?(\d+(?:\.\d+)?)\s*(kb|mb|gb|tb)\b",
+        blob,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    amount = float(m.group(1))
+    unit = m.group(2).lower()
+    mult = {"kb": 1024, "mb": 1024**2, "gb": 1024**3, "tb": 1024**4}[unit]
+    return int(amount * mult)
+
+
+def resolve_headroom_target(
+    *,
+    evidence: Optional[List[str]] = None,
+    text: str = "",
+    default_bytes: int = DEFAULT_HEADROOM_BYTES,
+    volume_path: str = "/",
+    free_now: Optional[int] = None,
+) -> int:
+    """Target free bytes: UI reclaim ask (+buffer) or a modest absolute default.
+
+    When the app quotes an amount (e.g. WhatsApp "free up at least 11.88 MB"),
+    that is treated as *additional* space to reclaim from the current free
+    level — not as an absolute free-space floor. Host headroom alone does not
+    satisfy an app that is still space-blocked.
+    """
+    required = parse_required_free_bytes(evidence, text)
+    if required is None:
+        return int(default_bytes)
+    # Small buffer so the modal's exact threshold is not razor-thin.
+    buffered_need = int(required * 1.15) + (4 * 1024 * 1024)
+    if free_now is None:
+        free_now = free_bytes(volume_path)
+    return int(free_now) + buffered_need
+
+
+def relieve_until_headroom(
+    *,
+    target_free_bytes: Optional[int] = None,
+    evidence: Optional[List[str]] = None,
+    reason: str = "",
+    volume_path: str = "/",
+) -> Dict[str, Any]:
+    """Stage low-importance cleanups and stop once decent headroom exists.
+
+    Stages (low importance → higher):
+      1. Hermes tracked disposables + empty dirs (``quick``)
+      2. Host temp leftovers
+      3. Host recreatable caches
+
+    Never proceeds to interactive/deep cleanup. Returns as soon as free space
+    meets the target so the agent can resume the goal without over-cleaning.
+    """
+    stages: List[Dict[str, Any]] = []
+    merged = {"deleted": 0, "empty_dirs": 0, "freed": 0, "errors": []}
+    free_before = free_bytes(volume_path)
+    target = int(
+        target_free_bytes
+        if target_free_bytes is not None
+        else resolve_headroom_target(
+            evidence=evidence,
+            text=reason,
+            volume_path=volume_path,
+            free_now=free_before,
+        )
+    )
+    if free_before >= target:
+        return {
+            "deleted": 0,
+            "empty_dirs": 0,
+            "freed": 0,
+            "errors": [],
+            "stages": [],
+            "stopped_early": True,
+            "stop_reason": "headroom_already_met",
+            "target_free_bytes": target,
+            "free_before": free_before,
+            "free_after": free_before,
+            "headroom_met": True,
+        }
+
+    prefs = load_cleanup_preferences()
+    enabled = {str(x).strip().lower() for x in (prefs.get("enabled") or []) if str(x).strip()}
+    # Full ladder; skip stages the user disabled in cleanup.md.
+    full_plan = (
+        ("tracked_disposables", quick, "tracked"),
+        ("host_temp", _cleanup_host_temp_roots, "host_temp"),
+        ("host_cache", _cleanup_host_cache_roots, "host_cache"),
+        ("app_caches", _cleanup_app_caches, "app_caches"),
+    )
+    stage_plan = tuple((name, fn) for name, fn, key in full_plan if key in enabled)
+    if not stage_plan:
+        stage_plan = tuple((name, fn) for name, fn, _key in full_plan)
+
+    free_now = free_before
+    stop_reason = "stages_exhausted"
+    stopped_early = False
+    for importance, (stage_name, fn) in enumerate(stage_plan):
+        if free_now >= target:
+            stopped_early = True
+            stop_reason = "headroom_met"
+            break
+        try:
+            summary = fn()
+        except Exception as exc:
+            summary = {"deleted": 0, "empty_dirs": 0, "freed": 0, "errors": [str(exc)]}
+        if not isinstance(summary, dict):
+            summary = {"deleted": 0, "empty_dirs": 0, "freed": 0, "errors": ["bad_summary"]}
+        free_after_stage = free_bytes(volume_path)
+        stage_rec = {
+            "stage": stage_name,
+            "importance": importance,
+            "summary": {
+                "deleted": int(summary.get("deleted", 0) or 0),
+                "empty_dirs": int(summary.get("empty_dirs", 0) or 0),
+                "freed": int(summary.get("freed", 0) or 0),
+                "errors": list(summary.get("errors") or []),
+            },
+            "free_before": free_now,
+            "free_after": free_after_stage,
+        }
+        stages.append(stage_rec)
+        merged["deleted"] += stage_rec["summary"]["deleted"]
+        merged["empty_dirs"] += stage_rec["summary"]["empty_dirs"]
+        merged["freed"] += stage_rec["summary"]["freed"]
+        merged["errors"].extend(stage_rec["summary"]["errors"])
+        free_now = free_after_stage
+        if free_now >= target:
+            stopped_early = True
+            stop_reason = "headroom_met"
+            break
+
+    _log(
+        f"RELIEVE_UNTIL_HEADROOM: target={fmt_size(float(target))} "
+        f"before={fmt_size(float(free_before))} after={fmt_size(float(free_now))} "
+        f"stages={len(stages)} stop={stop_reason}"
+    )
+    return {
+        **merged,
+        "stages": stages,
+        "stopped_early": stopped_early,
+        "stop_reason": stop_reason,
+        "target_free_bytes": target,
+        "free_before": free_before,
+        "free_after": free_now,
+        "headroom_met": free_now >= target,
+        "reason": reason,
+        "evidence": list(evidence or []),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Deep cleanup (interactive — not called from plugin hooks)
 # ---------------------------------------------------------------------------
@@ -1089,7 +1721,7 @@ def guess_category(path: Path) -> Optional[str]:
         top = rel.parts[0] if rel.parts else ""
         if top in {
             "disk-cleanup", "logs", "memories", "sessions", "config.yaml",
-            "skills", "plugins", ".env", "USER.md", "MEMORY.md", "SOUL.md",
+            "skills", "plugins", ".env", "USER.md", "MEMORY.md", "SOUL.md", "cleanup.md",
             "auth.json", "hermes-agent",
         }:
             return None

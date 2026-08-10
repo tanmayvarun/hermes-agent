@@ -1,0 +1,118 @@
+{
+  "fixture_id": "storage_blocker_trajectory_161105",
+  "family": "trajectories",
+  "phenomenon": "environmental_blocker",
+  "source_run": "20260810_161105",
+  "app": "WhatsApp",
+  "note": "End-to-end semantic trajectory from live 161105. Scores milestones, not exact motor steps.",
+  "tags": [
+    "hard_contract",
+    "from_live",
+    "trajectory"
+  ],
+  "observation_texts": [
+    "Storage is too full",
+    "To keep using WhatsApp on this device, free up at least 175.81 MB of your device's",
+    "1. Go to System Settings, select General and then select Storage.",
+    "2. Delete any apps or documents like large files you no longer use.",
+    "3. Close and reopen WhatsApp.",
+    "Exit WhatsApp"
+  ],
+  "system_facts": {
+    "agent_owned_reclaimable_bytes": 3400000000
+  },
+  "view": {
+    "screen": "dialog",
+    "storage_pressure": true,
+    "surface": "dialog"
+  },
+  "features": {
+    "extras": {
+      "storage_pressure": true,
+      "screen_kind": "dialog",
+      "has_dialog": true,
+      "system_warnings": [
+        "Storage is too full",
+        "To keep using WhatsApp on this device, free up at least 175.81 MB of your device's"
+      ]
+    }
+  },
+  "parent_intention": {
+    "id": "i_parent",
+    "objective": "forward source message",
+    "success_predicate": "forward_affordance_grounded",
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
+  },
+  "world_before": {},
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "milestones": [
+      "detect_blocker",
+      "blocked_resolvable",
+      "parent_suspended",
+      "no_duplicate_child",
+      "safe_method",
+      "effect_verified",
+      "eventual_parent_recovery"
+    ],
+    "free_after_bytes": 194350146,
+    "blocker_absent_after": true,
+    "expect_resume": true
+  },
+  "forbidden": [
+    "duplicate_child",
+    "premature_resume",
+    "delete_user_documents"
+  ],
+  "frames": [
+    {
+      "id": "A",
+      "label": "WhatsApp blocked by storage dialog",
+      "observation_texts": [
+        "Storage is too full",
+        "To keep using WhatsApp on this device, free up at least 175.81 MB of your device's",
+        "1. Go to System Settings, select General and then select Storage.",
+        "2. Delete any apps or documents like large files you no longer use.",
+        "3. Close and reopen WhatsApp.",
+        "Exit WhatsApp"
+      ],
+      "view": {
+        "screen": "dialog",
+        "storage_pressure": true,
+        "surface": "dialog"
+      }
+    },
+    {
+      "id": "B",
+      "label": "parent suspended / child created"
+    },
+    {
+      "id": "C",
+      "label": "cleanup performed"
+    },
+    {
+      "id": "D",
+      "label": "storage evidence updated"
+    },
+    {
+      "id": "E",
+      "label": "child success evaluated"
+    },
+    {
+      "id": "F",
+      "label": "parent executability re-evaluated"
+    },
+    {
+      "id": "G",
+      "label": "parent resumes only if blocker absent"
+    }
+  ]
+}

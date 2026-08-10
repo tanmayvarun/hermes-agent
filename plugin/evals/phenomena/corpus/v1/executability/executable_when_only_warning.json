@@ -1,0 +1,47 @@
+{
+  "fixture_id": "executable_when_only_warning",
+  "family": "executability",
+  "phenomenon": "environmental_blocker",
+  "source_run": "20260810_161105",
+  "app": "",
+  "note": "",
+  "tags": [
+    "hard_contract",
+    "counterfactual"
+  ],
+  "observation_texts": [
+    "Storage almost full"
+  ],
+  "system_facts": {
+    "agent_owned_reclaimable_bytes": 1
+  },
+  "view": {
+    "screen": "conversation"
+  },
+  "features": {
+    "extras": {
+      "screen_kind": "conversation"
+    }
+  },
+  "parent_intention": {
+    "id": "i_parent",
+    "objective": "forward source message",
+    "success_predicate": "forward_affordance_grounded",
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
+  },
+  "world_before": {},
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "status": "executable"
+  },
+  "forbidden": [],
+  "frames": []
+}

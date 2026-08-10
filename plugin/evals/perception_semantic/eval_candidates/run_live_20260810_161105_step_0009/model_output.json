@@ -1,0 +1,387 @@
+{
+  "world_model": {
+    "frame": 9,
+    "surface": "conversation",
+    "open_conversation": "agent_memo",
+    "focused_field_role": "in_chat_or_composer",
+    "objects": [
+      {
+        "id": "obj_msg_zarooratwala",
+        "kind": "text_label",
+        "text": "Atter tnat, I woula run Zarooratwala again ratner tnan continuing arcnitecture work in the apstract.",
+        "point": [
+          1075,
+          127
+        ],
+        "matches_goal": true,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "obj_msg_discipline",
+        "kind": "text_label",
+        "text": "That epistemic discipline is far more important to general-purpose agency than making this particular",
+        "point": [
+          1073,
+          406
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "obj_msg_capability",
+        "kind": "text_label",
+        "text": "since we are building general purpose agent, waste cleanup, storage mgmt is an expected capability",
+        "point": [
+          1087,
+          956
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      }
+    ],
+    "layers": [
+      {
+        "role": "container",
+        "name": "ChatGPT Conversation (agent_memo)",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_msg_zarooratwala",
+            "kind": "text_label",
+            "text": "Atter tnat, I woula run Zarooratwala again ratner tnan continuing arcnitecture work in the apstract.",
+            "point": [
+              1075,
+              127
+            ],
+            "matches_goal": true,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "obj_msg_discipline",
+            "kind": "text_label",
+            "text": "That epistemic discipline is far more important to general-purpose agency than making this particular",
+            "point": [
+              1073,
+              406
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "obj_msg_capability",
+            "kind": "text_label",
+            "text": "since we are building general purpose agent, waste cleanup, storage mgmt is an expected capability",
+            "point": [
+              1087,
+              956
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          }
+        ]
+      }
+    ],
+    "beliefs": [
+      {
+        "predicate": "wrong_application_context",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "URL is chatgpt.com",
+          "UI shows ChatGPT sidebar and conversation",
+          "Task requires WhatsApp"
+        ],
+        "confirmed_on_frame": 9,
+        "owner_surface": "conversation",
+        "semantic_role": "context_mismatch"
+      },
+      {
+        "predicate": "target_keyword_found_in_wrong_app",
+        "value": true,
+        "confidence": 0.9,
+        "evidence": [
+          "OCR line contains 'Zarooratwala'",
+          "Text matches goal query"
+        ],
+        "confirmed_on_frame": 9,
+        "owner_surface": "conversation",
+        "semantic_role": "content_match"
+      }
+    ],
+    "progress": {
+      "phase": "context_recovery",
+      "objective": "Switch from ChatGPT to WhatsApp",
+      "notes": "The agent is viewing a ChatGPT conversation containing the keyword 'Zarooratwala', but the task requires forwarding a message from WhatsApp to Tanmay. The previous belief about AWS was corrected; now "
+    },
+    "attempts": [
+      {
+        "frame": 2,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 3,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 4,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 5,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 6,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 7,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 8,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 9,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      }
+    ],
+    "exhausted": [],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": null,
+      "window_id": null,
+      "display_index": null,
+      "display_count": 2,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1920.0,
+            1080.0
+          ],
+          "backing_scale": 1.0,
+          "is_main": true
+        },
+        {
+          "index": 1,
+          "bounds": [
+            1920.0,
+            -27.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": false
+        }
+      ],
+      "capture_origin": [
+        134.0,
+        0.0
+      ],
+      "capture_scale": 1.0,
+      "point_scale": 1.05,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "backtrack": {},
+  "observed_state": {
+    "surface": "conversation",
+    "open_conversation": "agent_memo",
+    "target_object_visible": true,
+    "target_object_id": "obj_msg_zarooratwala",
+    "layers": [
+      {
+        "role": "container",
+        "name": "ChatGPT Conversation (agent_memo)",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_msg_zarooratwala",
+            "kind": "text_label",
+            "text": "Atter tnat, I woula run Zarooratwala again ratner tnan continuing arcnitecture work in the apstract.",
+            "point": [
+              1075,
+              127
+            ],
+            "matches_goal": true,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "obj_msg_discipline",
+            "kind": "text_label",
+            "text": "That epistemic discipline is far more important to general-purpose agency than making this particular",
+            "point": [
+              1073,
+              406
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "obj_msg_capability",
+            "kind": "text_label",
+            "text": "since we are building general purpose agent, waste cleanup, storage mgmt is an expected capability",
+            "point": [
+              1087,
+              956
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          }
+        ]
+      }
+    ],
+    "focused_field_role": "in_chat_or_composer"
+  },
+  "belief_updates": [
+    {
+      "predicate": "wrong_application_context",
+      "value": true,
+      "confidence": 1.0,
+      "evidence": [
+        "URL is chatgpt.com",
+        "UI shows ChatGPT sidebar and conversation",
+        "Task requires WhatsApp"
+      ],
+      "confirmed_on_frame": 9,
+      "owner_surface": "conversation",
+      "semantic_role": "context_mismatch"
+    },
+    {
+      "predicate": "target_keyword_found_in_wrong_app",
+      "value": true,
+      "confidence": 0.9,
+      "evidence": [
+        "OCR line contains 'Zarooratwala'",
+        "Text matches goal query"
+      ],
+      "confirmed_on_frame": 9,
+      "owner_surface": "conversation",
+      "semantic_role": "content_match"
+    }
+  ],
+  "next_action": {},
+  "next_actions": [
+    {
+      "rank": 1,
+      "family": "recover_blocked_app",
+      "target_id": null,
+      "text": "Switch to WhatsApp application",
+      "confidence": 0.95,
+      "why": "Current surface is ChatGPT browser tab; task requires WhatsApp. Must change application context before proceeding."
+    }
+  ],
+  "suggested_actions": [
+    {
+      "rank": 1,
+      "family": "recover_blocked_app",
+      "target_id": null,
+      "text": "Switch to WhatsApp application",
+      "confidence": 0.95,
+      "why": "Current surface is ChatGPT browser tab; task requires WhatsApp. Must change application context before proceeding."
+    }
+  ],
+  "expected_transition": {
+    "surface": "chat_list",
+    "likely_controls": [
+      "search_field",
+      "conversation_rows"
+    ]
+  },
+  "surprise_explanation": {
+    "cause": "unknown",
+    "locus": "unknown",
+    "transition_class": "unknown",
+    "confidence": 0.0,
+    "detail": "",
+    "evidence": [],
+    "repair": {
+      "kind": "reperceive"
+    },
+    "do_not_repeat": [],
+    "recommended_next": "reperceive",
+    "source": "model"
+  },
+  "visible_objects": [
+    {
+      "id": "obj_msg_zarooratwala",
+      "kind": "text_label",
+      "text": "Atter tnat, I woula run Zarooratwala again ratner tnan continuing arcnitecture work in the apstract.",
+      "point": [
+        1075,
+        127
+      ],
+      "matches_goal": true,
+      "owner_surface": "conversation"
+    },
+    {
+      "id": "obj_msg_discipline",
+      "kind": "text_label",
+      "text": "That epistemic discipline is far more important to general-purpose agency than making this particular",
+      "point": [
+        1073,
+        406
+      ],
+      "matches_goal": false,
+      "owner_surface": "conversation"
+    },
+    {
+      "id": "obj_msg_capability",
+      "kind": "text_label",
+      "text": "since we are building general purpose agent, waste cleanup, storage mgmt is an expected capability",
+      "point": [
+        1087,
+        956
+      ],
+      "matches_goal": false,
+      "owner_surface": "conversation"
+    }
+  ],
+  "missing_evidence": [
+    "WhatsApp window location",
+    "Pallavi conversation entry"
+  ],
+  "evidence_gaps": [
+    "Is WhatsApp running on another display or minimized?",
+    "Which window contains the Pallavi conversation?"
+  ],
+  "coverage": 0.3,
+  "missing_affordance_information": [
+    "WhatsApp controls not visible in current browser context"
+  ],
+  "recommended_probe": {},
+  "affordance_qc": {
+    "expected_found": false,
+    "missing": [
+      "WhatsApp interface",
+      "Forward action",
+      "Pallavi conversation"
+    ],
+    "notes": "Critical WhatsApp affordances are absent because the wrong application is active."
+  },
+  "affordance_stance": "explore_needed",
+  "scene_summary": "Browser showing ChatGPT conversation with 'agent_memo' tab active. Text includes 'Zarooratwala' keyword but this is not WhatsApp. Sidebar shows various project links. No WhatsApp UI elements visible.",
+  "confidence": 0.95,
+  "model": "qwen3.5:397b",
+  "latency_s": 19.548
+}

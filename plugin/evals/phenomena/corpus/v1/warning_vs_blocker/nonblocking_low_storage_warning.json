@@ -1,0 +1,52 @@
+{
+  "fixture_id": "nonblocking_low_storage_warning",
+  "family": "warning_vs_blocker",
+  "phenomenon": "environmental_blocker",
+  "source_run": "20260810_161105",
+  "app": "WhatsApp",
+  "note": "Counterfactual B: low-disk toast while app still works.",
+  "tags": [
+    "hard_contract",
+    "warning_no_auto_suspend",
+    "counterfactual"
+  ],
+  "observation_texts": [
+    "Storage almost full"
+  ],
+  "system_facts": {},
+  "view": {
+    "screen": "conversation",
+    "surface": "conversation"
+  },
+  "features": {
+    "extras": {
+      "screen_kind": "conversation"
+    }
+  },
+  "parent_intention": {
+    "id": "i_parent",
+    "objective": "forward source message",
+    "success_predicate": "forward_affordance_grounded",
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
+  },
+  "world_before": {},
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "expect_blocker": false,
+    "expect_warning": true,
+    "parent_executable": true
+  },
+  "forbidden": [
+    "suspend_parent",
+    "spawn_child"
+  ],
+  "frames": []
+}

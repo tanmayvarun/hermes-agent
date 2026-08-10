@@ -1,0 +1,39 @@
+{
+  "fixture_id": "missing_dependency",
+  "family": "effect_resolution",
+  "phenomenon": "effect_resolution",
+  "source_run": "",
+  "app": "",
+  "note": "",
+  "tags": [
+    "counterfactual",
+    "stub"
+  ],
+  "observation_texts": [],
+  "system_facts": {
+    "dependency_installable": true
+  },
+  "view": {},
+  "features": {},
+  "parent_intention": {
+    "required_effect": {
+      "subject": "dependency_present",
+      "relation": "is_true",
+      "value": true
+    }
+  },
+  "world_before": {},
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "required_effect": {
+      "subject": "dependency_present",
+      "relation": "is_true",
+      "value": true
+    },
+    "top_capability": "install_dependency"
+  },
+  "forbidden": [],
+  "frames": []
+}

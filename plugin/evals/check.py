@@ -146,6 +146,9 @@ def _run_pytest(quick: bool) -> int:
         "tests/plugin/test_search_episode.py",
         "tests/plugin/test_meta_search.py",
         "tests/plugin/test_design_flaw_fixes.py::test_prediction_error_does_not_rearm_after_reflect_consume",
+        "tests/plugin/test_prerequisite_intentions.py",
+        "tests/plugin/test_housekeeping_capabilities.py",
+        "tests/plugin/test_phenomenon_goldens.py",
     ]
     cmd.extend(["-q", "--tb=line", *targets])
     print(f"\n== pytest {' '.join(targets)}", flush=True)
@@ -156,11 +159,19 @@ def run_check(*, quick: bool = False) -> int:
     global _EVAL_CHECK_PASSED_THIS_PROCESS
     print("== plugin.evals.check (package preflight)", flush=True)
     from plugin.evals.golden.score import render, score_all
+    from plugin.evals.phenomena.score import (
+        blocking_failures as phenomenon_blocking_failures,
+        render as render_phenomena,
+        score_all as score_phenomena,
+    )
 
     report = score_all()
     print(render(report), flush=True)
+    phen_report = score_phenomena()
+    print(render_phenomena(phen_report), flush=True)
 
     golden_fails = _blocking_golden_failures()
+    phen_fails = phenomenon_blocking_failures(phen_report)
     gate_fails = _blocking_gate_failures()
 
     if golden_fails:
@@ -169,6 +180,13 @@ def run_check(*, quick: bool = False) -> int:
             print(f"  FAIL {line}", flush=True)
     else:
         print("\ngoldens: all non-gap cases pass", flush=True)
+
+    if phen_fails:
+        print("\nBLOCKING phenomenon failures:", flush=True)
+        for line in phen_fails:
+            print(f"  FAIL {line}", flush=True)
+    else:
+        print("phenomena: all non-gap fixtures pass", flush=True)
 
     if gate_fails:
         print("\nBLOCKING regression gates:", flush=True)
@@ -181,7 +199,7 @@ def run_check(*, quick: bool = False) -> int:
     if pytest_rc != 0:
         print(f"\nBLOCKING pytest exit={pytest_rc}", flush=True)
 
-    if golden_fails or gate_fails or pytest_rc != 0:
+    if golden_fails or phen_fails or gate_fails or pytest_rc != 0:
         print(
             "\npackage check FAILED — fix goldens/gates before live run",
             flush=True,

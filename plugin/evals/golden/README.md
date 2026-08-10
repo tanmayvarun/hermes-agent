@@ -7,6 +7,11 @@ This is not training data. It is the gold standard you run every change against
 so a regression names the *layer* that broke (perceive / critic / meta / brain /
 actor / handoff / reflect / flow) instead of only “the zarooratwala task failed.”
 
+**Phenomenon curriculum** (environmental blockers, prerequisite children,
+effect verification, trajectories) lives beside this track in
+[`plugin/evals/phenomena/`](../phenomena/README.md) — organized by phenomenon,
+seeded from live runs (e.g. `20260810_161105`), with harvest → annotate → promote.
+
 **Promotion policy (mandatory):** after every live run, freeze **each new failure
 and each new success** as a golden — module case for a single layer, `flow/`
 case when the bug spans modules (e.g. surprise → reflect diagnosis → brain).

@@ -1,0 +1,25 @@
+{
+  "id": "phenomenon_run_live_20260810_161105_step_0017",
+  "status": "needs_annotation",
+  "source": {
+    "kind": "perception_eval_candidate",
+    "stamp": "20260810_161105",
+    "step": 17,
+    "src": "plugin/evals/perception_semantic/eval_candidates/run_live_20260810_161105_step_0017",
+    "harvest_quality": "production_packet"
+  },
+  "phenomena": [
+    "environmental_blocker",
+    "prerequisite_child",
+    "effect_verification"
+  ],
+  "files": [
+    "ax.json",
+    "executive_context.json",
+    "world_before.json",
+    "transition.json",
+    "observation_texts.json",
+    "screenshot.png",
+    "annotation.json"
+  ]
+}

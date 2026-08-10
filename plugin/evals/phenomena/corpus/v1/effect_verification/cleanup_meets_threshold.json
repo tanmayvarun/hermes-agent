@@ -1,0 +1,46 @@
+{
+  "fixture_id": "cleanup_meets_threshold",
+  "family": "effect_verification",
+  "phenomenon": "effect_verification",
+  "source_run": "20260810_161105",
+  "app": "",
+  "note": "200MB reclaimed → child success_predicate true; resume decided elsewhere.",
+  "tags": [
+    "hard_contract",
+    "execution_ok_ne_effect"
+  ],
+  "observation_texts": [],
+  "system_facts": {
+    "required_bytes": 184350146,
+    "available_storage_bytes": 209715200
+  },
+  "view": {},
+  "features": {},
+  "parent_intention": {
+    "id": "i_parent",
+    "objective": "forward source message",
+    "success_predicate": "forward_affordance_grounded",
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
+  },
+  "world_before": {
+    "available_storage_bytes": 209715200,
+    "surface": "dialog"
+  },
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "required_bytes": 184350146,
+    "child_success": true,
+    "expect_resume": true,
+    "app_operational": true
+  },
+  "forbidden": [],
+  "frames": []
+}

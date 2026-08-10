@@ -1,0 +1,1382 @@
+{
+  "goal": {
+    "operation": "whatsapp_forward_message",
+    "source_conversation": "Pallavi",
+    "source_query": "zarooratwala",
+    "destination": "Tanmay",
+    "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+  },
+  "world_model": {
+    "frame": 4,
+    "surface": "dialog",
+    "open_conversation": "WhatsApp Main Window",
+    "focused_field_role": "dialog_field",
+    "objects": [
+      {
+        "id": "obj_storage_header",
+        "kind": "text_label",
+        "text": "Storage is too full",
+        "point": [
+          808,
+          224
+        ]
+      },
+      {
+        "id": "obj_exit_btn",
+        "kind": "button",
+        "text": "Exit WhatsApp",
+        "point": [
+          849,
+          967
+        ]
+      }
+    ],
+    "layers": [
+      {
+        "role": "container",
+        "name": "WhatsApp Main Window",
+        "state": "occluded",
+        "objects": []
+      },
+      {
+        "role": "dialog",
+        "name": "Storage Full Alert",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_storage_header",
+            "kind": "text_label",
+            "text": "Storage is too full",
+            "point": [
+              808,
+              224
+            ]
+          },
+          {
+            "id": "obj_exit_btn",
+            "kind": "button",
+            "text": "Exit WhatsApp",
+            "point": [
+              849,
+              967
+            ]
+          }
+        ]
+      }
+    ],
+    "beliefs": [
+      {
+        "predicate": "app_blocked_by_system_dialog",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "OCR: 'Storage is too full'",
+          "AX: 'To keep using WhatsApp... free up at least 175.81 MB'"
+        ],
+        "confirmed_on_frame": 1,
+        "owner_surface": "dialog",
+        "semantic_role": "blocking_condition"
+      }
+    ],
+    "progress": {
+      "phase": "blocked",
+      "objective": "Resolve system storage constraint to access WhatsApp interface",
+      "notes": "The application is currently unusable due to a blocking modal dialog regarding device storage."
+    },
+    "attempts": [
+      {
+        "frame": 1,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 2,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 3,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      }
+    ],
+    "exhausted": [],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": null,
+      "window_id": null,
+      "display_index": null,
+      "display_count": 2,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1920.0,
+            1080.0
+          ],
+          "backing_scale": 1.0,
+          "is_main": true
+        },
+        {
+          "index": 1,
+          "bounds": [
+            1920.0,
+            -27.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": false
+        }
+      ],
+      "capture_origin": [
+        220.0,
+        25.0
+      ],
+      "capture_scale": 1.0,
+      "point_scale": 1.0,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "observation": {
+    "frame": 5,
+    "app": "WhatsApp",
+    "window_name": "WhatsApp",
+    "ax_node_count": 0,
+    "ax_content_node_count": 0,
+    "ax_evidence": [
+      {
+        "id": 1,
+        "role": "AXStaticText",
+        "label": "Mail",
+        "bounds": [
+          19,
+          237,
+          27,
+          13
+        ],
+        "description": "Mail"
+      },
+      {
+        "id": 2,
+        "role": "AXStaticText",
+        "label": "Meet",
+        "bounds": [
+          16,
+          365,
+          33,
+          13
+        ],
+        "description": "Meet"
+      },
+      {
+        "id": 3,
+        "role": "AXStaticText",
+        "label": "Your GST registration status is required for us to calculate Monthly Settlements that we should credit you going forward",
+        "bounds": [
+          393,
+          284,
+          982,
+          16
+        ],
+        "description": "Your GST registration status is required for us to calculate Monthly Settlements that we should credit you going forward for the new financial year started on 1"
+      },
+      {
+        "id": 4,
+        "role": "AXStaticText",
+        "label": "live-comnare X",
+        "bounds": [
+          147,
+          16,
+          97,
+          8
+        ],
+        "description": "live-comnare X"
+      },
+      {
+        "id": 5,
+        "role": "AXStaticText",
+        "label": "Ask Gemini",
+        "bounds": [
+          1827,
+          13,
+          75,
+          14
+        ],
+        "description": "Ask Gemini"
+      },
+      {
+        "id": 6,
+        "role": "AXStaticText",
+        "label": "• All Bookmarks",
+        "bounds": [
+          1800,
+          97,
+          106,
+          14
+        ],
+        "description": "• All Bookmarks"
+      },
+      {
+        "id": 7,
+        "role": "AXStaticText",
+        "label": "Please provide confirmation to all points latest by 4th June, to help us process your Monthly Settlements for May Month ",
+        "bounds": [
+          393,
+          323,
+          745,
+          16
+        ],
+        "description": "Please provide confirmation to all points latest by 4th June, to help us process your Monthly Settlements for May Month as usual."
+      },
+      {
+        "id": 8,
+        "role": "AXStaticText",
+        "label": "mail.google.com/mail/u/0/#sent/QgrcJHsbdJmbbIVBXVQsLvCRfPsHzhnSrVG",
+        "bounds": [
+          153,
+          55,
+          513,
+          16
+        ],
+        "description": "mail.google.com/mail/u/0/#sent/QgrcJHsbdJmbbIVBXVQsLvCRfPsHzhnSrVG"
+      },
+      {
+        "id": 9,
+        "role": "AXStaticText",
+        "label": "Chat",
+        "bounds": [
+          19,
+          301,
+          30,
+          13
+        ],
+        "description": "Chat"
+      },
+      {
+        "id": 10,
+        "role": "AXStaticText",
+        "label": "• Verify that it's you",
+        "bounds": [
+          1724,
+          55,
+          139,
+          17
+        ],
+        "description": "• Verify that it's you"
+      },
+      {
+        "id": 11,
+        "role": "AXStaticText",
+        "label": "M Gmail",
+        "bounds": [
+          89,
+          141,
+          103,
+          28
+        ],
+        "description": "M Gmail"
+      },
+      {
+        "id": 12,
+        "role": "AXStaticText",
+        "label": "Google",
+        "bounds": [
+          1777,
+          142,
+          78,
+          27
+        ],
+        "description": "Google"
+      },
+      {
+        "id": 13,
+        "role": "AXStaticText",
+        "label": "Inbox",
+        "bounds": [
+          131,
+          276,
+          41,
+          13
+        ],
+        "description": "Inbox"
+      },
+      {
+        "id": 14,
+        "role": "AXStaticText",
+        "label": "Starred",
+        "bounds": [
+          128,
+          306,
+          53,
+          13
+        ],
+        "description": "Starred"
+      },
+      {
+        "id": 15,
+        "role": "AXStaticText",
+        "label": "Snoozed",
+        "bounds": [
+          131,
+          340,
+          58,
+          13
+        ],
+        "description": "Snoozed"
+      },
+      {
+        "id": 16,
+        "role": "AXStaticText",
+        "label": "-D",
+        "bounds": [
+          83,
+          435,
+          30,
+          13
+        ],
+        "description": "-D"
+      },
+      {
+        "id": 17,
+        "role": "AXStaticText",
+        "label": "in:sent",
+        "bounds": [
+          376,
+          145,
+          53,
+          16
+        ],
+        "description": "in:sent"
+      },
+      {
+        "id": 18,
+        "role": "AXStaticText",
+        "label": "Active",
+        "bounds": [
+          1414,
+          150,
+          64,
+          8
+        ],
+        "description": "Active"
+      },
+      {
+        "id": 19,
+        "role": "AXStaticText",
+        "label": "Compose",
+        "bounds": [
+          131,
+          214,
+          67,
+          16
+        ],
+        "description": "Compose"
+      },
+      {
+        "id": 20,
+        "role": "AXStaticText",
+        "label": "?",
+        "bounds": [
+          1529,
+          147,
+          16,
+          13
+        ],
+        "description": "?"
+      },
+      {
+        "id": 21,
+        "role": "AXStaticText",
+        "label": "oee -utinie",
+        "bounds": [
+          293,
+          19,
+          78,
+          5
+        ],
+        "description": "oee -utinie"
+      },
+      {
+        "id": 22,
+        "role": "AXStaticText",
+        "label": "agent_memo",
+        "bounds": [
+          438,
+          16,
+          80,
+          13
+        ],
+        "description": "agent_memo"
+      },
+      {
+        "id": 23,
+        "role": "AXStaticText",
+        "label": "Request to cl X in (1) Notificatic X Labelbox Sur X 23 (223) Discor X 23 (223) Discor x® Discord",
+        "bounds": [
+          580,
+          13,
+          775,
+          17
+        ],
+        "description": "Request to cl X in (1) Notificatic X Labelbox Sur X 23 (223) Discor X 23 (223) Discor x® Discord"
+      },
+      {
+        "id": 24,
+        "role": "AXStaticText",
+        "label": "Cursor",
+        "bounds": [
+          198,
+          608,
+          47,
+          14
+        ],
+        "description": "Cursor"
+      },
+      {
+        "id": 25,
+        "role": "AXStaticText",
+        "label": "New",
+        "bounds": [
+          926,
+          1007,
+          22,
+          13
+        ],
+        "description": "New"
+      },
+      {
+        "id": 26,
+        "role": "AXStaticText",
+        "label": "Plugin Support <support@plugin.earth>",
+        "bounds": [
+          393,
+          789,
+          240,
+          17
+        ],
+        "description": "Plugin Support <support@plugin.earth>"
+      },
+      {
+        "id": 27,
+        "role": "AXStaticText",
+        "label": "(223) Discorc",
+        "bounds": [
+          1453,
+          13,
+          83,
+          14
+        ],
+        "description": "(223) Discorc"
+      },
+      {
+        "id": 28,
+        "role": "AXStaticText",
+        "label": "Thankyou sir.",
+        "bounds": [
+          393,
+          837,
+          80,
+          14
+        ],
+        "description": "Thankyou sir."
+      },
+      {
+        "id": 29,
+        "role": "AXStaticText",
+        "label": "• 29 Jun 2026, 15:24",
+        "bounds": [
+          1546,
+          786,
+          131,
+          17
+        ],
+        "description": "• 29 Jun 2026, 15:24"
+      },
+      {
+        "id": 30,
+        "role": "AXStaticText",
+        "label": "One attachment • Scanned by Gmail ©",
+        "bounds": [
+          399,
+          917,
+          267,
+          16
+        ],
+        "description": "One attachment • Scanned by Gmail ©"
+      },
+      {
+        "id": 31,
+        "role": "AXStaticText",
+        "label": "@4 Add to Drive",
+        "bounds": [
+          675,
+          918,
+          122,
+          19
+        ],
+        "description": "@4 Add to Drive"
+      },
+      {
+        "id": 32,
+        "role": "AXStaticText",
+        "label": "5 of 20",
+        "bounds": [
+          1710,
+          203,
+          41,
+          14
+        ],
+        "description": "5 of 20"
+      },
+      {
+        "id": 33,
+        "role": "AXStaticText",
+        "label": "Sent",
+        "bounds": [
+          131,
+          371,
+          33,
+          13
+        ],
+        "description": "Sent"
+      },
+      {
+        "id": 34,
+        "role": "AXStaticText",
+        "label": "Regards,",
+        "bounds": [
+          393,
+          365,
+          55,
+          13
+        ],
+        "description": "Regards,"
+      },
+      {
+        "id": 35,
+        "role": "AXStaticText",
+        "label": "Plugin Support Team",
+        "bounds": [
+          393,
+          385,
+          125,
+          14
+        ],
+        "description": "Plugin Support Team"
+      },
+      {
+        "id": 36,
+        "role": "AXStaticText",
+        "label": "Drafts",
+        "bounds": [
+          131,
+          401,
+          44,
+          16
+        ],
+        "description": "Drafts"
+      },
+      {
+        "id": 37,
+        "role": "AXStaticText",
+        "label": "Reply to all",
+        "bounds": [
+          544,
+          1023,
+          80,
+          14
+        ],
+        "description": "Reply to all"
+      },
+      {
+        "id": 38,
+        "role": "AXStaticText",
+        "label": "Triveni Electronic...",
+        "bounds": [
+          426,
+          705,
+          111,
+          13
+        ],
+        "description": "Triveni Electronic..."
+      },
+      {
+        "id": 40,
+        "role": "AXStaticText",
+        "label": "Categories",
+        "bounds": [
+          131,
+          434,
+          72,
+          17
+        ],
+        "description": "Categories"
+      },
+      {
+        "id": 46,
+        "role": "AXStaticText",
+        "label": "IJ",
+        "bounds": [
+          440,
+          513,
+          36,
+          44
+        ],
+        "description": "IJ"
+      },
+      {
+        "id": 53,
+        "role": "AXStaticText",
+        "label": "M GST Registra",
+        "bounds": [
+          1573,
+          13,
+          100,
+          17
+        ],
+        "description": "M GST Registra"
+      },
+      {
+        "id": 56,
+        "role": "AXStaticText",
+        "label": "4. Please confirm, you will inform Plugin as soon as you get registered in GST and share GST Number and GST Certificate ",
+        "bounds": [
+          393,
+          248,
+          778,
+          14
+        ],
+        "description": "4. Please confirm, you will inform Plugin as soon as you get registered in GST and share GST Number and GST Certificate with Plugin."
+      },
+      {
+        "id": 64,
+        "role": "AXStaticText",
+        "label": "Reply",
+        "bounds": [
+          435,
+          1024,
+          44,
+          13
+        ],
+        "description": "Reply"
+      },
+      {
+        "id": 65,
+        "role": "AXStaticText",
+        "label": ") (r Forward ) (©)",
+        "bounds": [
+          619,
+          1014,
+          184,
+          32
+        ],
+        "description": ") (r Forward ) (©)"
+      },
+      {
+        "id": 66,
+        "role": "AXStaticText",
+        "label": "• Share in chat",
+        "bounds": [
+          812,
+          1021,
+          131,
+          17
+        ],
+        "description": "• Share in chat"
+      },
+      {
+        "id": 67,
+        "role": "AXStaticText",
+        "label": "to ceooffice, Triveni-",
+        "bounds": [
+          393,
+          809,
+          125,
+          14
+        ],
+        "description": "to ceooffice, Triveni-"
+      }
+    ],
+    "sources": [
+      {
+        "source": "screenshot",
+        "state": "on",
+        "why": "always supplied; the authoritative account of the screen"
+      },
+      {
+        "source": "accessibility",
+        "state": "empty",
+        "why": "the app exposed no accessibility tree this frame",
+        "node_count": 0,
+        "content_node_count": 0
+      },
+      {
+        "source": "ocr",
+        "state": "on",
+        "why": "text read from the screenshot, bounds in screen points; corroborates the pixels but may split or clip words",
+        "lines": [
+          {
+            "text": "Mail",
+            "bounds": [
+              19.5,
+              237.2,
+              27.9,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Chat",
+            "bounds": [
+              19.5,
+              301.4,
+              30.7,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Meet",
+            "bounds": [
+              16.7,
+              365.6,
+              33.5,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "live-comnare X",
+            "bounds": [
+              147.9,
+              16.7,
+              97.7,
+              8.4
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "oee -utinie",
+            "bounds": [
+              293.0,
+              19.5,
+              78.1,
+              5.6
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "agent_memo",
+            "bounds": [
+              438.1,
+              16.7,
+              80.9,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Request to cl X in (1) Notificatic X Labelbox Sur X 23 (223) Discor X 23 (223) Discor x® Discord",
+            "bounds": [
+              580.5,
+              14.0,
+              775.8,
+              17.0
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "(223) Discorc",
+            "bounds": [
+              1454.0,
+              14.0,
+              83.7,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "mail.google.com/mail/u/0/#sent/QgrcJHsbdJmbbIVBXVQsLvCRfPsHzhnSrVG",
+            "bounds": [
+              153.5,
+              55.8,
+              513.5,
+              16.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "M GST Registra",
+            "bounds": [
+              1574.0,
+              14.0,
+              100.5,
+              17.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Ask Gemini",
+            "bounds": [
+              1827.9,
+              14.0,
+              75.3,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "• Verify that it's you",
+            "bounds": [
+              1724.7,
+              55.8,
+              139.5,
+              17.2
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "• All Bookmarks",
+            "bounds": [
+              1800.0,
+              97.7,
+              106.0,
+              14.3
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "Google",
+            "bounds": [
+              1777.7,
+              142.3,
+              78.1,
+              27.9
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "M Gmail",
+            "bounds": [
+              89.3,
+              142.0,
+              103.3,
+              28.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Compose",
+            "bounds": [
+              131.1,
+              214.8,
+              67.0,
+              17.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Inbox",
+            "bounds": [
+              131.2,
+              276.3,
+              41.9,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Starred",
+            "bounds": [
+              128.4,
+              307.0,
+              53.0,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Snoozed",
+            "bounds": [
+              131.2,
+              340.5,
+              58.6,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Sent",
+            "bounds": [
+              131.2,
+              371.2,
+              33.5,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Drafts",
+            "bounds": [
+              131.2,
+              401.9,
+              44.7,
+              16.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "-D",
+            "bounds": [
+              83.7,
+              435.3,
+              30.7,
+              14.0
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "Categories",
+            "bounds": [
+              131.1,
+              435.0,
+              72.7,
+              17.5
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "in:sent",
+            "bounds": [
+              376.7,
+              145.1,
+              53.0,
+              16.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Active",
+            "bounds": [
+              1414.9,
+              150.7,
+              64.2,
+              8.4
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "?",
+            "bounds": [
+              1529.3,
+              147.9,
+              16.7,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "5 of 20",
+            "bounds": [
+              1710.7,
+              203.7,
+              41.9,
+              14.3
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "4. Please confirm, you will inform Plugin as soon as you get registered in GST and share GST Number and GST Certificate ",
+            "bounds": [
+              393.5,
+              248.0,
+              778.6,
+              14.3
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Your GST registration status is required for us to calculate Monthly Settlements that we should credit you going forward",
+            "bounds": [
+              393.5,
+              284.7,
+              982.3,
+              16.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Please provide confirmation to all points latest by 4th June, to help us process your Monthly Settlements for May Month ",
+            "bounds": [
+              393.5,
+              323.7,
+              745.1,
+              16.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Regards,",
+            "bounds": [
+              393.5,
+              365.6,
+              55.8,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Plugin Support Team",
+            "bounds": [
+              393.5,
+              385.0,
+              125.6,
+              14.1
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "IJ",
+            "bounds": [
+              440.9,
+              513.5,
+              36.3,
+              44.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Cursor",
+            "bounds": [
+              198.1,
+              608.3,
+              47.5,
+              14.2
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "Triveni Electronic...",
+            "bounds": [
+              427.0,
+              706.0,
+              111.6,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Plugin Support <support@plugin.earth>",
+            "bounds": [
+              393.5,
+              789.8,
+              240.0,
+              17.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "to ceooffice, Triveni-",
+            "bounds": [
+              393.5,
+              809.0,
+              125.6,
+              14.3
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Thankyou sir.",
+            "bounds": [
+              393.5,
+              837.0,
+              80.9,
+              14.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "• 29 Jun 2026, 15:24",
+            "bounds": [
+              1546.0,
+              787.0,
+              131.2,
+              17.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "One attachment • Scanned by Gmail ©",
+            "bounds": [
+              399.1,
+              918.0,
+              267.9,
+              17.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "@4 Add to Drive",
+            "bounds": [
+              675.3,
+              918.0,
+              122.8,
+              20.0
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "Reply",
+            "bounds": [
+              435.3,
+              1024.2,
+              44.7,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Reply to all",
+            "bounds": [
+              544.2,
+              1024.0,
+              80.9,
+              14.1
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": ") (r Forward ) (©)",
+            "bounds": [
+              619.4,
+              1014.8,
+              184.5,
+              32.7
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "New",
+            "bounds": [
+              926.5,
+              1007.4,
+              22.3,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "• Share in chat",
+            "bounds": [
+              812.1,
+              1021.0,
+              131.2,
+              17.1
+            ],
+            "confidence": 0.5
+          }
+        ]
+      }
+    ],
+    "active_interaction_surface": "dialog",
+    "image_size": [
+      640,
+      1029
+    ],
+    "image_roi": [
+      134,
+      0,
+      806,
+      1080
+    ],
+    "encoded_bytes": 61970
+  },
+  "allowed_actions": [
+    "click",
+    "right_click",
+    "hover",
+    "type",
+    "scroll",
+    "press_escape",
+    "observe",
+    "request_more_evidence",
+    "compose_search_query",
+    "locate_content",
+    "open_entity",
+    "resolve_entity",
+    "select_content",
+    "reveal_actions",
+    "invoke_affordance",
+    "dismiss_transient",
+    "revert_effects",
+    "relieve_host_storage",
+    "recover_blocked_app",
+    "commit_irreversible"
+  ],
+  "affordance_frontier": {
+    "surface": "dialog",
+    "observed_actions": [
+      {
+        "id": "obj_1_invoke_affordance",
+        "family": "invoke_affordance",
+        "status": "observed",
+        "confidence": 0.6,
+        "target_label": "Exit WhatsApp",
+        "actuators": [
+          {
+            "type": "coordinate_click",
+            "point": [
+              849,
+              967
+            ],
+            "confidence": 0.9
+          }
+        ],
+        "expected_outcomes": [
+          {
+            "probability": 0.8,
+            "predicates": {
+              "conversation_open": true
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "source": "vision_object",
+            "detail": "kind=button"
+          }
+        ]
+      }
+    ],
+    "latent_actions": [],
+    "probe_actions": [],
+    "known_transition_edges": [
+      {
+        "from_action": "observe",
+        "to_surface": "dialog",
+        "probability": 1.0,
+        "enumeration_status": "observed",
+        "basis": "seen 3/3 times this session"
+      },
+      {
+        "from_action": "invoke_affordance",
+        "to_surface": "forward_picker",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      },
+      {
+        "from_action": "reveal_actions",
+        "to_surface": "forward_picker",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      },
+      {
+        "from_action": "open_entity",
+        "to_surface": "conversation",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      },
+      {
+        "from_action": "locate_content",
+        "to_surface": "conversation",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      },
+      {
+        "from_action": "invoke_affordance",
+        "to_surface": "dialog",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      },
+      {
+        "from_action": "commit_irreversible",
+        "to_surface": "dialog",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      }
+    ],
+    "unknown_frontiers": [],
+    "excluded_actions": []
+  },
+  "last_action": {
+    "action": "Observe",
+    "family": "observe",
+    "target": "",
+    "text": "",
+    "result": {
+      "ok": true,
+      "message": "observe"
+    },
+    "you_predicted": {
+      "surface": "system_settings",
+      "likely_controls": [
+        "Storage Management",
+        "Applications List"
+      ]
+    },
+    "prediction_error": {
+      "predicted_surface": "system_settings",
+      "observed_surface": "dialog",
+      "matched": false,
+      "verdict": "you predicted 'system_settings' and the screen is 'dialog'. None of the controls you expected are present (storage management, applications list).",
+      "controls_predicted": [
+        "storage management",
+        "applications list"
+      ],
+      "controls_present": [],
+      "controls_absent": [
+        "storage management",
+        "applications list"
+      ],
+      "action_family": "",
+      "attempt_id": "",
+      "target": "",
+      "effect_absent": true,
+      "consumed_by_reflect": true,
+      "suppressed_rearm": true,
+      "surprise_armed": false
+    },
+    "recent_surprises": [
+      {
+        "iteration": 3,
+        "action": "observe",
+        "predicted_surface": "system_settings",
+        "observed_surface": "dialog"
+      }
+    ]
+  },
+  "identical_readings_in_a_row": 4,
+  "stuck_signals": {
+    "seconds_since_anything_advanced": 72.4,
+    "seconds_before_this_counts_as_stalled": 45.0,
+    "stalled": true
+  },
+  "perception_objective": {
+    "questions": [
+      "Which surfaces are present and which is the foreground interaction surface?",
+      "What selection state belongs to the foreground destination picker vs background surfaces?",
+      "Is destination Tanmay visible or selected inside the destination picker?",
+      "Which grounded actions advance destination resolution within the picker?"
+    ],
+    "focus": "forward_picker",
+    "depth": "deep",
+    "objective": "Resolve destination selection for Tanmay within the foreground destination picker; do not attribute background selection chrome to destination_selected",
+    "completion_condition": "destination_selected for Tanmay inside picker, or picker search path clear (search_field_visible=False, destination_visible=False)",
+    "active_interaction_surface": "dialog",
+    "destination_visible": false,
+    "destination_selected": false,
+    "destination_search_available": false
+  }
+}

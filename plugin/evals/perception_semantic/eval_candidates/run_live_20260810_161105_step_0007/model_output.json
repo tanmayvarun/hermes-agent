@@ -1,0 +1,284 @@
+{
+  "world_model": {
+    "frame": 7,
+    "surface": "conversation",
+    "open_conversation": "AWS Billing Console",
+    "focused_field_role": "in_chat_or_composer",
+    "objects": [
+      {
+        "id": "obj_aws_url",
+        "kind": "text_label",
+        "text": "us-east-1.console.aws.amazon.com/billing/home...",
+        "point": [
+          326,
+          64
+        ],
+        "matches_goal": false
+      },
+      {
+        "id": "obj_search_bar",
+        "kind": "search_field",
+        "text": "Search",
+        "point": [
+          189,
+          149
+        ],
+        "matches_goal": false
+      }
+    ],
+    "layers": [
+      {
+        "role": "container",
+        "name": "AWS Management Console",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_aws_url",
+            "kind": "text_label",
+            "text": "us-east-1.console.aws.amazon.com/billing/home...",
+            "point": [
+              326,
+              64
+            ],
+            "matches_goal": false
+          },
+          {
+            "id": "obj_search_bar",
+            "kind": "search_field",
+            "text": "Search",
+            "point": [
+              189,
+              149
+            ],
+            "matches_goal": false
+          }
+        ]
+      }
+    ],
+    "beliefs": [
+      {
+        "predicate": "wrong_application_context",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "URL is aws.amazon.com",
+          "UI shows 'AWS bill summary'",
+          "Task requires WhatsApp"
+        ],
+        "confirmed_on_frame": 7,
+        "owner_surface": "conversation",
+        "semantic_role": "context_mismatch"
+      }
+    ],
+    "progress": {
+      "phase": "context_recovery",
+      "objective": "Switch from AWS Console to WhatsApp",
+      "notes": "The agent is completely out of context. It is currently viewing an AWS Billing page in a browser, not WhatsApp. The previous belief about Gmail was also a mismatch, but now it's AWS."
+    },
+    "attempts": [
+      {
+        "frame": 1,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 2,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 3,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 4,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 5,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      },
+      {
+        "frame": 4,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe"
+      }
+    ],
+    "exhausted": [],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": null,
+      "window_id": null,
+      "display_index": null,
+      "display_count": 2,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1920.0,
+            1080.0
+          ],
+          "backing_scale": 1.0,
+          "is_main": true
+        },
+        {
+          "index": 1,
+          "bounds": [
+            1920.0,
+            -27.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": false
+        }
+      ],
+      "capture_origin": [
+        134.0,
+        0.0
+      ],
+      "capture_scale": 1.0,
+      "point_scale": 1.05,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "backtrack": {},
+  "observed_state": {
+    "surface": "conversation",
+    "open_conversation": "AWS Billing Console",
+    "target_object_visible": false,
+    "target_object_id": null,
+    "layers": [
+      {
+        "role": "container",
+        "name": "AWS Management Console",
+        "state": "active",
+        "objects": [
+          {
+            "id": "obj_aws_url",
+            "kind": "text_label",
+            "text": "us-east-1.console.aws.amazon.com/billing/home...",
+            "point": [
+              326,
+              64
+            ],
+            "matches_goal": false
+          },
+          {
+            "id": "obj_search_bar",
+            "kind": "search_field",
+            "text": "Search",
+            "point": [
+              189,
+              149
+            ],
+            "matches_goal": false
+          }
+        ]
+      }
+    ],
+    "focused_field_role": "in_chat_or_composer"
+  },
+  "belief_updates": [
+    {
+      "predicate": "wrong_application_context",
+      "value": true,
+      "confidence": 1.0,
+      "evidence": [
+        "URL is aws.amazon.com",
+        "UI shows 'AWS bill summary'",
+        "Task requires WhatsApp"
+      ],
+      "confirmed_on_frame": 7,
+      "owner_surface": "conversation",
+      "semantic_role": "context_mismatch"
+    }
+  ],
+  "next_action": {},
+  "next_actions": [
+    {
+      "rank": 1,
+      "family": "observe",
+      "target_id": null,
+      "text": "observe",
+      "confidence": 1.0,
+      "why": "The current screen is an AWS billing page. I need to find a way to navigate back to WhatsApp or the OS level to switch apps."
+    }
+  ],
+  "suggested_actions": [
+    {
+      "rank": 1,
+      "family": "observe",
+      "target_id": null,
+      "text": "observe",
+      "confidence": 1.0,
+      "why": "The current screen is an AWS billing page. I need to find a way to navigate back to WhatsApp or the OS level to switch apps."
+    }
+  ],
+  "expected_transition": {
+    "surface": "blank",
+    "likely_controls": []
+  },
+  "surprise_explanation": {
+    "cause": "unknown",
+    "locus": "unknown",
+    "transition_class": "unknown",
+    "confidence": 0.0,
+    "detail": "",
+    "evidence": [],
+    "repair": {
+      "kind": "reperceive"
+    },
+    "do_not_repeat": [],
+    "recommended_next": "reperceive",
+    "source": "model"
+  },
+  "visible_objects": [
+    {
+      "id": "obj_aws_url",
+      "kind": "text_label",
+      "text": "us-east-1.console.aws.amazon.com/billing/home...",
+      "point": [
+        326,
+        64
+      ],
+      "matches_goal": false
+    },
+    {
+      "id": "obj_search_bar",
+      "kind": "search_field",
+      "text": "Search",
+      "point": [
+        189,
+        149
+      ],
+      "matches_goal": false
+    }
+  ],
+  "missing_evidence": [
+    "Where is the WhatsApp application window?"
+  ],
+  "evidence_gaps": [
+    "Is WhatsApp open in another tab or window?"
+  ],
+  "coverage": 1.0,
+  "missing_affordance_information": [],
+  "recommended_probe": {},
+  "affordance_qc": {},
+  "affordance_stance": "explore_needed",
+  "scene_summary": "The screen shows the AWS Management Console Billing page. There is no sign of WhatsApp or the target conversation.",
+  "confidence": 1.0,
+  "model": "gemma4:31b",
+  "latency_s": 29.427
+}

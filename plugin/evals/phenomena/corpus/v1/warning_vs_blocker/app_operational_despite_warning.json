@@ -1,0 +1,47 @@
+{
+  "fixture_id": "app_operational_despite_warning",
+  "family": "warning_vs_blocker",
+  "phenomenon": "environmental_blocker",
+  "source_run": "20260810_161105",
+  "app": "",
+  "note": "Counterfactual B': running out of space but conversation usable.",
+  "tags": [
+    "hard_contract",
+    "counterfactual"
+  ],
+  "observation_texts": [
+    "Running out of space on this Mac"
+  ],
+  "system_facts": {},
+  "view": {
+    "screen": "conversation",
+    "app_operational": true
+  },
+  "features": {
+    "extras": {
+      "screen_kind": "conversation"
+    }
+  },
+  "parent_intention": {
+    "id": "i_parent",
+    "objective": "forward source message",
+    "success_predicate": "forward_affordance_grounded",
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
+  },
+  "world_before": {},
+  "resources": [],
+  "offered_capabilities": [],
+  "artifacts": {},
+  "gold": {
+    "expect_blocker": false,
+    "expect_warning": true
+  },
+  "forbidden": [],
+  "frames": []
+}

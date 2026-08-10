@@ -1,0 +1,797 @@
+{
+  "nodes": [
+    {
+      "id": 8,
+      "role": "AXStaticText",
+      "label": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another",
+      "bounds": [
+        706,
+        371,
+        728,
+        17
+      ],
+      "description": "eliminate: discover a condition in ZarooratWala → add a special executive rule → accumulate another"
+    },
+    {
+      "id": 1,
+      "role": "AXStaticText",
+      "label": "0 Projects",
+      "bounds": [
+        16,
+        228,
+        80,
+        17
+      ],
+      "description": "0 Projects"
+    },
+    {
+      "id": 2,
+      "role": "AXStaticText",
+      "label": "10 Library",
+      "bounds": [
+        16,
+        300,
+        72,
+        17
+      ],
+      "description": "10 Library"
+    },
+    {
+      "id": 3,
+      "role": "AXStaticText",
+      "label": "executive should suspend G",
+      "bounds": [
+        725,
+        674,
+        195,
+        19
+      ],
+      "description": "executive should suspend G"
+    },
+    {
+      "id": 4,
+      "role": "AXStaticText",
+      "label": "• agent_memo X",
+      "bounds": [
+        418,
+        13,
+        119,
+        17
+      ],
+      "description": "• agent_memo X"
+    },
+    {
+      "id": 5,
+      "role": "AXStaticText",
+      "label": "• Ask Gemini",
+      "bounds": [
+        1811,
+        13,
+        92,
+        14
+      ],
+      "description": "• Ask Gemini"
+    },
+    {
+      "id": 6,
+      "role": "AXStaticText",
+      "label": "D All Bookmarks",
+      "bounds": [
+        1797,
+        94,
+        111,
+        17
+      ],
+      "description": "D All Bookmarks"
+    },
+    {
+      "id": 7,
+      "role": "AXStaticText",
+      "label": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix",
+      "bounds": [
+        703,
+        275,
+        759,
+        17
+      ],
+      "description": "I agree with the coding agent's immediate diagnosis, but I would push back strongly on its proposed fix"
+    },
+    {
+      "id": 9,
+      "role": "AXStaticText",
+      "label": "Recents",
+      "bounds": [
+        13,
+        454,
+        58,
+        16
+      ],
+      "description": "Recents"
+    },
+    {
+      "id": 10,
+      "role": "AXStaticText",
+      "label": "Verify that it's you",
+      "bounds": [
+        1724,
+        55,
+        139,
+        17
+      ],
+      "description": "Verify that it's you"
+    },
+    {
+      "id": 11,
+      "role": "AXStaticText",
+      "label": "Q GPTS",
+      "bounds": [
+        16,
+        407,
+        61,
+        17
+      ],
+      "description": "Q GPTS"
+    },
+    {
+      "id": 12,
+      "role": "AXStaticText",
+      "label": "specifically \"disk is full!\" It is:",
+      "bounds": [
+        700,
+        460,
+        214,
+        26
+      ],
+      "description": "specifically \"disk is full!\" It is:"
+    },
+    {
+      "id": 13,
+      "role": "AXStaticText",
+      "label": "• Scheduled",
+      "bounds": [
+        16,
+        262,
+        97,
+        20
+      ],
+      "description": "• Scheduled"
+    },
+    {
+      "id": 14,
+      "role": "AXStaticText",
+      "label": "6 cannot progress until B is resolved",
+      "bounds": [
+        722,
+        591,
+        281,
+        33
+      ],
+      "description": "6 cannot progress until B is resolved"
+    },
+    {
+      "id": 15,
+      "role": "AXStaticText",
+      "label": "Instantv",
+      "bounds": [
+        1300,
+        1018,
+        120,
+        22
+      ],
+      "description": "Instantv"
+    },
+    {
+      "id": 16,
+      "role": "AXStaticText",
+      "label": "@ Plugins",
+      "bounds": [
+        16,
+        334,
+        75,
+        17
+      ],
+      "description": "@ Plugins"
+    },
+    {
+      "id": 17,
+      "role": "AXStaticText",
+      "label": "choose c*",
+      "bounds": [
+        722,
+        736,
+        72,
+        39
+      ],
+      "description": "choose c*"
+    },
+    {
+      "id": 18,
+      "role": "AXStaticText",
+      "label": "+ Ask ChatGPT",
+      "bounds": [
+        711,
+        1018,
+        145,
+        25
+      ],
+      "description": "+ Ask ChatGPT"
+    },
+    {
+      "id": 19,
+      "role": "AXStaticText",
+      "label": "223 (223) Discor X ® Discord",
+      "bounds": [
+        1141,
+        13,
+        214,
+        17
+      ],
+      "description": "223 (223) Discor X ® Discord"
+    },
+    {
+      "id": 20,
+      "role": "AXStaticText",
+      "label": "•- chatgpt.com/c/6a1462dd-0d64-83ab-b7fe-dbb3bfb467eb",
+      "bounds": [
+        128,
+        55,
+        421,
+        17
+      ],
+      "description": "•- chatgpt.com/c/6a1462dd-0d64-83ab-b7fe-dbb3bfb467eb"
+    },
+    {
+      "id": 21,
+      "role": "AXStaticText",
+      "label": "live-compare X A CodeHumanF X",
+      "bounds": [
+        142,
+        16,
+        248,
+        11
+      ],
+      "description": "live-compare X A CodeHumanF X"
+    },
+    {
+      "id": 22,
+      "role": "AXStaticText",
+      "label": "Request to cl X",
+      "bounds": [
+        563,
+        13,
+        120,
+        17
+      ],
+      "description": "Request to cl X"
+    },
+    {
+      "id": 23,
+      "role": "AXStaticText",
+      "label": "* Bills Billing : X Labelbox",
+      "bounds": [
+        706,
+        16,
+        220,
+        11
+      ],
+      "description": "* Bills Billing : X Labelbox"
+    },
+    {
+      "id": 24,
+      "role": "AXStaticText",
+      "label": "Al Leveraged EV Charger",
+      "bounds": [
+        13,
+        703,
+        164,
+        22
+      ],
+      "description": "Al Leveraged EV Charger"
+    },
+    {
+      "id": 25,
+      "role": "AXStaticText",
+      "label": "ChatGPT",
+      "bounds": [
+        19,
+        139,
+        75,
+        17
+      ],
+      "description": "ChatGPT"
+    },
+    {
+      "id": 26,
+      "role": "AXStaticText",
+      "label": "Show morev",
+      "bounds": [
+        948,
+        200,
+        97,
+        17
+      ],
+      "description": "Show morev"
+    },
+    {
+      "id": 27,
+      "role": "AXStaticText",
+      "label": "instance.",
+      "bounds": [
+        700,
+        903,
+        75,
+        22
+      ],
+      "description": "instance."
+    },
+    {
+      "id": 28,
+      "role": "AXStaticText",
+      "label": "must be freed before the aoo can continuel",
+      "bounds": [
+        706,
+        1062,
+        309,
+        14
+      ],
+      "description": "must be freed before the aoo can continuel"
+    },
+    {
+      "id": 29,
+      "role": "AXStaticText",
+      "label": "vertry o resoived",
+      "bounds": [
+        719,
+        777,
+        134,
+        55
+      ],
+      "description": "vertry o resoived"
+    },
+    {
+      "id": 30,
+      "role": "AXStaticText",
+      "label": "resume 6",
+      "bounds": [
+        722,
+        828,
+        66,
+        28
+      ],
+      "description": "resume 6"
+    },
+    {
+      "id": 31,
+      "role": "AXStaticText",
+      "label": "223",
+      "bounds": [
+        996,
+        13,
+        19,
+        16
+      ],
+      "description": "223"
+    },
+    {
+      "id": 32,
+      "role": "AXStaticText",
+      "label": "→",
+      "bounds": [
+        50,
+        55,
+        16,
+        16
+      ],
+      "description": "→"
+    },
+    {
+      "id": 33,
+      "role": "AXStaticText",
+      "label": "What appears to be working",
+      "bounds": [
+        700,
+        945,
+        242,
+        25
+      ],
+      "description": "What appears to be working"
+    },
+    {
+      "id": 34,
+      "role": "AXStaticText",
+      "label": "of simply \"hard meta force under storage_pressure.\"",
+      "bounds": [
+        706,
+        300,
+        399,
+        19
+      ],
+      "description": "of simply \"hard meta force under storage_pressure.\""
+    },
+    {
+      "id": 35,
+      "role": "AXStaticText",
+      "label": "That would probably make this run succeed, but it risks repeating the pattern we've been trying to",
+      "bounds": [
+        703,
+        342,
+        711,
+        20
+      ],
+      "description": "That would probably make this run succeed, but it risks repeating the pattern we've been trying to"
+    },
+    {
+      "id": 36,
+      "role": "AXStaticText",
+      "label": "© New chat",
+      "bounds": [
+        16,
+        192,
+        89,
+        17
+      ],
+      "description": "© New chat"
+    },
+    {
+      "id": 37,
+      "role": "AXStaticText",
+      "label": "That's a prerequisite/interruption architecture problem, with storage pressure merely being one",
+      "bounds": [
+        700,
+        876,
+        714,
+        28
+      ],
+      "description": "That's a prerequisite/interruption architecture problem, with storage pressure merely being one"
+    },
+    {
+      "id": 38,
+      "role": "AXStaticText",
+      "label": "IIULUVICUHUN BUVIIUIUIE",
+      "bounds": [
+        948,
+        119,
+        195,
+        8
+      ],
+      "description": "IIULUVICUHUN BUVIIUIUIE"
+    },
+    {
+      "id": 39,
+      "role": "AXStaticText",
+      "label": "From the coding agent's evidence, perception seems reasonably good here. The system apparently",
+      "bounds": [
+        700,
+        979,
+        725,
+        30
+      ],
+      "description": "From the coding agent's evidence, perception seems reasonably good here. The system apparently"
+    },
+    {
+      "id": 40,
+      "role": "AXStaticText",
+      "label": "AC to DC conversion",
+      "bounds": [
+        13,
+        808,
+        136,
+        20
+      ],
+      "description": "AC to DC conversion"
+    },
+    {
+      "id": 41,
+      "role": "AXStaticText",
+      "label": "sgenr a aty posoases roality c casabise dl resolvinge",
+      "bounds": [
+        721,
+        616,
+        445,
+        73
+      ],
+      "description": "sgenr a aty posoases roality c casabise dl resolvinge"
+    },
+    {
+      "id": 42,
+      "role": "AXStaticText",
+      "label": "ở Agents",
+      "bounds": [
+        16,
+        371,
+        72,
+        16
+      ],
+      "description": "ở Agents"
+    },
+    {
+      "id": 43,
+      "role": "AXStaticText",
+      "label": "(223) Discorc x",
+      "bounds": [
+        1018,
+        13,
+        100,
+        14
+      ],
+      "description": "(223) Discorc x"
+    },
+    {
+      "id": 44,
+      "role": "AXStaticText",
+      "label": "agent_memory",
+      "bounds": [
+        13,
+        488,
+        103,
+        16
+      ],
+      "description": "agent_memory"
+    },
+    {
+      "id": 45,
+      "role": "AXStaticText",
+      "label": "establish subgoal Resolve(B)",
+      "bounds": [
+        722,
+        711,
+        209,
+        22
+      ],
+      "description": "establish subgoal Resolve(B)"
+    },
+    {
+      "id": 46,
+      "role": "AXStaticText",
+      "label": "works; relieve_host_storage never runs.",
+      "bounds": [
+        951,
+        139,
+        315,
+        16
+      ],
+      "description": "works; relieve_host_storage never runs."
+    },
+    {
+      "id": 47,
+      "role": "AXStaticText",
+      "label": "Long Horizon Coding Task",
+      "bounds": [
+        13,
+        521,
+        175,
+        19
+      ],
+      "description": "Long Horizon Coding Task"
+    },
+    {
+      "id": 48,
+      "role": "AXStaticText",
+      "label": "EV Charging Market VC",
+      "bounds": [
+        11,
+        594,
+        159,
+        22
+      ],
+      "description": "EV Charging Market VC"
+    },
+    {
+      "id": 49,
+      "role": "AXStaticText",
+      "label": "Replace Logo with Plugin",
+      "bounds": [
+        13,
+        666,
+        167,
+        17
+      ],
+      "description": "Replace Logo with Plugin"
+    },
+    {
+      "id": 50,
+      "role": "AXStaticText",
+      "label": "ai_fundamentals",
+      "bounds": [
+        13,
+        557,
+        114,
+        22
+      ],
+      "description": "ai_fundamentals"
+    },
+    {
+      "id": 53,
+      "role": "AXStaticText",
+      "label": "x (23 (223) Discor X M GST Registra x | +",
+      "bounds": [
+        1395,
+        13,
+        337,
+        17
+      ],
+      "description": "x (23 (223) Discor X M GST Registra x | +"
+    },
+    {
+      "id": 55,
+      "role": "AXStaticText",
+      "label": "Kundli Analysis Summary",
+      "bounds": [
+        13,
+        736,
+        164,
+        22
+      ],
+      "description": "Kundli Analysis Summary"
+    },
+    {
+      "id": 56,
+      "role": "AXStaticText",
+      "label": "SAC Code in Invoices",
+      "bounds": [
+        11,
+        881,
+        145,
+        19
+      ],
+      "description": "SAC Code in Invoices"
+    },
+    {
+      "id": 58,
+      "role": "AXStaticText",
+      "label": "special-purpose agent.",
+      "bounds": [
+        703,
+        396,
+        173,
+        20
+      ],
+      "description": "special-purpose agent."
+    },
+    {
+      "id": 60,
+      "role": "AXStaticText",
+      "label": "Standalone calling earphones",
+      "bounds": [
+        16,
+        630,
+        195,
+        19
+      ],
+      "description": "Standalone calling earphones"
+    },
+    {
+      "id": 61,
+      "role": "AXStaticText",
+      "label": "utf8mb4 vs latint",
+      "bounds": [
+        13,
+        845,
+        114,
+        16
+      ],
+      "description": "utf8mb4 vs latint"
+    },
+    {
+      "id": 62,
+      "role": "AXStaticText",
+      "label": "Chargepe",
+      "bounds": [
+        47,
+        979,
+        66,
+        16
+      ],
+      "description": "Chargepe"
+    },
+    {
+      "id": 65,
+      "role": "AXStaticText",
+      "label": "environment presents blocking condition B",
+      "bounds": [
+        722,
+        552,
+        309,
+        25
+      ],
+      "description": "environment presents blocking condition B"
+    },
+    {
+      "id": 66,
+      "role": "AXStaticText",
+      "label": "—arousny ranare, veteuon",
+      "bounds": [
+        1146,
+        117,
+        217,
+        11
+      ],
+      "description": "—arousny ranare, veteuon"
+    },
+    {
+      "id": 67,
+      "role": "AXStaticText",
+      "label": "The screenshot is actually a very useful general-purpose-agent test. The important event is not",
+      "bounds": [
+        703,
+        437,
+        697,
+        25
+      ],
+      "description": "The screenshot is actually a very useful general-purpose-agent test. The important event is not"
+    },
+    {
+      "id": 68,
+      "role": "AXStaticText",
+      "label": "Indian EV Charging Markei ev m...",
+      "bounds": [
+        13,
+        773,
+        223,
+        22
+      ],
+      "description": "Indian EV Charging Markei ev m..."
+    },
+    {
+      "id": 72,
+      "role": "AXStaticText",
+      "label": "Agent pursuing Goal G",
+      "bounds": [
+        722,
+        513,
+        162,
+        31
+      ],
+      "description": "Agent pursuing Goal G"
+    },
+    {
+      "id": 74,
+      "role": "AXStaticText",
+      "label": "Curl for API Key Validity",
+      "bounds": [
+        11,
+        917,
+        159,
+        22
+      ],
+      "description": "Curl for API Key Validity"
+    },
+    {
+      "id": 75,
+      "role": "AXStaticText",
+      "label": "Best OS for Ollama",
+      "bounds": [
+        13,
+        953,
+        128,
+        17
+      ],
+      "description": "Best OS for Ollama"
+    },
+    {
+      "id": 76,
+      "role": "AXStaticText",
+      "label": "Business",
+      "bounds": [
+        44,
+        999,
+        55,
+        13
+      ],
+      "description": "Business"
+    },
+    {
+      "id": 77,
+      "role": "AXStaticText",
+      "label": "2y. Invite team members",
+      "bounds": [
+        58,
+        1040,
+        142,
+        8
+      ],
+      "description": "2y. Invite team members"
+    }
+  ],
+  "count": 66
+}

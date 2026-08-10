@@ -497,6 +497,10 @@ class IntentionFrame:
     parent_intention_id: Optional[str] = None
     child_intention_ids: List[str] = field(default_factory=list)
     suspended_by_child: bool = False
+    # Explicit why suspended (not IntentionStatus.BLOCKED — that is budget).
+    suspension: Optional[Dict[str, Any]] = None
+    # Semantic key of the unmet required_effect this child is resolving.
+    prerequisite_effect_key: str = ""
     status: str = IntentionStatus.ACTIVE.value
     termination_reason: Optional[str] = None
     opened_at: float = field(default_factory=time.time)
@@ -518,6 +522,8 @@ class IntentionFrame:
             "parent_intention_id": self.parent_intention_id,
             "child_intention_ids": list(self.child_intention_ids),
             "suspended_by_child": self.suspended_by_child,
+            "suspension": dict(self.suspension or {}) if self.suspension else None,
+            "prerequisite_effect_key": self.prerequisite_effect_key,
             "status": self.status,
             "termination_reason": self.termination_reason,
             "opened_at": self.opened_at,
@@ -770,6 +776,40 @@ def evaluate_intention_success(
         if surface == "selection_mode":
             return True
         return False
+    # Effect-keyed child success predicates (storage / operational / stubs).
+    if pred.startswith("storage:available_bytes_at_least") or pred == "free_storage_satisfied":
+        from plugin.agent.executive.blocking import (
+            EffectPredicate,
+            evaluate_effect_predicate,
+        )
+
+        # Prefer structured world facts over capability self-claim.
+        if ":" in pred and pred != "free_storage_satisfied":
+            # storage:available_bytes_at_least:N
+            parts = pred.split(":")
+            need = int(parts[2]) if len(parts) >= 3 and str(parts[2]).isdigit() else 0
+            return evaluate_effect_predicate(
+                EffectPredicate(
+                    subject="storage",
+                    relation="available_bytes_at_least",
+                    value=need,
+                ),
+                world=doc,
+            )
+        return bool(doc.get("free_storage_satisfied")) or evaluate_effect_predicate(
+            EffectPredicate(subject="storage", relation="available_bytes_at_least", value=0),
+            world=doc,
+        )
+    if pred in {"app_operational:is_true", "app_operational"}:
+        from plugin.agent.executive.blocking import (
+            EffectPredicate,
+            evaluate_effect_predicate,
+        )
+
+        return evaluate_effect_predicate(
+            EffectPredicate(subject="app_operational", relation="is_true", value=True),
+            world=doc,
+        )
     return False
 
 
@@ -898,7 +938,14 @@ def spawn_child_for_precondition(
         parent_intention_id=parent.intention.id,
         target_binding=bind,
     )
+    child.prerequisite_effect_key = str(precondition or "source_object_selected")
     parent.suspended_by_child = True
+    parent.suspension = {
+        "reason": "unsatisfied_prerequisite",
+        "child_intention_id": child.intention.id,
+        "blocking_condition_id": "",
+        "precondition_key": str(precondition or "source_object_selected"),
+    }
     parent.child_intention_ids.append(child.intention.id)
     # Tag parent attempt ledger with the prereq miss (not a method attempt).
     parent.attempts.append(
@@ -916,16 +963,159 @@ def spawn_child_for_precondition(
     return child
 
 
+def seed_prerequisite_child(
+    *,
+    parent_intention_id: str,
+    effect_key: str,
+    success_predicate: str,
+    objective: str,
+    methods: Sequence[Tuple[str, str]],
+    blocking_condition_id: str = "",
+) -> IntentionFrame:
+    """Generic child whose success_predicate is judged from world evidence."""
+    intention = Intention(
+        id=new_intention_id(),
+        objective=str(objective or f"Satisfy prerequisite {effect_key}")[:200],
+        success_predicate=str(success_predicate or effect_key),
+        scope=str(effect_key or "")[:120],
+        created_from=IntentionOrigin(
+            kind="prerequisite",
+            parent_goal_id=str(parent_intention_id or "")[:64],
+            triggering_uncertainty=str(effect_key or "")[:80],
+        ),
+    )
+    catalog: Dict[str, MethodSpec] = {}
+    known: List[str] = []
+    for i, (cap, mid) in enumerate(methods):
+        method_id = str(mid or f"{cap}_{i}").strip() or f"m_{i}"
+        catalog[method_id] = MethodSpec(
+            id=method_id,
+            capability=str(cap),
+            expected_effect=EffectSpec(success_any=[str(success_predicate or effect_key)]),
+            retry_safety=RetrySafety.SAFE_TO_RETRY.value,
+            provenance=MethodProvenance.GENERIC_PRIOR.value,
+            reversibility=0.85,
+            risk=0.05,
+        )
+        known.append(method_id)
+    frontier = MethodFrontier(known_untried=known, catalog=catalog)
+    frame = IntentionFrame(
+        intention=intention,
+        originating_meta_action="act",
+        scoring_policy=ScoringPolicy.for_meta("act"),
+        method_frontier=frontier,
+        retry_policy=RetryPolicy(same_method_max=1, try_alternatives=True),
+        budget=IntentionBudget(
+            max_methods=max(2, len(known)), max_wall_time_s=45.0, max_perception_calls=6
+        ),
+        parent_intention_id=str(parent_intention_id or "") or None,
+        prerequisite_effect_key=str(effect_key or ""),
+    )
+    return frame
+
+
+def ensure_child_for_precondition(
+    state: Any,
+    parent: IntentionFrame,
+    *,
+    effect_key: str,
+    success_predicate: str = "",
+    objective: str = "",
+    methods: Optional[Sequence[Tuple[str, str]]] = None,
+    blocking_condition_id: str = "",
+) -> Optional[IntentionFrame]:
+    """Ensure one child for a semantic prerequisite; dedupe by effect_key.
+
+    Two observations of the same unmet predicate must not spawn two children.
+    """
+    if state is None or parent is None:
+        return None
+    key = str(effect_key or "").strip()
+    if not key:
+        return None
+    # Dedupe: existing child on stack with same semantic key.
+    for frame in intention_stack_of(state):
+        if (
+            frame.parent_intention_id == parent.intention.id
+            and str(frame.prerequisite_effect_key or "") == key
+            and frame.status == IntentionStatus.ACTIVE.value
+        ):
+            return frame
+    if parent.suspended_by_child:
+        child = active_intention_frame(state)
+        if (
+            child is not None
+            and child.intention.id != parent.intention.id
+            and str(child.prerequisite_effect_key or "") == key
+        ):
+            return child
+
+    method_pairs = list(methods or [])
+    if not method_pairs:
+        from plugin.agent.executive.blocking import (
+            EffectPredicate,
+            resolve_methods_for_effect,
+        )
+
+        parts = key.split(":")
+        pred = EffectPredicate(
+            subject=parts[0] if parts else "",
+            relation=parts[1] if len(parts) > 1 else "is_true",
+            value=int(parts[2]) if len(parts) > 2 and str(parts[2]).isdigit() else True,
+        )
+        resolved = resolve_methods_for_effect(
+            pred, facts={"agent_owned_reclaimable_bytes": 1, "blocked_app_recoverable": True}
+        )
+        method_pairs = [(m.capability, m.capability) for m in resolved]
+    if not method_pairs:
+        return None
+
+    child = seed_prerequisite_child(
+        parent_intention_id=parent.intention.id,
+        effect_key=key,
+        success_predicate=str(success_predicate or key),
+        objective=objective or f"Resolve prerequisite {key}",
+        methods=method_pairs,
+        blocking_condition_id=blocking_condition_id,
+    )
+    parent.suspended_by_child = True
+    parent.suspension = {
+        "reason": "unsatisfied_prerequisite",
+        "child_intention_id": child.intention.id,
+        "blocking_condition_id": str(blocking_condition_id or ""),
+        "precondition_key": key,
+    }
+    if child.intention.id not in parent.child_intention_ids:
+        parent.child_intention_ids.append(child.intention.id)
+    parent.attempts.append(
+        AttemptRecord(
+            method_id="",
+            execution_status="not_executed",
+            observation_quality=1.0,
+            method_outcome=MethodOutcome.EFFECT_ABSENT.value,
+            failure_class=FailureClass.PRECONDITION_MISSING.value,
+            evidence_refs=[f"precondition_missing:{key}"],
+        )
+    )
+    replace_active_frame(state, parent)
+    push_intention_frame(state, child)
+    return child
+
+
 def resume_parent_after_child(
     state: Any,
     *,
     world: Optional[Dict[str, Any]] = None,
     affordance_stance: str = "",
     grounded_forward: bool = False,
+    facts: Optional[Dict[str, Any]] = None,
+    parent_blockers: Optional[Sequence[Any]] = None,
 ) -> Dict[str, Any]:
-    """On child ACHIEVED: pop, clear suspend, re-rank — never blind-replay blocked method.
+    """On child ACHIEVED: recheck parent executability before resume.
 
-    Returns a status dict for gates/logs.
+    Child success triggers re-evaluation — not automatic resume. If the parent
+    goal is already complete, do not resume obsolete work. If parent is still
+    blocked on another resolvable prereq, leave that for the caller to spawn.
     """
     status: Dict[str, Any] = {"resumed": False}
     child = active_intention_frame(state)
@@ -935,7 +1125,9 @@ def resume_parent_after_child(
         child, world=world, affordance_stance=affordance_stance
     ):
         status["child_still_active"] = child.intention.id
+        status["child_effect_met"] = False
         return status
+    status["child_effect_met"] = True
     child.status = IntentionStatus.ACHIEVED.value
     child.termination_reason = TerminationReason.SUCCESS.value
     status["child_achieved"] = child.intention.id
@@ -950,7 +1142,50 @@ def resume_parent_after_child(
     if parent is None:
         status["parent_missing"] = True
         return status
+
+    # Parent already done while child was running → do not resume obsolete work.
+    if evaluate_intention_success(
+        parent,
+        world=world,
+        affordance_stance=affordance_stance,
+        grounded_forward=grounded_forward,
+    ):
+        parent.suspended_by_child = False
+        parent.suspension = None
+        parent.status = IntentionStatus.ACHIEVED.value
+        parent.termination_reason = TerminationReason.SUCCESS.value
+        status["parent_achieved"] = parent.intention.id
+        status["resumed"] = False
+        status["obsolete_parent"] = True
+        pop_intention_frame(state)
+        return status
+
+    # Recheck parent executability before clearing suspension / resuming.
+    from plugin.agent.executive.blocking import (
+        ExecutabilityStatus,
+        assess_executability,
+    )
+
+    assessment = assess_executability(
+        intention_id=parent.intention.id,
+        blockers=list(parent_blockers or []),
+        world=world if isinstance(world, dict) else {},
+        facts=facts if isinstance(facts, dict) else {},
+    )
+    status["parent_executability"] = assessment.to_dict()
+    if assessment.status != ExecutabilityStatus.EXECUTABLE.value:
+        # Keep parent suspended conceptually until caller handles next prereq,
+        # but clear child link so a new child can be ensured.
+        parent.suspended_by_child = False
+        parent.suspension = None
+        replace_active_frame(state, parent)
+        status["resumed"] = False
+        status["parent_still_blocked"] = True
+        status["parent_id"] = parent.intention.id
+        return status
+
     parent.suspended_by_child = False
+    parent.suspension = None
     # Re-enable methods that were only blocked on this prereq.
     for mid in list(parent.method_frontier.currently_ineligible):
         spec = parent.method_frontier.catalog.get(mid)
@@ -958,24 +1193,8 @@ def resume_parent_after_child(
             continue
         if method_preconditions_met(spec, world=world):
             clear_method_ineligible(parent, mid)
-    # Intention may already be satisfied via unexpected path — stop exploring.
-    if evaluate_intention_success(
-        parent,
-        world=world,
-        affordance_stance=affordance_stance,
-        grounded_forward=grounded_forward,
-    ):
-        parent.status = IntentionStatus.ACHIEVED.value
-        parent.termination_reason = TerminationReason.SUCCESS.value
-        status["parent_achieved"] = parent.intention.id
-        pop_intention_frame(state)
-        status["resumed"] = True
-        status["rerank"] = []
-        return status
     apply_derived_status(parent)
     replace_active_frame(state, parent)
-    # Methods that were blocked only on the prereq we just satisfied must not
-    # automatically win — re-rank prefers newly observed / other eligible routes.
     demote = [
         str(a.method_id)
         for a in parent.attempts
@@ -988,12 +1207,11 @@ def resume_parent_after_child(
     status["rerank"] = [m for m, _ in ranked]
     status["next_method"] = ranked[0][0] if ranked else None
     status["demoted"] = list(demote)
-    # Motivated reobserve before next method (architect: re-perceive / revalidate).
     motivated_perceive_packet(
         parent,
         purpose="revalidate_after_child",
-        question="After selection prereq, what forwarding methods are now viable?",
-        focus="source_message_neighborhood",
+        question="After prerequisite, what methods are now viable?",
+        focus="task_surface",
     )
     parent.pending_effect_verification = False
     return status
