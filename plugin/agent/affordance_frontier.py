@@ -522,15 +522,17 @@ def observed_from_objects(
             try:
                 space = str(item.get("coordinate_space") or "").strip().lower()
                 rx, ry = float(raw_point[0]), float(raw_point[1])
-                # Screen-tagged (or OCR/AX) geometry must not receive origin+scale
-                # again — that is the live 171216 Forward double-transform.
+                # Unknown space → not executable (missing location metadata).
+                # Screen: pass through. Image: origin+scale via FrameGraph path.
                 if space == "screen":
                     point = (int(rx), int(ry))
-                else:
+                elif space == "image":
                     point = (
                         int(float(point_origin[0]) + rx * float(point_scale)),
                         int(float(point_origin[1]) + ry * float(point_scale)),
                     )
+                else:
+                    point = None
             except (TypeError, ValueError):
                 point = None
         actuators = _actuators(None, point, ())

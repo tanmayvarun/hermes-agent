@@ -13,6 +13,33 @@ from plugin.agent.role_binding import Constraint, RoleBindingSpec
 
 def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
     """Typed roles for a forward-style goal. Values come from the goal object."""
+    object_constraints = [
+        Constraint(
+            relation="same_content_referent",
+            referent_source="goal.source_query",
+            required=True,
+        ),
+        Constraint(
+            relation="equals_binding",
+            referent_source="source_container",
+            required=True,
+        ),
+    ]
+    # Originator only when the goal parse expressed authorship ("from X" / "I sent").
+    # Unset originator ⇒ container+content only (e.g. "in Pallavi chat").
+    originator = ""
+    if isinstance(goal, dict):
+        originator = str(goal.get("originator") or "").strip()
+    else:
+        originator = str(getattr(goal, "originator", "") or "").strip()
+    if originator:
+        object_constraints.append(
+            Constraint(
+                relation="same_originator",
+                referent_source="goal.originator",
+                required=True,
+            )
+        )
     return {
         "source_container": RoleBindingSpec(
             role="source_container",
@@ -35,25 +62,7 @@ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
                 "attachment",
                 "document",
             },
-            identity_constraints=[
-                Constraint(
-                    relation="same_content_referent",
-                    referent_source="goal.source_query",
-                    required=True,
-                ),
-                Constraint(
-                    relation="equals_binding",
-                    referent_source="source_container",
-                    required=True,
-                ),
-                # Container ≠ originator: "from Pallavi" requires sender/author,
-                # not merely residing inside Pallavi's conversation.
-                Constraint(
-                    relation="same_originator",
-                    referent_source="goal.originator",
-                    required=True,
-                ),
-            ],
+            identity_constraints=object_constraints,
             evidence_threshold=0.85,
         ),
         "destination": RoleBindingSpec(

@@ -46,9 +46,8 @@ class Goal:
             from plugin.agent.reference import interpret_reference
 
             self.reference = interpret_reference(self.contact)
-        if not str(self.originator or "").strip() and self.contact:
-            # "from <contact>" default; "I sent …" sets originator="self" explicitly.
-            self.originator = self.contact
+        # originator is set only by relational parse ("from X" / "I sent"), never
+        # inferred from contact alone (call/open/in-chat goals must leave it unset).
         # Selection is eager so downstream consumers can treat the procedure as
         # an attached goal substrate rather than a late heuristic.
         try:

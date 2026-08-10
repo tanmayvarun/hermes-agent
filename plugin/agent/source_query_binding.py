@@ -197,6 +197,7 @@ def infer_message_originator(
 
 
 def originator_matches(observed: str, expected: str) -> bool:
+    """Identity equivalence via IdentityResolver — no substring matching."""
     want = _norm(expected)
     got = _norm(observed)
     if not want:
@@ -209,7 +210,9 @@ def originator_matches(observed: str, expected: str) -> bool:
         return got_self
     if got_self:
         return False
-    return want == got or want in got or got in want
+    from plugin.agent.role_binding import IdentityResolver
+
+    return IdentityResolver._values_same_identity(observed, expected)
 
 
 def evaluate_source_object_match(

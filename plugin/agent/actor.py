@@ -492,9 +492,19 @@ def _normalize_to_screen(
             active_graph = None
 
     space = str(coordinate_space or "").strip().lower()
-    # TaskSurface adapter convention: untagged points are image-space.
-    if adapter_used and not space and not frame_id:
-        space = "image"
+    # Untagged geometry is never assumed image/screen — even with TaskSurface.
+    if adapter_used and not space and not frame_id and (
+        point is not None or bounds is not None
+    ):
+        return None, None, {
+            "grounding_uncertain": True,
+            "attempt_validity": "inconclusive_grounding",
+            "error": "untagged geometry — producer must stamp screen/image frame",
+            "error_code": "grounding_uncertain",
+            "source_frame_id": frame_id or "",
+            "source_space": space,
+            "legacy_heuristic_refused": True,
+        }
     # Explicit legacy marker only — never infer screen from absence of info.
     elif (
         allow_legacy_geometry
@@ -642,9 +652,12 @@ def _reconcile_click_geometry(
         elif cap in _CTA_POINT_WINS:
             point = brain_point
         elif cap in _INVENTORY_POINT_WINS:
-            # Explicit screen CTA on the task window beats an image inventory
-            # mispoint (multi-display: image [790,500] vs screen [3417,947]).
-            if (b_space == "screen" or _on_task_window(brain_point)) and _is_image(
+            # Explicit screen CTA beats image/unknown inventory (never let
+            # untagged inventory override authoritative screen geometry —
+            # multi-display: image [790,500] vs screen [3417,947]).
+            if b_space == "screen" and o_space != "screen":
+                point = brain_point
+            elif (b_space == "screen" or _on_task_window(brain_point)) and _is_image(
                 obj_point, o_space
             ):
                 point = brain_point
@@ -962,22 +975,10 @@ def brief_from_brain_choice(
         if not label:
             label = str(obj.get("text") or obj.get("label") or "").strip()
         target_kind = str(obj.get("kind") or "").strip().lower() or target_kind
+        # Producer contract: OCR/AX stamp screen; VLM stamps image. Actor never
+        # infers coordinate space from numeric point values.
         obj_space = str(obj.get("coordinate_space") or "").strip().lower()
         obj_point = _as_point(obj.get("point"))
-        # Untagged inventory: only assume image-local when the point *looks*
-        # image-relative. Screen/OCR/AX points that already sit inside the task
-        # window must stay screen — re-tagging them as image double-transforms
-        # (live 171216: Forward ~[1380,217] → 2751 via capture_origin+scale).
-        if not obj_space and task_surface is not None and obj_point is not None:
-            try:
-                from plugin.perception.display_topology import looks_like_image_point
-
-                if looks_like_image_point(obj_point, task_surface):
-                    obj_space = "image"
-                else:
-                    obj_space = "screen"
-            except Exception:
-                obj_space = ""
         obj_bounds = _as_bounds(obj.get("bounds")) or bounds
     elif (
         is_high_cost(cap)
@@ -1007,17 +1008,6 @@ def brief_from_brain_choice(
                 label = str(obj.get("text") or obj.get("label") or "").strip()
             obj_space = str(obj.get("coordinate_space") or "").strip().lower()
             obj_point = _as_point(obj.get("point"))
-            if not obj_space and task_surface is not None and obj_point is not None:
-                try:
-                    from plugin.perception.display_topology import looks_like_image_point
-
-                    obj_space = (
-                        "image"
-                        if looks_like_image_point(obj_point, task_surface)
-                        else "screen"
-                    )
-                except Exception:
-                    obj_space = ""
             obj_bounds = _as_bounds(obj.get("bounds")) or bounds
         elif hit_forbidden:
             # Nearby inventory row under the CTA (Search sits ~80px above the
@@ -1064,19 +1054,17 @@ def brief_from_brain_choice(
         obj_space=obj_space,
         task_surface=task_surface,
     )
-    # Prefer an explicit screen brain/OCR space when native points already agree.
-    # Never let an untagged-or-mis-tagged inventory "image" label force a second
-    # image→screen transform onto geometry that is already screen-absolute.
+    # Explicit provenance only — never invent space for untagged inventory.
     winner_space = brain_space
     if point is not None and obj_point is not None and _points_agree(point, obj_point):
-        if (brain_space or "").lower() == "screen":
-            winner_space = "screen"
-        elif (obj_space or "").lower() == "screen":
-            winner_space = "screen"
+        if (brain_space or "").lower() in {"screen", "image"}:
+            winner_space = brain_space
+        elif (obj_space or "").lower() in {"screen", "image"}:
+            winner_space = obj_space
         else:
             winner_space = obj_space or brain_space
     elif point is not None and brain_point is not None and _points_agree(point, brain_point):
-        winner_space = brain_space or "screen"
+        winner_space = brain_space  # may be empty → fail closed in normalize
     elif obj_space:
         winner_space = obj_space
     frame_id = str(

@@ -274,30 +274,23 @@ def _entity_sender_for_binding(
     *,
     peer: str = "",
 ) -> str:
-    """Resolve message authorship for binding.
+    """Resolve identity-bearing sender evidence only.
 
-    Explicit ``You:`` / sender attrs win. Otherwise, unlabeled bubbles in an
-    open peer conversation are treated as inbound from that peer (WhatsApp
-    timeline convention) — container membership alone never invents authorship
-    when the UI marks the message as outgoing.
+    Open conversation / peer name alone never proves authorship. Unknown
+    sender stays unknown (not binding-eligible for required originator).
     """
     from plugin.agent.source_query_binding import infer_message_originator
 
+    _ = peer  # not identity-bearing
     e = world.entities.get(int(eid))
     if e is None:
         return ""
     attrs = e.attributes or {}
     text = _entity_query_blob(world, eid)
-    explicit = infer_message_originator(
+    return infer_message_originator(
         text,
         sender=attrs.get("sender") or attrs.get("originator"),
-    )
-    if explicit:
-        return explicit
-    peer_n = str(peer or "").strip()
-    if peer_n:
-        return peer_n
-    return ""
+    ) or ""
 
 
 def _entity_binding_eligible(
@@ -307,14 +300,13 @@ def _entity_binding_eligible(
     query: str,
     expected_container: str = "",
     expected_originator: str = "",
+    goal: Any = None,
 ) -> bool:
-    """Overlay bind gate: query identity + originator (not opaque matches_goal).
-
-    AX timeline nodes are often ``static``; object-kind is enforced at RoleBinder
-    ACT time. Here we only refuse host-contradicting / wrong-author candidates.
-    """
+    """RoleBinder commit gate — scorers may not authorize resolved_entity_id."""
+    from plugin.agent.composition import compose_domain_adapters
+    from plugin.agent.procedures.forward_message import forward_role_specs
+    from plugin.agent.role_binding import assess_candidate_for_role
     from plugin.agent.source_query_binding import (
-        evaluate_source_object_match,
         host_contradicts_query,
         query_supported_by_text,
     )
@@ -330,25 +322,46 @@ def _entity_binding_eligible(
             return False
         if not query_supported_by_text(text, query):
             return False
-    if not expected_originator:
+    if goal is None:
+        # Diagnostic path without goal: query-only; originator required → fail if unset.
+        if expected_originator:
+            sender = _entity_sender_for_binding(world, eid)
+            from plugin.agent.source_query_binding import originator_matches
+
+            return bool(sender) and originator_matches(sender, expected_originator)
         return True
+    compose_domain_adapters()
     open_c = str(
         getattr(world, "open_conversation", "")
         or (getattr(world, "overlay_hints", None) or {}).get("open_conversation")
         or ""
     )
-    peer = expected_container or open_c
-    # Treat URL-bearing / query-bearing AX nodes as content for originator check.
-    gm = evaluate_source_object_match(
-        text=text,
-        kind="message_with_link" if _entity_blob_has_url(text.lower()) else "message",
-        query="",  # query already checked above (host may distract while text matches)
-        container_open=open_c,
-        expected_container="",  # container gated separately via on_source
-        expected_originator=expected_originator,
-        sender=_entity_sender_for_binding(world, eid, peer=peer),
+    attrs = e.attributes or {}
+    cand = {
+        "id": int(eid),
+        "entity_id": int(eid),
+        "kind": str(getattr(e, "kind", "") or attrs.get("kind") or "message"),
+        "text": text,
+        "label": str(getattr(e, "label", "") or ""),
+        "container": expected_container or open_c,
+        "sender": _entity_sender_for_binding(world, eid),
+        "domain": "whatsapp",
+        "source_query": query,
+        "app": "whatsapp",
+    }
+    bindings = {}
+    if expected_container or open_c:
+        bindings["source_container"] = {
+            "resolved_label": expected_container or open_c
+        }
+    assessment = assess_candidate_for_role(
+        spec=forward_role_specs(goal)["source_object"],
+        candidate=cand,
+        goal=goal,
+        bindings=bindings,
+        task_relevance=0.5,
     )
-    return bool(gm.originator_match)
+    return bool(assessment.binding_eligible)
 
 
 def _rank_source_object_hits(
@@ -657,12 +670,8 @@ def build_forward_task_state(
 
     # --- source_object (message/link matching query) ---
     obj_b = state.binding("source_object")
-    originator = str(
-        getattr(goal, "originator", None)
-        or getattr(goal, "contact", None)
-        or source
-        or ""
-    ).strip()
+    # Authorship only when the goal expressed it — never alias from contact.
+    originator = str(getattr(goal, "originator", None) or "").strip()
     obj_b.constraints = {
         "content_tokens": [query] if query else [],
         "types": ["link", "message"],
@@ -1024,6 +1033,7 @@ def build_forward_task_state(
             query=query,
             expected_container=source if on_source else "",
             expected_originator=originator,
+            goal=goal,
         ):
             obj_b.evidence = list(obj_b.evidence or []) + [
                 f"binding_rejected: entity_id={obj_b.resolved_entity_id} "

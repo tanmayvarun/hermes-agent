@@ -352,6 +352,47 @@ def _note_post_action_reperceive(runtime: Any, *, open_conversation: str = "", s
         pass
 
 
+def _grounding_repair_satisfied(state: Any) -> bool:
+    """True when the named reground target has fresh executable grounding.
+
+    Requires same semantic label, explicit coordinate_space, and geometry —
+    not merely seeing the word again on a stale/wrong layer.
+    """
+    target = str(getattr(state, "grounding_reground_target", "") or "").strip().lower()
+    if not target:
+        return False
+    doc = getattr(state, "unified_world_document", None) or {}
+    if not isinstance(doc, dict):
+        return False
+
+    def _label_hit(text: str) -> bool:
+        t = str(text or "").strip().lower()
+        return bool(t) and (target in t or t in target)
+
+    for obj in doc.get("objects") or []:
+        if not isinstance(obj, dict):
+            continue
+        if not _label_hit(str(obj.get("text") or obj.get("label") or "")):
+            continue
+        space = str(obj.get("coordinate_space") or "").strip().lower()
+        if space not in {"screen", "image"}:
+            continue
+        if obj.get("point") is None and not (
+            isinstance(obj.get("bounds"), (list, tuple)) and len(obj.get("bounds") or []) >= 4
+        ):
+            continue
+        return True
+    for aff in getattr(state, "last_grounded_affordance_set", None) or []:
+        if not isinstance(aff, dict):
+            continue
+        if not _label_hit(str(aff.get("target_label") or aff.get("label") or "")):
+            continue
+        acts = aff.get("actuators") or []
+        if acts:
+            return True
+    return False
+
+
 def _clear_post_action_reperceive_if_fresh(
     runtime: Any,
     *,
@@ -381,10 +422,26 @@ def _clear_post_action_reperceive_if_fresh(
         state.post_action_reperceive_pending = False
         state.post_action_baseline_open = ""
         state.post_action_baseline_sig = ""
-        # Fresh look satisfied local grounding recovery.
+        # Clear grounding repair only when the named target has fresh executable
+        # grounding — not merely because any PERCEIVE ran.
         if bool(getattr(state, "grounding_reground_only", False)):
-            state.grounding_reground_only = False
-            state.grounding_reground_target = ""
+            if _grounding_repair_satisfied(state):
+                state.grounding_reground_only = False
+                state.grounding_reground_target = ""
+            else:
+                # Target disappeared / still ungrounded → escalate reveal/route.
+                state.grounding_reground_only = False
+                state.grounding_reground_target = ""
+                state.world_exploration_needed = True
+                if not str(getattr(state, "reveal_prefer_capability", "") or "").strip():
+                    state.reveal_prefer_capability = "reveal_actions"
+                try:
+                    closure = dict(getattr(state, "last_effect_closure", None) or {})
+                    closure["grounding_repair"] = "target_disappeared_or_ungrounded"
+                    closure["recovery"] = "explore_reveal"
+                    state.last_effect_closure = closure
+                except Exception:
+                    pass
     except Exception:
         return False
     return True

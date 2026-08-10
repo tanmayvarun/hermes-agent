@@ -265,9 +265,9 @@ def goal_path(goal: Any, path: str) -> Any:
         "source_conversation": ("contact", "source_conversation", "source_contact"),
         "source_query": ("link_query", "source_query", "content_query", "query"),
         "source_referent": ("contact", "source_conversation", "source_contact"),
-        # Author/sender/creator — falls back to contact when goal.originator unset.
-        "originator": ("originator", "contact", "source_conversation", "source_contact"),
-        "sender": ("originator", "contact", "source_conversation", "source_contact"),
+        # Author/sender/creator — never alias to contact (container ≠ originator).
+        "originator": ("originator",),
+        "sender": ("originator", "sender"),
         "destination": ("target_contact", "destination"),
         "target_contact": ("target_contact", "destination"),
         "app": ("app",),

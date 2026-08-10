@@ -480,6 +480,61 @@ def advance_search_with_candidates(
     return ep
 
 
+def note_retrieval_complete(
+    execution_state: Any,
+    *,
+    chosen_label: str = "",
+    chosen_id: Any = None,
+    scores: Optional[Sequence[Any]] = None,
+    role_resolved: bool = False,
+    role_unresolved_reason: str = "",
+    candidate_count: int = 0,
+) -> Dict[str, Any]:
+    """Mark retrieval finished without necessarily resolving the role referent.
+
+    ``retrieval_complete`` ≠ ``role_resolved``. A single wrong-author hit may
+    finish retrieval while source_object stays unresolved.
+    """
+    if execution_state is None:
+        return {}
+    ep = search_episode_of(execution_state) or {}
+    ep = {
+        **ep,
+        "retrieval_complete": True,
+        "role_resolved": bool(role_resolved),
+        "chosen_label": str(chosen_label or "").strip(),
+        "chosen_id": chosen_id,
+        "chosen_candidate": chosen_id,
+        "scores": list(scores or [])[:12],
+        "candidate_count": int(
+            candidate_count or ep.get("candidate_count") or (1 if chosen_id is not None else 0)
+        ),
+        "role_unresolved_reason": str(role_unresolved_reason or "")[:160],
+        "fail_reason": "",
+    }
+    if role_resolved:
+        ep["status"] = "complete"
+    else:
+        # Keep episode open for role resolution; do not pretend referent bound.
+        ep["status"] = str(ep.get("status") or "ranking") or "ranking"
+        if ep["status"] == "complete":
+            ep["status"] = "ranking"
+    stamp_search_contract(ep, exhausted=False)
+    try:
+        execution_state.search_episode = ep
+        note_search_progress(
+            execution_state,
+            delta=1.0 if role_resolved else 0.5,
+            empty=False,
+            reason="role_resolved" if role_resolved else "retrieval_complete",
+        )
+        if role_resolved and hasattr(execution_state, "search_retreat_owed"):
+            execution_state.search_retreat_owed = False
+    except Exception:
+        pass
+    return ep
+
+
 def complete_search_choice(
     execution_state: Any,
     *,
@@ -487,31 +542,15 @@ def complete_search_choice(
     chosen_id: Any = None,
     scores: Optional[Sequence[Any]] = None,
 ) -> Dict[str, Any]:
-    if execution_state is None:
-        return {}
-    ep = search_episode_of(execution_state) or {}
-    ep = {
-        **ep,
-        "status": "complete",
-        "chosen_label": str(chosen_label or "").strip(),
-        "chosen_id": chosen_id,
-        "scores": list(scores or [])[:12],
-        "fail_reason": "",
-    }
-    stamp_search_contract(ep, exhausted=False)
-    try:
-        execution_state.search_episode = ep
-        note_search_progress(
-            execution_state,
-            delta=1.0,
-            empty=False,
-            reason="chosen",
-        )
-        if hasattr(execution_state, "search_retreat_owed"):
-            execution_state.search_retreat_owed = False
-    except Exception:
-        pass
-    return ep
+    """Role-resolved search completion (retrieval + binding-eligible referent)."""
+    return note_retrieval_complete(
+        execution_state,
+        chosen_label=chosen_label,
+        chosen_id=chosen_id,
+        scores=scores,
+        role_resolved=True,
+        candidate_count=1,
+    )
 
 
 def fail_search_episode(
@@ -1057,70 +1096,108 @@ def search_continue_capability(
         if unique is not None and len(filtered) == 1:
             label = str(unique.get("label") or unique.get("text") or "")
             holder = _episode_holder(execution_state)
-            complete_search_choice(
-                holder, chosen_label=label, chosen_id=unique.get("id")
-            )
-            try:
-                brief.search_episode = search_episode_of(holder) or {
-                    **ep,
-                    "status": "complete",
-                    "chosen_label": label,
-                }
-            except Exception:
-                pass
-            if label:
-                if meta == "search":
-                    return "", "", "search unique fit; await ACT open"
-                if "open_entity" in allowed:
-                    return (
-                        "open_entity",
-                        label,
-                        "search unique fit; commit chosen candidate",
-                    )
-        if filtered and "resolve_entity" in allowed:
-            top = filtered[0]
-            label = str(top.get("label") or top.get("text") or "")
-            # Clear score margin ⇒ treat as ranked choice for actor click.
-            scores = [float(r.get("_search_score") or 0) for r in filtered[:3]]
-            # matches_goal is recall-only — never sufficient for search completion.
-            # Complete only when score margin is decisive OR a unique candidate
-            # already cleared role-constraint eligibility (binding_eligible).
-            top_eligible = bool(
-                (top.get("goal_match") or {}).get("binding_eligible")
-                if isinstance(top.get("goal_match"), dict)
+            unique_eligible = bool(
+                (unique.get("goal_match") or {}).get("binding_eligible")
+                if isinstance(unique.get("goal_match"), dict)
                 else False
             )
-            clear_winner = (
-                len(filtered) == 1
-                or (len(scores) >= 2 and scores[0] >= scores[1] + 2.0)
-                or (len(scores) >= 2 and top_eligible and scores[0] > scores[1])
-                or (len(scores) == 1 and scores[0] > 0 and top_eligible)
-            )
-            if clear_winner and label:
-                holder = _episode_holder(execution_state)
+            if unique_eligible:
                 complete_search_choice(
-                    holder, chosen_label=label, chosen_id=top.get("id"), scores=scores
+                    holder, chosen_label=label, chosen_id=unique.get("id")
                 )
                 try:
                     brief.search_episode = search_episode_of(holder) or {
                         **ep,
                         "status": "complete",
                         "chosen_label": label,
+                        "retrieval_complete": True,
+                        "role_resolved": True,
                     }
                 except Exception:
                     pass
-                if meta == "search":
-                    return "", "", "search ranked; await ACT open"
-                if "open_entity" in allowed:
-                    return (
-                        "open_entity",
-                        label,
-                        "search ranked; commit top filtered candidate",
+                if label:
+                    if meta == "search":
+                        return "", "", "search unique fit; role resolved; await ACT open"
+                    if "open_entity" in allowed:
+                        return (
+                            "open_entity",
+                            label,
+                            "search unique fit; commit binding-eligible candidate",
+                        )
+            else:
+                note_retrieval_complete(
+                    holder,
+                    chosen_label=label,
+                    chosen_id=unique.get("id"),
+                    role_resolved=False,
+                    role_unresolved_reason="required identity constraint failed",
+                    candidate_count=1,
+                )
+                try:
+                    brief.search_episode = search_episode_of(holder)
+                except Exception:
+                    pass
+        if filtered and "resolve_entity" in allowed:
+            top = filtered[0]
+            label = str(top.get("label") or top.get("text") or "")
+            # Clear score margin ⇒ treat as ranked choice for actor click.
+            scores = [float(r.get("_search_score") or 0) for r in filtered[:3]]
+            # retrieval_complete ≠ role_resolved. Unique/high-margin candidates
+            # finish retrieval; only binding_eligible commits role resolution.
+            top_eligible = bool(
+                (top.get("goal_match") or {}).get("binding_eligible")
+                if isinstance(top.get("goal_match"), dict)
+                else False
+            )
+            retrieval_done = (
+                len(filtered) == 1
+                or (len(scores) >= 2 and scores[0] >= scores[1] + 2.0)
+                or (len(scores) == 1 and scores[0] > 0)
+            )
+            holder = _episode_holder(execution_state)
+            if retrieval_done and label:
+                if top_eligible:
+                    complete_search_choice(
+                        holder,
+                        chosen_label=label,
+                        chosen_id=top.get("id"),
+                        scores=scores,
                     )
+                    try:
+                        brief.search_episode = search_episode_of(holder) or {
+                            **ep,
+                            "status": "complete",
+                            "chosen_label": label,
+                            "retrieval_complete": True,
+                            "role_resolved": True,
+                        }
+                    except Exception:
+                        pass
+                    if meta == "search":
+                        return "", "", "search ranked; role resolved; await ACT open"
+                    if "open_entity" in allowed:
+                        return (
+                            "open_entity",
+                            label,
+                            "search ranked; commit binding-eligible candidate",
+                        )
+                note_retrieval_complete(
+                    holder,
+                    chosen_label=label,
+                    chosen_id=top.get("id"),
+                    scores=scores,
+                    role_resolved=False,
+                    role_unresolved_reason="required identity constraint failed",
+                    candidate_count=len(filtered),
+                )
+                try:
+                    brief.search_episode = search_episode_of(holder)
+                except Exception:
+                    pass
             return (
                 "resolve_entity",
                 label or str(ep.get("referent") or ep.get("query") or ""),
-                "search incomplete; resolve_entity before commit",
+                "retrieval may be complete; role unresolved — resolve_entity",
             )
         if status == "querying" and "compose_search_query" in allowed:
             return (

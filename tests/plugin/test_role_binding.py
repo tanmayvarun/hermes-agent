@@ -19,6 +19,7 @@ class _Goal:
     contact = "Pallavi"
     link_query = "zarooratwala"
     target_contact = "Tanmay"
+    originator = "Pallavi"
 
 
 def _specs():
