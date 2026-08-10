@@ -95,10 +95,17 @@ class ReasoningConsultationResult:
     model: str = ""
     base_url: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
+    def to_dict(self, *, include_messages: bool = True) -> Dict[str, Any]:
+        """Serialize the consultation.
+
+        ``include_messages`` carries the full prompt that was sent, screenshots
+        included, which is what a trace wants and what anything stored on the
+        world model must not have: records kept there are read back into later
+        prompts, and a base64 image round-tripping through one costs six figures
+        of tokens while being undecodable to the model that receives it.
+        """
+        payload: Dict[str, Any] = {
             "task": self.task,
-            "messages": _json_safe(self.messages),
             "raw_response": self.raw_response,
             "parsed": _json_safe(self.parsed),
             "confidence": round(float(self.confidence or 0.0), 4),
@@ -110,6 +117,9 @@ class ReasoningConsultationResult:
             "model": self.model,
             "base_url": self.base_url,
         }
+        if include_messages:
+            payload["messages"] = _json_safe(self.messages)
+        return payload
 
 
 def consult_reasoning(
@@ -120,25 +130,56 @@ def consult_reasoning(
     call_kwargs: Optional[Dict[str, Any]] = None,
     temperature: float = 0.0,
     max_tokens: int = 256,
+    usecase: Optional[str] = None,
+    honor_requested_task: bool = False,
 ) -> ReasoningConsultationResult:
-    """Run one bounded reasoning consultation through the shared LLM router."""
+    """Run one bounded reasoning consultation through the shared LLM router.
+
+    ``task`` may be a legacy auxiliary name (often ``perception``). Unless
+    ``honor_requested_task`` is set, :mod:`consultation_routing` remaps
+    text-only calls off vision pins onto the decision/inference stack, and
+    upgrades image-bearing calls onto a multimodal task.
+    """
+    from plugin.agent.consultation_routing import resolve_reasoning_route
+
     effective_call_kwargs = dict(call_kwargs or {})
     effective_call_kwargs.pop("task", None)
+    honor = bool(honor_requested_task) or bool(
+        effective_call_kwargs.pop("honor_requested_task", False)
+    )
     materialized_messages = [dict(msg) for msg in messages]
+    route = resolve_reasoning_route(
+        task,
+        materialized_messages,
+        usecase=usecase,
+        honor_requested_task=honor,
+    )
+    resolved_task = route.task
     if caller is None:
         from agent.auxiliary_client import call_llm as caller
 
     timeout_s = float(effective_call_kwargs.get("timeout") or 0.0)
+    if route.remapped:
+        logger.info(
+            "Reasoning consultation route: requested=%s resolved=%s modality=%s "
+            "usecase=%s reason=%s constraints=%s",
+            route.requested_task,
+            resolved_task,
+            route.modality.value,
+            route.usecase,
+            route.reason,
+            list(route.constraints),
+        )
     logger.info(
         "Reasoning consultation: task=%s messages=%d timeout=%.0fs max_tokens=%d",
-        task,
+        resolved_task,
         len(materialized_messages),
         timeout_s,
         int(max_tokens or 0),
     )
-    with inflight.mark(f"reasoning:{task}"):
+    with inflight.mark(f"reasoning:{resolved_task}"):
         response = caller(
-            task=task,
+            task=resolved_task,
             messages=materialized_messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -163,7 +204,7 @@ def consult_reasoning(
     elif abstained and not reason:
         reason = "consultation_abstained"
     return ReasoningConsultationResult(
-        task=task,
+        task=resolved_task,
         messages=materialized_messages,
         raw_response=raw_text,
         parsed=parsed,

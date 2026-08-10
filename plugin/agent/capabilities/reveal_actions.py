@@ -111,10 +111,26 @@ class RevealResult:
     def to_outcome(self) -> CapabilityOutcome:
         """Back-compat envelope so dispatch and existing callers keep working."""
         evidence = dict(self.evidence)
-        evidence.setdefault("substrate", "affordance_set")
+        grounded = self.grounded_actions()
+        # affordance_set substrate only when at least one control has geometry.
+        # Motor-ok probe handoff without points is incomplete discovery — the
+        # next perceive must ground menu items before invoke_affordance can run.
+        if grounded:
+            evidence["substrate"] = "affordance_set"
+            evidence["incomplete_reveal"] = False
+        elif evidence.get("handoff") or evidence.get("incomplete_reveal"):
+            evidence["substrate"] = "addressable_entity"
+            evidence["incomplete_reveal"] = True
+            evidence.setdefault("discovery", "pending_perception")
+        else:
+            evidence.setdefault(
+                "substrate",
+                "affordance_set" if self.ok and self.actions else "addressable_entity",
+            )
         evidence["method"] = self.method
         evidence["escalated"] = self.escalated
         evidence["actions"] = [a.to_dict() for a in self.actions]
+        evidence["grounded_count"] = len(grounded)
         if self.surface_opened:
             evidence["surface_opened"] = self.surface_opened
         evidence["coverage"] = round(float(self.coverage), 2)
@@ -356,7 +372,26 @@ def reveal_actions(
         )
 
     ladder = reveal_ladder(context, mode)
+    # Prefer execution_state probe mode after a prior incomplete reveal (153213)
+    # so capability path and actor path share the same rotation.
     gesture = ladder[0]
+    try:
+        est = (context or {}).get("execution_state") if isinstance(context, dict) else None
+        state_mode = current_reveal_probe_mode(est) if est is not None else ""
+        if state_mode in {"context_click", "hover"}:
+            gesture = state_mode
+        elif state_mode == "select_content":
+            return RevealResult(
+                ok=False,
+                actions=visible,
+                method="read",
+                escalated=False,
+                coverage=0.3,
+                message="reveal probe exhausted; prefer select_content path",
+                evidence={"label": entity.label, "prefer": "select_content"},
+            )
+    except Exception:
+        pass
     try:
         runtime.activate(entity.app)
         if gesture == "hover":
@@ -375,11 +410,12 @@ def reveal_actions(
             evidence={"label": entity.label, "mode": gesture},
         )
 
-    # Hand-off: leave the revealed surface open so the executive can act, and let
-    # the next perception frame ground the menu items as an action_menu layer.
-    # The expected (latent) set is returned so the executive knows what is coming.
+    # Hand-off: leave the revealed surface open so the next perception frame
+    # can ground menu items into affordance_set. Motor success alone is not
+    # discovery completeness — latents here have no geometry yet.
     expected = latent_actions_from_context(context)
-    _record_handoff(context, surface="context_menu")
+    if ok:
+        _record_handoff(context, surface="context_menu")
     return RevealResult(
         ok=ok,
         actions=expected,
@@ -387,15 +423,221 @@ def reveal_actions(
         method=gesture,
         escalated=True,
         coverage=0.4 if ok else 0.0,
-        message=message or f"probed {entity.label!r} via {gesture}",
+        message=(
+            (message or f"probed {entity.label!r} via {gesture}")
+            + ("; pending overlay ingest for affordance_set" if ok else "")
+        ),
         evidence={
             "substrate": "addressable_entity",
             "label": entity.label,
             "mode": gesture,
             "had_bounds": entity.bounds is not None,
-            "handoff": True,
+            "handoff": bool(ok),
+            "incomplete_reveal": bool(ok),
+            "discovery": "pending_perception" if ok else "probe_failed",
         },
     )
+
+
+# Motor ladder after incomplete reveal (live 153213). Actor defaults to
+# context_click; failed overlay ingest rotates — never re-probe the same gesture.
+REVEAL_PROBE_LADDER = ("context_click", "hover", "select_content")
+
+
+def reveal_motor_fingerprint(
+    gesture: str,
+    target: str = "",
+    point: Any = None,
+) -> str:
+    """Gesture-scoped avoid key so hover remains admissible after context_click fails."""
+    from plugin.agent.brain import motor_fingerprint
+
+    g = str(gesture or "context_click").strip().lower() or "context_click"
+    return motor_fingerprint(f"reveal_actions:{g}", target, point)
+
+
+def current_reveal_probe_mode(execution_state: Any) -> str:
+    mode = str(getattr(execution_state, "reveal_probe_mode", "") or "").strip().lower()
+    if mode in REVEAL_PROBE_LADDER:
+        return mode
+    return "context_click"
+
+
+def escalate_failed_reveal(
+    execution_state: Any,
+    *,
+    target: str = "",
+    point: Any = None,
+    last_gesture: str = "",
+) -> Dict[str, Any]:
+    """Latch the failed reveal gesture and rotate to the next motor.
+
+    Motor-ok context_click is not discovery. After TTL looks with no menu,
+    re-issuing the same fingerprint loops OPEN_FORWARD forever (153213). This
+    advances ``reveal_probe_mode``: context_click → hover → select_content.
+    """
+    status: Dict[str, Any] = {"escalated": False}
+    if execution_state is None:
+        return status
+    gesture = (
+        str(last_gesture or "").strip().lower()
+        or current_reveal_probe_mode(execution_state)
+    )
+    if gesture not in REVEAL_PROBE_LADDER:
+        gesture = "context_click"
+    key = reveal_motor_fingerprint(gesture, target, point)
+    try:
+        keys = list(getattr(execution_state, "avoid_motor_keys", None) or [])
+        if key and key not in keys:
+            keys.append(key)
+        # Also latch the legacy family-only key so older avoid checks still fire.
+        from plugin.agent.brain import motor_fingerprint
+
+        legacy = motor_fingerprint("reveal_actions", target, point)
+        if legacy and legacy not in keys and legacy != "||":
+            keys.append(legacy)
+        execution_state.avoid_motor_keys = keys[-16:]
+        execution_state.last_failed_motor_key = key or legacy
+    except Exception:
+        pass
+
+    try:
+        idx = REVEAL_PROBE_LADDER.index(gesture)
+    except ValueError:
+        idx = 0
+    next_mode = REVEAL_PROBE_LADDER[min(idx + 1, len(REVEAL_PROBE_LADDER) - 1)]
+    try:
+        execution_state.reveal_probe_mode = next_mode
+        if next_mode == "select_content":
+            execution_state.reveal_prefer_capability = "select_content"
+        else:
+            # Stay on reveal_actions but with the next gesture.
+            execution_state.reveal_prefer_capability = "reveal_actions"
+    except Exception:
+        pass
+    # Advance IntentionFrame method ledger (METHOD_INEFFECTIVE under same intention).
+    try:
+        from plugin.agent.executive.intention_frame import (
+            AttemptRecord,
+            FailureClass,
+            MethodOutcome,
+            active_intention_frame,
+            apply_derived_status,
+            mark_method_attempted,
+        )
+
+        iframe = active_intention_frame(execution_state)
+        if iframe is not None:
+            failed_mid = {
+                "context_click": "reveal_context_click",
+                "hover": "reveal_hover",
+                "select_content": "select_then_toolbar",
+            }.get(gesture, "reveal_context_click")
+            mark_method_attempted(iframe, failed_mid)
+            iframe.attempts.append(
+                AttemptRecord(
+                    method_id=failed_mid,
+                    execution_status="motor_ok",
+                    observation_quality=0.9,
+                    method_outcome=MethodOutcome.EFFECT_ABSENT.value,
+                    failure_class=FailureClass.METHOD_INEFFECTIVE.value,
+                    evidence_refs=[
+                        "expected message action surface absent after settle"
+                    ],
+                )
+            )
+            iframe.pending_effect_verification = False
+            apply_derived_status(iframe)
+            status["intention_id"] = iframe.intention.id
+            status["intention_status"] = iframe.status
+            status["termination_reason"] = iframe.termination_reason
+            status["eligible_methods"] = list(
+                iframe.method_frontier.eligible_methods()
+            )
+    except Exception:
+        pass
+    status.update(
+        {
+            "escalated": True,
+            "failed_gesture": gesture,
+            "next_mode": next_mode,
+            "avoid_key": key,
+            "prefer_capability": str(
+                getattr(execution_state, "reveal_prefer_capability", "") or ""
+            ),
+        }
+    )
+    return status
+
+
+def note_reveal_probe_handoff(
+    execution_state: Any,
+    *,
+    surface: str = "context_menu",
+    ttl: int = 2,
+    gesture: str = "",
+) -> None:
+    """Record that a reveal probe ran and the next perceive must ground affordance_set.
+
+    The live loop often motors ``reveal_actions`` via the actor (context_click)
+    rather than :func:`reveal_actions` itself; both paths must set this handoff
+    so critic promote / phash-block / post-perceive completeness share one signal.
+
+    Also opens/updates an EXPLORE ``IntentionFrame`` so the intention survives
+    method failure (architect: intent-level retry, not sticky ACT).
+    """
+    if execution_state is None:
+        return
+    try:
+        frame = int(getattr(execution_state, "unified_frame", 0) or 0)
+        mode = str(gesture or "").strip().lower() or current_reveal_probe_mode(
+            execution_state
+        )
+        execution_state.reveal_handoff = {
+            "surface": surface,
+            "ttl": int(ttl),
+            "opened_frame": frame,
+            "incomplete_reveal": True,
+            "discovery": "pending_perception",
+            "probe_gesture": mode,
+        }
+        # Keep probe mode aligned with the gesture that just ran.
+        if mode in {"context_click", "hover"}:
+            execution_state.reveal_probe_mode = mode
+        execution_state.reveal_gesture_attempts = int(
+            getattr(execution_state, "reveal_gesture_attempts", 0) or 0
+        ) + 1
+    except Exception:
+        pass
+    # Intention-frame bookkeeping (best-effort; never block handoff).
+    try:
+        from plugin.agent.executive.intention_frame import (
+            active_intention_frame,
+            motivated_perceive_packet,
+            push_intention_frame,
+            seed_reveal_explore_frame,
+        )
+
+        iframe = active_intention_frame(execution_state)
+        if iframe is None or str(
+            getattr(iframe.intention, "success_predicate", "") or ""
+        ) != "forward_affordance_grounded":
+            iframe = seed_reveal_explore_frame(
+                triggering_uncertainty="forward_affordance_not_grounded"
+            )
+            push_intention_frame(execution_state, iframe)
+        iframe.pending_effect_verification = True
+        motivated_perceive_packet(
+            iframe,
+            purpose="effect_verification",
+            question=(
+                f"Did {mode or 'reveal'} expose a message action surface "
+                "or grounded Forward affordance?"
+            ),
+            focus="source_message_neighborhood",
+        )
+    except Exception:
+        pass
 
 
 def _record_handoff(context: Optional[Dict[str, Any]], *, surface: str, ttl: int = 2) -> None:
@@ -406,14 +648,7 @@ def _record_handoff(context: Optional[Dict[str, Any]], *, surface: str, ttl: int
     """
     if not isinstance(context, dict):
         return
-    exec_state = context.get("execution_state")
-    if exec_state is None:
-        return
-    try:
-        frame = int(getattr(exec_state, "unified_frame", 0) or 0)
-        exec_state.reveal_handoff = {"surface": surface, "ttl": int(ttl), "opened_frame": frame}
-    except Exception:
-        pass
+    note_reveal_probe_handoff(context.get("execution_state"), surface=surface, ttl=ttl)
 
 
 def reveal_from_request(

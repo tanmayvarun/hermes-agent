@@ -203,6 +203,23 @@ def assess_continuity(
         if observation.matched:
             return verdict(CONFIRMED, f"target still reads as expected ({observation.detail})", True)
         if observation.saw_text:
+            detail_l = str(observation.detail or "").lower()
+            # Tiny/local VLM read-backs sometimes emit prompt debris instead of
+            # UI text ("small vlm think false tiny json"). That is not evidence
+            # the target moved — fail open so the agent is not wedged (013229).
+            garbage_markers = (
+                "small vlm",
+                "tiny json",
+                "think false",
+                "reasoning",
+                "assistant",
+            )
+            if any(m in detail_l for m in garbage_markers):
+                return verdict(
+                    INDETERMINATE,
+                    f"ocr read-back unusable ({observation.detail})",
+                    fail_open,
+                )
             # Text is present and it is the wrong text. This is the case the
             # whole module exists for: something took the target's place.
             return verdict(
@@ -210,12 +227,13 @@ def assess_continuity(
                 f"something else is at the target now — {observation.detail}",
                 False,
             )
-        # The rectangle read as empty. Either the row scrolled away or the
-        # capture caught a repaint; either way the expectation is unconfirmed.
+        # Empty ≠ wrong. Wrong text hard-refuses; missing OCR is unconfirmed —
+        # fail open for reversible actions so a false-negative read-back does
+        # not stall the agent forever.
         return verdict(
-            FOCUS_DISTURBED,
+            FOCUS_DISTURBED if expectation.irreversible else INDETERMINATE,
             f"expected {expectation.label!r} at the target but found no text there",
-            False,
+            fail_open,
         )
 
     if observation.method == "icon_hash":

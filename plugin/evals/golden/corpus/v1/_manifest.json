@@ -1,0 +1,180 @@
+{
+  "version": "v1",
+  "frozen": true,
+  "eval_only": true,
+  "goal_fixture": "zarooratwala_forward",
+  "goal_description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay",
+  "sources": [
+    "plugin/evals/fixtures (open_source/find_link)",
+    "plugin/evals/annotations/overrides.jsonl",
+    "live failure forward_zarooratwala_live_20260805_111555 (AX settle Q Search|)",
+    "live failure 132948 (picker type \u2192 sidebar Cmd+F)",
+    "live failure 142736 (reveal/forward content point)",
+    "one-executive consolidation contract",
+    "actor motor-brief contract",
+    "live actuation failures 132948/135732/131333 (perceive ok \u2192 motor wrong)",
+    "surprise\u2192reflect meta contract",
+    "live 135732 wrong-region reveal (message card vs link/sidebar) reflect recovery",
+    "live 011358 perceptor\u2192brain\u2192actor chat-row handoff (Pallavi 1:1 vs Ather Gen3)",
+    "live perception-confirm refusals 152420/153356/041742/045430 (wrong OCR, list scroll, Cursor foreground, empty OCR)",
+    "live 145239 Forward AXPress-in-background \u2192 selection chrome; Observe instead of toolbar Forward (reflect/flow)",
+    "live 202832 search field append/garble zaropratwala Pallavipo + No results; clear-before-retype + search_empty",
+    "live 014321 reveal miss: act intention \u2192 post-act perceive mismatch \u2192 REFLECT (not AX-settle surprise heuristics)",
+    "mined unique meta situations from 2018 executive_judgement events (208 unique)",
+    "live 095344 compose typed into chat composer; generic action_area filter_input high-cost refuse",
+    "live 150708 window-scoped screencapture misses context-menu layer; overlay_display + Forward promote",
+    "live 235701 post-accept promote + multipass explore (menu in accepted doc; no OCR invent)",
+    "live 123746 compose demoted geometry_required_missing despite AX Q Search on frontier",
+    "live failure 20260809_210526 (search evidence vs conversation patch; resolve\u2260open)",
+    "live failure 20260809_214025 (YouTube distractor bound as zarooratwala source_object)"
+  ],
+  "modules": {
+    "perceive": 3,
+    "critic": 4,
+    "meta_action": 224,
+    "brain": 2,
+    "actor": 15,
+    "brain_actor_handoff": 11,
+    "reflect": 9,
+    "flow": 13,
+    "ui": 14
+  },
+  "promotion_policy": {
+    "after_every_live_run": true,
+    "require_failure_goldens": true,
+    "require_success_goldens": true,
+    "module_for_single_layer": true,
+    "flow_for_cross_module": true,
+    "tag_with_run_stamp": true,
+    "harvest_then_promote": true,
+    "blocking_gate": "every case not listed in known_gap_case_ids"
+  },
+  "known_gap_case_ids": [],
+  "changelog": [
+    {
+      "date": "2026-08-05",
+      "note": "Initial v1 seed: zarooratwala open\u2192hunt frames + AX search-chrome critic trap + post-act meta/brain contract."
+    },
+    {
+      "date": "2026-08-05",
+      "note": "Add actor + brain_actor_handoff modules: destination_filter geometry, no sidebar Cmd+F on picker, content-point reveal handoff."
+    },
+    {
+      "date": "2026-08-05",
+      "note": "Promote zarooratwala actuation failures: picker Cmd+F (132948), reveal point overwritten by sidebar AX (135732), destination contact vs message (131333)."
+    },
+    {
+      "date": "2026-08-05",
+      "note": "Surprise meta-action is REFLECT (look+explain), not bare PERCEIVE/VERIFY."
+    },
+    {
+      "date": "2026-08-05",
+      "note": "Add reflect module: 135732 wrong click on zarooratwala link/sidebar vs message-card body; brain detects and re-grounds."
+    },
+    {
+      "date": "2026-08-05",
+      "note": "Reflect eval reframed for genuine discovery: packet must carry intended vs motor_landed + measured hypotheses; brain cases are consumption-only (not injected detection)."
+    },
+    {
+      "date": "2026-08-06",
+      "note": "Add perceptor_brain_actor pipeline golden from 011358: fresh chat_row objects+[167,175] must survive consultation over stale accepted world; actor must not land Ather Gen3."
+    },
+    {
+      "date": "2026-08-06",
+      "note": "Add actor perception-confirm failure goldens from zarooratwala live refusals: focus_disturbed wrong OCR (152420, 153356), surface_lost Cursor foreground (041742), empty OCR on zarooratwala row (045430)."
+    },
+    {
+      "date": "2026-08-06",
+      "note": "Add reflect diagnosis_seed + brain repair + flow module goldens from 145239: background AXPress Forward predicted picker, got selection chrome; must follow_observed_transition toolbar Forward (not Observe). Promotion policy: every live failure and success gets a module and/or flow golden."
+    },
+    {
+      "date": "2026-08-06",
+      "note": "202832: type fallbacks must Cmd+A clear before CGEvent; No results / Pallavipo garble \u2192 search_empty so compose retries."
+    },
+    {
+      "date": "2026-08-07",
+      "note": "014321: stamp act intention at motor time; post-act AX settle stays diagnostic (PERCEIVE first); prediction_error on look infers surprise \u2192 REFLECT. Goldens: meta/post_act_ax_settle_owes_perceive_not_reflect, reflect/live_014321_prediction_mismatch_selects_reflect, flow/live_014321_reveal_miss_act_intention_to_reflect."
+    },
+    {
+      "date": "2026-08-07",
+      "note": "Anti-regression loop: case-level golden gate (known_gap_case_ids allowlist); stale actor/handoff golds aligned to geometry-required + inventory-wins; brain scorer uses stub chooser+sanitize; harvest act_intention/prediction_error; promote.py + supervise post-run harvest."
+    },
+    {
+      "date": "2026-08-07",
+      "note": "Mine every unique live meta-decision situation into meta_action goldens; reshape LLM meta packet (look_debt/evidence/search/budgets/situation) from discriminators."
+    },
+    {
+      "date": "2026-08-07",
+      "note": "Action-area contracts: capabilities bind to filter_input/content/candidate areas; high-cost wrong grounding refuses pre-motor. Goldens: brain_actor_handoff/type_binds_filter_not_composer_or_contact, type_refuses_when_only_wrong_area_geometry, live_095344_compose_binds_search_not_pallavi; actor/refuse_type_wrong_action_area_composer, refuse_type_wrong_action_area_contact_kind."
+    },
+    {
+      "date": "2026-08-07",
+      "note": "Hard gate high_cost_wrong_action_area_impossible: tagged action_area+high_cost goldens must pass + inline e2e bind/refuse; actor/filter_type_into_must_be_search_never_contact."
+    },
+    {
+      "date": "2026-08-07",
+      "note": "150708: window-scoped screencapture -l drops macOS context-menu layers; when reveal_handoff/expects_overlay, capture must use overlay_display and menu_item Forward must promote. Goldens: flow/live_150708_window_capture_misses_context_menu (failure), flow/live_150708_overlay_capture_grounds_forward_menu (success). Gate: overlay_capture_includes_menu_layer_after_reveal."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "235701: post-accept promote + multipass explore (no OCR invent). Goldens: flow/live_235701_post_accept_promote_grounds_forward, flow/live_235701_multipass_relook_without_ocr_invent. Gate: post_accept_promote_and_multipass_explore."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "123746: bind AX/OCR Search into compose GroundedUiTarget when VLM objects are only chat rows; never invent Search or mistype into chat_row. Goldens: flow/live_123746_ax_search_binds_compose, flow/live_123746_compose_demotes_without_search_geometry. Gate: ax_search_binds_compose_without_vlm_object."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "123746 stash: last_filter_geometry binds compose when frontier lacks Search actuators. Golden: flow/live_123746_stashed_ax_search_binds_compose."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "125715: reveal geometry mismatch → inconclusive re-perceive (no motor→object rewrite); OCR menu verbs enrich document under handoff then promote; Forwarded chrome must not invent Forward; phase-gate clears last_filter_geometry; zarooratwala soft max_stepcount=40. Goldens: flow/live_125715_reveal_geometry_mismatch_prefers_landed, flow/live_125715_forward_ocr_enriches_empty_frontier, flow/live_125715_forwarded_chrome_does_not_promote. Gate: reveal_geometry_mismatch_prefers_landed_not_intended (+ OCR enrich in post_accept_promote gate)."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "131221: search results open_entity rewrite; no observe thrash; stash clear not on AX conversation mislabel during reach_source. Gate: search_results_do_not_observe_thrash."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "132831: overloaded revert_effects capability (analyze\u2192approve\u2192execute) for goal-inconsistent multi-select; ui module goldens; never follow toolbar Forward on wrong selection. Gate: wrong_selection_reverts_not_forwards."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "140713: Videos search filter \u2192 backtrack\u2261revert clear_search_filter; nomenclature backtrack/revert/rollback interchangeable. Gate: videos_filter_backtracks_not_ig_thrash."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "Start-anywhere recoverability: branch_fitness + press_escape; filter_chip typed; demote Videos trap detectors. Gate: barren_filter_chip_backtracks_not_ig_thrash."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "Live-mined recoverability goldens from 140713 (Videos OCR grid + ej seq331 IG thrash\u2192backtrack) and 132831 (OCR 2 Selected+Chunni). score_meta passes branch_unfit."
+    },
+    {
+      "date": "2026-08-08",
+      "note": "Gate+tests recoverability_substrate_wired_for_goldens: catalog aliases, branch_fitness/meta packet, undo_hint, BACKTRACK\u2192revert, brain/reflect, required live ui/meta goldens must still score."
+    },
+    {
+      "date": "2026-08-09",
+      "note": "210526: critic refuses conversation when prediction_error/Links-Messages search evidence contradicts; resolve_entity does not claim conversation_open; decline opens chosen entity. Golden: critic/search_evidence_rejects_conversation_after_resolve. Gate: search_evidence_owns_surface_and_resolve_recovery. Manifest meta_action count synced to 222."
+    },
+    {
+      "date": "2026-08-09",
+      "note": "214025: source_query identity binding \u2014 YouTube distractor cannot matches_goal/bind/reveal; SEARCH until zarooratwala source_object. Gate: source_query_binding_rejects_distractor_urls. Goldens: critic/youtube_distractor_not_source_object, meta/content_search_owed_after_source_open_not_explore_youtube."
+    },
+    {
+      "date": "2026-08-09",
+      "note": "Typed role-binding layers: RoleBindingPolicy + IdentityEvidenceProvider + IdentityResolver. Core has no row/preview extraction; WhatsApp adapter emits identity vs content evidence. REFERENT_MISMATCH \u2192 SEARCH. Gate: typed_role_binding_identity_gates. Golden: meta/role_identity_mismatch_forces_search_not_react. Cross-domain folder/thread/tab goldens in tests."
+    }
+  ],
+  "rules": [
+    "Do not edit existing case gold casually; add failure promotions or open v2.",
+    "Never use recorded model replies as gold for the field under score.",
+    "Screenshots referenced by name under live_forward; not committed here.",
+    "After every live run: harvest candidates, then promote each new failure AND success (module + flow when cross-module).",
+    "Tag live cases with run stamp (e.g. 145239) in id and tags.",
+    "known_gap_case_ids is explicit open debt only \u2014 new red cases outside that list block CI.",
+    "Use python -m plugin.evals.golden.promote after human-checking gold fields."
+  ]
+}

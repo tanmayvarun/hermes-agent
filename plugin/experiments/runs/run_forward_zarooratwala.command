@@ -22,7 +22,17 @@ unset OLLAMA_REMOTE_BASE_URL
 : "${HERMES_DECISION_PROVIDER:=ollama-cloud}"
 : "${HERMES_DECISION_HIGH_RISK_PROVIDER:=ollama-cloud}"
 export HERMES_MAX_TOKENS=4096
-export HERMES_PERCEPTION_LLM_MAX_TOKENS=2048
+# Fast perception path: small local VLM first (think off, ROI, tiny JSON);
+# escalate to cloud vision only on low confidence / needs_more_evidence.
+: "${HERMES_PERCEPTION_LLM_MAX_TOKENS:=250}"
+export HERMES_PERCEPTION_LLM_MAX_TOKENS
+: "${HERMES_PERCEPTION_COMPACT:=1}"
+export HERMES_PERCEPTION_COMPACT
+: "${HERMES_PERCEPTION_THINK:=0}"
+export HERMES_PERCEPTION_THINK
+# Cloud vision remains the escalate SoT (override .env pins to 120b/text).
+HERMES_PERCEPTION_MODEL="${HERMES_PERCEPTION_VISION_MODEL:-qwen3.5:cloud}"
+HERMES_PERCEPTION_PROVIDER=ollama-cloud
 export HERMES_MODEL
 export HERMES_INFERENCE_MODEL
 export HERMES_PERCEPTION_MODEL
@@ -44,24 +54,26 @@ export HERMES_AUXILIARY_PROVIDER_POLICY=ollama-only
 : "${HERMES_DECISION_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_DECISION_HIGH_RISK_SELECTOR_TIMEOUT_SECONDS:=60}"
 : "${HERMES_SELECTOR_STRICT:=1}"
-# Executive loop (meta-action dispatch + perception gate). This was opt-in only
-# while perception was blocked (a chrome-only AX tree gave it nothing to ground,
-# so it thrashed). That blocker is resolved: the vision model (qwen3.5:397b)
-# perceives content again, so the executive loop now has real state to reason
-# over and is on by default. Set HERMES_META_PERCEPTION=0 to disable.
 : "${HERMES_META_PERCEPTION:=1}"
 export HERMES_META_PERCEPTION
-# Perceptor: the multimodal brain is off by default in code (it reroutes every
-# decision path), so the live experiment turns it on. Unified cognition reasons
-# over the screenshot; layered perception models overlays/occlusion; OCR recovers
-# content from pixels when the AX tree is blind. These are the perceptor's best
-# form — restore them here (the hard reset wiped them from this launcher).
 : "${HERMES_UNIFIED_COGNITION:=1}"
 : "${HERMES_LAYERED_PERCEPTION:=1}"
 : "${HERMES_PERCEPTION_OCR:=1}"
+# Phase ROI @ 640 — bench win (~−62% vs full-frame 397B path).
+: "${HERMES_PERCEPTION_ROI:=phase}"
+: "${HERMES_UNIFIED_IMAGE_MAX_WIDTH:=640}"
+: "${HERMES_PERCEPTION_ESCALATE_MODEL:=qwen3.5:cloud}"
+# Pinned fast winner from model sweep (override with env if sweep picks another).
+: "${HERMES_PERCEPTION_FAST_MODEL:=qwen3.5:4b}"
+: "${HERMES_PERCEPTION_FAST_BASE_URL:=http://127.0.0.1:11434/v1}"
 export HERMES_UNIFIED_COGNITION
 export HERMES_LAYERED_PERCEPTION
 export HERMES_PERCEPTION_OCR
+export HERMES_PERCEPTION_ROI
+export HERMES_UNIFIED_IMAGE_MAX_WIDTH
+export HERMES_PERCEPTION_ESCALATE_MODEL
+export HERMES_PERCEPTION_FAST_MODEL
+export HERMES_PERCEPTION_FAST_BASE_URL
 # Foreground persistence: take the app back, don't wait for it. A call or a
 # notification steals the foreground mid-task and every synthetic click after
 # that lands in whatever window took it, so the agent raises WhatsApp itself,
@@ -103,9 +115,43 @@ export HERMES_DECISION_HIGH_RISK_SELECTOR_TIMEOUT_SECONDS
 export HERMES_SELECTOR_STRICT
 
 stamp="${HERMES_RUN_STAMP:-$(python3 -c 'import time; print(time.strftime("%Y%m%d_%H%M%S")+"_"+str(time.time_ns()))')}"
-log_path="plugin/experiments/runs/forward_zarooratwala_live_${stamp}.jsonl"
-console_path="plugin/experiments/runs/terminal_forward_zarooratwala_${stamp}_console.txt"
-status_path="plugin/experiments/runs/terminal_forward_zarooratwala_${stamp}_status.txt"
+# Bulky live artifacts under /tmp/hermes-runs so relieve_host_storage's host_temp
+# stage can reclaim them (hermes- prefix). Repo runs/ keeps only tiny pointers.
+LIVE_RUN_ROOT="${HERMES_LIVE_RUN_DIR:-/tmp/hermes-runs}"
+LIVE_RUN_DIR="${LIVE_RUN_ROOT}/${stamp}"
+mkdir -p "${LIVE_RUN_DIR}"
+log_path="${LIVE_RUN_DIR}/forward_zarooratwala_live_${stamp}.jsonl"
+console_path="${LIVE_RUN_DIR}/terminal_forward_zarooratwala_${stamp}_console.txt"
+status_path="${LIVE_RUN_DIR}/terminal_forward_zarooratwala_${stamp}_status.txt"
+printf '%s\n' "${stamp}" > "plugin/experiments/runs/latest_live_stamp.txt"
+printf '%s\n' "${LIVE_RUN_DIR}" > "plugin/experiments/runs/latest_live_dir.txt"
+printf '%s\n' "${stamp}" > /tmp/hermes_active_forward_stamp.txt
+export HERMES_LIVE_RUN_DIR="${LIVE_RUN_ROOT}"
+export HERMES_RUN_STAMP="${stamp}"
+
+# Freeze production perception packets for the semantic eval curriculum.
+ROOT="$(pwd)"
+export HERMES_PERCEPTOR_RECORD_DIR="${HERMES_PERCEPTOR_RECORD_DIR:-${ROOT}/plugin/experiments/fixtures/perceptor/live_${stamp}}"
+export HERMES_PERCEPTION_EVAL_CANDIDATES_DIR="${HERMES_PERCEPTION_EVAL_CANDIDATES_DIR:-${ROOT}/plugin/evals/perception_semantic/eval_candidates}"
+mkdir -p "$HERMES_PERCEPTOR_RECORD_DIR" "$HERMES_PERCEPTION_EVAL_CANDIDATES_DIR"
+
+# mvn-test equivalent: goldens + gates + focused pytest must be green before
+# burning a live run. No skip env — red evals always refuse launch.
+# Launchers that already ran a green check may export HERMES_EVAL_PREFLIGHT_DONE=1.
+if [ "${HERMES_EVAL_PREFLIGHT_DONE:-0}" != "1" ]; then
+  echo "=== eval package check (preflight) ===" | tee -a "${console_path:-/dev/null}"
+  # Capture check output into the run console so Terminal.app refusals are diagnosable.
+  if ! ./.venv/bin/python -m plugin.evals.check 2>&1 | tee -a "${console_path:-/dev/null}"; then
+    {
+      echo "status=eval_check_failed"
+      echo "stamp=${stamp}"
+      echo "message=plugin.evals.check failed — refuse live launch"
+    } > "${status_path}"
+    echo "REFUSING live launch: package eval check failed" >&2
+    exit 1
+  fi
+  export HERMES_EVAL_PREFLIGHT_DONE=1
+fi
 
 {
   echo "status=launching"
@@ -119,6 +165,8 @@ status_path="plugin/experiments/runs/terminal_forward_zarooratwala_${stamp}_stat
   echo "log_path=${log_path}"
   echo "console_path=${console_path}"
   echo "status_path=${status_path}"
+  echo "perceptor_record=${HERMES_PERCEPTOR_RECORD_DIR}"
+  echo "eval_candidates=${HERMES_PERCEPTION_EVAL_CANDIDATES_DIR}"
 } | tee -a "${console_path}"
 
-./.venv/bin/python -c "from pathlib import Path; from plugin.experiments.run_forward_message import run_forward_message; ok, log = run_forward_message(log_path=Path('${log_path}'), prompt='find the zarooratwala link sent to kulvinder on whatsapp and forward to pallavi', source_contact='Kulvinder', target_contact='Pallavi', link_query='zarooratwala', max_iterations=100, max_stepcount=100); print(f'OK={ok} LOG=${log_path}')" 2>&1 | tee -a "${console_path}"
+./.venv/bin/python -c "from pathlib import Path; from plugin.experiments.run_forward_message import run_forward_message; ok, log = run_forward_message(log_path=Path('${log_path}'), prompt='find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay', source_contact='Pallavi', target_contact='Tanmay', link_query='zarooratwala', max_iterations=100, max_stepcount=100); print(f'OK={ok} LOG=${log_path}')" 2>&1 | tee -a "${console_path}"

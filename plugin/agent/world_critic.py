@@ -30,8 +30,77 @@ live option and kept choosing it.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Set
+
+# Open-document titles that are really the focused search field's chrome
+# (caret, placeholder, filter prompt) — never a conversation / entity referent.
+# General UI: a search affordance echo is not "what is open".
+_SEARCH_FIELD_ECHO = re.compile(
+    # WA Mac AX/OCR: "Search", "Search|", "Q Search|", "• Search|", "· Search"
+    r"^([•·▪●◦]\s*)?(q\s+)?search\|?$"
+    r"|^([•·▪●◦]\s*)?search\s*(chats?|messages?|or\s+start)?.*"
+    r"|^type\s+(a\s+)?search.*"
+    r"|^cmd\s*\+\s*f.*"
+    r"|^filter\s*(chats?|messages?)?$",
+    re.IGNORECASE,
+)
+
+
+def is_search_field_echo(open_title: Any, *, search_query: Any = "") -> bool:
+    """True when ``open_conversation`` is search-field chrome, not a referent."""
+    raw = str(open_title or "").strip()
+    if not raw:
+        return False
+    if _SEARCH_FIELD_ECHO.match(raw):
+        return True
+    low = raw.lower()
+    # Strip common AX/OCR bullets before the glyph+Search checks.
+    low_stripped = re.sub(r"^[•·▪●◦]+\s*", "", low).strip()
+    if _SEARCH_FIELD_ECHO.match(low_stripped):
+        return True
+    # AX often prefixes the search glyph: "Q Search|", "Q Search chats and …"
+    if (low.startswith("q ") or low_stripped.startswith("q ")) and "search" in low:
+        return True
+    # Typed query still in the search chrome: "Q Pallavi zarooratwala link||"
+    if low.startswith("q ") and ("|" in low or low.count(" ") >= 2):
+        return True
+    # OCR of a focused search AXValue, live: "227 a Pallavi zarooratwala link"
+    if re.match(r"^\d{1,4}\s+[a-z]\s+\S+", low):
+        return True
+    # Typed query echoed back as the "open" title (same tokens, not a chat name).
+    sq = str(search_query or "").strip().lower()
+    if sq:
+        q_tokens = [t for t in re.findall(r"[a-z0-9]{3,}", sq)]
+        if len(q_tokens) >= 2:
+            hits = sum(1 for t in q_tokens if t in low)
+            if hits >= max(2, len(q_tokens) - 1):
+                return True
+        sq_compact = re.sub(r"[^a-z0-9]+", "", sq)
+        low_compact = re.sub(r"[^a-z0-9]+", "", low)
+        if sq_compact and len(sq_compact) >= 6 and (
+            sq_compact in low_compact or low_compact in sq_compact
+        ):
+            return True
+    return False
+
+
+def _open_referent_from_objects(objects: Sequence[Any]) -> str:
+    """Best contact/header label from inventory when open title is unusable."""
+    best = ""
+    for obj in objects or []:
+        if not isinstance(obj, dict):
+            continue
+        kind = str(obj.get("kind") or "").strip().lower()
+        text = str(obj.get("text") or obj.get("label") or "").strip()
+        if not text or is_search_field_echo(text):
+            continue
+        if kind in {"chat_header", "header", "conversation_header"}:
+            return text.split("\n")[0].strip()[:80]
+        if kind in {"chat_row", "contact", "entity"} and obj.get("matches_goal"):
+            best = best or text.split("\n")[0].strip()[:80]
+    return best
 
 # Closed surface vocabulary (must stay aligned with unified_cognition).
 CANONICAL_SURFACES: Set[str] = {
@@ -39,6 +108,7 @@ CANONICAL_SURFACES: Set[str] = {
     "conversation",
     "search",
     "context_menu",
+    "selection_mode",
     "forward_picker",
     "dialog",
     "blank",
@@ -49,15 +119,32 @@ CANONICAL_SURFACES: Set[str] = {
 SURFACE_PARENTS: Dict[str, Set[str]] = {
     "chat_list": {"blank", "conversation", "search", "dialog", "chat_list"},
     "search": {"chat_list", "conversation", "search", "blank"},
-    "conversation": {"chat_list", "search", "conversation", "dialog", "forward_picker"},
-    "context_menu": {"conversation"},
-    "forward_picker": {"context_menu", "conversation", "dialog", "forward_picker"},
+    "conversation": {
+        "chat_list",
+        "search",
+        "conversation",
+        "dialog",
+        "forward_picker",
+        "selection_mode",
+        "context_menu",
+    },
+    "context_menu": {"conversation", "selection_mode"},
+    # Multi-select chrome ("N Selected" + toolbar verbs) — not a context menu.
+    "selection_mode": {"conversation", "context_menu", "selection_mode"},
+    "forward_picker": {
+        "context_menu",
+        "conversation",
+        "dialog",
+        "forward_picker",
+        "selection_mode",
+    },
     "dialog": {
         "conversation",
         "chat_list",
         "search",
         "forward_picker",
         "context_menu",
+        "selection_mode",
         "dialog",
     },
     "blank": set(CANONICAL_SURFACES),
@@ -74,6 +161,7 @@ ACTION_OPENS_SURFACE: Dict[str, Set[str]] = {
         "type_query",
     },
     "context_menu": {"reveal_actions", "context_click"},
+    "selection_mode": {"select_content", "reveal_actions", "invoke_affordance"},
     "search": {"type_query", "compose_search_query", "open_search", "open_entity"},
     "conversation": {"open_entity", "open_contact", "locate_content", "select_content"},
     "dialog": {"invoke_affordance", "commit_irreversible", "click"},
@@ -86,6 +174,7 @@ SURFACE_FIELD_ROLE: Dict[str, str] = {
     "chat_list": "sidebar_search",
     "conversation": "in_chat_or_composer",
     "context_menu": "none",
+    "selection_mode": "none",
     "dialog": "dialog_field",
     "blank": "none",
 }
@@ -94,6 +183,7 @@ SURFACE_FIELD_ROLE: Dict[str, str] = {
 NO_SIDEBAR_SEARCH_SURFACES: Set[str] = {
     "forward_picker",
     "context_menu",
+    "selection_mode",
     "dialog",
 }
 
@@ -285,8 +375,108 @@ def _norm_surface(value: Any) -> str:
         "forward": "forward_picker",
         "destination_picker": "forward_picker",
         "menu": "context_menu",
+        "action_menu": "context_menu",
+        "multi_select": "selection_mode",
+        "multiselect": "selection_mode",
+        "select_messages": "selection_mode",
+        "selection": "selection_mode",
     }
     return aliases.get(text, text if text else "")
+
+
+# Search-result chrome tokens (Links / Messages / All, etc.). Presence of these
+# while a cloud patch claims conversation is high-quality contradictory evidence.
+_SEARCH_RESULT_CHROME_TOKENS = frozenset(
+    {
+        "links",
+        "messages",
+        "all",
+        "chats",
+        "groups",
+        "unread",
+        "photos",
+        "videos",
+        "gifs",
+        "documents",
+        "stickers",
+        "audio",
+    }
+)
+
+
+def search_surface_evidence(
+    proposal: Optional[Dict[str, Any]],
+    *,
+    prior: Optional[Dict[str, Any]] = None,
+    observed_surface: str = "",
+    prediction_error: Optional[Dict[str, Any]] = None,
+) -> tuple[bool, str]:
+    """Return whether direct observation contradicts a conversation surface claim.
+
+    Prediction error is belief-changing evidence, not telemetry: when the last
+    look already scored predicted=conversation / observed=search, a subsequent
+    cloud patch proposing conversation must not become authoritative.
+    """
+    prop = proposal if isinstance(proposal, dict) else {}
+    prior_doc = prior if isinstance(prior, dict) else {}
+    obs = _norm_surface(observed_surface or prop.get("observed_surface"))
+    if obs in {"search", "search_results"}:
+        return True, f"observed_surface={obs}"
+
+    pe = prediction_error if isinstance(prediction_error, dict) else {}
+    pe_obs = _norm_surface(pe.get("observed_surface"))
+    pe_pred = _norm_surface(pe.get("predicted_surface"))
+    if pe.get("matched") is False and pe_obs in {"search", "search_results"}:
+        return True, (
+            f"prediction_error observed={pe_obs} "
+            f"(predicted={pe_pred or 'conversation'})"
+        )
+
+    search_query = str(
+        prop.get("search_query") or prior_doc.get("search_query") or ""
+    ).strip()
+    if search_query:
+        # Active query with no conversation composer/header is search scope.
+        has_conversation_chrome = False
+        for item in prop.get("objects") or prior_doc.get("objects") or []:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("kind") or "").strip().lower()
+            if kind in {"chat_header", "message_bubble", "composer", "input_field"}:
+                text = str(item.get("text") or item.get("label") or "").strip()
+                if kind == "chat_header" and text and not is_search_field_echo(text):
+                    has_conversation_chrome = True
+                    break
+                if kind in {"message_bubble", "composer"}:
+                    has_conversation_chrome = True
+                    break
+        if not has_conversation_chrome:
+            return True, f"active search_query={search_query!r} without conversation chrome"
+
+    chrome_hits: List[str] = []
+    for item in prop.get("objects") or []:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip().lower()
+        text = re.sub(
+            r"^[\s•·]+", "", str(item.get("text") or item.get("label") or "")
+        ).strip()
+        token = text.split()[0].lower() if text else ""
+        if kind == "filter_chip" or (
+            kind in {"chip", "tab", "segment"} and token in _SEARCH_RESULT_CHROME_TOKENS
+        ):
+            chrome_hits.append(token or kind)
+        elif token in _SEARCH_RESULT_CHROME_TOKENS and kind in {
+            "",
+            "static",
+            "label",
+            "text",
+        }:
+            chrome_hits.append(token)
+    if chrome_hits:
+        return True, f"search result chrome present ({', '.join(chrome_hits[:4])})"
+
+    return False, ""
 
 
 def _last_action_family(prior: Dict[str, Any], last_action: str = "") -> str:
@@ -371,6 +561,7 @@ def critique_world_proposal(
     *,
     last_action: str = "",
     observed_surface: str = "",
+    prediction_error: Optional[Dict[str, Any]] = None,
     coherence_judge: Optional[Any] = None,
     surface_judge: Optional[Any] = None,
 ) -> CriticVerdict:
@@ -382,6 +573,10 @@ def critique_world_proposal(
     know whether *this* rewrite makes sense, which requires understanding what the
     action meant. Absent a judge the rules decide alone, which is the behaviour
     every offline caller and eval depends on.
+
+    ``prediction_error`` (when present) is authoritative surface evidence: a
+    high-quality observed contradiction must reject/downgrade a cloud patch that
+    claims conversation while the screen remains search/search_results.
     """
     prior_doc = dict(prior or {})
     prop = dict(proposal or {})
@@ -417,6 +612,48 @@ def critique_world_proposal(
             reason = judged_reason or reason
         except Exception:
             pass
+
+    # Authority: direct search evidence beats a legal parent-edge accept of
+    # conversation. Parent legality answers "could this jump happen?"; evidence
+    # answers "did it?". Live 210526 accepted conversation while prediction_error
+    # repeatedly reported observed=search.
+    search_ev, search_why = search_surface_evidence(
+        prop,
+        prior=prior_doc,
+        observed_surface=observed_surface,
+        prediction_error=prediction_error,
+    )
+    if (
+        ok
+        and proposed_surface == "conversation"
+        and search_ev
+        and action
+        not in {"open_entity", "open_contact", "locate_content", "select_content"}
+    ):
+        ok = False
+        reason = (
+            f"refuse conversation patch: contradictory search evidence ({search_why})"
+        )
+    elif (
+        ok
+        and proposed_surface == "conversation"
+        and search_ev
+        and action in {"open_entity", "open_contact", "locate_content", "select_content"}
+        and _norm_surface(
+            (prediction_error or {}).get("observed_surface")
+            if isinstance(prediction_error, dict)
+            else ""
+        )
+        in {"search", "search_results"}
+        and (prediction_error or {}).get("matched") is False
+    ):
+        # Even a navigation opener fails when the post-act look still reads search.
+        ok = False
+        reason = (
+            f"refuse conversation after {action}: post-act look still search "
+            f"({search_why})"
+        )
+
     if ok and proposed_surface:
         surface = proposed_surface
         decisions.append(
@@ -430,7 +667,19 @@ def critique_world_proposal(
             )
         )
     else:
-        surface = prior_surface or proposed_surface or "blank"
+        # Prefer search when conversation was refused for search evidence.
+        if (
+            not ok
+            and proposed_surface == "conversation"
+            and search_ev
+        ):
+            surface = (
+                prior_surface
+                if prior_surface in {"search", "chat_list"}
+                else "search"
+            )
+        else:
+            surface = prior_surface or proposed_surface or "blank"
         decisions.append(
             CriticDecision(
                 field="surface",
@@ -442,10 +691,80 @@ def critique_world_proposal(
             )
         )
 
+    # Selection chrome ("N Selected" + toolbar) must not stay labeled context_menu.
+    try:
+        from plugin.agent.capabilities.branch_fitness import selection_chrome_present
+
+        chrome_doc = {
+            "objects": list(prop.get("objects") or prior_doc.get("objects") or []),
+            "surface": surface,
+        }
+        if selection_chrome_present(chrome_doc) and surface in {
+            "conversation",
+            "context_menu",
+            "action_menu",
+            "",
+        }:
+            decisions.append(
+                CriticDecision(
+                    field="surface",
+                    verdict="edit",
+                    reason="selection chrome present — coerce to selection_mode",
+                    prior=surface,
+                    proposed=proposed_surface,
+                    accepted="selection_mode",
+                )
+            )
+            surface = "selection_mode"
+    except Exception:
+        pass
+
     # open_conversation: do not wipe a confirmed open without evidence.
+    # Also refuse search-field chrome as an open referent (AX title latch).
     prior_open = str(prior_doc.get("open_conversation") or "").strip()
     prop_open = str(prop.get("open_conversation") or "").strip()
-    if prop_open:
+    search_query = str(
+        prop.get("search_query") or prior_doc.get("search_query") or ""
+    ).strip()
+    if prior_open and is_search_field_echo(prior_open, search_query=search_query):
+        prior_open = ""
+    recovered = _open_referent_from_objects(prop.get("objects") or prior_doc.get("objects") or [])
+    if prop_open and is_search_field_echo(prop_open, search_query=search_query):
+        open_conversation = (
+            prior_open
+            if prior_open and not is_search_field_echo(prior_open, search_query=search_query)
+            else recovered
+        )
+        decisions.append(
+            CriticDecision(
+                field="open_conversation",
+                verdict="reject",
+                reason=(
+                    "proposal open_conversation is search-field chrome, not a "
+                    "document referent; kept prior/header"
+                ),
+                prior=prior_open,
+                proposed=prop_open,
+                accepted=open_conversation,
+            )
+        )
+    elif prop_open and surface == "search" and search_ev:
+        # Conversation referent claim while search evidence won the surface.
+        open_conversation = ""
+        decisions.append(
+            CriticDecision(
+                field="open_conversation",
+                verdict="reject",
+                reason=(
+                    "refuse open_conversation while search evidence keeps "
+                    f"surface=search ({search_why})"
+                ),
+                prior=prior_open,
+                proposed=prop_open,
+                accepted=open_conversation,
+            )
+        )
+    elif prop_open:
         open_conversation = prop_open
         decisions.append(
             CriticDecision(
@@ -457,7 +776,12 @@ def critique_world_proposal(
                 accepted=open_conversation,
             )
         )
-    elif prior_open and surface in {"conversation", "context_menu", "forward_picker"}:
+    elif prior_open and surface in {
+        "conversation",
+        "context_menu",
+        "selection_mode",
+        "forward_picker",
+    }:
         open_conversation = prior_open
         decisions.append(
             CriticDecision(
@@ -473,7 +797,12 @@ def critique_world_proposal(
             )
         )
     else:
-        open_conversation = prop_open or prior_open
+        open_conversation = prop_open or prior_open or (
+            recovered
+            if surface
+            in {"conversation", "context_menu", "selection_mode", "forward_picker"}
+            else ""
+        )
         decisions.append(
             CriticDecision(
                 field="open_conversation",
@@ -484,6 +813,28 @@ def critique_world_proposal(
                 accepted=open_conversation,
             )
         )
+
+    # Wishful open latch: conversation was refused for search evidence.
+    if (
+        surface == "search"
+        and search_ev
+        and proposed_surface == "conversation"
+        and open_conversation
+    ):
+        decisions.append(
+            CriticDecision(
+                field="open_conversation",
+                verdict="reject",
+                reason=(
+                    "clear open_conversation: surface kept as search under "
+                    f"contradictory evidence ({search_why})"
+                ),
+                prior=prior_open,
+                proposed=prop_open or open_conversation,
+                accepted="",
+            )
+        )
+        open_conversation = ""
 
     field_role = infer_field_role(surface, prop)
     # If the surface proposal was rejected, ignore the proposed field role —
@@ -613,6 +964,30 @@ def critique_world_proposal(
             )
         )
 
+    # Layer push/pop + object permanence (flagged). Overlay must not erase the
+    # container beneath; stack ops replace flat surface-jump special cases.
+    layer_decision = _accept_layers(
+        prior_doc, accepted, last_action=action, surface=surface
+    )
+    if layer_decision is not None:
+        decisions.append(layer_decision)
+        try:
+            from plugin.agent.scene_layers import (
+                derive_flat,
+                layered_perception_enabled,
+                normalize_layers,
+            )
+
+            if layered_perception_enabled() and accepted.get("layers"):
+                _top_surface, base_name = derive_flat(
+                    normalize_layers(accepted["layers"])
+                )
+                if base_name and not str(accepted.get("open_conversation") or "").strip():
+                    accepted["open_conversation"] = base_name
+                    open_conversation = base_name
+        except Exception:
+            pass
+
     forbid_sidebar_motor = (
         surface in NO_SIDEBAR_SEARCH_SURFACES or field_role == "destination_filter"
     )
@@ -718,7 +1093,42 @@ def note_topology_evidence(
     return record
 
 
-def _grounded_from_objects(document: Dict[str, Any]) -> List[Any]:
+def _iter_document_objects(document: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Flat objects plus per-layer objects (action_menu items live on layers)."""
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    for obj in list(document.get("objects") or []):
+        if not isinstance(obj, dict):
+            continue
+        key = (
+            str(obj.get("text") or obj.get("label") or "").strip().lower(),
+            str(obj.get("point") or ""),
+        )
+        if key[0] and key not in seen:
+            seen.add(key)
+            out.append(obj)
+    for layer in document.get("layers") or []:
+        if not isinstance(layer, dict):
+            continue
+        for obj in layer.get("objects") or []:
+            if not isinstance(obj, dict):
+                continue
+            key = (
+                str(obj.get("text") or obj.get("label") or "").strip().lower(),
+                str(obj.get("point") or ""),
+            )
+            if key[0] and key not in seen:
+                seen.add(key)
+                out.append(obj)
+    return out
+
+
+_MENU_KINDS = frozenset({"menu_item", "menuitem", "menu", "action", "affordance"})
+
+
+def _grounded_from_objects(
+    document: Dict[str, Any], *, prefer_menu: bool = False
+) -> List[Any]:
     """The document's own objects, shaped as grounded reveal actions.
 
     After a confirmed reveal the perceptor reports the menu entries it can now
@@ -729,18 +1139,140 @@ def _grounded_from_objects(document: Dict[str, Any]) -> List[Any]:
     from types import SimpleNamespace
 
     out: List[Any] = []
-    for obj in document.get("objects") or []:
-        if not isinstance(obj, dict):
-            continue
+    for obj in _iter_document_objects(document):
         label = str(obj.get("text") or obj.get("label") or "").strip()
         point = obj.get("point")
         if not label or not point:
             continue
+        kind = str(obj.get("kind") or "").strip().lower()
+        if prefer_menu and kind and kind not in _MENU_KINDS:
+            # When promoting under a reveal handoff with flat surface still
+            # conversation, only take explicit menu_item-like objects — not
+            # every message bubble with a point.
+            if not bool(obj.get("is_menu_item")):
+                continue
         target: Dict[str, Any] = {"point": list(point)}
         if obj.get("id") is not None:
             target["entity_id"] = obj.get("id")
-        out.append(SimpleNamespace(label=label, is_grounded=True, target=target))
+        out.append(
+            SimpleNamespace(
+                label=label,
+                is_grounded=True,
+                target=target,
+                confidence=0.9 if kind in _MENU_KINDS else 0.8,
+            )
+        )
     return out
+
+
+def _reveal_handoff_active(execution_state: Any) -> bool:
+    handoff = getattr(execution_state, "reveal_handoff", None) if execution_state else None
+    return isinstance(handoff, dict) and bool(str(handoff.get("surface") or "").strip())
+
+
+def _document_has_action_menu_layer(document: Dict[str, Any]) -> bool:
+    for layer in document.get("layers") or []:
+        if not isinstance(layer, dict):
+            continue
+        if str(layer.get("role") or "").strip().lower() in {"action_menu", "context_menu"}:
+            return True
+    return False
+
+
+_MENU_VERB_LABELS = frozenset(
+    {
+        "forward",
+        "forward message",
+        "forward messages",
+        "reply",
+        "react",
+        "star",
+        "pin",
+        "copy",
+        "info",
+        "delete",
+        "select messages",
+        "share",
+    }
+)
+
+
+def _label_looks_like_menu_verb(label: str) -> bool:
+    """True for context-menu verbs; false for 'Forwarded…' chat chrome."""
+    text = str(label or "").strip().lower()
+    text = re.sub(r"^[\s•·▪●◦\-–—]+", "", text).strip()
+    if not text or text.startswith("forwarded"):
+        return False
+    return text in _MENU_VERB_LABELS
+
+
+def enrich_document_menu_verbs_from_ocr(
+    document: Optional[Dict[str, Any]],
+    ocr_lines: Optional[Sequence[Any]] = None,
+) -> Dict[str, Any]:
+    """Under reveal handoff, fold OCR menu verbs into document objects.
+
+    Does **not** invent into ``affordance_set`` — only enriches the accepted
+    world document so ``reconcile_frontier`` / post-accept promote can ground
+    Forward (etc.) from measured OCR geometry (live 125715 empty-frontier class).
+    """
+    doc = dict(document) if isinstance(document, dict) else {}
+    lines = [ln for ln in (ocr_lines or []) if isinstance(ln, dict)]
+    if not lines:
+        # Allow goldens / callers to attach lines on the document itself.
+        raw = doc.get("ocr_lines") or doc.get("ocr_menu_hints") or []
+        lines = [ln for ln in raw if isinstance(ln, dict)]
+    if not lines:
+        return doc
+
+    objects = [o for o in (doc.get("objects") or []) if isinstance(o, dict)]
+    seen = {
+        str(o.get("text") or o.get("label") or "").strip().lower()
+        for o in objects
+        if _label_looks_like_menu_verb(str(o.get("text") or o.get("label") or ""))
+    }
+    added = 0
+    for line in lines:
+        text = str(line.get("text") or line.get("label") or "").strip()
+        if not _label_looks_like_menu_verb(text):
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        point = line.get("point")
+        bounds = line.get("bounds")
+        if point is None and isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+            try:
+                x, y, w, h = (float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3]))
+                point = [x + w / 2.0, y + h / 2.0]
+            except (TypeError, ValueError):
+                point = None
+        if point is None or not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        try:
+            pt = [float(point[0]), float(point[1])]
+        except (TypeError, ValueError):
+            continue
+        obj: Dict[str, Any] = {
+            "text": text,
+            "label": text,
+            "kind": "menu_item",
+            "is_menu_item": True,
+            "point": pt,
+            "geometry_source": "ocr_menu",
+        }
+        if isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+            try:
+                obj["bounds"] = [float(x) for x in bounds[:4]]
+            except (TypeError, ValueError):
+                pass
+        objects.append(obj)
+        seen.add(key)
+        added += 1
+    if added:
+        doc["objects"] = objects
+        doc["ocr_menu_enriched"] = True
+    return doc
 
 
 def reconcile_frontier(
@@ -762,21 +1294,54 @@ def reconcile_frontier(
         return frontier
     document = document if isinstance(document, dict) else {}
     surface = _norm_surface(document.get("surface") or getattr(frontier, "surface", ""))
+    family = _norm_label(last_action_family)
+    handoff = _reveal_handoff_active(execution_state)
+    has_menu_layer = _document_has_action_menu_layer(document)
 
-    # A reveal that landed on an action surface has grounded its controls.
-    if (
-        _norm_label(last_action_family) == "reveal_actions"
-        and surface in _REVEALED_SURFACES
-    ):
-        grounded = _grounded_from_objects(document)
+    # Promote when a reveal probe just ran (handoff) or last action was
+    # reveal_actions, and the accepted document shows a revealed surface / menu
+    # layer / still-active handoff (lossy flat enum often stays conversation).
+    # Handoff alone is enough for the family check: post-accept promote may run
+    # after the plan step was cleared but while incomplete_reveal is still owed.
+    should_promote = (family == "reveal_actions" or handoff) and (
+        surface in _REVEALED_SURFACES or handoff or has_menu_layer
+    )
+    if should_promote:
+        # Without a flat surface flip, only promote menu-shaped / control-labeled
+        # objects so chat bubbles are not mistaken for Forward/Reply controls.
+        prefer_menu = surface not in _REVEALED_SURFACES
+        grounded = _grounded_from_objects(document, prefer_menu=prefer_menu)
+        if not grounded and not prefer_menu:
+            grounded = _grounded_from_objects(document, prefer_menu=False)
+        # VLM often tags Forward without kind=menu_item after a reveal probe.
+        # Do not treat conversation chrome like "Forwarded: …" as the Forward CTA
+        # (150708 window-pixel false positive).
+        if prefer_menu and not grounded:
+            grounded = [
+                g
+                for g in _grounded_from_objects(document, prefer_menu=False)
+                if _label_looks_like_menu_verb(str(getattr(g, "label", "") or ""))
+            ]
         if grounded:
             try:
-                from plugin.agent.affordance_frontier import ground_revealed
+                from plugin.agent.affordance_frontier import (
+                    ground_revealed,
+                    publish_grounded_affordance_set,
+                )
                 from types import SimpleNamespace
 
                 ground_revealed(frontier, SimpleNamespace(actions=grounded))
+                publish_grounded_affordance_set(execution_state, frontier)
             except Exception:
                 pass
+    else:
+        # Keep the durable substrate in sync even when no new promote ran.
+        try:
+            from plugin.agent.affordance_frontier import publish_grounded_affordance_set
+
+            publish_grounded_affordance_set(execution_state, frontier)
+        except Exception:
+            pass
 
     dead = [
         item
@@ -817,3 +1382,202 @@ def reconcile_frontier(
         setattr(frontier, bucket, keep)
     frontier.excluded_actions = excluded
     return frontier
+
+
+def _accept_layers(
+    prior_doc: Dict[str, Any],
+    accepted: Dict[str, Any],
+    *,
+    last_action: str = "",
+    surface: str = "",
+) -> Optional[CriticDecision]:
+    """Validate / merge layer stack push-pop into ``accepted`` when enabled.
+
+    Returns a CriticDecision when layers are touched; None when the feature is
+    off or there is nothing to do. Never invents menu items — only enforces
+    permanence (container stays under overlay) and normalizes the stack.
+    """
+    try:
+        from plugin.agent.scene_layers import (
+            ACTION_MENU,
+            OVERLAY_ROLES,
+            flat_objects,
+            layered_perception_enabled,
+            layers_from_flat,
+            layers_to_dicts,
+            merge_permanence,
+            normalize_layers,
+        )
+    except Exception:
+        return None
+    if not layered_perception_enabled():
+        return None
+
+    prior_layers = normalize_layers(prior_doc.get("layers")) if prior_doc else []
+    raw_new = accepted.get("layers")
+    if raw_new:
+        new_layers = normalize_layers(raw_new)
+        verdict = "accept"
+        reason = "proposal layers normalized; permanence merge applied"
+    else:
+        new_layers = layers_from_flat(
+            accepted.get("surface") or surface,
+            accepted.get("open_conversation"),
+            accepted.get("objects"),
+        )
+        verdict = "edit"
+        reason = "derived layers from flat surface; permanence merge applied"
+
+    action = _norm_label(last_action)
+    top_role = new_layers[-1].role if new_layers else ""
+    if top_role in OVERLAY_ROLES and action not in {
+        "reveal_actions",
+        "context_click",
+        "invoke_affordance",
+        "hover",
+        "",
+    }:
+        reason = f"{reason}; overlay top={top_role} after action={action or 'none'}"
+
+    merged = merge_permanence(prior_layers, new_layers)
+    if not merged:
+        return None
+    accepted["layers"] = layers_to_dicts(merged)
+    try:
+        union = flat_objects(merged)
+        if union:
+            prior_texts = {
+                str(o.get("text") or o.get("label") or "").strip().lower()
+                for o in (accepted.get("objects") or [])
+                if isinstance(o, dict)
+            }
+            menu_added = any(
+                str(o.get("kind") or "").lower() in _MENU_KINDS
+                or _label_looks_like_menu_verb(
+                    str(o.get("text") or o.get("label") or "")
+                )
+                for o in union
+                if str(o.get("text") or "").strip().lower() not in prior_texts
+            )
+            if menu_added or not accepted.get("objects"):
+                accepted["objects"] = union[:12]
+    except Exception:
+        pass
+
+    has_menu = any(l.role == ACTION_MENU for l in merged)
+    has_base = any(not l.is_overlay for l in merged)
+    if has_menu and not has_base and prior_layers:
+        verdict = "edit"
+        reason = "overlay push restored occluded base from prior (permanence)"
+    return CriticDecision(
+        field="layers",
+        verdict=verdict,
+        reason=reason,
+        prior=len(prior_layers),
+        proposed=len(new_layers),
+        accepted=len(merged),
+    )
+
+
+def promote_frontier_after_accept(
+    execution_state: Any,
+    *,
+    accepted_document: Optional[Dict[str, Any]] = None,
+    last_action_family: str = "",
+    ocr_lines: Optional[Sequence[Any]] = None,
+) -> Dict[str, Any]:
+    """Promote revealed controls from the *accepted* post-look document.
+
+    Timing fix for multi-pass discovery: ``_frontier_for_packet`` reconciles
+    against the *prior* document before stage-1 writes menu objects. After
+    ``persist_world_document`` accepts the new reading, call this so Forward
+    (etc.) enter ``affordance_set`` while the overlay is still live.
+
+    Under an active reveal handoff, OCR menu verbs may enrich the *document*
+    first (geometry from OCR bounds). Still no OCR→affordance_set invent path.
+    """
+    status: Dict[str, Any] = {"promoted": False, "grounded": 0, "ocr_enriched": False}
+    if execution_state is None:
+        return status
+    doc = accepted_document
+    if not isinstance(doc, dict):
+        doc = getattr(execution_state, "unified_world_document", None)
+    if not isinstance(doc, dict):
+        return status
+
+    if _reveal_handoff_active(execution_state):
+        lines = ocr_lines
+        if lines is None:
+            lines = getattr(execution_state, "last_overlay_ocr_menu", None)
+        enriched = enrich_document_menu_verbs_from_ocr(doc, lines)
+        if enriched.get("ocr_menu_enriched"):
+            status["ocr_enriched"] = True
+            doc = enriched
+            try:
+                execution_state.unified_world_document = dict(doc)
+            except Exception:
+                pass
+
+    family = _norm_label(last_action_family)
+    if not family:
+        step = getattr(execution_state, "last_plan_step", None)
+        family = _norm_label(
+            getattr(step, "action_family", "") or getattr(execution_state, "last_action", "")
+        )
+    if not family and _reveal_handoff_active(execution_state):
+        family = "reveal_actions"
+
+    try:
+        from plugin.agent.affordance_frontier import (
+            Affordance,
+            AffordanceFrontier,
+            STATUS_LATENT,
+            finalize_reveal_handoff,
+            grounded_affordance_set_of,
+        )
+    except Exception:
+        return status
+
+    stored = getattr(execution_state, "last_affordance_frontier", None)
+    if hasattr(stored, "observed_actions") and hasattr(stored, "latent_actions"):
+        frontier = stored
+    else:
+        # Seed a latent Forward so ground_revealed can flip it; also ingest any
+        # menu items not prelisted. Packet dicts are not rehydrated as objects.
+        seed_surface = ""
+        if isinstance(stored, dict):
+            seed_surface = str(stored.get("surface") or "")
+        frontier = AffordanceFrontier(
+            surface=seed_surface or str(doc.get("surface") or ""),
+            latent_actions=[
+                Affordance(
+                    id="goal_fwd",
+                    family="invoke_affordance",
+                    status=STATUS_LATENT,
+                    target_label="Forward",
+                )
+            ],
+        )
+
+    try:
+        frontier = reconcile_frontier(
+            frontier,
+            document=doc,
+            execution_state=execution_state,
+            last_action_family=family or "reveal_actions",
+        )
+        finalize_reveal_handoff(execution_state, frontier)
+    except Exception:
+        return status
+
+    grounded = grounded_affordance_set_of(execution_state)
+    status["grounded"] = len(grounded)
+    status["promoted"] = bool(grounded)
+    try:
+        if hasattr(frontier, "to_packet"):
+            execution_state.last_affordance_frontier = frontier.to_packet()
+        elif isinstance(frontier, dict):
+            execution_state.last_affordance_frontier = frontier
+    except Exception:
+        pass
+    return status

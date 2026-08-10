@@ -24,6 +24,7 @@ def test_catalog_names_the_general_capabilities():
         "reveal_actions",
         "invoke_affordance",
         "dismiss_transient",
+        "revert_effects",
         "commit_irreversible",
     } <= names
 

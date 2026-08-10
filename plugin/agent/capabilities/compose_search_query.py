@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, Sequence, runtime_checkable
 
-from plugin.agent.capabilities.base import CapabilityOutcome
+from plugin.agent.capabilities.base import CapabilityOutcome, GroundedUiTarget
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +30,19 @@ _COMPOSE_SYSTEM = (
     "Return ONLY JSON of the form "
     '{"queries":[{"q":"...","why":"..."}],"chosen":"..."}. '
     "Compose queries that would narrow the surface toward the goal. "
+    "Ground every word in evidence_tokens (or a clear shortening of one). "
+    "Do not invent extra words that are not content evidence — host search "
+    "often AND-matches every token, so invented words can hide real hits. "
     "Use whatever combination of evidence you judge useful — including a "
     "single token, several tokens, token order swaps, shorter subsets, or "
     "a spelling variant. "
     "When several distinct evidence tokens are available and the surface is "
     "a crowded list of similarly named rows, prefer a query that combines "
     "more than one token so results disambiguate. "
-    "When a prior query has outcome no_results / empty / failed, you MUST "
-    "choose a different string — simplify, drop a token, try another token, "
-    "or change order. Do not repeat a dead query. "
+    "When a prior query has outcome no_results / empty / failed, or results "
+    "look like a poor fit for the goal criteria, you MUST choose a different "
+    "string — simplify, drop a token, try another token, or change order. "
+    "Do not repeat a dead query. "
     "Do not include the host application name as a search token. "
     "Do not merely echo one entity name when other evidence would "
     "disambiguate. Be persistent and willing to iterate. "
@@ -56,7 +60,12 @@ class QueryAuthor(Protocol):
 
 @dataclass
 class SearchQueryBrief:
-    """Evidence bag for query authorship — not a UI click target."""
+    """Evidence bag for query authorship plus the search-field GroundedUiTarget.
+
+    Authorship is judgment over task evidence. Actuation still inherits the
+    GroundedUiTarget contract: the Search field's point/bounds must be bound
+    before the actor types the chosen string.
+    """
 
     goal_tokens: List[str] = field(default_factory=list)
     goal_kind: str = ""
@@ -65,6 +74,7 @@ class SearchQueryBrief:
     prior_queries: List[Dict[str, Any]] = field(default_factory=list)
     visible_result_labels: List[str] = field(default_factory=list)
     notes: str = ""
+    field: Optional[GroundedUiTarget] = None
 
 
 def goal_evidence_tokens(goal: Any) -> List[str]:
@@ -84,6 +94,8 @@ def goal_evidence_tokens(goal: Any) -> List[str]:
 
     for attr in ("contact", "target_contact", "link_query", "description", "prompt"):
         add(getattr(goal, attr, None))
+    # Evidence only — do not invent intent labels beyond goal fields.
+    # Authorship / SEARCH refine must decide composition; the bag is not a script.
     try:
         for hyp in list(getattr(goal, "intent_hypotheses", lambda: [])() or []):
             add(hyp)
@@ -193,9 +205,10 @@ def _parse_author_payload(raw: Any) -> Dict[str, Any]:
 
 @dataclass
 class LlmQueryAuthor:
-    """Default realization: one short text LLM call."""
+    """Default realization: one short *text* LLM call (never the vision pin)."""
 
-    timeout_s: float = 90.0
+    # Keep well below vision SoT hangs; deterministic fallback still authors.
+    timeout_s: float = 45.0
 
     def author(self, system: str, user_packet: Dict[str, Any]) -> Dict[str, Any]:
         from plugin.agent.perception_synthesis import _call_llm_hard_timeout
@@ -213,11 +226,11 @@ class LlmQueryAuthor:
         ]
         try:
             consultation = consult_reasoning(
-                "perception",
+                "decision",
                 messages,
+                usecase="compose_search_query",
                 caller=lambda **kwargs: _call_llm_hard_timeout(self.timeout_s, **kwargs),
                 call_kwargs={
-                    "task": "perception",
                     "timeout": self.timeout_s,
                 },
                 temperature=0.2,
@@ -243,6 +256,76 @@ def is_bare_entity_query(text: str, goal: Any) -> bool:
         if str(getattr(goal, attr, "") or "").strip()
     }
     return q in singles
+
+
+def _levenshtein(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            ins, delete, sub = cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + (ca != cb)
+            cur.append(min(ins, delete, sub))
+        prev = cur
+    return prev[-1]
+
+
+def query_looks_corrupted(observed: str, evidence_tokens: Sequence[str]) -> bool:
+    """True when the search-field string is a near-miss garble of goal evidence.
+
+    Live 202832: typed ``zarooratwala Pallavi``, field drifted to
+    ``zaropratwala Pallavipo`` / No results. Exact token match fails, but a
+    word is within edit distance 2 of a goal token — treat as corrupted so
+    compose clears and retries a fresh string.
+    """
+    raw = " ".join((observed or "").strip().split())
+    if not raw:
+        return False
+    # Strip common Electron search mirrors ("a …", "Q …").
+    low = raw.lower()
+    for prefix in ("a ", "q ", "• "):
+        if low.startswith(prefix):
+            raw = raw[len(prefix) :].strip()
+            low = raw.lower()
+            break
+    words = [w for w in re.split(r"[^\w]+", low) if len(w) >= 4]
+    if not words:
+        return False
+    tokens = [
+        " ".join(str(t or "").strip().lower().split())
+        for t in evidence_tokens
+        if str(t or "").strip() and 3 <= len(str(t).strip()) <= 48
+    ]
+    token_words: List[str] = []
+    for t in tokens:
+        token_words.extend([w for w in re.split(r"[^\w]+", t) if len(w) >= 4])
+    if not token_words:
+        return False
+    for tw in set(token_words):
+        exact = any(w == tw for w in words)
+        near = any(
+            w != tw and abs(len(w) - len(tw)) <= 2 and _levenshtein(w, tw) <= 2
+            for w in words
+        )
+        if near and not exact:
+            return True
+    return False
+
+
+def ui_shows_no_search_results(*labels: Any) -> bool:
+    """Detect WhatsApp empty-hit chrome from labels / open conversation."""
+    for item in labels:
+        text = " ".join(str(item or "").strip().lower().split())
+        if not text:
+            continue
+        if "no results" in text or text == "no result":
+            return True
+    return False
 
 
 def _failed_prior_queries(priors: Sequence[Dict[str, Any]]) -> set[str]:

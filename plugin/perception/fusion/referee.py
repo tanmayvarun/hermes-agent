@@ -45,6 +45,25 @@ class FusionRefereeDecision:
         return asdict(self)
 
 
+# The task framing, the allowed actions and the output schema never vary, so
+# they belong in the system message where they form a cacheable prefix; only the
+# fusion payload itself changes from call to call.
+_REFEREE_SYSTEM_PROMPT = (
+    "You are a perception-fusion referee for a GUI agent. Choose the safest "
+    "fusion policy decision. You must NOT invent UI elements. You may only "
+    "choose one of: \"accept\" the deterministic fused result, \"prefer_source\" "
+    "and name one observed source_id, or \"reobserve\" when all sources are too "
+    "ambiguous. Prefer the source with the richest usable UI structure when "
+    "deterministic fusion has collapsed or the selected fusion is clearly too "
+    "lossy.\n"
+    "\n"
+    "Return strict JSON only, of the form: "
+    '{"action": "accept|prefer_source|reobserve", "preferred_source_id": '
+    '"string", "confidence": number 0..1, "reason": "string", '
+    '"should_reobserve": boolean}'
+)
+
+
 class FusionReferee:
     """Ask the current main LLM to arbitrate ambiguous source fusion."""
 
@@ -55,31 +74,14 @@ class FusionReferee:
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You are a perception-fusion referee for a GUI agent. "
-                    "You must NOT invent UI elements. You may only choose one of: "
-                    "\"accept\" the deterministic fused result, \"prefer_source\" and name one "
-                    "observed source_id, or \"reobserve\" when all sources are too ambiguous. "
-                    "Prefer the source with the richest usable UI structure when deterministic "
-                    "fusion has collapsed or the selected fusion is clearly too lossy. "
-                    "Return strict JSON only."
-                ),
+                "content": _REFEREE_SYSTEM_PROMPT,
             },
             {
                 "role": "user",
                 "content": json.dumps(
                     {
                         "task": "fusion_referee",
-                        "instruction": "Choose the safest fusion policy decision.",
                         "payload": payload,
-                        "allowed_actions": ["accept", "prefer_source", "reobserve"],
-                        "output_schema": {
-                            "action": "accept|prefer_source|reobserve",
-                            "preferred_source_id": "string",
-                            "confidence": "number 0..1",
-                            "reason": "string",
-                            "should_reobserve": "boolean",
-                        },
                     },
                     ensure_ascii=False,
                     sort_keys=True,

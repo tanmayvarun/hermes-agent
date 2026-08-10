@@ -156,6 +156,7 @@ def test_settled_empty_allows_advance_via_observe():
 
 
 def test_auto_candidate_beats_next_hyp_type():
+    """Visible-row auto-candidate ranking removed — without unified, Observes."""
     from plugin.agent.decision import DecisionEngine
     from plugin.worldmodel.entities.entity import Entity
     from plugin.worldmodel.model import WorldModel
@@ -192,15 +193,18 @@ def test_auto_candidate_beats_next_hyp_type():
 
     ex = RuntimeState().execution_state
     ex.search_hypothesis_index = 1  # wrongly advanced already
-    decision = DecisionEngine().decide(goal, wm, ex)
+    decision = DecisionEngine().define_action_step(goal, wm, ex)
     assert decision is not None
-    assert decision.action_family == "open_contact"
-    assert "now" in (decision.semantic_target or "").lower()
+    assert decision.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (decision.rationale or "")
 
 
-def test_refresh_perception_is_reusable_observe_fuse_update():
+def test_refresh_perception_is_reusable_observe_fuse_update(monkeypatch):
+    from plugin.agent import perception_cycle
     from plugin.agent.perception_cycle import ensure_settled_perception, refresh_perception
     from plugin.perception.observation import AxNode, Observation
+
+    monkeypatch.setattr(perception_cycle, "synthesize_perception", lambda *args, **kwargs: None)
 
     runtime = RuntimeState()
     goal = Goal(kind="whatsapp_voice_call", contact="now group")

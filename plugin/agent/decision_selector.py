@@ -47,9 +47,22 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+_MAX_VISIBLE_ENTITIES = 24
+
+
 def _compact_world_view(world: WorldModel, features: StateFeatures) -> Dict[str, Any]:
+    """The screen as a chooser needs it: state flags plus what is on it.
+
+    This deliberately carries the conclusions of perception and not its
+    transcript. It used to also embed ``perception_summary``, ``perception_llm``
+    and ``structured_perception``, which are records of how the scene was read
+    -- including, nested inside the consultation entry, the base64 screenshot it
+    was read from. That made a single selector prompt 282k tokens, about two
+    thirds of it one JPEG repeated four times as a string no model can decode.
+    The question here is which of a few grounded candidates to actuate, and the
+    entities and flags below are what that question turns on.
+    """
     scene = getattr(world, "last_scene_graph", None) or {}
-    attention = scene.get("attention") or {}
     surface_state = scene.get("surface_state") or {}
     active_subgraph = (
         features.extras.get("active_cognitive_subgraph")
@@ -57,8 +70,16 @@ def _compact_world_view(world: WorldModel, features: StateFeatures) -> Dict[str,
         or getattr(world, "last_active_subgraph", None)
         or {}
     )
+    # Everything except the relation ids, which run to hundreds of opaque edge
+    # keys naming nothing that can be chosen; the ids that can be are kept.
+    focus = {
+        str(key): _json_safe(value)
+        for key, value in dict(active_subgraph or {}).items()
+        if key != "relevant_relation_ids"
+    }
+
     visible_entities: List[Dict[str, Any]] = []
-    for entity in list(world.entities.values())[:40]:
+    for entity in world.entities.values():
         if not getattr(entity, "visible", False):
             continue
         visible_entities.append(
@@ -70,6 +91,8 @@ def _compact_world_view(world: WorldModel, features: StateFeatures) -> Dict[str,
                 "region_kind": getattr(entity, "region_kind", "") or "",
             }
         )
+        if len(visible_entities) >= _MAX_VISIBLE_ENTITIES:
+            break
 
     return {
         "screen_kind": str(getattr(features, "screen_kind", "") or features.screen_bucket or "unknown"),
@@ -87,53 +110,65 @@ def _compact_world_view(world: WorldModel, features: StateFeatures) -> Dict[str,
         "branch_active": bool(features.extras.get("branch_active")),
         "branch_depth": int(features.extras.get("branch_depth") or 0),
         "branch_affordances": list(features.extras.get("branch_affordances") or []),
-        "active_cognitive_subgraph": _json_safe(active_subgraph),
-        "focus_phase": str((active_subgraph or {}).get("phase") or features.extras.get("forward_phase") or ""),
-        "focus_region_ids": list((active_subgraph or {}).get("focus_region_ids") or []),
-        "active_entity_ids": list((active_subgraph or {}).get("active_entity_ids") or []),
-        "excluded_region_ids": list((active_subgraph or {}).get("excluded_region_ids") or []),
-        "grounded_capability_ids": list((active_subgraph or {}).get("grounded_capability_ids") or []),
+        "active_cognitive_subgraph": focus,
+        "focus_phase": str(focus.get("phase") or features.extras.get("forward_phase") or ""),
         "result_surface_visible": bool(features.extras.get("result_surface_visible")),
         "search_query": str(features.extras.get("search_query") or ""),
         "selected_capability_id": str(features.extras.get("selected_capability_id") or ""),
         "selected_capability_type": str(features.extras.get("selected_capability_type") or ""),
-        "selected_procedure_id": str(features.extras.get("selected_procedure_id") or ""),
-        "selected_procedure_title": str(features.extras.get("selected_procedure_title") or ""),
-        "selected_procedure_score": round(float(features.extras.get("selected_procedure_score") or 0.0), 4),
-        "selected_procedure_stage_id": str(features.extras.get("selected_procedure_stage_id") or ""),
-        "selected_procedure_stage_objective": str(features.extras.get("selected_procedure_stage_objective") or ""),
-        "selected_procedure_stage_required_predicates": list(
-            features.extras.get("selected_procedure_stage_required_predicates") or []
-        ),
-        "selected_procedure_stage_satisfied_predicates": list(
-            features.extras.get("selected_procedure_stage_satisfied_predicates") or []
-        ),
-        "selected_procedure_stage_missing_predicates": list(
-            features.extras.get("selected_procedure_stage_missing_predicates") or []
-        ),
-        "selected_procedure_stage_preferred_capabilities": list(
-            features.extras.get("selected_procedure_stage_preferred_capabilities") or []
-        ),
-        "selected_procedure_stage_recovery": list(features.extras.get("selected_procedure_stage_recovery") or []),
-        "selected_procedure_stage_reversible": bool(features.extras.get("selected_procedure_stage_reversible", True)),
-        "selected_procedure_stage_confidence_threshold": round(
-            float(features.extras.get("selected_procedure_stage_confidence_threshold") or 0.0), 4
-        ),
-        "selected_procedure_stage_progress": round(
-            float(features.extras.get("selected_procedure_stage_progress") or 0.0), 4
-        ),
-        "selected_procedure_progress": round(float(features.extras.get("selected_procedure_progress") or 0.0), 4),
-        "attention_regions": list(attention.get("region_ids") or []),
-        "attention_entities": list(attention.get("entity_ids") or []),
-        "goal_hypotheses": list(features.extras.get("goal_hypotheses") or []),
-        "conversation_context_window": int(features.extras.get("conversation_context_window") or 0),
-        "conversation_context_text": list(features.extras.get("conversation_context_text") or [])[:100],
-        "conversation_message_relevance": _json_safe(features.extras.get("conversation_message_relevance") or {}),
-        "perception_summary": _json_safe(structured_perception_bridge(features=features, world=world)),
-        "structured_perception": _json_safe(features.extras.get("perception_result") or {}),
-        "perception_llm": _json_safe(features.extras.get("perception_llm") or {}),
+        # Where the run stands in the selected procedure. The stage definition
+        # travels separately and in full; these are the live readings taken
+        # against it, which a static definition cannot carry.
+        "procedure_progress": {
+            "stage_id": str(features.extras.get("selected_procedure_stage_id") or ""),
+            "objective": str(features.extras.get("selected_procedure_stage_objective") or ""),
+            "satisfied_predicates": list(
+                features.extras.get("selected_procedure_stage_satisfied_predicates") or []
+            ),
+            "missing_predicates": list(
+                features.extras.get("selected_procedure_stage_missing_predicates") or []
+            ),
+            "stage_progress": round(float(features.extras.get("selected_procedure_stage_progress") or 0.0), 4),
+            "procedure_progress": round(float(features.extras.get("selected_procedure_progress") or 0.0), 4),
+        },
         "visible_entities": visible_entities,
     }
+
+
+# What perception concluded about the screen, as opposed to how it read it.
+_VERDICT_FIELDS = (
+    "screen_type",
+    "phase",
+    "active_surface",
+    "primary_surface_id",
+    "likely_next_family",
+    "likely_next_target",
+    "likely_next_text",
+    "transition_status",
+    "transition_summary",
+    "confidence",
+)
+_MAX_NARRATIVE_CHARS = 600
+
+
+def _perception_verdict(world: WorldModel, features: StateFeatures) -> Dict[str, Any]:
+    """Perception's reading of the screen, named field by field.
+
+    A fixed projection rather than the whole bridge, because the bridge folds in
+    the synthesis summary wholesale: anything later attached to that summary
+    would otherwise ride into every decision prompt uninvited, which is how a
+    base64 screenshot came to be in here four times over.
+    """
+    bridge = structured_perception_bridge(features=features, world=world)
+    verdict: Dict[str, Any] = {}
+    for key in _VERDICT_FIELDS:
+        value = bridge.get(key)
+        if value not in (None, "", [], {}):
+            verdict[key] = _json_safe(value)
+    narrative = str(bridge.get("narrative") or "").strip()
+    if narrative:
+        verdict["narrative"] = narrative[:_MAX_NARRATIVE_CHARS]
+    return verdict
 
 
 def _candidate_payload(candidate: Action, *, candidate_id: str) -> Dict[str, Any]:
@@ -272,6 +307,36 @@ def _resolve_choice(
     return None
 
 
+# Static text belongs in the system message, not in the user JSON. The user
+# message is rebuilt from live state every call, so anything placed there is
+# re-sent and re-prefilled each time; providers cache on a byte-identical
+# prefix, and the system message is the only part of this prompt that is one.
+# Keep this string free of interpolated state or the prefix stops matching.
+_SELECTOR_SYSTEM_PROMPT = (
+    "You are a UI action selector. Your job is to pick one grounded actuator "
+    "from the candidates in the user message. Return strict JSON with keys: "
+    "choice_id, confidence, reason. choice_id must be one of the provided "
+    "candidate ids or 'observe'.\n"
+    "\n"
+    "Choose the single next actuator that best advances the goal from the "
+    "current world view. Take perception_summary as the screen-level reading of "
+    "what is showing. Read the procedure stage and its missing predicates as the "
+    "trajectory contract, the frontier and goal hypotheses as the open lines of "
+    "attack, and the model-prior proposals as a secondary hint, not a command. "
+    "Treat the active_cognitive_subgraph as the immediate reasoning scope: "
+    "prefer affordances, regions, entities and capabilities inside that focus "
+    "slice, and down-rank unrelated sidebar/list/header noise. Check "
+    "already_tried before choosing: a move listed there with no effect has been "
+    "tested and failed, so repeating it needs a reason the earlier attempt did "
+    "not have. Prefer the candidate whose capability, region and visible context "
+    "match the goal; do not optimize for visually familiar controls alone. Treat "
+    "irreversible actions as high-cost: choose one only when the world evidence, "
+    "the active procedure stage and the risk gate justify it. If a concrete "
+    "candidate is better grounded than observe, choose it instead of idling. If "
+    "no candidate is suitable, choose 'observe'."
+)
+
+
 def build_selector_messages(
     goal: Goal,
     world: WorldModel,
@@ -281,6 +346,7 @@ def build_selector_messages(
     cap_graph: Optional[CapabilityGraph] = None,
     frontier_summary: Optional[Sequence[Dict[str, Any]]] = None,
     action_prior_runs: Optional[Sequence[Dict[str, Any]]] = None,
+    already_tried: Optional[Sequence[Dict[str, Any]]] = None,
     irreversible_threshold: float = 0.7,
 ) -> List[Dict[str, Any]]:
     candidate_payloads: List[Dict[str, Any]] = []
@@ -306,64 +372,49 @@ def build_selector_messages(
             "procedure_id": goal.procedure_id,
             "procedure_score": round(float(goal.procedure_score or 0.0), 4),
         },
-        "perception_summary": _json_safe(structured_perception_bridge(features=features, world=world)),
-        "perception_llm": _json_safe(features.extras.get("perception_llm") or {}),
-        "conversation_message_relevance": _json_safe(features.extras.get("conversation_message_relevance") or {}),
+        "perception_summary": _perception_verdict(world, features),
         "world_view": _compact_world_view(world, features),
-        "capability_graph": _projected_capability_payload(cap_graph, world=world, features=features, goal=goal),
         "frontier_hypotheses": list(frontier_summary or []),
+        "already_tried": list(already_tried or []),
         "action_prior_runs": list(action_prior_runs or []),
         "goal_hypotheses": list(features.extras.get("goal_hypotheses") or []),
         "selected_procedure": _json_safe(features.extras.get("selected_procedure") or {}),
         "selected_procedure_stage": _json_safe(features.extras.get("selected_procedure_stage") or {}),
-        "structured_perception": _json_safe(features.extras.get("perception_result") or {}),
         "risk_gate": {
             "irreversible_threshold": round(float(irreversible_threshold or 0.7), 3),
             "irreversible_actions_require_extra_confidence": True,
         },
         "candidates": candidate_payloads,
-        "instruction": (
-            "Choose the single next actuator that best advances the goal from the "
-            "current world view. Reason over the frontier hypotheses first, then "
-            "use the selected procedure and current procedure stage as the main "
-            "trajectory contract, and then treat the model-prior proposals as a "
-            "secondary hint, not a command. Use the "
-            "structured_perception as the screen-level and temporal interpretation "
-            "when it is present, and do not ignore it in favor of visually familiar "
-            "controls. "
-            "Treat the active_cognitive_subgraph as the immediate reasoning scope: "
-            "prefer affordances, regions, entities, and capabilities inside that "
-            "focus slice; explicitly down-rank unrelated sidebar/list/header noise. "
-            "pick the grounded candidate that best advances the most plausible "
-            "hypothesis. Prefer the candidate whose capability, region, and visible "
-            "context match the goal. Do not choose a visually familiar but goal-"
-            "irrelevant control. Treat irreversible actions as high-cost: only "
-            "choose them when the world evidence, the active procedure stage, and "
-            "the provided risk gate justify the move. If a concrete actuation "
-            "candidate is already better grounded than observe, choose it instead "
-            "of idling. If no candidate is suitable, choose 'observe'."
-        ),
     }
     return [
         {
             "role": "system",
-        "content": (
-            "You are a UI action selector. Your job is to pick one grounded "
-            "actuator from the provided candidates. Return strict JSON with "
-            "keys: choice_id, confidence, reason. choice_id must be one of the "
-            "provided candidate ids or 'observe'. Use the frontier hypotheses "
-            "and the selected procedure stage when present. Use the structured "
-            "perception contract and the active cognitive "
-            "subgraph as the immediate scope. Use the frontier "
-            "hypotheses and the explicit goal hypotheses to compare plausible "
-            "next steps; do not optimize for visually familiar controls alone."
-        ),
+            "content": _SELECTOR_SYSTEM_PROMPT,
         },
         {
             "role": "user",
             "content": json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
         },
     ]
+
+
+_BRANCH_STRATEGY_SYSTEM_PROMPT = (
+    "You are a branch strategy planner for a persistent UI agent. Given the "
+    "current branch state in the user message, choose the best strategic search "
+    "direction for the next few steps. Return only strict JSON with keys: "
+    "preferred_family, backtrack_family, avoid_families, branch_hypothesis, "
+    "expected_surface, confidence, reason.\n"
+    "\n"
+    "preferred_family should be a candidate family such as open_contact, "
+    "type_query, open_search, explore_chrome, probe_hover, probe_context_menu, "
+    "probe_focus, start_call, dismiss, end_call, observe. backtrack_family "
+    "should be the family to try if the current local branch is stale. "
+    "avoid_families should list only dead-end families for this branch; do not "
+    "include the preferred_family or backtrack_family unless the current branch "
+    "evidence shows they are also dead ends. Choose a strategy that changes the "
+    "search direction when the current frontier has stalled, rather than just "
+    "restating the nearest action."
+)
 
 
 def _branch_strategy_payload(
@@ -404,20 +455,6 @@ def _branch_strategy_payload(
         "branch": _json_safe(branch or {}),
         "candidates": candidate_payloads,
         "capability_graph": _projected_capability_payload(cap_graph, world=world, features=features, goal=goal),
-        "instructions": (
-            "You are a branch strategy planner. Given the current branch state, choose the "
-            "best strategic search direction for the next few steps. Return strict JSON with "
-            "keys: preferred_family, backtrack_family, avoid_families, branch_hypothesis, "
-            "expected_surface, confidence, reason. preferred_family should be a candidate "
-            "family such as open_contact, type_query, open_search, explore_chrome, probe_hover, "
-            "probe_context_menu, probe_focus, start_call, dismiss, end_call, observe. "
-            "backtrack_family should be the family to try if the "
-            "current local branch is stale. avoid_families should list only dead-end families "
-            "for this branch; do not include the preferred_family or backtrack_family unless "
-            "the current branch evidence shows they are also dead ends. Choose a strategy that "
-            "changes the search direction when the current frontier has stalled, rather than "
-            "just restating the nearest action."
-        ),
     }
 
 
@@ -443,11 +480,7 @@ def build_branch_strategy_messages(
     return [
         {
             "role": "system",
-            "content": (
-                "You are a strategic search planner for a persistent UI agent. Return only strict "
-                "JSON with keys: preferred_family, backtrack_family, avoid_families, "
-                "branch_hypothesis, expected_surface, confidence, reason."
-            ),
+            "content": _BRANCH_STRATEGY_SYSTEM_PROMPT,
         },
         {
             "role": "user",
@@ -565,6 +598,7 @@ def select_action_with_llm(
     allow_single_candidate: bool = False,
     frontier_summary: Optional[Sequence[Dict[str, Any]]] = None,
     action_prior_runs: Optional[Sequence[Dict[str, Any]]] = None,
+    already_tried: Optional[Sequence[Dict[str, Any]]] = None,
     irreversible_threshold: float = 0.7,
     grounding_threshold: float = 0.7,
     call_kwargs: Optional[Dict[str, Any]] = None,
@@ -607,6 +641,7 @@ def select_action_with_llm(
         cap_graph=cap_graph,
         frontier_summary=frontier_summary,
         action_prior_runs=action_prior_runs,
+        already_tried=already_tried,
         irreversible_threshold=irreversible_threshold,
     )
 

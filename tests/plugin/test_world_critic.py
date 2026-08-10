@@ -26,6 +26,44 @@ def _goal() -> Goal:
     )
 
 
+def test_critic_rejects_search_field_chrome_as_open_conversation():
+    """AX often latches the search glyph/title as open_conversation after a click.
+
+    That is not a document referent. Critic must refuse it and recover the
+    contact from inventory / prior — general search-chrome rule, not app folklore.
+    """
+    prior = {"surface": "chat_list", "open_conversation": ""}
+    proposal = {
+        "surface": "conversation",
+        "open_conversation": "Q Search|",
+        "objects": [
+            {
+                "id": "header",
+                "kind": "chat_header",
+                "text": "Pallavi",
+                "matches_goal": True,
+            }
+        ],
+    }
+    verdict = critique_world_proposal(prior, proposal, last_action="open_entity")
+    assert verdict.accepted_document["surface"] == "conversation"
+    assert verdict.accepted_document["open_conversation"] == "Pallavi"
+    assert any(
+        d.field == "open_conversation" and d.verdict == "reject" for d in verdict.decisions
+    )
+
+
+def test_bullet_search_chrome_is_search_field_echo():
+    """Live WA Mac AX stamps open as '• Search|' — must not pass as a contact."""
+    from plugin.agent.world_critic import is_search_field_echo
+    from plugin.agent.whatsapp_view import _is_contact_name, _normalize_open_conversation_text
+
+    for title in ("• Search|", "• Search", "· Search|", "Q Search|", "Search|"):
+        assert is_search_field_echo(title), title
+        assert not _is_contact_name(title), title
+        assert _normalize_open_conversation_text(title) == ""
+
+
 def test_critic_rejects_illegal_jump_to_search_from_picker():
     prior = {
         "surface": "forward_picker",
@@ -118,3 +156,64 @@ def test_sidebar_search_forbidden_helper():
     state.focused_field_role = "destination_filter"
     assert sidebar_search_forbidden(state)
     assert not sidebar_search_forbidden(surface="search", role="sidebar_search")
+
+
+def test_critic_rejects_conversation_when_prediction_error_says_search():
+    """Direct transition evidence must downgrade a contradicted conversation patch.
+
+    Live 210526: cloud proposed conversation while prediction_error repeatedly
+    reported observed=search. Parent-edge legality alone must not win.
+    """
+    prior = {"surface": "search", "open_conversation": "", "search_query": "Pallavi"}
+    proposal = {
+        "surface": "conversation",
+        "open_conversation": "Pallavi",
+        "search_query": "Pallavi",
+        "objects": [
+            {"id": "links", "kind": "filter_chip", "text": "Links", "restricts": "result_scope"},
+            {"id": "messages", "kind": "filter_chip", "text": "Messages", "restricts": "result_scope"},
+            {"id": "row", "kind": "chat_row", "text": "Pallavi: https://…", "matches_goal": True},
+        ],
+    }
+    pe = {
+        "predicted_surface": "conversation",
+        "observed_surface": "search",
+        "matched": False,
+        "verdict": "you predicted 'conversation' and the screen is 'search'.",
+    }
+    verdict = critique_world_proposal(
+        prior,
+        proposal,
+        last_action="resolve_entity",
+        observed_surface="search",
+        prediction_error=pe,
+    )
+    assert verdict.accepted_document["surface"] == "search"
+    assert not verdict.accepted_document.get("open_conversation")
+    assert any(
+        d.field == "surface" and d.verdict == "reject" for d in verdict.decisions
+    )
+
+
+def test_resolve_entity_intention_does_not_claim_conversation():
+    """resolve_entity establishes EntityRef; it must not predict conversation_open."""
+    from plugin.agent.action import Action
+    from plugin.agent.unified_cognition import intention_expectation_from_decision
+
+    decision = Action(
+        action="ResolveEntity",
+        action_family="resolve_entity",
+        semantic_target="Pallavi",
+        text="Pallavi",
+        prediction={
+            "expected_surface": "conversation",
+            "expected_affordances": ["message_bubbles", "input_field", "header_info"],
+        },
+        expected_predicate="conversation",
+    )
+    claim = intention_expectation_from_decision(decision)
+    assert claim.get("surface") == "search"
+    assert claim.get("claims_navigation") is False
+    assert claim.get("claims_resolution") is True
+    controls = [str(c).lower() for c in (claim.get("likely_controls") or [])]
+    assert "message_bubbles" not in controls

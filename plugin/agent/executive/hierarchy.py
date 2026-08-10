@@ -1,30 +1,30 @@
-"""The executive's decision hierarchy and its two cognitive modes.
+"""Cognitive modes and the offline meta decision ladder (eval oracle only).
 
-The design specifies an ordered ladder the runtime walks every step:
+Live meta-action selection is always LLM-based
+(``meta_consultation.resolve_meta_choice``) — no runtime flag, no ladder
+fallback. ``decision_ladder`` remains as a frozen policy oracle for goldens /
+hermetic test stubs that *simulate* an LLM chooser:
 
-    1. goal already complete?           -> stop
-    2. grounded low-risk advancing move? -> ACT
-    3. a blocking uncertainty?           -> the info action that resolves it
-    4. local exploration exhausted?      -> BACKTRACK / broaden
-    5. no strategy clear?                -> THINK (consult the model)
-    6. no safe route at all?             -> ASK_USER
+    0. goal already complete?           -> PERCEIVE (verify via look)
+    1. hard block?                      -> ASK
+    2. look owed (post-act / surprise)?   -> PERCEIVE
+    3. grounded advancing move?           -> ACT
+    4. blocking uncertainty?              -> PERCEIVE / EXPLORE
+    5. branch stale?                    -> THINK (or ACT / ASK when budgets spent)
+    6. no strategy clear?               -> THINK
+    7. look for action geometry?        -> PERCEIVE
+    8. fallbacks                        -> ACT / PERCEIVE / ASK
 
-and two cognitive modes:
+Cognitive modes:
 
     - deliberative: new goal, ambiguity, exhausted branch, high-consequence
-      action, contradicted beliefs, or no matching procedure -> use the strong
-      reasoning model;
-    - reactive: clear intention, grounded action, known transition, low risk ->
-      deterministic / fast path.
-
-``select_meta_action`` scores moves by value; this module expresses the *order*
-and the *mode* explicitly, so the runtime walks one ladder instead of leaving
-the precedence implicit across scattered flags.
+      action, contradicted beliefs, or no matching procedure -> strong model;
+    - reactive: clear intention, grounded action, known transition, low risk.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 from plugin.agent.executive.meta_action import MetaAction, MetaChoice, MetaContext
@@ -81,60 +81,129 @@ def mode_triggers(ctx: ModeContext) -> List[str]:
 def decision_ladder(ctx: MetaContext, *, goal_complete: bool = False) -> MetaChoice:
     """Walk the ordered hierarchy and return the first rung that applies.
 
-    This is the explicit-precedence sibling of ``select_meta_action``: where the
-    scorer weighs moves, this states the order plainly. They agree on the clear
-    cases; the ladder is what the runtime reads when it wants the *reason* to be
-    the rung, not a score.
+    Eval-only / hermetic-stub oracle. Live runtime never calls this — meta is
+    always LLM-inferred via ``meta_consultation.resolve_meta_choice``.
     """
     if goal_complete:
-        return MetaChoice(MetaAction.VERIFY, "rung 0: goal appears complete; verify", {"verify": 1.0})
+        return MetaChoice(
+            MetaAction.PERCEIVE,
+            "rung 0: goal appears complete; verify via look",
+            {"perceive": 1.0},
+        )
 
     if ctx.hard_block:
-        return MetaChoice(MetaAction.ASK_USER, "rung 6: no self-serve route; ask user", {"ask_user": 1.0})
+        return MetaChoice(MetaAction.ASK, "rung 1: no self-serve route; ask", {"ask": 1.0})
 
-    # A surprise buys a look that carries the failed attempt — but only while
-    # looking can still tell us something. Once those re-looks are spent on a
-    # world that will not move, this rung yields so the ladder reaches the
-    # retreat that broadens the search (rung 4).
-    if (
-        ctx.awaiting_verification
-        and ctx.last_action_surprised
-        and not ctx.reperception_exhausted
+    # Rung 1.5: entity-resolution SEARCH — known criteria + unresolved target +
+    # searchable scope. Beats unpaid look debt when surprise is absent: the
+    # prior look already answered visibility / search-availability (live 203259).
+    entity_search = (
+        bool(getattr(ctx, "destination_search_needed", False))
+        and not bool(getattr(ctx, "act_clear", False))
+        and not bool(getattr(ctx, "referent_repair_owed", False))
+        and not bool(getattr(ctx, "search_exhausted", False))
+        and not bool(getattr(ctx, "last_action_surprised", False))
+    )
+    if entity_search:
+        return MetaChoice(
+            MetaAction.SEARCH,
+            "rung 1.5: entity unresolved with searchable scope — SEARCH",
+            {"search": 1.0, "destination_search": 1.0, "entity_resolution": 1.0},
+        )
+
+    # Rung 2: executive owes a look (post-act re-perceive and/or surprise).
+    # Post-act debt is hard — surprise-relook exhaustion must not skip this
+    # while the act→reperceive→decide cycle is unfinished (live 033711).
+    if ctx.post_action_look_owed or (
+        ctx.awaiting_verification and not ctx.reperception_exhausted
     ):
-        return MetaChoice(MetaAction.VERIFY, "rung 1: last action surprised us; verify first", {"verify": 1.0})
+        scores = {"perceive": 1.0}
+        if ctx.last_action_surprised:
+            scores["surprise"] = 1.0
+        else:
+            scores["must_reperceive"] = 1.0
+        return MetaChoice(
+            MetaAction.PERCEIVE,
+            "rung 2: relook owed — perceive before re-acting",
+            scores,
+        )
 
     suff = ctx.sufficiency
 
-    # Rung 2: a grounded, sufficiently-evidenced move that advances the goal.
+    # Rung 3: a grounded, sufficiently-evidenced move that advances the goal.
     if ctx.has_grounded_action and (suff is None or suff.sufficient_to_act):
-        return MetaChoice(MetaAction.ACT, "rung 2: grounded action with sufficient evidence", {"act": 1.0})
+        return MetaChoice(MetaAction.ACT, "rung 3: grounded action with sufficient evidence", {"act": 1.0})
 
-    # Rung 3: a blocking uncertainty a look/probe could resolve — unless that
+    # Rung 4: a blocking uncertainty a look/explore could resolve — unless that
     # question is already settled (then this rung is skipped, not re-asked).
+    # Entity-resolution gaps are SEARCH (rung 1.5), not another generic look.
     if suff is not None and suff.blocking_uncertainties and not ctx.question_settled:
-        if suff.observe_has_value:
-            return MetaChoice(MetaAction.PERCEIVE, "rung 3: blocking uncertainty a look can close", {"perceive": 1.0})
-        if ctx.probe_available:
-            return MetaChoice(MetaAction.PROBE, "rung 3: blocking uncertainty a probe can reveal", {"probe": 1.0})
+        if suff.observe_has_value and not (
+            ctx.perceive_streak_exhausted and not ctx.post_action_look_owed
+        ):
+            return MetaChoice(MetaAction.PERCEIVE, "rung 4: blocking uncertainty a look can close", {"perceive": 1.0})
+        if ctx.probe_available and not ctx.probe_exhausted:
+            return MetaChoice(MetaAction.EXPLORE, "rung 4: blocking uncertainty explore can reveal", {"explore": 1.0})
 
-    # Rung 4: local exploration exhausted. Retreating is only half the move —
-    # the other half is knowing where to retreat *to*, which is a question about
-    # the action space rather than this screen. Gather that information first;
-    # the plain retreat remains the fallback when no plan can be formed.
+    # Rung 5: branch stale — strategic replan from known info, or ACT/ASK when
+    # retreat budgets are spent (loop must not rewrite after meta).
     if ctx.branch_stale:
+        if ctx.information_gathering_exhausted:
+            return MetaChoice(
+                MetaAction.ACT,
+                "rung 5: replan budget exhausted; decide next capability",
+                {"act": 1.0, "retreat_exhausted": 1.0},
+            )
+        if ctx.backtrack_exhausted:
+            if ctx.has_grounded_action:
+                return MetaChoice(
+                    MetaAction.ACT,
+                    "rung 5: explore retreat exhausted; commit the grounded action",
+                    {"act": 1.0, "retreat_exhausted": 1.0},
+                )
+            return MetaChoice(
+                MetaAction.ASK,
+                "rung 5: explore retreat exhausted; nothing can be grounded",
+                {"ask": 1.0, "retreat_exhausted": 1.0},
+            )
         return MetaChoice(
-            MetaAction.INFORMATION_GATHERING,
-            "rung 4: branch exhausted; plan which branch to try next",
-            {"information_gathering": 1.0},
+            MetaAction.THINK,
+            "rung 5: branch stale; replan from known info",
+            {"think": 1.0},
         )
 
-    # Rung 5: no clear strategy -> consult the reasoning model.
-    if ctx.ambiguous:
-        return MetaChoice(MetaAction.THINK, "rung 5: no clear strategy; consult", {"think": 1.0})
+    # Rung 6: no clear strategy -> consult reasoning, but only when a look
+    # would not help.
+    if (
+        ctx.ambiguous
+        and not ctx.think_exhausted
+        and (suff is None or not suff.observe_has_value)
+    ):
+        return MetaChoice(MetaAction.THINK, "rung 6: no clear strategy; consult", {"think": 1.0})
 
-    # Fallbacks: act if we can, else look, else ask.
+    # Rung 7: evidence is ready but geometry is still missing (live 134822).
+    if (
+        suff is not None
+        and suff.observe_has_value
+        and not ctx.has_grounded_action
+        and not (ctx.perceive_streak_exhausted and not ctx.post_action_look_owed)
+    ):
+        return MetaChoice(
+            MetaAction.PERCEIVE,
+            "rung 7: look for grounded action geometry",
+            {"perceive": 1.0},
+        )
+
+    # Rung 8: fallbacks — act if we can, else look, else ask.
+    # Perceive streak spent (and no post-act debt): decide a capability.
+    if ctx.perceive_streak_exhausted and not ctx.post_action_look_owed:
+        return MetaChoice(
+            MetaAction.ACT,
+            "fallback: perceive streak exhausted; decide next capability",
+            {"act": 1.0, "perceive_streak_exhausted": 1.0},
+        )
     if ctx.has_grounded_action:
         return MetaChoice(MetaAction.ACT, "fallback: commit to the grounded action", {"act": 0.5})
     if suff is None or suff.observe_has_value:
         return MetaChoice(MetaAction.PERCEIVE, "fallback: look again", {"perceive": 0.5})
-    return MetaChoice(MetaAction.ASK_USER, "fallback: nothing resolves the block", {"ask_user": 0.5})
+    return MetaChoice(MetaAction.ASK, "fallback: nothing resolves the block", {"ask": 0.5})

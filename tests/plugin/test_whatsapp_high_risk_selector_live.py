@@ -144,7 +144,7 @@ def test_live_high_risk_call_selector_prefers_voice_over_video_and_participants(
     from agent.auxiliary_client import call_llm
 
     engine = DecisionEngine(selector_enabled=True, selector_caller=call_llm)
-    decision = engine.decide(goal, wm, ExecutionState())
+    decision = engine.define_action_step(goal, wm, ExecutionState())
     _emit_trace("call-picker", engine, decision)
 
     assert decision is not None
@@ -220,7 +220,7 @@ def test_live_high_risk_forward_selector_prefers_source_content_over_forward_chr
     from agent.auxiliary_client import call_llm
 
     engine = DecisionEngine(selector_enabled=True, selector_caller=call_llm)
-    decision = engine.decide(goal, wm, ExecutionState())
+    decision = engine.define_action_step(goal, wm, ExecutionState())
     _emit_trace("forward-source-binding", engine, decision)
 
     assert decision is not None

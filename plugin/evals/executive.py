@@ -30,12 +30,12 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 # Meta-actions that ask a question of the world (look-like), used to measure how
 # efficiently the executive resolves its open questions.
-_LOOK_ACTIONS = {"perceive", "probe"}
+_LOOK_ACTIONS = {"perceive", "explore"}
 
 # Meta-actions that commit to the world rather than gather more evidence.
-_ACT_LIKE = {"act", "verify"}
+_ACT_LIKE = {"act"}
 # Meta-actions that gather evidence rather than commit.
-_LOOK_LIKE = {"perceive", "probe", "backtrack", "think", "ask_user"}
+_LOOK_LIKE = {"perceive", "explore", "think", "ask", "wait", "delegate"}
 
 # Transition outcomes (substring match) that mean the step did not cleanly
 # advance: a skip or an "I can act" verdict in front of one of these is a

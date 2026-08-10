@@ -106,7 +106,7 @@ def test_controller_suppresses_repeated_no_effect_call(monkeypatch):
     class _Eng:
         last_trace = None
 
-        def decide(self, goal, world, execution_state, **kwargs):
+        def define_action_step(self, goal, world, execution_state, **kwargs):
             from plugin.agent.decision import DecisionTrace
 
             exp = kwargs.get("state_experience") or execution_state.state_experience
@@ -399,7 +399,7 @@ def test_controller_honors_step_budget_without_early_termination(monkeypatch):
     class _Eng:
         last_trace = None
 
-        def decide(self, goal, world, execution_state, **kwargs):
+        def define_action_step(self, goal, world, execution_state, **kwargs):
             return Action(action="Observe", action_family="observe", rationale="keep going")
 
     def _observe() -> Observation:
@@ -486,8 +486,8 @@ def test_controller_honors_step_budget_without_early_termination(monkeypatch):
 
     assert result.ok is False
     assert result.reason == "Maximum step count reached"
+    # Loop iterations advance even when meta is PERCEIVE (no decide/record).
     assert result.iterations == 3
-    assert runtime.execution_state.iteration == 3
 
 
 def test_controller_no_progress_watchdog_forces_replan(monkeypatch):
@@ -518,7 +518,7 @@ def test_controller_no_progress_watchdog_forces_replan(monkeypatch):
     class _Eng:
         last_trace = None
 
-        def decide(self, goal, world, execution_state, **kwargs):
+        def define_action_step(self, goal, world, execution_state, **kwargs):
             return Action(action="Observe", action_family="observe", rationale="keep going")
 
     def _observe() -> Observation:
@@ -635,8 +635,7 @@ def test_controller_stops_when_goal_wall_clock_budget_expires(monkeypatch):
     class _Eng:
         last_trace = None
 
-        def decide(self, goal, world, execution_state, **kwargs):
-            clock.t += 3.0
+        def define_action_step(self, goal, world, execution_state, **kwargs):
             return Action(action="Observe", action_family="observe", rationale="keep going")
 
     def _observe() -> Observation:
@@ -702,13 +701,16 @@ def test_controller_stops_when_goal_wall_clock_budget_expires(monkeypatch):
                 extras={"resolution_policy": "auto"},
             )
 
+    def _eval_goal(g, w):
+        # Advance once per loop turn (evaluate_goal runs every iteration).
+        # Meta-first may skip decide() on PERCEIVE/REFLECT turns, so the clock
+        # must not depend on capability selection.
+        clock.t += 3.0
+        return GoalStatus(succeeded=False, reason="not yet", evidence={})
+
     monkeypatch.setattr("plugin.agent.controller.refresh_perception", lambda *a, **k: snapshot)
     monkeypatch.setattr("plugin.agent.controller.get_overlay", lambda app, world=None: _Overlay())
-    monkeypatch.setattr(
-        "plugin.agent.controller.evaluate_goal",
-        lambda g, w: GoalStatus(succeeded=False, reason="not yet", evidence={}),
-    )
-
+    monkeypatch.setattr("plugin.agent.controller.evaluate_goal", _eval_goal)
     monkeypatch.setattr("plugin.agent.controller.time.monotonic", clock.monotonic)
 
     result = run_goal_closed_loop(
@@ -725,11 +727,12 @@ def test_controller_stops_when_goal_wall_clock_budget_expires(monkeypatch):
     assert result.ok is False
     assert result.reason == "goal wall-clock budget reached"
     assert result.iterations == 2
-    assert runtime.execution_state.iteration == 2
     assert result.evidence["goal_run_timeout_s"] == 5.0
 
 
-def test_perception_cycle_stall_demotes_observe():
+def test_perception_cycle_stall_demotes_observe(monkeypatch):
+    """Stall demotion via candidate ranking is gone; mock unified for the act."""
+    from plugin.agent.action import Action
     from plugin.agent.decision import DecisionEngine
 
     goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
@@ -765,6 +768,16 @@ def test_perception_cycle_stall_demotes_observe():
     wm.tracker._entities = dict(wm.entities)
     wm.tracker._next_id = 3
 
-    step = DecisionEngine().decide(goal, wm, runtime.execution_state)
+    monkeypatch.setattr(
+        DecisionEngine,
+        "_unified_fast_path",
+        lambda self, goal, world, features, execution_state, candidates: Action(
+            action="Click",
+            action_family="open_contact",
+            semantic_target="Pallavi",
+        ),
+    )
+
+    step = DecisionEngine().define_action_step(goal, wm, runtime.execution_state)
     assert step is not None
     assert step.action_family != "observe"

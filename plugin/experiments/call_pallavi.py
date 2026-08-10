@@ -239,6 +239,11 @@ def run_call_pallavi_live(
     Must be launched from Terminal.app / iTerm with Accessibility enabled for
     that host — not from Cursor's agent shell.
     """
+    from plugin.evals.check import mark_live_goal_process, require_eval_check_or_exit
+
+    mark_live_goal_process()
+    require_eval_check_or_exit(reason="whatsapp call live agent startup")
+
     runtime = RuntimeState(active_task=goal)
     step_i = 0
 
@@ -680,7 +685,7 @@ def run_call_pallavi_fixture(
         status="ok" if patch.screen_label == "conversation" else "fail",
     )
     goal_obj = Goal(kind="whatsapp_voice_call" if "call" in goal.lower() else "unknown", contact=goal)
-    decision = DecisionEngine(selector_enabled=True).decide(goal_obj, runtime.world_model, runtime.execution_state)
+    decision = DecisionEngine(selector_enabled=True).define_action_step(goal_obj, runtime.world_model, runtime.execution_state)
     log.planner_decision(
         {"goal": goal_obj.description, "action": None if decision is None else decision.__dict__, "mode": "fixture"},
         step=step_i,

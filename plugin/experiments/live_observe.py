@@ -33,7 +33,14 @@ def format_raw_observation_trace(obs: Observation, *, max_nodes: int = 15, max_m
     return format_observation_raw_summary(obs, max_nodes=max_nodes, max_message_like=max_message_like)
 
 
-def _live_observe(log: EventLogger, *, app: str, step: int, with_screenshot: bool) -> Observation:
+def _live_observe(
+    log: EventLogger,
+    *,
+    app: str,
+    step: int,
+    with_screenshot: bool,
+    include_overlays: bool = False,
+) -> Observation:
     """Fuse pyobjc_ax + macapptree when possible; prefer deep AX as primary."""
     obs: Optional[Observation] = None
     errors: List[str] = []
@@ -48,8 +55,16 @@ def _live_observe(log: EventLogger, *, app: str, step: int, with_screenshot: boo
     except Exception:
         strict_retries = 3
     strict_retries = max(1, strict_retries)
-    print(f"[observe_begin step={step}] app={app} screenshot={with_screenshot}", flush=True)
-    log.step("observe_begin", step=step, message=f"app={app} screenshot={with_screenshot}")
+    print(
+        f"[observe_begin step={step}] app={app} screenshot={with_screenshot} "
+        f"overlays={include_overlays}",
+        flush=True,
+    )
+    log.step(
+        "observe_begin",
+        step=step,
+        message=f"app={app} screenshot={with_screenshot} overlays={include_overlays}",
+    )
     try:
         from plugin.perception.fusion.fuse import observe_fused
 
@@ -87,6 +102,8 @@ def _live_observe(log: EventLogger, *, app: str, step: int, with_screenshot: boo
                 prefer_source="pyobjc_ax",
                 source_timeout_s=source_timeout_s,
                 trace_bundle=_trace_bundle,
+                with_screenshot=with_screenshot,
+                include_overlays=include_overlays,
             )
             if len(fused.nodes) > 0:
                 obs = fused

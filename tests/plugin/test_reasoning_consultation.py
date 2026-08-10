@@ -47,7 +47,9 @@ def test_reasoning_consultation_preserves_abstention(monkeypatch):
     assert result.abstained is True
     assert result.reason == "need more context"
     assert result.parsed["needs_followup_observe"] is True
-    assert seen["task"] == "perception"
+    # Text-only messages must not ride the vision perception pin.
+    assert seen["task"] == "decision"
+    assert result.task == "decision"
     assert seen["provider"] == "ollama-cloud"
     assert seen["model"] == "gpt-oss:120b"
     assert seen["timeout"] == 7

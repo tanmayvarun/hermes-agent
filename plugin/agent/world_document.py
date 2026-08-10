@@ -82,6 +82,28 @@ def _normalize_objects(raw: Any, frame: int) -> List[Dict[str, Any]]:
         point = _point(item.get("point") or item.get("target_point"))
         if point:
             entry["point"] = point
+        bounds = item.get("bounds")
+        if isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+            try:
+                entry["bounds"] = [float(x) for x in bounds[:4]]
+            except (TypeError, ValueError):
+                pass
+        space = str(item.get("coordinate_space") or "").strip().lower()
+        if space in {"image", "screen"}:
+            entry["coordinate_space"] = space
+        elif entry.get("bounds") and not space:
+            # Measured bounds (OCR/AX) are pointer/screen space by contract.
+            entry["coordinate_space"] = "screen"
+        owner = _text(item.get("owner_surface") or item.get("surface"), 40)
+        if owner:
+            entry["owner_surface"] = owner
+        if item.get("selected") is not None:
+            entry["selected"] = bool(item.get("selected"))
+        if item.get("enabled") is not None:
+            entry["enabled"] = bool(item.get("enabled"))
+        role = _text(item.get("semantic_role") or item.get("role"), 40)
+        if role:
+            entry["semantic_role"] = role
         objects.append(entry)
     return objects[:MAX_OBJECTS]
 
@@ -109,11 +131,51 @@ def _int(value: Any, default: int = 0) -> int:
         return default
 
 
+# Selection / destination claims must name their owning surface. Background
+# conversation selection must never satisfy a destination-picker predicate.
+_DESTINATION_SELECTION_PREDICATES = frozenset(
+    {
+        "destination_selected",
+        "destination_selected_count",
+        "recipient_selected",
+        "recipient_selected_count",
+        "destination_contact_selected",
+    }
+)
+_SOURCE_SELECTION_PREDICATES = frozenset(
+    {
+        "source_object_selected",
+        "source_message_selected",
+        "source_message_selected_count",
+        "source_selected_count",
+    }
+)
+_DESTINATION_OWNER_SURFACES = frozenset(
+    {
+        "forward_picker",
+        "destination",
+        "destination_picker",
+        "dialog",
+    }
+)
+_SOURCE_OWNER_SURFACES = frozenset(
+    {
+        "conversation",
+        "selection_mode",
+        "container",
+        "conversation_selection_bar",
+        "chat_list",
+    }
+)
+
+
 def _normalize_beliefs(raw: Any, frame: int) -> List[Dict[str, Any]]:
     """Beliefs must carry their evidence and when they were last confirmed.
 
     That provenance is what lets the model retract its own stale claim on a
-    later frame instead of the runtime having to police it.
+    later frame instead of the runtime having to police it. Selection claims
+    also carry ``owner_surface`` / ``semantic_role`` so cross-surface
+    attribution can be scrubbed (architect: surface ownership).
     """
     beliefs: List[Dict[str, Any]] = []
     if not isinstance(raw, (list, tuple)):
@@ -129,18 +191,166 @@ def _normalize_beliefs(raw: Any, frame: int) -> List[Dict[str, Any]]:
             for e in (item.get("evidence") or [])
             if _text(e, 120)
         ][:MAX_EVIDENCE_ITEMS]
-        beliefs.append(
-            {
-                "predicate": predicate,
-                "value": bool(item.get("value")),
-                "confidence": _confidence(item.get("confidence")),
-                "evidence": evidence,
-                "confirmed_on_frame": _int(item.get("confirmed_on_frame"), frame),
-            }
-        )
+        raw_val = item.get("value")
+        if isinstance(raw_val, bool):
+            coerced: Any = raw_val
+        elif isinstance(raw_val, (int, float)) and not isinstance(raw_val, bool):
+            coerced = int(raw_val)
+        else:
+            coerced = bool(raw_val)
+        entry: Dict[str, Any] = {
+            "predicate": predicate,
+            "value": coerced,
+            "confidence": _confidence(item.get("confidence")),
+            "evidence": evidence,
+            "confirmed_on_frame": _int(item.get("confirmed_on_frame"), frame),
+        }
+        owner = _text(item.get("owner_surface"), 40)
+        if owner:
+            entry["owner_surface"] = owner
+        role = _text(item.get("semantic_role"), 40)
+        if role:
+            entry["semantic_role"] = role
+        rejected = [
+            e
+            for e in (item.get("rejected_evidence") or [])
+            if isinstance(e, dict) or _text(e, 120)
+        ][:MAX_EVIDENCE_ITEMS]
+        if rejected:
+            entry["rejected_evidence"] = [
+                (
+                    {
+                        "text": _text(e.get("text"), 80),
+                        "reason": _text(e.get("reason"), 120),
+                        "owner_surface": _text(e.get("owner_surface"), 40),
+                    }
+                    if isinstance(e, dict)
+                    else _text(e, 120)
+                )
+                for e in rejected
+            ]
+        beliefs.append(entry)
     # Keep the most recently confirmed when the model overruns the bound.
     beliefs.sort(key=lambda b: b["confirmed_on_frame"], reverse=True)
     return beliefs[:MAX_BELIEFS]
+
+
+def _inventory_destination_selected(objects: List[Dict[str, Any]]) -> bool:
+    """True when a destination-owned inventory row is marked selected."""
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        if not (bool(obj.get("selected")) or bool(obj.get("matches_goal"))):
+            continue
+        owner = str(obj.get("owner_surface") or "").strip().lower()
+        role = str(obj.get("semantic_role") or obj.get("kind") or "").strip().lower()
+        if owner in _DESTINATION_OWNER_SURFACES:
+            return True
+        if role in {
+            "recipient",
+            "contact_row",
+            "destination",
+            "destination_row",
+            "checkbox",
+        }:
+            return True
+        # On a flat forward_picker inventory, selected contact-like rows count
+        # when they are not commit/status chrome.
+        text = str(obj.get("text") or "").strip().lower()
+        kind = str(obj.get("kind") or "").strip().lower()
+        if kind in {"status", "chrome", "toolbar_status"}:
+            continue
+        if text in {
+            "forward",
+            "send",
+            "share",
+            "cancel",
+            "search",
+            "my status",
+        }:
+            continue
+        if owner in {"", "forward_picker", "destination_picker"} and bool(
+            obj.get("selected")
+        ):
+            return True
+    return False
+
+
+def scrub_cross_surface_selection_beliefs(
+    document: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Retract destination-selection claims owned by the wrong surface.
+
+    Structural invariant (not string-specific): a destination_selected belief
+    may only stand when its ``owner_surface`` is a destination surface *and*
+    inventory corroborates a selected recipient (or the claim is explicitly
+    false). Background source-selection ownership can never satisfy destination
+    predicates.
+    """
+    if not isinstance(document, dict):
+        return document
+    beliefs = list(document.get("beliefs") or [])
+    if not beliefs:
+        return document
+    objects = [
+        o for o in (document.get("objects") or []) if isinstance(o, dict)
+    ]
+    inventory_dest = _inventory_destination_selected(objects)
+    active = str(document.get("surface") or "").strip().lower()
+    scrubbed: List[Dict[str, Any]] = []
+    changed = False
+    for belief in beliefs:
+        if not isinstance(belief, dict):
+            continue
+        pred = str(belief.get("predicate") or "").strip().lower()
+        owner = str(belief.get("owner_surface") or "").strip().lower()
+        role = str(belief.get("semantic_role") or "").strip().lower()
+        b = dict(belief)
+        if pred in _DESTINATION_SELECTION_PREDICATES or pred.endswith(
+            "destination_selected"
+        ):
+            owned_by_source = owner in _SOURCE_OWNER_SURFACES or role in {
+                "source_message_selection",
+                "source_selection",
+            }
+            owned_by_dest = owner in _DESTINATION_OWNER_SURFACES or role in {
+                "destination_selection",
+                "recipient_selection",
+            }
+            if bool(b.get("value")) and (
+                owned_by_source
+                or (not owned_by_dest and not inventory_dest)
+                or (owned_by_dest and not inventory_dest and active in _DESTINATION_OWNER_SURFACES)
+            ):
+                b["value"] = False
+                b["confidence"] = min(float(b.get("confidence") or 0.0), 0.25)
+                rejected = list(b.get("rejected_evidence") or [])
+                rejected.append(
+                    {
+                        "text": "cross_surface_or_uncorroborated_destination_selection",
+                        "reason": (
+                            "destination selection claims require destination-surface "
+                            "ownership plus inventory-selected recipient; "
+                            "source-surface selection state is a separate namespace"
+                        ),
+                        "owner_surface": owner or "unspecified",
+                    }
+                )
+                b["rejected_evidence"] = rejected[:MAX_EVIDENCE_ITEMS]
+                if not owner and active in _DESTINATION_OWNER_SURFACES:
+                    b["owner_surface"] = active
+                changed = True
+        elif pred in _SOURCE_SELECTION_PREDICATES:
+            if not owner and active in _SOURCE_OWNER_SURFACES | {"conversation"}:
+                b["owner_surface"] = (
+                    "selection_mode" if active == "selection_mode" else "conversation"
+                )
+                changed = True
+        scrubbed.append(b)
+    if changed:
+        document = dict(document)
+        document["beliefs"] = scrubbed
+    return document
 
 
 def _normalize_attempts(raw: Any) -> List[Dict[str, Any]]:
@@ -178,7 +388,7 @@ def normalize_document(raw: Any, *, frame: int) -> Dict[str, Any]:
         _text(item, 120) for item in (raw.get("exhausted") or []) if _text(item, 120)
     ]
 
-    return {
+    out = {
         "frame": frame,
         "surface": _text(raw.get("surface"), 40),
         "open_conversation": _text(raw.get("open_conversation"), 80),
@@ -194,6 +404,12 @@ def normalize_document(raw: Any, *, frame: int) -> Dict[str, Any]:
         "attempts": _normalize_attempts(raw.get("attempts")),
         "exhausted": exhausted[:MAX_EXHAUSTED],
     }
+    # Runtime-stamped multi-display topology — carry through normalize; never
+    # invent from the model (it may omit or hallucinate display indices).
+    ts = raw.get("task_surface")
+    if isinstance(ts, dict) and ts:
+        out["task_surface"] = ts
+    return scrub_cross_surface_selection_beliefs(out)
 
 
 def record_attempt(

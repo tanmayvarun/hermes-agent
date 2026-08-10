@@ -12,6 +12,10 @@ def _norm_use_case(use_case: str) -> str:
     return " ".join((use_case or "").strip().lower().split())
 
 
+# Cold-start order for live UI screens, before any success rate is observed.
+_UI_ENGINE_PREFERENCE = {"visionkit": 0, "easyocr": 1, "paddleocr": 2}
+
+
 def _use_case_hint(use_case: str) -> str:
     low = _norm_use_case(use_case)
     if any(token in low for token in ("pdf", "doc", "document", "scan", "invoice", "receipt", "table")):
@@ -47,10 +51,16 @@ class OCRSelector:
                     idx,
                 )
             else:
+                engine_id = getattr(engine, "engine_id", "")
                 if hint == "document":
-                    prefer = 0 if getattr(engine, "engine_id", "") == "paddleocr" else 1
+                    prefer = 0 if engine_id == "paddleocr" else 1
                 else:
-                    prefer = 0 if getattr(engine, "engine_id", "") == "easyocr" else 1
+                    # A UI screen is read against a clock: the agent acts on what
+                    # it saw, so a read that takes fifteen seconds describes a
+                    # screen fifteen seconds gone. VisionKit returns the same
+                    # text in about one, which is why it leads here rather than
+                    # easyocr. Measured stats override this after a few attempts.
+                    prefer = _UI_ENGINE_PREFERENCE.get(engine_id, len(_UI_ENGINE_PREFERENCE))
                 rank = (1, prefer, idx)
             annotated.append((rank, engine))
         annotated.sort(key=lambda item: item[0])

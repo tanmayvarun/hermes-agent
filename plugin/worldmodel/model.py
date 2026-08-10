@@ -75,6 +75,14 @@ class WorldModel:
     # into a second inventory of the screen and reconciling that against the AX
     # tree behind the model's back. Empty when OCR is gated off for the surface.
     last_ocr_lines: List[Dict[str, Any]] = field(default_factory=list)
+    # The last query the search field was seen holding. Durable because the
+    # frame where it is needed is exactly the frame where it cannot be read:
+    # the field's text sometimes gets taken for the open chat's title instead,
+    # and recognising that echo requires knowing what was typed. Runs reached
+    # the forward phase believing the open conversation was 'Q zarooratwala
+    # Kulvinder' -- their own query, read back with the magnifier glyph on the
+    # front -- and hunted a forward affordance on a search screen.
+    last_search_query: str = ""
     current_screen: Optional[Screen] = None
     entities: Dict[int, Entity] = field(default_factory=dict)
     transitions: TransitionStore = field(default_factory=TransitionStore)
@@ -419,10 +427,15 @@ class WorldModel:
         agreement = None
         conflicts: List[Dict[str, Any]] = []
         needs = False
+        assemble_mode = False
         if isinstance(fusion_meta, dict):
             agreement = fusion_meta.get("agreement")
             conflicts = list(fusion_meta.get("conflicts") or [])
-            needs = bool(fusion_meta.get("needs_reobserve"))
+            assemble_mode = fusion_meta.get("fusion_mode") == "assemble"
+            # Assembly never produces a rivalry reobserve signal. Emptiness is
+            # scored from the observation itself, not from fusion conflicts.
+            if not assemble_mode:
+                needs = bool(fusion_meta.get("needs_reobserve"))
         self.last_conflicts = conflicts
 
         from plugin.worldmodel.score import compute_worldview_score

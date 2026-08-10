@@ -485,6 +485,41 @@ def _keydown(key_code: int, *, cmd: bool = False) -> None:
     CGEventPost(kCGHIDEventTap, up)
 
 
+def _clear_focused_field_keys(app: str) -> bool:
+    """Cmd+A then Delete so type fallbacks replace the field instead of appending.
+
+    Live 202832: paste reported ok but verify failed, then CGEvent appended into
+    a half-corrupt WhatsApp search box → ``zarooratwala Pallavipo`` / No results.
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            [
+                "osascript",
+                "-e",
+                f'tell application "{app}" to activate',
+                "-e",
+                "delay 0.15",
+                "-e",
+                'tell application "System Events" to keystroke "a" using command down',
+                "-e",
+                "delay 0.05",
+                "-e",
+                "tell application \"System Events\" to key code 51",
+                "-e",
+                "delay 0.08",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=12,
+        )
+        return proc.returncode == 0
+    except Exception as e:
+        logger.warning("clear focused field failed: %s", e)
+        return False
+
+
 def _type_via_cgevent(text: str) -> None:
     from Quartz import (
         CGEventCreateKeyboardEvent,
@@ -510,12 +545,17 @@ def _type_via_system_events(app: str, text: str) -> bool:
 
     # Escape for AppleScript string
     esc = text.replace("\\", "\\\\").replace('"', '\\"')
+    # Always select-all + delete before typing — never append into a dirty field.
     script = f'''
     tell application "{app}" to activate
     delay 0.35
     tell application "System Events"
       tell process "{app}"
         set frontmost to true
+        keystroke "a" using command down
+        delay 0.05
+        key code 51
+        delay 0.08
         keystroke "{esc}"
       end tell
     end tell
@@ -529,7 +569,12 @@ def _type_via_system_events(app: str, text: str) -> bool:
 
 
 def _paste_via_clipboard(app: str, text: str) -> bool:
-    """Use the system clipboard plus Cmd+V as a robust text-injection path."""
+    """Use the system clipboard plus Cmd+V as a robust text-injection path.
+
+    The previous clipboard must not be restored until Cmd+V has been consumed —
+    restoring immediately races the paste and leaves the field empty (live
+    zarooratwala: ``paste=True`` but ``AXValue=''``).
+    """
     import subprocess
 
     prev = ""
@@ -540,31 +585,54 @@ def _paste_via_clipboard(app: str, text: str) -> bool:
     except Exception:
         prev = ""
 
+    pasted = False
     try:
-        subprocess.run(["pbcopy"], input=text, text=True, capture_output=True, timeout=5)
-        subprocess.run(
+        copy = subprocess.run(
+            ["pbcopy"], input=text, text=True, capture_output=True, timeout=5
+        )
+        if copy.returncode != 0:
+            return False
+        # Select-all first so a half-typed field is replaced, not appended.
+        proc = subprocess.run(
             [
                 "osascript",
                 "-e",
                 f'tell application "{app}" to activate',
                 "-e",
-                "delay 0.15",
+                "delay 0.2",
+                "-e",
+                'tell application "System Events" to keystroke "a" using command down',
+                "-e",
+                "delay 0.08",
                 "-e",
                 'tell application "System Events" to keystroke "v" using command down',
+                "-e",
+                "delay 0.35",
             ],
             capture_output=True,
-            timeout=10,
+            text=True,
+            timeout=12,
         )
-        time.sleep(0.15)
-        return True
+        pasted = proc.returncode == 0
+        if not pasted:
+            err = (proc.stderr or proc.stdout or "").strip()[:160]
+            logger.warning("Clipboard paste osascript failed: %s", err or proc.returncode)
+        else:
+            time.sleep(0.2)
+        return pasted
     except Exception as e:
         logger.warning("Clipboard paste failed: %s", e)
         return False
     finally:
-        try:
-            subprocess.run(["pbcopy"], input=prev, text=True, capture_output=True, timeout=5)
-        except Exception:
-            pass
+        # Only restore after the paste keystroke had time to read the board.
+        if pasted or prev:
+            try:
+                time.sleep(0.15)
+                subprocess.run(
+                    ["pbcopy"], input=prev, text=True, capture_output=True, timeout=5
+                )
+            except Exception:
+                pass
 
 
 def _open_search_ui(app: str, bounds: Optional[Tuple[float, float, float, float]] = None) -> str:
@@ -742,32 +810,50 @@ def ax_click(
         # the user sees. This is how an AX-rich app is driven while the user works
         # in another window. AX-blind apps (WhatsApp) resolve nothing pressable
         # here and fall through to the foreground synthetic-click path below.
-        if _clean(target).lower() != "search":
+        target_l = _clean(target).lower()
+        # Context-menu verbs (Forward/Share/…) often advertise AXPress but only
+        # commit when the app is frontmost. Live zarooratwala: background AXPress
+        # 'Forward' left surface=context_menu and never opened the picker.
+        _FOREGROUND_MENU_VERBS = {
+            "forward",
+            "forward message",
+            "forward messages",
+            "share",
+            "reply",
+            "copy",
+            "delete",
+            "info",
+            "star",
+            "pin",
+            "react",
+        }
+        if target_l != "search" and target_l not in _FOREGROUND_MENU_VERBS:
             el_bg = _find_element(
                 app,
                 target,
                 prefer_roles=["AXButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXPopUpButton"],
             )
             if el_bg is not None and _supports_press(el_bg):
-                # A background press must be confirmed to target the *same* thing the
-                # caller resolved. On AX-blind apps (WhatsApp) a "search-mirror"
-                # AXStaticText titled with the query advertises AXPress but sits in
-                # the search field, not the chat row — pressing it reports success
-                # while nothing opens, which is exactly the silent no-op that loops
-                # the agent on search_results forever. When the caller supplies
-                # world-model bounds (the vision-perceived location of the target),
-                # only press in the background if the name-resolved element actually
-                # sits there. With no bounds (a pure AX-tree target on an AX-rich
-                # app) the element found by name *is* the target, so press it.
+                # Geometry wins over name. When the caller supplies world bounds,
+                # only background-press if the named element sits there — a
+                # same-named chrome echo (filter field, breadcrumb, status) must
+                # not steal the press. Without bounds, press true controls by
+                # name; never treat bare static text as the target.
                 bc = _bounds_center(bounds)
                 fc = _frame_center(el_bg)
-                coincides = bc is None or (
-                    fc is not None
-                    and fc[0] >= 0
-                    and fc[1] >= 0
-                    and abs(fc[0] - bc[0]) <= 40.0
-                    and abs(fc[1] - bc[1]) <= 40.0
-                )
+                role_bg = str(_ax_attr(el_bg, "AXRole") or "")
+                if role_bg == "AXMenuItem":
+                    coincides = False
+                elif bc is not None:
+                    coincides = (
+                        fc is not None
+                        and fc[0] >= 0
+                        and fc[1] >= 0
+                        and abs(fc[0] - bc[0]) <= 40.0
+                        and abs(fc[1] - bc[1]) <= 40.0
+                    )
+                else:
+                    coincides = role_bg != "AXStaticText"
                 if coincides:
                     err_bg = _press(el_bg)
                     if _press_ok(err_bg):
@@ -781,28 +867,24 @@ def ax_click(
 
         _activate_app(app)
         prefer = ["AXButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXPopUpButton", "AXStaticText"]
-        if _clean(target).lower() == "search":
-            # Opening search via Cmd+F is more reliable than clicking chrome
-            # (AXPosition for Search is often x=-1).
-            how = _open_search_ui(app, bounds=bounds)
+        if _clean(target).lower() == "search" and (
+            bounds is None or _bounds_center(bounds) is None
+        ):
+            # Inventing Search via Cmd+F is forbidden. Callers must supply
+            # grounded bounds from perception (same contract as ax_type).
             return ExecResult(
-                ok=True,
+                ok=False,
                 backend="ax",
-                message=f"open Search via {how}",
+                message="search_click_without_grounded_bounds; refusing Cmd+F invent",
                 command=f"ax_click {app} {target}",
             )
         # Prefer world-model entity bounds when valid — live WhatsApp often has a
         # search-mirror AXStaticText title=<query> that steals name-based lookup.
         bounds_center = _bounds_center(bounds)
         if bounds_center is not None and bounds_center[0] >= 0 and bounds_center[1] >= 0:
-            # These bounds came from a screenshot taken ~60s ago (measured 35-76s
-            # on live runs), so they are a claim about the past. This is the last
-            # moment the live screen can still be consulted, and the first at
-            # which the rectangle is final — the decision upstream frequently
-            # carries no geometry, leaving resolution to the branch above. Read
-            # the target back and refuse the click if it no longer holds what was
-            # asked for; a reordered chat list would otherwise open the wrong
-            # conversation, and at the Send step, message the wrong person.
+            # Defense in depth: brain→actor owns the transactional commit gate
+            # (plugin.agent.actor.execute_actor). Keep the same freshness refuse
+            # here for legacy non-actor callers that still hit ax_click directly.
             refusal = _refuse_stale_click(app, target, bounds)
             if refusal is not None:
                 return refusal
@@ -884,12 +966,32 @@ def ax_context_click(
         return ExecResult(ok=False, backend="ax", message="PyObjC ApplicationServices unavailable")
     try:
         _activate_app(app)
+        # Grounded decision bounds own content geometry. AX label match often
+        # resolves the sidebar preview that echoes the query ("zarooratwala…")
+        # and steals the right-click from the conversation-pane link.
+        bounds_center = _bounds_center(bounds)
         el = _find_element(app, target, prefer_roles=["AXButton", "AXLink", "AXMenuItem", "AXStaticText"])
-        center = _frame_center(el) if el is not None else None
-        if center is None:
-            center = _bounds_center(bounds)
+        ax_center = _frame_center(el) if el is not None else None
+        if ax_center is not None and (ax_center[0] < 0 or ax_center[1] < 0):
+            ax_center = None
+        center = None
+        if bounds_center is not None and bounds_center[0] >= 0 and bounds_center[1] >= 0:
+            center = bounds_center
+            if (
+                ax_center is not None
+                and abs(ax_center[0] - bounds_center[0]) <= 40.0
+                and abs(ax_center[1] - bounds_center[1]) <= 40.0
+            ):
+                center = ax_center
+        else:
+            center = ax_center
         if center is None:
             return ExecResult(ok=False, backend="ax", message=f"context click target not found for {target!r}", command=f"ax_context_click {app} {target}")
+        # Same freshness transaction as ax_click (actor owns the primary gate).
+        if bounds is not None:
+            refusal = _refuse_stale_click(app, target, bounds)
+            if refusal is not None:
+                return refusal
         # Move the pointer onto the target and let the app register the hover
         # before right-clicking. Apps like WhatsApp only build the row's context
         # menu for the element under the cursor; a cold right-click at a point
@@ -914,21 +1016,25 @@ def ax_press_escape(app: str) -> ExecResult:
 
     try:
         _activate_app(app)
-        time.sleep(0.15)
-        subprocess.run(
-            [
-                "osascript",
-                "-e",
-                f'tell application "{app}" to activate',
-                "-e",
-                "delay 0.15",
-                "-e",
-                'tell application "System Events" to key code 53',
-            ],
-            capture_output=True,
-            timeout=5,
-        )
-        time.sleep(0.35)
+        time.sleep(0.1)
+        try:
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'tell application "{app}" to activate',
+                    "-e",
+                    "delay 0.1",
+                    "-e",
+                    'tell application "System Events" to key code 53',
+                ],
+                capture_output=True,
+                timeout=2,
+            )
+        except Exception:
+            # System Events can hang under load; CGEvent Escape still dismisses.
+            _keydown(53)
+        time.sleep(0.25)
         return ExecResult(ok=True, backend="ax", message="pressed Escape", command="key code 53")
     except Exception as e:
         return ExecResult(ok=False, backend="ax", message=f"Escape failed: {e}", command="key code 53")
@@ -1007,6 +1113,17 @@ def ax_hangup_call(
         return ExecResult(ok=False, backend="ax", message=str(e), command=f"ax_hangup {app}")
 
 
+def _looks_like_search_field_label(label: str) -> bool:
+    """True when a label/placeholder describes Search — not a chat composer."""
+    low = _clean(label).lower()
+    if not low:
+        return False
+    if any(tok in low for tok in ("type a message", "message", "compose", "write a")):
+        if "search" not in low and "find" not in low:
+            return False
+    return any(tok in low for tok in ("search", "find", "filter", "q search"))
+
+
 def ax_type(
     app: str,
     text: str,
@@ -1014,9 +1131,35 @@ def ax_type(
     into: Optional[str] = None,
     submit: bool = False,
     search_bounds: Optional[Tuple[float, float, float, float]] = None,
+    open_search_ui: bool = False,
 ) -> ExecResult:
+    """Type into a grounded search/filter field.
+
+    Requires ``search_bounds`` from perception. Never invents a field via Cmd+F
+    or a global AX "Search" hunt — ``open_search_ui`` is ignored (legacy flag;
+    invent path closed). Callers without geometry must refuse upstream.
+
+    Hard safety (live 095344): if the grounded click is *not* on the AX Search
+    field, do **not** type at that focus — that dumped the query into the open
+    chat composer (Godrej / Pallavi drafts). Retarget to the real Search field
+    when AX can name it; otherwise refuse without keystrokes.
+    """
     if not ax_available():
         return ExecResult(ok=False, backend="ax", message="PyObjC ApplicationServices unavailable")
+    if search_bounds is None:
+        return ExecResult(
+            ok=False,
+            backend="ax",
+            message=(
+                f"type_without_grounded_bounds for {text!r}; "
+                "refusing Cmd+F / global Search invent"
+            ),
+            command=f"ax_type {app} {text}",
+        )
+    if open_search_ui:
+        logger.warning(
+            "ax_type: open_search_ui ignored (invent forbidden); using grounded bounds only"
+        )
     try:
         from ApplicationServices import AXUIElementSetAttributeValue
         import subprocess
@@ -1029,68 +1172,89 @@ def ax_type(
         open_how = ""
         value_now = ""
 
-        # Background-first: set the field's value via AX without activating the
-        # app. AX-rich apps accept AXValue writes invisibly; WhatsApp/Electron
-        # ignore them, so we verify the write actually took and only then claim a
-        # background success — otherwise we fall through to the foreground
-        # click+keystroke path below (which does bring the app forward).
-        field_bg, field_bg_label = _find_search_text_field(app)
-        if field_bg is None and into:
-            cand = _find_element(app, into, prefer_roles=["AXTextField", "AXSearchField", "AXComboBox"])
-            if cand is not None and _is_editable_text_target(cand):
-                field_bg, field_bg_label = cand, (into or "")
-        if field_bg is not None:
-            try:
-                AXUIElementSetAttributeValue(field_bg, "AXFocused", True)
-                AXUIElementSetAttributeValue(field_bg, "AXValue", "")
-                AXUIElementSetAttributeValue(field_bg, "AXValue", text)
-                time.sleep(0.15)
-            except Exception:
-                pass
-            got = _clean(_ax_str(field_bg, "AXValue") or "")
-            want = _clean(text)
-            if want and (got == want or want in got):
-                if submit:
-                    # AXConfirm submits the field without a keystroke — still
-                    # background. If the app does not implement it, the live
-                    # results still filter on the value we set.
-                    try:
-                        from ApplicationServices import AXUIElementPerformAction
-
-                        AXUIElementPerformAction(field_bg, "AXConfirm")
-                    except Exception:
-                        pass
-                return ExecResult(
-                    ok=True,
-                    backend="ax_bg",
-                    message=f"set {field_bg_label or into or 'field'!r} via AXValue in background value={got!r}",
-                    command=f"ax_type {app}",
-                )
-
         for attempt in range(2):
             _activate_app(app)
             time.sleep(0.25)
             if attempt > 0:
                 ax_press_escape(app)
                 time.sleep(0.15)
-            open_how = _open_search_ui(app, bounds=search_bounds)
+            # Grounded only: click the provided field geometry. Never Cmd+F.
+            open_how = "grounded_field"
+            center = _bounds_center(search_bounds)
+            if center and center[0] >= 0 and center[1] >= 0:
+                _mouse_click(center[0], center[1])
+                time.sleep(0.35)
+                open_how = f"clicked grounded field center={center}"
+            else:
+                return ExecResult(
+                    ok=False,
+                    backend="ax",
+                    message=(
+                        f"type_without_usable_bounds for {text!r}; "
+                        "refusing Cmd+F / global Search invent"
+                    ),
+                    command=f"ax_type {app} {text}",
+                )
             attempt_notes.append(f"open={open_how}")
 
+            # Only accept an AX field that sits on the grounded rectangle —
+            # unless that rectangle missed Search entirely, in which case we
+            # retarget to the real Search field rather than typing into whatever
+            # the wrong click focused (composer / chat row).
+            def _near_grounded(el: Any) -> bool:
+                fc = _frame_center(el)
+                bc = _bounds_center(search_bounds)
+                if not fc or not bc:
+                    return False
+                return abs(fc[0] - bc[0]) <= 96.0 and abs(fc[1] - bc[1]) <= 96.0
+
             field, field_label = _find_search_text_field(app)
-            if field is None and into:
-                field = _find_element(
+            retargeted = False
+            if field is not None and not _near_grounded(field):
+                attempt_notes.append("ax_search_field_off_grounded_bounds")
+                if _looks_like_search_field_label(field_label):
+                    # Wrong geometry from the model — correct to AX Search.
+                    retargeted = True
+                    attempt_notes.append("retarget_ax_search_field")
+                    fc = _frame_center(field)
+                    if fc:
+                        _activate_app(app)
+                        _mouse_click(fc[0], fc[1])
+                        time.sleep(0.3)
+                        open_how = f"retargeted ax search center={fc}"
+                else:
+                    field, field_label = None, ""
+            if field is None and into and _looks_like_search_field_label(into):
+                cand = _find_element(
                     app,
                     into,
                     prefer_roles=["AXTextField", "AXSearchField", "AXComboBox"],
                 )
-                if field is not None and not _is_editable_text_target(field):
-                    field = None
+                if (
+                    cand is not None
+                    and _is_editable_text_target(cand)
+                    and _near_grounded(cand)
+                ):
+                    field, field_label = cand, (into or "")
                 else:
-                    field_label = into or ""
+                    field = None
+            elif field is None and into and not _looks_like_search_field_label(into):
+                # Live 095344: into='Pallavi' — a contact name is not a search field.
+                attempt_notes.append(f"refuse_into_non_search_label={into!r}")
 
             if field is None:
-                attempt_notes.append("editable_field=missing")
-                continue
+                # Never type at a grounded click we could not confirm as Search.
+                # Live 095344 typed into the Godrej/Pallavi composer this way.
+                return ExecResult(
+                    ok=False,
+                    backend="ax",
+                    message=(
+                        f"refuse_type_non_search_focus for {text!r}; "
+                        f"grounded click was not the Search field "
+                        f"(into={into!r}) attempts={attempt_notes!r}"
+                    ),
+                    command=f"ax_type {app} {text}",
+                )
 
             try:
                 AXUIElementSetAttributeValue(field, "AXFocused", True)
@@ -1100,17 +1264,19 @@ def ax_type(
                 _press(field)
             except Exception:
                 pass
-            center = _frame_center(field) or _bounds_center(search_bounds)
-            if center:
-                _activate_app(app)
-                _mouse_click(center[0], center[1])
+            if not retargeted:
+                center = _frame_center(field) or _bounds_center(search_bounds)
+                if center:
+                    _activate_app(app)
+                    _mouse_click(center[0], center[1])
             time.sleep(0.2)
-            try:
-                AXUIElementSetAttributeValue(field, "AXValue", "")
-                AXUIElementSetAttributeValue(field, "AXValue", text)
-                time.sleep(0.25)
-            except Exception as e:
-                logger.warning("AXValue set failed: %s", e)
+            if field is not None:
+                try:
+                    AXUIElementSetAttributeValue(field, "AXValue", "")
+                    AXUIElementSetAttributeValue(field, "AXValue", text)
+                    time.sleep(0.25)
+                except Exception as e:
+                    logger.warning("AXValue set failed: %s", e)
 
             pasted = _paste_via_clipboard(app, text)
             attempt_notes.append(f"paste={pasted}")
@@ -1142,7 +1308,16 @@ def ax_type(
                 time.sleep(0.35)
 
             if not _query_visible_in_search(app, text)[0]:
+                # Never append: clear first (live 202832 Pallavipo garble).
+                cleared = _clear_focused_field_keys(app)
+                attempt_notes.append(f"clear_before_cgevent={cleared}")
                 _type_via_cgevent(text)
+                time.sleep(0.35)
+            if not _query_visible_in_search(app, text)[0]:
+                # CGEvent can be swallowed when focus is wrong; System Events
+                # keystrokes into the app process are a second injection path.
+                se_ok = _type_via_system_events(app, text)
+                attempt_notes.append(f"system_events={se_ok}")
                 time.sleep(0.35)
 
             if field is not None:

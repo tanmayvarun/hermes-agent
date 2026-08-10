@@ -211,7 +211,12 @@ def _proposal_with_prediction() -> UnifiedProposal:
     proposal.world_model = {"surface": "conversation", "objects": []}
     proposal.observed_state = {"surface": "conversation"}
     proposal.expected_transition = _menu_expected()
-    proposal.next_action = {"family": "reveal_actions", "text": "ZarooratWala"}
+    proposal.next_action = {
+        "family": "reveal_actions",
+        "text": "ZarooratWala",
+        "target_point": [400, 300],
+        "coordinate_space": "screen",
+    }
     return proposal
 
 
@@ -234,9 +239,16 @@ def test_the_prediction_is_in_the_shape_the_experience_layer_reads():
     assert pred.get("predicted_outcome")
 
 
-def test_an_action_the_model_made_no_prediction_for_carries_none():
+def test_an_action_the_model_made_no_prediction_for_gets_family_intention():
+    """Omitting expected_transition must not leave ACT with a blank claim.
+
+    Stamp_act_intention / post-act scoring need a surface; family defaults fill
+    the gap so reveal_actions still predicts context_menu.
+    """
     proposal = _proposal_with_prediction()
     proposal.expected_transition = {}
     action, _ = proposal_to_action(proposal, Goal(kind="whatsapp_forward_message"), WorldModel())
     assert action is not None
-    assert not action.prediction
+    assert action.prediction
+    assert action.prediction["expected_surface"] == "context_menu"
+    assert action.prediction.get("source") == "act_intention_default"

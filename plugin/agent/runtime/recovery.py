@@ -140,8 +140,16 @@ def perform_storage_cleanup(
     reason: str,
     evidence: Sequence[str],
     analysis: Optional[Dict[str, Any]] = None,
+    staged: bool = True,
+    headroom_text: str = "",
+    target_free_bytes: Optional[int] = None,
 ) -> StorageCleanupResult:
-    """Run the bundled cleanup routines for storage pressure."""
+    """Run cleanup for storage pressure.
+
+    Default path is staged / empathetic: low-importance destinations first,
+    stop once decent free-space headroom is available. Legacy bulk quick+host
+    temp remains available when ``staged=False``.
+    """
     if analysis is None:
         analysis = _analyze_storage_cleanup_targets(reason=reason, evidence=evidence)
     disk_cleanup_summary: Dict[str, Any] = {}
@@ -149,13 +157,26 @@ def perform_storage_cleanup(
 
     try:
         disk_cleanup_lib = _load_disk_cleanup_library()
-        disk_cleanup_summary = disk_cleanup_lib.quick()
-        if hasattr(disk_cleanup_lib, "quick_host_temp"):
-            host_temp_summary = disk_cleanup_lib.quick_host_temp()
-            disk_cleanup_summary = _merge_cleanup_summaries(
-                disk_cleanup_summary,
-                host_temp_summary,
+        if staged and hasattr(disk_cleanup_lib, "relieve_until_headroom"):
+            target = target_free_bytes
+            if target is None and hasattr(disk_cleanup_lib, "resolve_headroom_target"):
+                target = disk_cleanup_lib.resolve_headroom_target(
+                    evidence=list(evidence),
+                    text=headroom_text or reason,
+                )
+            disk_cleanup_summary = disk_cleanup_lib.relieve_until_headroom(
+                target_free_bytes=target,
+                evidence=list(evidence),
+                reason=reason,
             )
+        else:
+            disk_cleanup_summary = disk_cleanup_lib.quick()
+            if hasattr(disk_cleanup_lib, "quick_host_temp"):
+                host_temp_summary = disk_cleanup_lib.quick_host_temp()
+                disk_cleanup_summary = _merge_cleanup_summaries(
+                    disk_cleanup_summary,
+                    host_temp_summary,
+                )
     except Exception as exc:
         disk_cleanup_summary = {"deleted": 0, "empty_dirs": 0, "freed": 0, "errors": [str(exc)]}
 
@@ -262,7 +283,7 @@ def recover_after_unexpected(
         return obs
 
     snap = refresh_perception(runtime, goal_obj, observe=_obs, action_label="recover_observe")
-    new_action = DecisionEngine(selector_enabled=True).decide(goal_obj, runtime.world_model, runtime.execution_state)
+    new_action = DecisionEngine(selector_enabled=True).define_action_step(goal_obj, runtime.world_model, runtime.execution_state)
     runtime.execution_state.step = 0
     runtime.execution_state.last_action = "recover_observe"
     patch = snap.patch

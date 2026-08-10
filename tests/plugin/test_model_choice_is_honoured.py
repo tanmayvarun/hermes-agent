@@ -128,6 +128,33 @@ def test_the_uniquely_goal_matched_object_is_found():
     assert winner.label == "Kulvinder Ji - Video call"
 
 
+def test_prefer_url_ignores_plain_text_matches_goal():
+    """Link hunt must not auto-ground a caption bubble (live 024851)."""
+    from plugin.worldmodel.entities.entity import Entity
+
+    world = WorldModel()
+    world.entities[1] = Entity(
+        id=1,
+        entity_type="message",
+        semantic_role="message",
+        label="zarooratwala Pallavi 12:33 AM",
+        bounds=(3300.0, 900.0, 200.0, 40.0),
+        attributes={"matches_goal": True, "source": "vision"},
+    )
+    assert _goal_matched_object(world, prefer_url=True) is None
+    world.entities[2] = Entity(
+        id=2,
+        entity_type="link",
+        semantic_role="link",
+        label="https://www.zarooratwala.com/?",
+        bounds=(2400.0, 400.0, 400.0, 40.0),
+        attributes={"matches_goal": True, "source": "vision"},
+    )
+    winner = _goal_matched_object(world, prefer_url=True)
+    assert winner is not None
+    assert "zarooratwala.com" in (winner.label or "")
+
+
 def test_two_claimed_matches_are_not_silently_resolved():
     """Two claimed matches is the ambiguity resolve_entity exists to settle.
 
@@ -214,12 +241,11 @@ def test_every_family_that_points_at_something_grounds_it(family: str):
 
 # --- deliberating is a way of deciding, not a reason to stop looking ----------
 #
-# The executive raises force_deliberation for THINK and for a PROBE wanting a
-# fresh reveal, meaning "do not just take the fast pick". Reading it as "skip the
-# perceptor" also skipped what the perceptor call *does*: refresh the world
-# document, run the critic, and materialise the geometry above. The deliberative
-# path then reasoned over the previous frame -- in the live run, one taken before
-# the query was even typed -- and the enumerate/score machinery acted on it.
+# The executive raises force_deliberation for THINK / deliberative mode / PROBE,
+# meaning "decide carefully". Under the one-executive contract that careful
+# chooser is the brain (after a fresh perceive). Skipping the perceptor left
+# stale geometry; withholding the brain left deterministic promote to reopen a
+# contact from AX chrome while the multimodal reading already had the chat open.
 
 
 def _deliberation_fixture(monkeypatch):
@@ -252,14 +278,28 @@ def test_a_forced_deliberation_frame_still_perceives(monkeypatch):
     assert calls == ["consulted"], "deliberation must not skip the look"
 
 
-def test_a_forced_deliberation_frame_withholds_only_the_action(monkeypatch):
+def test_a_forced_deliberation_frame_still_lets_the_brain_act(monkeypatch):
+    """Deliberation requests a careful choice — the brain — not a no-op."""
     engine, goal, world, features, state, _ = _deliberation_fixture(monkeypatch)
     state.force_deliberation = True
 
+    def _brain(proposal, goal_, features=None, execution_state=None, chooser=None):
+        proposal.next_action = {
+            "family": "open_entity",
+            "text": "Kulvinder",
+            "target_id": "kulvinder_ji_row",
+            "target_label": "Kulvinder Ji - Video call",
+            "confidence": 0.9,
+        }
+        return {"phase": "reach_source", "realization": "test"}
+
+    monkeypatch.setattr("plugin.agent.brain.choose_next_capability", _brain)
+
     action = engine._unified_fast_path(goal, world, features, state, [])
 
-    assert action is None, "the executive asked to deliberate, so do not act on the fast pick"
-    assert features.extras["unified_cognition"]["withheld_for_deliberation"] is True
+    assert action is not None
+    assert features.extras["unified_cognition"]["withheld_for_deliberation"] is False
+    assert features.extras["unified_cognition"]["deliberation_requested"] is True
 
 
 def test_the_deliberation_request_is_consumed_once(monkeypatch):
@@ -275,14 +315,26 @@ def test_the_deliberation_request_is_consumed_once(monkeypatch):
 def test_an_ordinary_frame_acts_on_the_proposal(monkeypatch):
     engine, goal, world, features, state, _ = _deliberation_fixture(monkeypatch)
 
+    def _brain(proposal, goal_, features=None, execution_state=None, chooser=None):
+        proposal.next_action = {
+            "family": "open_entity",
+            "text": "Kulvinder",
+            "target_id": "kulvinder_ji_row",
+            "target_label": "Kulvinder Ji - Video call",
+            "confidence": 0.9,
+        }
+        return {"phase": "reach_source", "realization": "test"}
+
+    monkeypatch.setattr("plugin.agent.brain.choose_next_capability", _brain)
+
     action = engine._unified_fast_path(goal, world, features, state, [])
 
     assert action is not None
     assert features.extras["unified_cognition"]["withheld_for_deliberation"] is False
 
 
-def test_the_perception_reaches_the_trace_even_when_the_action_is_withheld(monkeypatch):
-    """A withheld frame must still be diagnosable: the reading is the evidence."""
+def test_the_perception_reaches_the_trace_on_a_deliberation_frame(monkeypatch):
+    """A deliberation frame must still be diagnosable: the reading is the evidence."""
     engine, goal, world, features, state, _ = _deliberation_fixture(monkeypatch)
     state.force_deliberation = True
 
@@ -290,3 +342,62 @@ def test_the_perception_reaches_the_trace_even_when_the_action_is_withheld(monke
 
     recorded = features.extras["unified_cognition"]
     assert recorded.get("world_model", {}).get("surface") == "search_results"
+
+
+def test_a_vision_object_takes_its_geometry_from_the_ocr_reading():
+    """The model says which object; the measurement says where it is.
+
+    Its coordinates are an estimate and a poor one: a live run named the link
+    card at a point outside the image it had been shown, which resolved to
+    (2271, 1550) on a 1710x1107 display and sent the right-click off-screen.
+    OCR cannot say what anything means but it measures to the pixel, so when it
+    has read the object the box wins over the guess.
+    """
+    from plugin.agent.unified_cognition import UnifiedProposal, materialize_vision_entities
+    from plugin.worldmodel.model import WorldModel
+
+    world = WorldModel()
+    world.last_ocr_lines = [
+        {"text": "Kulvinder Ji", "bounds": [90.0, 228.0, 71.0, 19.0], "confidence": 1.0},
+        {"text": "ZarooratWala - Fresh Groceries Delivered", "bounds": [160.0, 320.0, 240.0, 22.0]},
+        {"text": "Messages", "bounds": [80.0, 195.0, 56.0, 16.0]},
+    ]
+
+    proposal = UnifiedProposal()
+    proposal.confidence = 0.9
+    proposal.point_scale = 1.0
+    proposal.point_origin = (0.0, 0.0)
+    proposal.visible_objects = [
+        # Described in the model's words, not the rendered string, and aimed
+        # at a point that is nowhere near the row.
+        {"id": "row", "text": "Kulvinder Ji - zarooratwala.com link message", "point": [1700, 1131]},
+    ]
+
+    assert materialize_vision_entities(world, proposal) == 1
+    entity = world.entities[900000]
+    x, y, w, h = entity.bounds
+    assert (x, y, w, h) == (90.0, 228.0, 71.0, 19.0), "the measured row should win over the guess"
+
+
+def test_an_unread_object_keeps_the_model_point():
+    """With nothing measured, the estimate is still better than no target.
+
+    OCR reads text; a bare icon has none. Dropping those objects would make
+    every text-free control unclickable, so the model's point stays as the
+    fallback -- aimed at the right thing even when aimed badly.
+    """
+    from plugin.agent.unified_cognition import UnifiedProposal, materialize_vision_entities
+    from plugin.worldmodel.model import WorldModel
+
+    world = WorldModel()
+    world.last_ocr_lines = [{"text": "something else entirely", "bounds": [10.0, 10.0, 40.0, 12.0]}]
+
+    proposal = UnifiedProposal()
+    proposal.confidence = 0.8
+    proposal.point_scale = 1.0
+    proposal.point_origin = (0.0, 0.0)
+    proposal.visible_objects = [{"id": "btn", "text": "attach button", "point": [500, 400]}]
+
+    assert materialize_vision_entities(world, proposal) == 1
+    x, y, w, h = world.entities[900000].bounds
+    assert (x + w / 2, y + h / 2) == (500.0, 400.0)

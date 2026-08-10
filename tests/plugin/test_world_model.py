@@ -74,20 +74,25 @@ def test_screen_sequence_and_nav_graph():
 
 
 def test_planner_whatsapp_call():
-    """DecisionEngine snapshot: conversation world → open the visible contact."""
+    """Without unified, decide Observes — no legacy open_contact fallthrough."""
     from plugin.agent.runtime.state import ExecutionState
 
     wm = WorldModel()
     wm.ingest(FixtureObserver(FIXTURES / "whatsapp_conversation.json").observe())
-    a = DecisionEngine().decide(
+    a = DecisionEngine().define_action_step(
         Goal(kind="whatsapp_voice_call", contact="Pallavi"),
         wm,
         ExecutionState(),
     )
-    assert a is not None and a.action_family == "open_contact"
+    assert a is not None
+    assert a.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (a.rationale or "")
 
 
-def test_recovery_replans_without_restart():
+def test_recovery_replans_without_restart(monkeypatch):
+    from plugin.agent import perception_cycle
+
+    monkeypatch.setattr(perception_cycle, "synthesize_perception", lambda *args, **kwargs: None)
     rt = RuntimeState(active_task="Call Pallavi on WhatsApp")
     rt.world_model.ingest(FixtureObserver(FIXTURES / "whatsapp_conversation.json").observe())
     unexpected = FixtureObserver(FIXTURES / "whatsapp_call.json").observe()
@@ -443,11 +448,15 @@ def test_worldmodel_has_no_llm_imports():
             assert f"from {bad}" not in text
 
 
-def test_scorecard_kill_gate():
+def test_scorecard_kill_gate(monkeypatch):
+    from plugin.agent import perception_cycle
+
+    monkeypatch.setattr(perception_cycle, "synthesize_perception", lambda *args, **kwargs: None)
     card = run_scorecard()
     assert card.kill_gate_pass, card.notes
     assert card.entity_tracking >= 0.80
     assert card.screen_classification >= 0.95
+    # e2e harness scores Observe-on-decline (no legacy Type fallthrough)
     assert card.e2e_whatsapp_call >= 0.90
 
 

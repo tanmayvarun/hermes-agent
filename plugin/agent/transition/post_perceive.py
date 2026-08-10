@@ -120,6 +120,21 @@ POST_PERCEIVE_PROFILES: Dict[str, PostPerceiveProfile] = {
         min_extra_settle_s=0.35,
         retry_on=("needs_reobserve", "fusion_agreement_low"),
     ),
+    # After reveal_actions the overlay is short-lived. AX settle alone cannot
+    # ground menus; keep retries short and let the owed multimodal look finish
+    # discovery. affordance_set_empty only blocks once that look has run.
+    "reveal_actions": PostPerceiveProfile(
+        max_retries=2,
+        min_extra_settle_s=0.25,
+        require_resolution_settled=False,
+        retry_on=(
+            "needs_reobserve",
+            "fusion_agreement_low",
+            "affordance_set_empty",
+            "expected_overlay_missing",
+        ),
+        on_exhausted="uncertain",
+    ),
     "default": PostPerceiveProfile(max_retries=1, min_extra_settle_s=0.3),
 }
 
@@ -140,6 +155,50 @@ class PerceptionAssessment:
         return asdict(self)
 
 
+def _grounded_affordance_count(
+    *, features: Dict[str, Any], execution_state: Any = None
+) -> int:
+    if execution_state is not None:
+        try:
+            from plugin.agent.affordance_frontier import grounded_affordance_set_of
+
+            n = len(grounded_affordance_set_of(execution_state))
+            if n:
+                return n
+        except Exception:
+            pass
+        frontier = getattr(execution_state, "last_affordance_frontier", None)
+        if isinstance(frontier, dict):
+            n = 0
+            for aff in frontier.get("observed_actions") or []:
+                if not isinstance(aff, dict):
+                    continue
+                if str(aff.get("family") or "") not in {
+                    "invoke_affordance",
+                    "commit_irreversible",
+                }:
+                    continue
+                if aff.get("actuators"):
+                    n += 1
+            if n:
+                return n
+    extras = features.get("extras") if isinstance(features.get("extras"), dict) else {}
+    raw = extras.get("grounded_affordance_count")
+    try:
+        return int(raw or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _reveal_handoff_pending(execution_state: Any, features: Dict[str, Any]) -> bool:
+    if execution_state is not None:
+        handoff = getattr(execution_state, "reveal_handoff", None)
+        if isinstance(handoff, dict) and str(handoff.get("surface") or "").strip():
+            return True
+    extras = features.get("extras") if isinstance(features.get("extras"), dict) else {}
+    return bool(extras.get("reveal_handoff"))
+
+
 def assess_post_action_perception(
     *,
     action_family: str,
@@ -147,6 +206,7 @@ def assess_post_action_perception(
     features: Dict[str, Any],
     patch: Any = None,
     search_query_hint: str = "",
+    execution_state: Any = None,
 ) -> PerceptionAssessment:
     """Diagnose whether post-action perception is complete enough to judge the world."""
     profile = profile_for(action_family)
@@ -179,16 +239,67 @@ def assess_post_action_perception(
                     # Typing into a verified editable field is a landing action:
                     # once the query is visibly present, we should not keep
                     # retrying merely because source fusion was imperfect.
+                    # reveal_actions must not treat rich CONVERSATION as usable
+                    # while a reveal handoff still awaits affordance_set.
+                    usable = _primary_frame_is_usable(
+                        view=view, features=features, patch=patch
+                    )
+                    if action_family == "reveal_actions" and _reveal_handoff_pending(
+                        execution_state, features
+                    ):
+                        usable = False
                     if float(agreement) < 0.85 and not (
                         action_family == "type_query" and typed_query_landed
-                    ) and not _primary_frame_is_usable(view=view, features=features, patch=patch):
+                    ) and not usable:
                         modes.append("fusion_agreement_low")
                 except (TypeError, ValueError):
                     pass
-    if needs_reobs and not _primary_frame_is_usable(view=view, features=features, patch=patch):
-        modes.append("needs_reobserve")
-    elif needs_reobs:
-        evidence["needs_reobserve_overridden"] = True
+    reveal_pending = action_family == "reveal_actions" and _reveal_handoff_pending(
+        execution_state, features
+    )
+    if needs_reobs:
+        usable = _primary_frame_is_usable(view=view, features=features, patch=patch)
+        if reveal_pending:
+            usable = False
+        if not usable:
+            modes.append("needs_reobserve")
+        else:
+            evidence["needs_reobserve_overridden"] = True
+
+    # reveal_actions completeness: demand grounded affordance_set only after the
+    # owed post-act multimodal look has finished. AX settle right after the
+    # probe still has look debt and must not thrash / failed_reveal early.
+    if action_family == "reveal_actions":
+        grounded_n = _grounded_affordance_count(
+            features=features, execution_state=execution_state
+        )
+        evidence["grounded_affordance_count"] = grounded_n
+        screen = str(view.get("screen") or "").upper()
+        surface = str(
+            feature_get(features, "active_surface")
+            or feature_get(features, "surface")
+            or ""
+        ).strip().lower()
+        overlay_evidenced = surface in {
+            "context_menu",
+            "forward_picker",
+            "dialog",
+            "action_menu",
+        } or screen in {"DIALOG"}
+        evidence["overlay_evidenced"] = overlay_evidenced
+        look_owed = False
+        if execution_state is not None:
+            look_owed = bool(
+                getattr(execution_state, "post_action_reperceive_pending", False)
+            ) or bool(getattr(execution_state, "must_executive_reperceive", False))
+        evidence["post_act_look_owed"] = look_owed
+        if reveal_pending and not look_owed:
+            if grounded_n == 0:
+                modes.append("affordance_set_empty")
+            if not overlay_evidenced and grounded_n == 0:
+                modes.append("expected_overlay_missing")
+        elif grounded_n > 0:
+            evidence["affordance_set"] = True
 
     policy = feature_get(features, "resolution_policy")
     conf = feature_get(features, "resolution_confidence")
@@ -238,6 +349,8 @@ def assess_post_action_perception(
     strategy = "reobserve"
     if "needs_reobserve" in retryable or "fusion_agreement_low" in retryable:
         strategy = "reobserve_longer"
+    elif "affordance_set_empty" in retryable or "expected_overlay_missing" in retryable:
+        strategy = "reobserve"
     elif "resolution_unset" in retryable or "result_surface_ambiguous" in retryable:
         strategy = "reobserve"
     elif "query_hint_ax_mismatch" in retryable:

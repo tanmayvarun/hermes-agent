@@ -79,7 +79,7 @@ def handle_world_plan(args: Dict[str, Any], **kwargs: Any) -> str:
     goal = args.get("goal") or rt.active_task or "Call Pallavi on WhatsApp"
     rt.active_task = goal
     goal_obj = _goal_from_text(goal)
-    action = _engine.decide(goal_obj, rt.world_model, rt.execution_state)
+    action = _engine.define_action_step(goal_obj, rt.world_model, rt.execution_state)
     payload = None if action is None else action.__dict__
     if _logger:
         _logger.planner_decision({"goal": goal_obj.description, "action": payload})

@@ -139,6 +139,27 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
 
 
+def parse_motor_landed_point(message: Any) -> Optional[List[float]]:
+    """Extract ``center=(x, y)`` from an executor message, if present.
+
+    This is measured motor geometry — where the hands landed — distinct from
+    the brain's intended ``target_point``. REFLECT needs both to discover
+    wrong-region clicks without task-specific hardcoding.
+    """
+    msg = str(message or "")
+    m = re.search(
+        r"center\s*=\s*\(\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\)",
+        msg,
+        re.I,
+    )
+    if not m:
+        return None
+    try:
+        return [float(m.group(1)), float(m.group(2))]
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_execution_detail(execution: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Normalize executor payload into grounding/attempt signals."""
     execution = execution or {}
@@ -148,12 +169,14 @@ def parse_execution_detail(execution: Optional[Dict[str, Any]]) -> Dict[str, Any
     center_none = bool(re.search(r"center\s*=\s*None", msg, re.I))
     missing_bounds = "no bounds" in msg.lower() or "missing" in msg.lower() and "bound" in msg.lower()
     pressed = "axpress" in msg.lower() or "press" in msg.lower()
+    landed = parse_motor_landed_point(msg)
     return {
         "attempted": ok or bool(msg),
         "executor_ok": ok,
         "actuator": backend or ("ax" if pressed else "unknown"),
         "missing_geometry": center_none or missing_bounds,
         "message": msg[:240],
+        "motor_landed_point": landed,
     }
 
 

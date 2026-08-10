@@ -55,6 +55,127 @@ def _coerce_mapping(obj: Any) -> Dict[str, Any]:
     return {}
 
 
+class VisionKitEngine:
+    """Text and geometry from the macOS Vision framework.
+
+    Measured against easyocr on the same 3420x1968 window capture: 0.98s
+    accurate / 0.15s fast, versus 14-16s for easyocr on CPU, for text that is at
+    least as good ('Kulvinder Ji' read cleanly by both, but easyocr returned 26%
+    of its lines below 0.7 confidence). A live run spent 165 seconds of a
+    four-minute attempt inside easyocr, and every one of those seconds is a
+    second the screen it is reading gets staler.
+
+    The boxes are the reason this matters more than the speed. They are the only
+    accurate geometry the agent has: the accessibility tree on this app yields
+    two nodes both labelled 'WhatsApp', and the vision model's own coordinates
+    are a guess -- it named the right search-result row and placed it 200px
+    below where it actually was, so the click landed on empty space.
+    """
+
+    engine_id = "visionkit"
+
+    def __init__(self, *, accurate: bool = True, languages: Optional[Sequence[str]] = None) -> None:
+        self.accurate = bool(accurate)
+        self.languages = tuple(languages or ())
+
+    @staticmethod
+    def available() -> bool:
+        try:
+            import Quartz  # type: ignore  # noqa: F401
+            import Vision  # type: ignore  # noqa: F401
+            from Foundation import NSData  # type: ignore  # noqa: F401
+        except Exception:
+            return False
+        return True
+
+    def recognize(self, screenshot_path: str, *, use_case: str = "") -> OCRRun:
+        import Quartz  # type: ignore
+        import Vision  # type: ignore
+        from Foundation import NSData  # type: ignore
+
+        payload = Path(screenshot_path).read_bytes()
+        data = NSData.dataWithBytes_length_(payload, len(payload))
+        source = Quartz.CGImageSourceCreateWithData(data, None)
+        cg_image = (
+            Quartz.CGImageSourceCreateImageAtIndex(source, 0, None) if source is not None else None
+        )
+        if cg_image is None:
+            return OCRRun(
+                engine_id=self.engine_id,
+                use_case=use_case,
+                degraded=True,
+                meta={"error": "could not decode the capture"},
+            )
+
+        width = float(Quartz.CGImageGetWidth(cg_image))
+        height = float(Quartz.CGImageGetHeight(cg_image))
+
+        request = Vision.VNRecognizeTextRequest.alloc().init()
+        request.setRecognitionLevel_(
+            Vision.VNRequestTextRecognitionLevelAccurate
+            if self.accurate
+            else Vision.VNRequestTextRecognitionLevelFast
+        )
+        # Contact names are proper nouns, which correction actively damages.
+        request.setUsesLanguageCorrection_(False)
+        if self.languages:
+            request.setRecognitionLanguages_(list(self.languages))
+        handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)
+        handler.performRequests_error_([request], None)
+
+        spans: List[OCRSpan] = []
+        for index, observation in enumerate(request.results() or []):
+            candidates = observation.topCandidates_(1)
+            if not candidates or not len(candidates):
+                continue
+            text = str(candidates[0].string() or "").strip()
+            if not text:
+                continue
+            spans.append(
+                OCRSpan(
+                    text=text,
+                    bbox=_bbox_from_vision(observation.boundingBox(), width, height),
+                    confidence=float(candidates[0].confidence() or 0.0),
+                    engine=self.engine_id,
+                    line_index=index,
+                    meta={"engine": self.engine_id, "use_case": use_case},
+                )
+            )
+        return OCRRun(
+            engine_id=self.engine_id,
+            use_case=use_case,
+            spans=spans,
+            meta={
+                "accurate": self.accurate,
+                "image_size": [int(width), int(height)],
+            },
+        )
+
+
+def _bbox_from_vision(box: Any, width: float, height: float) -> Tuple[float, float, float, float]:
+    """Vision's normalized, bottom-left-origin box as top-left image pixels.
+
+    Two conversions, both of which are silent when wrong: the values arrive as
+    fractions of the image rather than pixels, and Vision's y axis grows upward
+    while every other coordinate in this codebase grows downward. Getting the
+    flip wrong mirrors every click about the horizontal midline, which looks
+    like the model choosing a different row rather than like a units bug.
+    """
+    try:
+        origin_x = float(box.origin.x)
+        origin_y = float(box.origin.y)
+        box_w = float(box.size.width)
+        box_h = float(box.size.height)
+    except Exception:
+        return (0.0, 0.0, 0.0, 0.0)
+    return (
+        origin_x * width,
+        (1.0 - origin_y - box_h) * height,
+        box_w * width,
+        box_h * height,
+    )
+
+
 class EasyOCREngine:
     engine_id = "easyocr"
     _reader_cache: Dict[Tuple[str, bool], Any] = {}
@@ -194,6 +315,15 @@ class PaddleOCREngine:
 
 def available_ocr_engines() -> List[Any]:
     engines: List[Any] = []
+    # First because it is the one that can keep up with a live screen. The
+    # others stay behind it as the fallback for a machine where the Vision
+    # framework is not importable; the selector re-ranks on measured success
+    # anyway, so this only decides the order before anything has been learned.
+    try:
+        if VisionKitEngine.available():
+            engines.append(VisionKitEngine())
+    except Exception:
+        pass
     try:
         engines.append(EasyOCREngine())
     except Exception:

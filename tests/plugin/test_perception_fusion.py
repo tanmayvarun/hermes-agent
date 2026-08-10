@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from plugin.perception.evidence import Evidence, EvidenceRef, ObservationEvent
 from plugin.perception.hypothesis import EntityHypothesis, hypothesis_key
 from plugin.perception.fusion.engine import FusionEngine
-from plugin.perception.fusion.referee import FusionReferee, FusionRefereeDecision
+from plugin.perception.fusion.referee import FusionReferee
 from plugin.worldmodel.belief import Belief, belief_from_evidence
 
 
@@ -68,7 +68,12 @@ def test_belief_from_evidence():
     assert ref.source == "pyobjc_ax"
 
 
-def test_fusion_engine_merges_dual_ax_hypotheses():
+def test_assembly_keeps_nodes_from_both_sources_without_rivalry():
+    """Assembly concatenates; it does not score agreement between sources.
+
+    Exact duplicates (same role/name/bbox) collapse once; distinct labels from
+    either source all survive. No agreement threshold, no preferred source.
+    """
     from plugin.perception.fusion.engine import FusionEngine
     from plugin.perception.observation import AxNode, Observation
     from plugin.perception.sources.base import ObservationBundle
@@ -85,15 +90,63 @@ def test_fusion_engine_merges_dual_ax_hypotheses():
         )
 
     frame = FusionEngine().fuse_bundles(
-        [bund("pyobjc_ax", ["Search", "Pallavi"]), bund("macapptree", ["Search", "Pallavi"])],
+        [
+            bund("pyobjc_ax", ["Search", "Pallavi"]),
+            bund("screen2ax", ["Search", "Kulvinder Ji"]),
+        ],
         app="WhatsApp",
     )
-    assert len(frame.entities) == 2
-    assert frame.report.agreement >= 0.9
+    labels = {e.label for e in frame.entities}
+    assert labels == {"Search", "Pallavi", "Kulvinder Ji"}
+    assert frame.report.agreement is None
+    assert frame.report.needs_reobserve is False
+    assert frame.report.meta["fusion_mode"] == "assemble"
     obs = frame.to_observation()
-    assert len(obs.nodes) == 2
-    wm_patch_entities = obs.meta.get("fusion", {})
-    assert "agreement" in wm_patch_entities
+    assert {n.name for n in obs.nodes} == labels
+    assert obs.meta.get("fusion", {}).get("fusion_mode") == "assemble"
+
+
+def test_assembly_never_calls_the_referee(monkeypatch):
+    """Multi-source assemble must not ask an LLM which source is true."""
+    from plugin.perception.fusion.referee import FusionReferee
+    from plugin.perception.observation import AxNode, Observation
+    from plugin.perception.sources.base import ObservationBundle
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("fusion referee must not run on the assemble path")
+
+    monkeypatch.setattr(FusionReferee, "decide", fail_if_called)
+
+    engine = FusionEngine()
+    bundles = [
+        ObservationBundle(
+            source_id="pyobjc_ax",
+            observation=Observation(
+                timestamp=0,
+                app_name="WhatsApp",
+                window_name="Main",
+                nodes=[AxNode(role="AXSearchField", name="Search", bbox=(10.0, 10.0, 120.0, 24.0))],
+                source="pyobjc_ax",
+                coverage=1.0,
+            ),
+            coverage_self=1.0,
+        ),
+        ObservationBundle(
+            source_id="screen2ax",
+            observation=Observation(
+                timestamp=0,
+                app_name="WhatsApp",
+                window_name="Main",
+                nodes=[AxNode(role="AXStaticText", name="Kulvinder Ji", bbox=(10.0, 40.0, 200.0, 28.0))],
+                source="screen2ax",
+                coverage=0.9,
+            ),
+            coverage_self=0.9,
+        ),
+    ]
+    frame = engine.fuse_bundles(bundles, app="WhatsApp")
+    assert len(frame.entities) == 2
+    assert "llm_referee" not in frame.report.meta
 
 
 def test_ingest_preserves_beliefs_and_soft_keeps():
@@ -191,69 +244,57 @@ def test_fusion_referee_uses_live_main_runtime(monkeypatch):
         auxiliary_client.reset_runtime_main(token)
 
 
-def test_fusion_engine_can_prefer_rich_source_when_deterministic_fusion_collapses(monkeypatch):
+def test_assembly_skips_degraded_empty_stubs_but_keeps_healthy_nodes():
+    """Timeout/empty stubs must not erase a healthy source's nodes."""
     from plugin.perception.observation import AxNode, Observation
     from plugin.perception.sources.base import ObservationBundle
 
-    engine = FusionEngine()
-    original_core = engine._fuse_hypotheses_core
-
-    def fake_decide(self, payload):
-        return FusionRefereeDecision(
-            action="prefer_source",
-            preferred_source_id="pyobjc_ax",
-            confidence=0.94,
-            reason="prefer the richer source",
-            should_reobserve=False,
-        )
-
-    def fake_core(self, hyps, **kwargs):
-        sources = kwargs.get("sources") or []
-        if len(sources) > 1:
-            return original_core(
-                [],
-                app=kwargs.get("app", ""),
-                window=kwargs.get("window", ""),
-                screenshot=kwargs.get("screenshot"),
-                sources=sources,
-                events=kwargs.get("events"),
-                latencies_ms=kwargs.get("latencies_ms"),
-                node_counts=kwargs.get("node_counts"),
-                hypothesis_counts=kwargs.get("hypothesis_counts"),
-            )
-        return original_core(hyps, **kwargs)
-
-    monkeypatch.setattr(FusionReferee, "decide", fake_decide)
-    monkeypatch.setattr(FusionEngine, "_fuse_hypotheses_core", fake_core)
-
-    rich_nodes = [
-        AxNode(role="AXSearchField", name="Search", bbox=(10.0, 10.0, 140.0, 28.0)),
-        AxNode(role="AXStaticText", name="Kulvinder Ji", bbox=(10.0, 40.0, 200.0, 28.0)),
-    ]
-    bundles = [
-        ObservationBundle(
-            source_id="pyobjc_ax",
-            observation=Observation(timestamp=0, app_name="WhatsApp", window_name="Main", nodes=rich_nodes, source="pyobjc_ax"),
-            coverage_self=1.0,
-            degraded=False,
+    healthy = ObservationBundle(
+        source_id="pyobjc_ax",
+        observation=Observation(
+            timestamp=0,
+            app_name="WhatsApp",
+            window_name="Main",
+            nodes=[
+                AxNode(role="AXSearchField", name="Search", bbox=(10.0, 10.0, 140.0, 28.0)),
+                AxNode(role="AXStaticText", name="Kulvinder Ji", bbox=(10.0, 40.0, 200.0, 28.0)),
+            ],
+            source="pyobjc_ax",
         ),
-        ObservationBundle(
-            source_id="macapptree",
-            observation=Observation(timestamp=0, app_name="WhatsApp", window_name="Main", nodes=[], source="macapptree"),
-            coverage_self=0.0,
+        coverage_self=1.0,
+        degraded=False,
+    )
+    degraded = ObservationBundle(
+        source_id="macapptree",
+        observation=Observation(
+            timestamp=0,
+            app_name="WhatsApp",
+            window_name="Main",
+            nodes=[],
+            source="macapptree",
+            coverage=0.0,
             degraded=True,
         ),
-    ]
+        coverage_self=0.0,
+        degraded=True,
+    )
 
-    frame = engine.fuse_bundles(bundles, app="WhatsApp")
+    frame = FusionEngine().fuse_bundles([healthy, degraded], app="WhatsApp")
     assert len(frame.entities) == 2
-    assert frame.report.primary_source == "pyobjc_ax"
     assert frame.report.agreement is None
-    assert frame.report.meta["fusion_mode"] == "single_source"
+    assert frame.report.needs_reobserve is False
+    assert frame.report.meta["fusion_mode"] == "assemble"
+    assert frame.report.meta["healthy_source_count"] == 1
+    assert "macapptree" in frame.report.meta["ignored_sources"]
     assert "llm_referee" not in frame.report.meta
 
 
-def test_fusion_engine_preserves_non_empty_source_when_interpreter_returns_empty(monkeypatch):
+def test_assembly_uses_raw_nodes_not_interpreter_output(monkeypatch):
+    """Even if an interpreter would return nothing, the raw nodes are kept.
+
+    Rival fusion used to interpret then fall back; assembly reads the nodes
+    the source already produced.
+    """
     from plugin.perception.interpreters.ax_tree import AxTreeInterpreter
     from plugin.perception.observation import AxNode, Observation
     from plugin.perception.sources.base import ObservationBundle
@@ -277,43 +318,4 @@ def test_fusion_engine_preserves_non_empty_source_when_interpreter_returns_empty
     frame = engine.fuse_bundles([bundle], app="WhatsApp")
     assert len(frame.entities) == 1
     assert frame.entities[0].sources == ["pyobjc_ax"]
-    assert frame.entities[0].beliefs["fallback_source"].value == "pyobjc_ax"
-
-
-def test_fusion_engine_skips_referee_for_single_healthy_source(monkeypatch):
-    from plugin.perception.observation import AxNode, Observation
-    from plugin.perception.sources.base import ObservationBundle
-
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("fusion referee should not run for a single healthy source")
-
-    monkeypatch.setattr(FusionReferee, "decide", fail_if_called)
-
-    engine = FusionEngine()
-    healthy = ObservationBundle(
-        source_id="pyobjc_ax",
-        observation=Observation(
-            timestamp=0,
-            app_name="WhatsApp",
-            window_name="Main",
-            nodes=[AxNode(role="AXSearchField", name="Search", bbox=(10.0, 10.0, 120.0, 24.0))],
-            source="pyobjc_ax",
-            coverage=1.0,
-        ),
-        coverage_self=1.0,
-        degraded=False,
-    )
-    degraded = ObservationBundle(
-        source_id="macapptree",
-        observation=Observation(timestamp=0, app_name="WhatsApp", window_name="Main", nodes=[], source="macapptree", coverage=0.0, degraded=True),
-        coverage_self=0.0,
-        degraded=True,
-    )
-
-    frame = engine.fuse_bundles([healthy, degraded], app="WhatsApp")
-
-    assert frame.report.agreement is None
-    assert frame.report.meta["fusion_mode"] == "single_source"
-    assert frame.report.meta["healthy_source_count"] == 1
-    assert "macapptree" in frame.report.meta["ignored_sources"]
-    assert frame.entities
+    assert frame.entities[0].role == "AXButton"

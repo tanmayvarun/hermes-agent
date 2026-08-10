@@ -247,6 +247,13 @@ def _is_contact_name(name: str) -> bool:
     if not n or len(n) > 48:
         return False
     low = n.lower()
+    # Sidebar Search chrome ("• Search|", "Q Search|") is never a contact.
+    try:
+        from plugin.agent.world_critic import is_search_field_echo
+    except Exception:  # pragma: no cover
+        is_search_field_echo = lambda _t: False  # type: ignore
+    if is_search_field_echo(n):
+        return False
     if any(re.search(pat, low, re.I) for pat in _SYSTEM_WARNING_PATTERNS):
         return False
     if any(re.search(pat, low, re.I) for pat in _OPEN_CONVERSATION_NOISE_PATTERNS):
@@ -254,6 +261,9 @@ def _is_contact_name(name: str) -> bool:
     if low in {"whatsapp", "whatsapp for mac"} or (low.startswith("whatsapp ") and "for mac" in low):
         return False
     if low in _CHROME_NAMES:
+        return False
+    low_stripped = re.sub(r"^[•·▪●◦q]+\s*", "", low).rstrip("|").strip()
+    if low_stripped in _CHROME_NAMES:
         return False
     if any(m in low for m in _PREVIEW_MARKERS):
         return False
@@ -459,6 +469,7 @@ def contact_names_from_entity(
 
 
 def _looks_like_message_row(e: Entity, entities: List[Entity], *, scene_graph: Optional[dict] = None) -> bool:
+    from plugin.agent.apps.whatsapp_targets import in_sidebar_band
     from plugin.worldmodel.pragmatic_role import (
         UiPragmaticRole,
         get_pragmatic_role,
@@ -472,7 +483,6 @@ def _looks_like_message_row(e: Entity, entities: List[Entity], *, scene_graph: O
         return False
     if _is_search_mirror(e):
         return False
-
     label = _clean_label(e.label or "")
     desc = _attr(e, "description", "AXDescription")
     value = _attr(e, "value", "AXValue")
@@ -491,6 +501,16 @@ def _looks_like_message_row(e: Entity, entities: List[Entity], *, scene_graph: O
                 break
     if region_kind and region_kind not in {"conversation", "timeline", "unknown"}:
         return False
+    # No scene region: geometric left-rail chat-list previews ("Voice message",
+    # last-message snippets) must not count as the open-conversation timeline.
+    # Live 092106 classified the chat list as CONVERSATION off a sidebar
+    # "Voice message" row with empty open_conversation — freezing OPEN_SOURCE.
+    if not region_kind:
+        try:
+            if in_sidebar_band(e, list(entities or []), scene_graph=None):
+                return False
+        except Exception:
+            pass
     if get_pragmatic_role(e) == UiPragmaticRole.UNKNOWN:
         infer_pragmatic_role_stage2(e)
     pragmatic_role = get_pragmatic_role(e)
@@ -577,7 +597,9 @@ def conversation_message_rows_from_entities(
     if len(records) <= window:
         if records:
             return records
-        records = _fallback_message_rows_from_entities(entities, max_messages=max_messages)
+        records = _fallback_message_rows_from_entities(
+            entities, max_messages=max_messages, scene_graph=scene_graph
+        )
         if len(records) <= window:
             return records
     return records[-window:]
@@ -587,6 +609,7 @@ def _fallback_message_rows_from_entities(
     entities: List[Entity],
     *,
     max_messages: Optional[int] = None,
+    scene_graph: Optional[dict] = None,
 ) -> List[Dict[str, Any]]:
     """Best-effort recovery when scene-region or role signals hide chat rows.
 
@@ -595,7 +618,12 @@ def _fallback_message_rows_from_entities(
     nodes as sidebar/header chrome. When the strict row detector returns
     nothing, fall back to message-shaped text so downstream reasoning still sees
     the timeline instead of an empty prompt.
+
+    When there is no scene graph, skip geometric left-rail previews so a chat
+    list cannot be mistaken for an open conversation (live 092106).
     """
+    from plugin.agent.apps.whatsapp_targets import in_sidebar_band
+
     ents = [e for e in entities if getattr(e, "visible", False)]
     if not ents:
         return []
@@ -603,6 +631,7 @@ def _fallback_message_rows_from_entities(
     window = max(1, min(500, int(window)))
     records: List[Dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    use_geo_sidebar_filter = not bool(scene_graph and (scene_graph.get("regions") or []))
     for e in sorted(
         ents,
         key=lambda ent: (
@@ -614,6 +643,12 @@ def _fallback_message_rows_from_entities(
         etype = (e.entity_type or "").lower()
         if etype not in {"static", "link", "cell", "button", "unknown", "textfield"}:
             continue
+        if use_geo_sidebar_filter:
+            try:
+                if in_sidebar_band(e, ents, scene_graph=None):
+                    continue
+            except Exception:
+                pass
         label = _clean_label(e.label or "")
         desc = _attr(e, "description", "AXDescription")
         value = _attr(e, "value", "AXValue")
@@ -680,7 +715,9 @@ def conversation_timeline_clusters_from_entities(
         scene_graph=scene_graph,
     )
     if not rows:
-        rows = _fallback_message_rows_from_entities(entities, max_messages=max_messages)
+        rows = _fallback_message_rows_from_entities(
+            entities, max_messages=max_messages, scene_graph=scene_graph
+        )
     if not rows:
         return []
 
@@ -784,6 +821,78 @@ def _name_match_score(candidate: str, needle: str) -> float:
 
 def contact_matches(haystack: str, needle: str, *, min_score: float = 0.75) -> bool:
     return _name_match_score(haystack or "", needle or "") >= min_score
+
+
+def _content_words(text: str) -> List[str]:
+    """Words in ``text``, minus the single characters OCR makes out of icons.
+
+    The magnifier glyph beside the search field has no text, so the reader
+    renders it as whatever letter it resembles -- 'Q', 'a' and 'cK' have all
+    been seen on this one field. That stray token adds a word, which is enough
+    to make a title that is purely an echo of the query look like a two-word
+    chat name and slip past a word-count comparison: a live run reached the
+    forward phase believing the open chat was 'Q Kulvinder'. No WhatsApp
+    contact is addressed by a single letter, so dropping them costs nothing.
+    """
+    return [w for w in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(w) > 1]
+
+
+def _echoes_search_query(title: str, query: str) -> bool:
+    """Is this supposed chat title just the search box reading itself back?
+
+    An echo is the typed string itself, so it carries the same word count; the
+    OCR damage seen live lands inside a word rather than adding one
+    ('Kulvinderr', 'Kulvinder]', 'Kulvinderng' against a typed 'Kulvinder').
+    A real chat title that merely starts the same way adds a word -- and the
+    case that matters is 'Kulvinder Ji', the actual target of this task, which a
+    plain prefix test would erase the moment the chat finally opened. So compare
+    word counts first, then prefix-match the stems for the OCR slack.
+    """
+    title_words = _content_words(title)
+    query_words = _content_words(query)
+    if not title_words or not query_words:
+        return False
+    # The search field's own placeholder, with the query not yet typed or not
+    # yet read. It is the field, so it is never a chat, whatever the query is.
+    if title_words == ["search"]:
+        return True
+    if len(title_words) != len(query_words):
+        return False
+    if sum(len(w) for w in query_words) < 4:
+        return False
+    # Word by word rather than on the concatenation. OCR damage lands *inside* a
+    # word ('zaroratwala' for 'zarooratwala'), and a joined stem carries that
+    # divergence into every character after it, so a comparison on the whole
+    # string stops matching at the first damaged letter and the echo is missed.
+    return all(_same_word(a, b) for a, b in zip(title_words, query_words))
+
+
+def _same_word(read: str, typed: str) -> bool:
+    """One OCR-damaged word against the word that was actually typed.
+
+    Kept loose on purpose: this only ever compares a candidate chat title
+    against the query the agent typed a moment earlier, position for position,
+    so the alternative to a near match is not a different contact but the same
+    string misread. Exact, either-way prefix, or one edit of any kind — the
+    damage seen live includes a dropped letter ('zaroratwala') as well as a
+    substituted one, and a same-length test only catches the second.
+    """
+    if read == typed:
+        return True
+    shorter, longer = sorted((read, typed), key=len)
+    if len(shorter) >= 4 and longer.startswith(shorter):
+        return True
+    return len(longer) - len(shorter) <= 1 and _within_one_edit(shorter, longer)
+
+
+def _within_one_edit(shorter: str, longer: str) -> bool:
+    """One substitution, insertion or deletion apart, at most."""
+    if len(shorter) == len(longer):
+        return sum(1 for a, b in zip(shorter, longer) if a != b) <= 1
+    for i, (a, b) in enumerate(zip(shorter, longer)):
+        if a != b:
+            return shorter[i:] == longer[i + 1 :]
+    return True
 
 
 def resolve_contact_entity(
@@ -1048,6 +1157,44 @@ class WhatsAppWorldView:
             window_l = window_name.lower()
             if open_l == window_l or "whatsapp" in open_l and open_l in {"whatsapp", "whatsapp for mac"}:
                 open_conversation = ""
+        # AX sidebar Search ("• Search|") is never an open chat title.
+        try:
+            from plugin.agent.world_critic import is_search_field_echo
+        except Exception:  # pragma: no cover
+            is_search_field_echo = lambda _t: False  # type: ignore
+        if open_conversation and is_search_field_echo(open_conversation):
+            open_conversation = ""
+        # Against the remembered query, not only this frame's. Recognising the
+        # field's text masquerading as a chat title requires knowing what was
+        # typed, and the frames where that confusion happens are exactly the
+        # frames where the query was consumed as the title and so cannot be
+        # read here: a run reached the forward phase believing the open chat
+        # was 'Q zarooratwala Kulvinder' with search_query empty beside it.
+        #
+        # Not on a conversation surface, though. Searching a contact by name
+        # and opening them leaves a chat whose title is the query, character
+        # for character -- the ordinary case, not a misread -- so a string test
+        # cannot separate the two and the surface has to. A composer on screen
+        # means a chat is genuinely open; erasing it there cost the voice-call
+        # path its success and left it re-opening the same contact until the
+        # step budget ran out.
+        if search_query:
+            world.last_search_query = search_query
+        remembered_query = search_query or str(getattr(world, "last_search_query", "") or "")
+        if (
+            open_conversation
+            and not composer_visible
+            and _echoes_search_query(open_conversation, remembered_query)
+        ):
+            # The search field lives in the header band, so on this app its text
+            # is a header static node like any other and gets read as the chat
+            # title -- except the title it yields is the query the agent typed a
+            # moment ago, echoed back. Three live runs believed the open chat was
+            # 'Kulvinderr', 'Kulvinder]' and 'Kulvinderng': OCR readings of their
+            # own query. Each confirmed source_conversation at 0.95 off it, jumped
+            # the phase past the step that actually opens the chat, and then hunted
+            # a forward affordance on a search screen until the clock ran out.
+            open_conversation = ""
         if system_warning_evidence:
             system_warning_evidence = list(dict.fromkeys(system_warning_evidence))
         # Keep open_conversation conservative: only an explicit header marker
@@ -1095,6 +1242,8 @@ class WhatsAppWorldView:
         if hint and not search_query:
             search_query = hint
             search_visible = True
+        if search_query:
+            world.last_search_query = search_query
 
         has_search_field = any(
             e.visible
@@ -1128,27 +1277,10 @@ class WhatsAppWorldView:
         if call_window_visible:
             call_state = "ringing"
 
-        # Prefer search overlay over open conversation (they coexist on WA Mac)
-        screen = "UNKNOWN"
-        if call_state == "ringing":
-            screen = "CALLING"
-        elif dialogs and not composer_visible and not search_query and (
-            blocking_overlay or not has_list_context
-        ):
-            screen = "DIALOG"
-        elif search_query or search_focused:
-            screen = "SEARCH_RESULTS" if (search_query or contacts) else "SEARCH"
-        elif has_search_field and search_visible:
-            screen = "SEARCH"
-        elif composer_visible:
-            screen = "CONVERSATION"
-        elif contacts or has_chat_list or has_layout_context:
-            screen = "LIST"
-        elif search_visible:
-            screen = "LIST"
-        if blocking_overlay and screen not in {"CALLING"}:
-            screen = "DIALOG"
-
+        # Build conversation evidence before screen classification. On WA Mac the
+        # sidebar Search field stays visible while a chat is open; preferring
+        # SEARCH over that evidence made AX settle report LIST/Search forever
+        # and poisoned executive belief (screenshot VLM is SoT).
         conversation_messages = conversation_message_rows_from_entities(
             visible_entities,
             max_messages=_conversation_context_window(),
@@ -1159,6 +1291,67 @@ class WhatsAppWorldView:
             max_messages=_conversation_context_window(),
             scene_graph=scene_graph,
         )
+        def _is_placeholder_timeline(items: Any) -> bool:
+            """E2E-encryption / empty-pane notices are not a real conversation."""
+            if not items:
+                return True
+            blob = " ".join(str(x) for x in items[:6]).lower()
+            markers = (
+                "end-to-end encrypted",
+                "end to end encrypted",
+                "messages and calls are",
+                "whatsapp for mac",
+            )
+            return any(m in blob for m in markers) and not open_conversation
+
+        timeline_is_placeholder = _is_placeholder_timeline(conversation_timeline)
+        messages_are_placeholder = _is_placeholder_timeline(conversation_messages)
+        real_conversation_body = bool(
+            (conversation_messages and not messages_are_placeholder)
+            or (conversation_timeline and not timeline_is_placeholder)
+        )
+        conversation_evidence = bool(
+            composer_visible
+            or open_conversation
+            or real_conversation_body
+        )
+
+        screen = "UNKNOWN"
+        if call_state == "ringing":
+            screen = "CALLING"
+        elif dialogs and not composer_visible and not search_query and (
+            blocking_overlay or not has_list_context
+        ):
+            screen = "DIALOG"
+        elif search_query or (search_focused and not conversation_evidence):
+            # Active typed query / focused empty search without chat evidence.
+            screen = "SEARCH_RESULTS" if (search_query or contacts) else "SEARCH"
+        elif conversation_evidence:
+            # Idle sidebar Search chrome coexists with an open chat on WA Mac —
+            # do not prefer SEARCH over header/messages/composer (screenshot SoT).
+            screen = "CONVERSATION"
+        elif has_search_field and search_visible:
+            screen = "SEARCH"
+        elif contacts or has_chat_list or has_layout_context:
+            screen = "LIST"
+        elif search_visible:
+            screen = "LIST"
+        # Chat-list + empty right pane ("WhatsApp for Mac") is LIST, not a
+        # conversation — even if an E2E notice looks message-shaped.
+        if (
+            screen == "CONVERSATION"
+            and not composer_visible
+            and not open_conversation
+            and (has_chat_list or has_search_field or bool(contacts))
+            and not real_conversation_body
+        ):
+            screen = "LIST"
+        if timeline_is_placeholder:
+            conversation_timeline = []
+        if messages_are_placeholder:
+            conversation_messages = []
+        if blocking_overlay and screen not in {"CALLING"}:
+            screen = "DIALOG"
 
         seen = set()
         uniq: List[str] = []
@@ -1259,16 +1452,17 @@ class WhatsAppWorldView:
                 view.voice_call_available = True
             if likely_family in {"open_search", "type_query"} and view.search_visible:
                 view.search_focused = True
-            # Only promote targets that plausibly name a conversation header.
-            # Dialog buttons like "Exit WhatsApp" can surface as a likely target
-            # during recovery, but they must not overwrite the open-chat belief.
-            if (
-                likely_target
-                and not view.open_conversation
-                and likely_family in {"open_contact", "select_forward_target"}
-                and screen_type in {"conversation", "list", "search", "unknown"}
-            ):
-                view.open_conversation = likely_target
+            # The recommendation is deliberately NOT folded into the open-chat
+            # belief here. likely_next_target names the chat the perceptor wants
+            # to open; treating it as the chat that *is* open turns an intention
+            # into an accomplished state, and the screen_type guard let it happen
+            # on the search surface, which is exactly where the target is only
+            # ever a proposal. Live runs then confirmed source_conversation at
+            # 0.95 off a search-result row the agent had not clicked, skipped the
+            # open step, and hunted a forward affordance that was not on screen:
+            # 31 iterations believing the open chat was 'Cmd+F search shortcut'
+            # in one run, 10 believing it was an OCR misread in another. What the
+            # perceptor actually observed is read below, from open_conversation.
 
             # The reading names the open conversation directly and lists the
             # messages it saw. Fold both in — this is the vision bridge that lets
@@ -1289,6 +1483,22 @@ class WhatsAppWorldView:
                 if rows:
                     view.conversation_messages = rows
         if view.open_conversation and not _is_contact_name(view.open_conversation):
+            view.open_conversation = None
+        # The same echo has to be caught again here, not only in the raw view:
+        # the perceptor reports an open_conversation of its own and it is applied
+        # above, so a model that reads the search box as a chat header reinstates
+        # exactly the belief the raw guard just cleared. It does -- a live run
+        # reached OPEN_FORWARD with open_conversation='Kulvinder', the query it
+        # had typed one action earlier and had not yet clicked a result for.
+        if (
+            view.open_conversation
+            and view.screen != "CONVERSATION"
+            and not view.composer_visible
+            and _echoes_search_query(
+                view.open_conversation,
+                view.search_query or str(getattr(world, "last_search_query", "") or ""),
+            )
+        ):
             view.open_conversation = None
         return view
 

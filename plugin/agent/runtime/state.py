@@ -73,6 +73,44 @@ class ExecutionState:
     # not just the last one, and can re-perceive at finer granularity — the
     # perception analogue of attending over prior context.
     recent_surprises: List[Dict[str, Any]] = field(default_factory=list)
+    # Last X accepted world snapshots (compact). REFLECT packets use these as
+    # prior perceptions so the perceptor can explain prediction error against
+    # what it believed before the act, not only the fresh frame.
+    recent_perceptions: List[Dict[str, Any]] = field(default_factory=list)
+    # Last surprise_explanation from a REFLECT look (cause / confidence / next).
+    last_surprise_explanation: Optional[Dict[str, Any]] = None
+    # Fingerprint of the last failed motor the brain must not re-issue unchanged.
+    last_failed_motor_key: str = ""
+    # Families+points that produced no world effect (e.g. reveal without menu).
+    # Fed to unified perception as avoid_families so the same latch is not re-offered.
+    avoid_motor_keys: List[str] = field(default_factory=list)
+    # Forward-leg ring buffer for overloaded revert_effects (capability, intention,
+    # post-look prediction/selection deltas). Cap enforced by append helper.
+    effect_trace: List[Dict[str, Any]] = field(default_factory=list)
+    # Last selection_consistency_error verdict from post-act look.
+    last_selection_consistency: Optional[Dict[str, Any]] = None
+    # Goal × world branch fitness (admissible / blockers) — backtrack evidence.
+    last_branch_fitness: Optional[Dict[str, Any]] = None
+    # Compat alias populated alongside last_branch_fitness.
+    last_branch_consistency: Optional[Dict[str, Any]] = None
+    # Goal content tokens (link_query, …) for consistency / revert analyze.
+    goal_referents: List[str] = field(default_factory=list)
+    # Compound search episode: querying → retrieving → ranking → complete|failed.
+    # Incomplete until chosen (or unique fit / failed). Commit is outside search.
+    search_episode: Optional[Dict[str, Any]] = None
+    # Last find attempt progress (delta / empty). Zero progress ⇒ retreat before
+    # re-entering MetaAction.SEARCH (loop convergence; no failure catalog).
+    last_search_progress: Optional[Dict[str, Any]] = None
+    # Set when a search episode fails empty / zero progress; cleared by
+    # BACKTRACK or INFORMATION_GATHERING so SEARCH may start fresh.
+    search_retreat_owed: bool = False
+    # After revert_effects succeeds: next look should re_ground_then_act.
+    pending_repair_after_revert: Optional[Dict[str, Any]] = None
+    last_revert_plan: Optional[Dict[str, Any]] = None
+    # Last accepted world surface; change invalidates carried geometry.
+    last_accepted_surface: str = ""
+    # Bumped when surface changes or geometry is explicitly invalidated.
+    geometry_generation: int = 0
     # The executive's single authoritative record of task state: arbitrated
     # beliefs, open questions, attempts and transitions. The sync helpers and
     # assess_executive_judgement read/write it through workspace_of(); without
@@ -83,17 +121,86 @@ class ExecutionState:
     # long the branch space is exhausted and the executive escalates instead of
     # thrashing. Reset whenever a non-backtrack move is taken.
     consecutive_backtracks: int = 0
+    # Consecutive executive INFORMATION_GATHERING meta-actions. Re-planning the
+    # branch order executes nothing and, once the re-perception budget is spent,
+    # suppresses the next look as well, so a run of these learns nothing and
+    # changes nothing while costing a full iteration each. It shares the
+    # backtrack counter's exhaustion rule, but at five that is far too slack for
+    # a move this inert; this counts it separately so it can be cut off sooner.
+    consecutive_information_gathering: int = 0
+    # Consecutive MetaAction.SEARCH turns (find-stage actuation). Cap in meta_action.
+    consecutive_searches: int = 0
+    # Consecutive PERCEIVE looks without falling through to ACT. Looking for
+    # grounded geometry forever (live 135459) never binds a motor; cap then ACT.
+    consecutive_perceives: int = 0
     # Consecutive diagnostic re-looks spent on surprises without the world moving.
     # A surprise buys a look carrying the failed attempt, which is how the model
     # works out why its move did nothing. But looking again at a world that keeps
     # not moving stops paying: past the cap the executive broadens the search
     # instead of re-reading the same screen. Reset the moment the world moves.
     consecutive_surprise_relooks: int = 0
+    # One-executive contract: after any non-observe act, the next iteration must
+    # run a fresh perceive (stage1 multimodal) before choosing the next capability.
+    # AX settle / TransitionEvaluator must not substitute for that look.
+    must_executive_reperceive: bool = False
+    # Soft perception-quality hints (retention_low / worldview_low / …). Advisory
+    # for meta only — never aliases must_executive_reperceive (hard look debt).
+    perception_soft_signals: List[str] = field(default_factory=list)
+    # True after ACT stamps unified_last_expectation from the decision's claim.
+    # Cleared once post-act perceive scores that intention (note_prediction_error).
+    # Stops a compact look with no expected_transition from wiping the claim
+    # before it is scored.
+    act_intention_pending: bool = False
+    # Stays set until a *fresh* stage1 reading lands (not phash reuse / not a
+    # failed look). Blocks perceive→ACT fallthrough onto a pre-act world.
+    post_action_reperceive_pending: bool = False
+    # Snapshot at act time (diagnostics); clear pending on any fresh stage1 look.
+    post_action_baseline_open: str = ""
+    post_action_baseline_sig: str = ""
     # Affordances the runtime measured as inert (invoked, app did not move). The
     # frontier is rebuilt from scratch each frame, so without this record a
     # control already proven dead is offered to the perceptor as a live option
     # again on the very next look. Written by the world critic.
     dead_affordances: List[Dict[str, Any]] = field(default_factory=list)
+    # After reveal_actions probe: short-lived note that an overlay should be
+    # ingested into affordance_set. Cleared when grounded controls land or
+    # post-perceive marks failed_reveal.
+    reveal_handoff: Optional[Dict[str, Any]] = None
+    # Last post-perceive effect-closure modes (expected_overlay_missing, …).
+    last_effect_closure: Optional[Dict[str, Any]] = None
+    # Milestone clocks for responsiveness (monotonic timestamps).
+    epistemic_success_at: float = 0.0
+    affordance_grounded_at: float = 0.0
+    referent_selected_at: float = 0.0
+    instrumental_commit_at: float = 0.0
+    reveal_gesture_attempts: int = 0
+    # Next reveal motor after an incomplete/failed probe (live 153213):
+    # context_click → hover → then prefer select_content (toolbar Forward path).
+    # Actor/consultation honor this so motor-ok context_click cannot loop forever.
+    reveal_probe_mode: str = "context_click"
+    # When set (usually after hover also fails), consultation prefers this
+    # capability instead of re-issuing reveal_actions at the same latch.
+    reveal_prefer_capability: str = ""
+    # Generic intention execution stack (IntentionFrame). Top = currently
+    # executing; parents may be suspended_by_child. See intention_frame.py.
+    intention_stack: List[Any] = field(default_factory=list)
+    # Grounded invoke/commit controls from the last frontier reconcile — the
+    # durable affordance_set substrate for invoke_affordance (parity with
+    # addressable_entity materialization).
+    last_grounded_affordance_set: List[Dict[str, Any]] = field(default_factory=list)
+    # Perceptor stance from last look: act_clear | explore_needed | ambiguous.
+    last_affordance_stance: str = ""
+    # Last affordance frontier packet the perceptor/brain shared.
+    last_affordance_frontier: Optional[Dict[str, Any]] = None
+    # Exclusive filter_input site (Search) from the last look's AX/OCR evidence.
+    # Decision consultation binds compose_search_query here when VLM objects omit
+    # the field (live 123746). Cleared/replaced each perception packet build;
+    # also cleared when leaving reach_source / non-filter surfaces (125715).
+    last_filter_geometry: Optional[Dict[str, Any]] = None
+    # OCR menu-verb hints (Forward/Reply/…) measured under reveal_handoff.
+    # Used only to enrich the accepted document before post-accept promote —
+    # never as a direct affordance_set invent path (live 125715).
+    last_overlay_ocr_menu: Optional[List[Dict[str, Any]]] = None
     # Branches abandoned for making no progress. Read by should_escalate() to
     # call branch exhaustion and send the next decision to the deep reasoner.
     no_progress_replans: int = 0
@@ -151,6 +258,57 @@ class ExecutionState:
         self.recent_surprises.append(entry)
         if len(self.recent_surprises) > cap:
             del self.recent_surprises[0 : len(self.recent_surprises) - cap]
+
+    def note_perception(
+        self,
+        document: Dict[str, Any],
+        *,
+        iteration: Optional[int] = None,
+        screenshot_path: str = "",
+        cap: int = 4,
+    ) -> None:
+        """Append a compact accepted-world snapshot for REFLECT priors."""
+        if not isinstance(document, dict) or not document:
+            return
+        objects_out: List[Dict[str, Any]] = []
+        for obj in (document.get("objects") or [])[:8]:
+            if not isinstance(obj, dict):
+                continue
+            entry_o: Dict[str, Any] = {
+                "id": str(obj.get("id") or "")[:40],
+                "kind": str(obj.get("kind") or "")[:40],
+                "text": str(obj.get("text") or obj.get("label") or "")[:80],
+            }
+            pt = obj.get("point")
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                try:
+                    entry_o["point"] = [float(pt[0]), float(pt[1])]
+                except (TypeError, ValueError):
+                    pass
+            if obj.get("matches_goal"):
+                entry_o["matches_goal"] = True
+            objects_out.append(entry_o)
+        snap: Dict[str, Any] = {
+            "iteration": int(iteration if iteration is not None else self.iteration or 0),
+            "surface": str(document.get("surface") or "")[:40],
+            "open_conversation": str(document.get("open_conversation") or "")[:80],
+            "focused_field_role": str(
+                document.get("focused_field_role")
+                or getattr(self, "focused_field_role", "")
+                or ""
+            )[:40],
+            "objects": objects_out,
+        }
+        path = str(screenshot_path or "").strip()
+        if path:
+            snap["screenshot_path"] = path[-200:]
+        # De-dupe same iteration (re-persist / layer merge).
+        if self.recent_perceptions and self.recent_perceptions[-1].get("iteration") == snap["iteration"]:
+            self.recent_perceptions[-1] = snap
+        else:
+            self.recent_perceptions.append(snap)
+        if len(self.recent_perceptions) > cap:
+            del self.recent_perceptions[0 : len(self.recent_perceptions) - cap]
 
     def advance_search_hypothesis(self, n_hypotheses: int) -> bool:
         """Move to next search hypothesis. Returns True if advanced."""
@@ -371,6 +529,26 @@ class ExecutionState:
             )[: len(self.action_attempts) - MAX_TRACKED_ATTEMPTS]:
                 self.action_attempts.pop(stale, None)
         return dict(entry)
+
+    def repeated_attempts(self, *, minimum: int = 2, limit: int = 8) -> List[Dict[str, Any]]:
+        """Moves tried here at least ``minimum`` times, most-tried first.
+
+        The shape every caller that has to warn a model about a loop wants: what
+        was tried, how often, and what it did. Bounded because a stuck run can
+        accumulate more of these than are worth spending prompt on.
+        """
+        tried = [
+            {
+                "family": str(entry.get("family") or ""),
+                "target": str(entry.get("target") or ""),
+                "attempts": int(entry.get("attempts") or 0),
+                "effects": [str(effect) for effect in (entry.get("effects") or [])][-3:],
+            }
+            for entry in self.action_attempts.values()
+            if isinstance(entry, dict) and int(entry.get("attempts") or 0) >= int(minimum)
+        ]
+        tried.sort(key=lambda item: item["attempts"], reverse=True)
+        return tried[: max(0, int(limit))]
 
     def attempts_for(self, *, family: str, target: str, surface: str = "") -> int:
         """How many times this exact move has been tried here, ever."""

@@ -299,29 +299,59 @@ class AttentionSubgraph:
 
 @dataclass
 class SurfaceState:
-    """Compositional split-pane surface model for controller-facing state."""
+    """Compositional split-pane surface model for controller-facing state.
+
+    Authoritative for meta/decision. Flat ``screen`` is a derived alias only.
+    """
 
     base_surface: str = ""
     sidebar_surface: str = ""
     main_surface: str = ""
     overlay_surface: str = ""
+    active_interaction_surface: str = ""
+    regions: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        regions = dict(self.regions or {})
+        if not regions:
+            regions = {
+                "sidebar": self.sidebar_surface,
+                "main": self.main_surface,
+                "overlay": self.overlay_surface,
+            }
         return {
             "base_surface": self.base_surface,
             "sidebar_surface": self.sidebar_surface,
             "main_surface": self.main_surface,
             "overlay_surface": self.overlay_surface,
+            "active_interaction_surface": self.active_interaction_surface
+            or self.overlay_surface
+            or self.main_surface
+            or self.sidebar_surface,
+            "regions": regions,
         }
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "SurfaceState":
+        regions = d.get("regions") if isinstance(d.get("regions"), dict) else {}
         return cls(
             base_surface=str(d.get("base_surface") or ""),
             sidebar_surface=str(d.get("sidebar_surface") or ""),
             main_surface=str(d.get("main_surface") or ""),
             overlay_surface=str(d.get("overlay_surface") or ""),
+            active_interaction_surface=str(d.get("active_interaction_surface") or ""),
+            regions={str(k): str(v) for k, v in (regions or {}).items()},
         )
+
+    def derived_screen_alias(self) -> str:
+        """Legacy flat screen label — debug/compat only, not control authority."""
+        if self.overlay_surface:
+            return self.overlay_surface
+        if self.active_interaction_surface:
+            return self.active_interaction_surface
+        if self.main_surface and self.main_surface not in {"empty_placeholder", "unknown"}:
+            return self.main_surface
+        return self.sidebar_surface or self.base_surface or "unknown"
 
 
 @dataclass

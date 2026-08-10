@@ -67,10 +67,15 @@ frozen baseline so an unintended behavior change shows up immediately.
   settled question is visibly redundant — the root fix for the
   re-search-the-same-thing failure class.
 
-- **Meta-actions** (`meta_action.py`) — `THINK / PERCEIVE / PROBE / ACT / VERIFY
-  / BACKTRACK / ASK_USER`, selected by value from the sufficiency verdict and
-  budget. Perception stops being unconditional: PERCEIVE is a chosen phase, and
-  a stale look yields to BACKTRACK or ACT.
+- **Meta-actions** (`meta_action.py`, contract in `meta_contract.py`, design in
+  [`agent-design.md`](agent-design.md)) — frozen v1 core:
+  `THINK / PERCEIVE / SEARCH / EXPLORE / ACT / ASK / DELEGATE / WAIT`.
+  Purpose not mechanism: PERCEIVE→known scope, SEARCH→criteria-known find,
+  EXPLORE→route/affordance discovery, THINK→internal derivation, ACT→external
+  change, ASK/DELEGATE/WAIT→other actor / specialist / time. SEARCH may actuate
+  find-stage catalog verbs; EXPLORE reveal stages only; ACT commits when the
+  target is known. Incomplete `search_episode` rewrites meta ACT→SEARCH (same
+  hardness as unpaid look→PERCEIVE).
 
 - **Capability registry** (`capabilities.py`) — `CapabilityDescriptor` enriches
   each catalog verb with cost, latency, reliability, preconditions and side

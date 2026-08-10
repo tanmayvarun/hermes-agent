@@ -29,13 +29,27 @@ COVERAGE_THRESHOLD = 0.80
 
 
 def estimate_coverage(obs: Observation, *, visual_node_estimate: Optional[int] = None) -> float:
-    """accessible_nodes / visual_nodes. If visual unknown, use 1.0 when nodes>0."""
-    accessible = len(obs.nodes)
-    if visual_node_estimate and visual_node_estimate > 0:
-        return min(1.0, accessible / float(visual_node_estimate))
-    if obs.coverage is not None:
-        return float(obs.coverage)
-    return 1.0 if accessible > 0 else 0.0
+    """Task-relevant coverage — never 1.0 merely because shell AX nodes exist.
+
+    Chrome-only App/Window trees used to short-circuit OCR recovery by reporting
+    coverage=1.0. That confused transport health with task knowledge.
+    """
+    try:
+        from plugin.perception.coverage_quality import estimate_task_coverage
+
+        return float(
+            estimate_task_coverage(obs, visual_node_estimate=visual_node_estimate)
+        )
+    except Exception:
+        accessible = len(obs.nodes)
+        if visual_node_estimate and visual_node_estimate > 0:
+            return min(1.0, accessible / float(visual_node_estimate))
+        if obs.coverage is not None:
+            # Clamp legacy self-reported 1.0 when the tree is tiny/chrome.
+            if accessible <= 3 and float(obs.coverage) >= 0.99:
+                return 0.2
+            return float(obs.coverage)
+        return 0.2 if accessible > 0 else 0.0
 
 
 def needs_screen2ax(obs: Observation, *, visual_node_estimate: Optional[int] = None) -> bool:

@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import plugin.agent.decision as decision_mod
 from plugin.agent.decision import DecisionEngine
 from plugin.agent.features import StateFeatures
 from plugin.agent.apps.whatsapp import WhatsAppOverlay
@@ -286,15 +285,17 @@ def test_latent_probe_candidates_stay_within_active_scope():
     assert all(p.semantic_target.lower() == "zarooratwala" for p in probes)
 
 
-def test_decision_engine_returns_grounded_capability_id():
+def test_decision_engine_returns_grounded_capability_id(monkeypatch):
+    """decide() returns whatever unified supplies — no LLM selector fallthrough."""
+    from plugin.agent.action import Action
+    from plugin.worldmodel.model import WorldModel
+
     wm_entities = [
         _ent(1, label="Messages in chat with now group", bounds=(400, 20, 280, 40), entity_type="static"),
         _ent(2, label="Voice", bounds=(860, 100, 120, 36)),
         _ent(3, label="Search", bounds=(20, 40, 220, 36), entity_type="textfield", role="AXTextField"),
     ]
     wm_graph = reconstruct_world_graph(wm_entities, app="WhatsApp")
-
-    from plugin.worldmodel.model import WorldModel
 
     wm = WorldModel()
     wm.active_app = "WhatsApp"
@@ -305,73 +306,33 @@ def test_decision_engine_returns_grounded_capability_id():
     ex = ExecutionState()
     goal = Goal(kind="whatsapp_voice_call", contact="now group")
 
-    def fake_synthesize_perception(*args, **kwargs):
-        return SimpleNamespace(
-            screen_type="conversation",
-            active_surface="conversation",
-            likely_next_family="start_call",
-            likely_next_target="Voice",
-            confidence=0.82,
-        )
+    grounded = Action(
+        action="Click",
+        action_family="start_call",
+        semantic_target="Voice",
+        capability_id="InitiateVoiceCall:2:header",
+        capability_type="InitiateVoiceCall",
+        target_entity_id=2,
+        grounding_reason="unified_brain",
+    )
+    monkeypatch.setattr(
+        DecisionEngine,
+        "_unified_fast_path",
+        lambda self, goal, world, features, execution_state, candidates: grounded,
+    )
 
-    def fake_select_action_with_llm(*args, **kwargs):
-        scored_candidates = args[3]
-        chosen = next(
-            (cand for cand in scored_candidates if cand.action_family == "start_call"),
-            next((cand for cand in scored_candidates if cand.action_family != "observe"), scored_candidates[0]),
-        )
-        return chosen, {"confidence": 0.84, "task": kwargs.get("task")}
-
-    decision_mod_synthesize = decision_mod.synthesize_perception
-    decision_mod_select = decision_mod.select_action_with_llm
-    decision_mod.synthesize_perception = fake_synthesize_perception
-    decision_mod.select_action_with_llm = fake_select_action_with_llm
-    try:
-        decision = DecisionEngine(selector_enabled=True).decide(goal, wm, ex)
-    finally:
-        decision_mod.synthesize_perception = decision_mod_synthesize
-        decision_mod.select_action_with_llm = decision_mod_select
+    decision = DecisionEngine().define_action_step(goal, wm, ex)
 
     assert decision is not None
-    assert decision.capability_id
-    assert decision.capability_type in {"InitiateVoiceCall", "SearchConversation", "OpenConversation"}
-    if decision.action_family == "start_call":
-        assert decision.target_entity_id is not None
+    assert decision.capability_id == "InitiateVoiceCall:2:header"
+    assert decision.capability_type == "InitiateVoiceCall"
+    assert decision.action_family == "start_call"
+    assert decision.target_entity_id == 2
 
 
+@pytest.mark.skip(reason="legacy DecisionEngine fallthrough removed")
 def test_decision_engine_allows_single_content_candidate_to_hit_selector():
-    goal = Goal(kind="whatsapp_forward_message", contact="Kulvinder", target_contact="Pallavi", link_query="india coffee house")
-    wm_entities = [
-        _ent(1, label="Messages in chat with Kulvinder Ji", bounds=(400, 20, 280, 40), entity_type="static"),
-        _ent(2, label="Search", bounds=(20, 40, 220, 36), entity_type="textfield", role="AXTextField"),
-    ]
-    wm_graph = reconstruct_world_graph(wm_entities, app="WhatsApp")
-
-    from plugin.worldmodel.model import WorldModel
-
-    wm = WorldModel()
-    wm.active_app = "WhatsApp"
-    wm.entities = {e.id: e for e in wm_entities}
-    wm.last_scene_graph = wm_graph.to_dict()
-    wm.last_capability_graph = build_capability_graph(wm_graph, wm_entities, goal=goal).to_dict()
-
-    captured = {}
-
-    def fake_select_action_with_llm(*args, **kwargs):
-        captured.update(kwargs)
-        scored_candidates = args[3]
-        chosen = next((cand for cand in scored_candidates if cand.action_family != "observe"), scored_candidates[0])
-        return chosen, {"task": kwargs.get("task"), "confidence": 0.81}
-
-    decision_mod_select = decision_mod.select_action_with_llm
-    decision_mod.select_action_with_llm = fake_select_action_with_llm
-    try:
-        decision = DecisionEngine(selector_enabled=True).decide(goal, wm, ExecutionState())
-    finally:
-        decision_mod.select_action_with_llm = decision_mod_select
-
-    assert captured["task"] == "decision"
-    assert decision is not None
+    pass
 
 
 def test_transition_progress_reports_capability_delta():
@@ -521,54 +482,13 @@ def test_composer_voice_message_is_not_grounded_as_call_capability():
     assert any(cap.type == "InitiateVoiceCall" for cap in overlay_caps)
 
 
+@pytest.mark.skip(reason="legacy DecisionEngine fallthrough removed")
 def test_decision_engine_uses_llm_selector_to_choose_the_right_call_cta():
-    goal = Goal(kind="whatsapp_voice_call", contact="now group")
-    entities = [
-        _ent(10, label="Voice message", bounds=(960, 920, 48, 40), entity_type="button"),
-        _ent(11, label="Voice", bounds=(860, 100, 120, 36)),
-        _ent(12, label="Video", bounds=(860, 140, 120, 36)),
-        _ent(13, label="Select people", bounds=(860, 180, 160, 36)),
-    ]
-    wm_graph = reconstruct_world_graph(entities, app="WhatsApp")
-
-    from plugin.worldmodel.model import WorldModel
-
-    wm = WorldModel()
-    wm.active_app = "WhatsApp"
-    wm.entities = {e.id: e for e in entities}
-    wm.last_scene_graph = wm_graph.to_dict()
-    wm.last_capability_graph = build_capability_graph(
-        wm_graph,
-        entities,
-        goal=goal,
-        capability_hints=WhatsAppOverlay().capability_hints(goal),
-    ).to_dict()
-
-    calls = {}
-
-    def fake_selector(**kwargs):
-        calls["kwargs"] = kwargs
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(
-                        content='{"choice": "Voice", "confidence": 0.99, "reason": "header voice call"}'
-                    )
-                )
-            ]
-        )
-
-    decision = DecisionEngine(selector_caller=fake_selector).decide(goal, wm, ExecutionState())
-
-    assert calls
-    assert decision is not None
-    assert decision.semantic_target == "Voice"
-    assert decision.capability_type == "InitiateVoiceCall"
-    assert decision.target_entity_id == 11
-    assert decision.grounding_reason
+    pass
 
 
 def test_decision_engine_blocks_low_confidence_irreversible_actions():
+    """Selector threshold path removed — without unified, decide Observes."""
     goal = Goal(kind="whatsapp_voice_call", contact="now group")
     entities = [
         _ent(10, label="Voice", bounds=(860, 100, 120, 36)),
@@ -589,23 +509,12 @@ def test_decision_engine_blocks_low_confidence_irreversible_actions():
         capability_hints=WhatsAppOverlay().capability_hints(goal),
     ).to_dict()
 
-    def fake_selector(**kwargs):
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(
-                        content='{"choice": "Voice", "confidence": 0.3, "reason": "not sure"}'
-                    )
-                )
-            ]
-        )
-
-    decision = DecisionEngine(selector_enabled=True, selector_caller=fake_selector).decide(goal, wm, ExecutionState())
+    decision = DecisionEngine(selector_enabled=True).define_action_step(goal, wm, ExecutionState())
 
     assert decision is not None
     assert decision.action_family == "observe"
-    assert decision.grounding_reason == "blocked_below_irreversible_threshold"
-    assert DecisionEngine(selector_enabled=True, selector_caller=fake_selector).irreversible_action_confidence_threshold() == 0.7
+    assert "unified_declined_no_legacy_fallthrough" in (decision.rationale or "")
+    assert DecisionEngine().irreversible_action_confidence_threshold() == 0.7
 
 
 def test_decision_engine_allows_selector_to_veto_single_risky_forward_action():
@@ -641,43 +550,19 @@ def test_decision_engine_allows_selector_to_veto_single_risky_forward_action():
             ]
         )
 
-    decision = DecisionEngine(selector_enabled=True, selector_caller=fake_selector).decide(goal, wm, ExecutionState())
+    decision = DecisionEngine(selector_enabled=True, selector_caller=fake_selector).define_action_step(goal, wm, ExecutionState())
 
     assert decision is not None
     assert decision.action_family == "observe"
 
 
+@pytest.mark.skip(reason="legacy DecisionEngine fallthrough removed")
 def test_decision_engine_strict_selector_mode_raises_on_llm_exhaustion(monkeypatch):
-    goal = Goal(kind="whatsapp_voice_call", contact="now group")
-    entities = [
-        _ent(10, label="Voice", bounds=(860, 100, 120, 36)),
-        _ent(11, label="Video", bounds=(860, 140, 120, 36)),
-    ]
-    wm_graph = reconstruct_world_graph(entities, app="WhatsApp")
-
-    from plugin.worldmodel.model import WorldModel
-    from agent.auxiliary_client import LLMProviderExhaustedError
-
-    wm = WorldModel()
-    wm.active_app = "WhatsApp"
-    wm.entities = {e.id: e for e in entities}
-    wm.last_scene_graph = wm_graph.to_dict()
-    wm.last_capability_graph = build_capability_graph(
-        wm_graph,
-        entities,
-        goal=goal,
-        capability_hints=WhatsAppOverlay().capability_hints(goal),
-    ).to_dict()
-
-    def fake_selector(**kwargs):
-        raise LLMProviderExhaustedError("selector timed out")
-
-    monkeypatch.setenv("HERMES_SELECTOR_STRICT", "1")
-    with pytest.raises(LLMProviderExhaustedError):
-        DecisionEngine(selector_enabled=True, selector_caller=fake_selector).decide(goal, wm, ExecutionState())
+    pass
 
 
 def test_decision_engine_overrules_selector_observe_when_open_search_is_better():
+    """Value/frontier overrule of selector Observe is gone — decline → Observe."""
     goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
     entities = [
         _ent(1, label="Search", bounds=(20, 40, 220, 36), entity_type="textfield", role="AXTextField"),
@@ -698,65 +583,13 @@ def test_decision_engine_overrules_selector_observe_when_open_search_is_better()
         capability_hints=WhatsAppOverlay().capability_hints(goal),
     ).to_dict()
 
-    def fake_selector(**kwargs):
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(
-                        content='{"choice": "observe", "confidence": 0.95, "reason": "stall"}'
-                    )
-                )
-            ]
-        )
-
-    decision = DecisionEngine(selector_enabled=True, selector_caller=fake_selector).decide(goal, wm, ExecutionState())
+    decision = DecisionEngine(selector_enabled=True).define_action_step(goal, wm, ExecutionState())
 
     assert decision is not None
-    assert decision.action_family != "observe"
-    assert decision.action_family in {"open_search", "type_query"}
+    assert decision.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (decision.rationale or "")
 
 
+@pytest.mark.skip(reason="legacy DecisionEngine fallthrough removed")
 def test_decision_engine_routes_irreversible_actions_through_high_risk_selector():
-    goal = Goal(kind="whatsapp_voice_call", contact="now group")
-    entities = [
-        _ent(10, label="Voice message", bounds=(960, 920, 48, 40), entity_type="button"),
-        _ent(11, label="Voice", bounds=(860, 100, 120, 36)),
-        _ent(12, label="Video", bounds=(860, 140, 120, 36)),
-        _ent(13, label="Select people", bounds=(860, 180, 160, 36)),
-    ]
-    wm_graph = reconstruct_world_graph(entities, app="WhatsApp")
-
-    from plugin.worldmodel.model import WorldModel
-
-    wm = WorldModel()
-    wm.active_app = "WhatsApp"
-    wm.entities = {e.id: e for e in entities}
-    wm.last_scene_graph = wm_graph.to_dict()
-    wm.last_capability_graph = build_capability_graph(
-        wm_graph,
-        entities,
-        goal=goal,
-        capability_hints=WhatsAppOverlay().capability_hints(goal),
-    ).to_dict()
-
-    captured = {}
-
-    def fake_select_action_with_llm(*args, **kwargs):
-        captured.update(kwargs)
-        scored_candidates = args[3]
-        chosen = next((cand for cand in scored_candidates if cand.action_family == "start_call"), scored_candidates[0])
-        chosen.target_entity_id = chosen.target_entity_id or 11
-        return chosen, {"task": kwargs.get("task"), "confidence": 0.99}
-
-    decision_mod_select = decision_mod.select_action_with_llm
-    decision_mod.select_action_with_llm = fake_select_action_with_llm
-    try:
-        decision = DecisionEngine().decide(goal, wm, ExecutionState())
-    finally:
-        decision_mod.select_action_with_llm = decision_mod_select
-
-    assert captured["task"] == "decision_high_risk"
-    assert captured["call_kwargs"]["reasoning_config"]["effort"] == "high"
-    assert decision is not None
-    assert decision.action_family == "start_call"
-    assert decision.capability_type == "InitiateVoiceCall"
+    pass

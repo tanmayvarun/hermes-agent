@@ -331,7 +331,7 @@ def build_view_features(
         # the screen type, the contradictions -- is derived from the unified
         # reading instead, in unified_cognition.unified_perception_extras.
         #
-        # The genuine fallback lives in DecisionEngine.decide, which calls this
+        # The genuine fallback lives in DecisionEngine.define_action_step, which calls this
         # only when unified cognition returns no usable proposal.
         perception = None
         if not unified_cognition_enabled():
@@ -622,6 +622,7 @@ def ensure_settled_perception(
             features=snap.features,
             patch=snap.patch,
             search_query_hint=hint,
+            execution_state=runtime.execution_state,
         )
         snap.settled = bool(snap.assessment.settled)
         if not snap.settled:
@@ -642,6 +643,7 @@ def ensure_settled_perception(
             features=snap.features,
             patch=snap.patch,
             search_query_hint=hint,
+            execution_state=runtime.execution_state,
         )
         snap.settled = bool(snap.assessment.settled)
         if not snap.settled:
@@ -684,13 +686,95 @@ def ensure_settled_perception(
             features=snap.features,
             patch=snap.patch,
             search_query_hint=hint,
+            execution_state=runtime.execution_state,
         )
         snap.settled = bool(snap.assessment.settled)
         if not snap.settled:
             _mark_unsettled(snap)
 
     snap.retries = retries
+    # Stamp effect-closure for meta/decision (route discovery + forbid re-ACT).
+    try:
+        modes = list(
+            (snap.assessment.failure_modes if snap.assessment else []) or []
+        )
+        evidence = (snap.assessment.evidence if snap.assessment else {}) or {}
+        step = getattr(runtime.execution_state, "last_plan_step", None)
+        fp = ""
+        try:
+            from plugin.agent.brain import motor_fingerprint
+
+            fp = motor_fingerprint(
+                str(action_family or getattr(step, "action_family", "") or ""),
+                str(getattr(step, "semantic_target", "") or ""),
+                getattr(step, "target_point", None) if step is not None else None,
+            )
+        except Exception:
+            fp = str(getattr(runtime.execution_state, "last_failed_motor_key", "") or "")
+        mode_blob = " ".join(str(m) for m in modes).lower()
+        sel = getattr(runtime.execution_state, "last_selection_consistency", None)
+        referent_repair = bool(
+            evidence.get("referent_repair_owed")
+            or (
+                isinstance(sel, dict)
+                and sel.get("applicable")
+                and sel.get("consistent") is False
+            )
+            or any(
+                tok in mode_blob
+                for tok in (
+                    "wrong_target",
+                    "target_deselected",
+                    "referent_mismatch",
+                    "selection_inconsistent",
+                )
+            )
+        )
+        runtime.execution_state.last_effect_closure = {
+            "modes": modes,
+            "incomplete_reveal": bool(
+                evidence.get("incomplete_reveal")
+                or "affordance_set_empty" in modes
+                or (
+                    isinstance(getattr(runtime.execution_state, "reveal_handoff", None), dict)
+                    and getattr(runtime.execution_state, "reveal_handoff", {}).get(
+                        "incomplete_reveal"
+                    )
+                )
+            ),
+            "expected_overlay_missing": "expected_overlay_missing" in modes,
+            "geometry_mismatch": bool(evidence.get("geometry_mismatch")),
+            "referent_repair_owed": referent_repair,
+            "fingerprint": fp,
+            "action_family": str(action_family or ""),
+            "settled": bool(snap.settled),
+        }
+    except Exception:
+        pass
     if not snap.settled:
+        # Exhausted reveal ingest: mark failed_reveal so the loop does not
+        # silently treat motor-ok as a shared affordance_set.
+        if action_family == "reveal_actions":
+            try:
+                handoff = getattr(runtime.execution_state, "reveal_handoff", None)
+                if isinstance(handoff, dict):
+                    runtime.execution_state.reveal_handoff = {
+                        **handoff,
+                        "failed_reveal": True,
+                        "status": "failed_reveal",
+                        # Terminal episode — do not keep incomplete meta debt.
+                        "incomplete_reveal": False,
+                    }
+                snap.features.setdefault("extras", {})
+                if isinstance(snap.features.get("extras"), dict):
+                    snap.features["extras"]["failed_reveal"] = True
+                    snap.features["extras"]["incomplete_reveal"] = False
+                    snap.features["extras"]["reveal_episode_failed"] = True
+                runtime.execution_state.reveal_gesture_attempts = int(
+                    getattr(runtime.execution_state, "reveal_gesture_attempts", 0) or 0
+                ) + 1
+            except Exception:
+                pass
         if log_fn:
             log_fn(
                 phase="perception_unsettled",

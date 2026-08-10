@@ -6,14 +6,16 @@ Which entity to open is judgment and stays with the model.
 
     open_entity(target) -> navigate into that conversation / channel / thread
 
-Apps do not fork this. Resolution prefers overlay.resolve_target when a world
-is supplied, then a model-supplied point, then a label click. That order is
-mechanism, not planning.
+Apps do not fork this. When the decision already supplies a screen point, that
+geometry wins over a later label→AX match (which often binds the sidebar search
+echo of the same URL/text). Otherwise: grounded entity id, then overlay
+resolve_target, then label click.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol, Tuple, runtime_checkable
 
@@ -22,6 +24,9 @@ from plugin.agent.capabilities.base import AddressableEntity, CapabilityOutcome
 logger = logging.getLogger(__name__)
 
 _POINT_TARGET_SIZE = 24
+# How far a label-resolved AX box may sit from the decision point before we
+# treat it as a different control and keep the point.
+_POINT_BOUNDS_AGREE_PAD = 96.0
 
 
 @runtime_checkable
@@ -61,6 +66,22 @@ def _point_bounds(point: Any) -> Optional[Tuple[float, float, float, float]]:
     return (float(x - half), float(y - half), float(_POINT_TARGET_SIZE), float(_POINT_TARGET_SIZE))
 
 
+def _point_agrees_with_bounds(
+    point: Any,
+    bounds: Any,
+    *,
+    pad: float = _POINT_BOUNDS_AGREE_PAD,
+) -> bool:
+    if point is None or not bounds:
+        return False
+    try:
+        px, py = float(point[0]), float(point[1])
+        x, y, w, h = (float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3]))
+    except (TypeError, ValueError, IndexError):
+        return False
+    return (x - pad) <= px <= (x + w + pad) and (y - pad) <= py <= (y + h + pad)
+
+
 def resolve_addressable(
     request_arg: str,
     extras: dict,
@@ -75,6 +96,7 @@ def resolve_addressable(
     point = extras.get("point")
     bounds = extras.get("bounds")
     world = extras.get("world")
+    decision_point_bounds = _point_bounds(point)
 
     if world is not None and (label or entity_id is not None):
         try:
@@ -102,13 +124,23 @@ def resolve_addressable(
                 entity = overlay.resolve_target(world, label, "click")
             if entity is not None:
                 label = str(getattr(entity, "label", "") or label)
-                bounds = getattr(entity, "bounds", None) or bounds
+                entity_bounds = getattr(entity, "bounds", None) or bounds
                 entity_id = getattr(entity, "id", entity_id)
+                # Live: decision pointed at the chat-pane link; label resolve
+                # returned the sidebar search hit of the same URL. Keep the point.
+                if (
+                    decision_point_bounds is not None
+                    and entity_bounds is not None
+                    and not _point_agrees_with_bounds(point, entity_bounds)
+                ):
+                    bounds = decision_point_bounds
+                else:
+                    bounds = entity_bounds or bounds
         except Exception as exc:
             logger.debug("overlay resolve_target failed: %s", exc)
 
     if bounds is None:
-        bounds = _point_bounds(point)
+        bounds = decision_point_bounds
 
     point_tuple: Optional[Tuple[int, int]] = None
     if point is not None:
@@ -120,10 +152,25 @@ def resolve_addressable(
     return AddressableEntity(
         app=app,
         label=label,
-        entity_id=int(entity_id) if entity_id is not None else None,
+        entity_id=int(entity_id) if entity_id is not None and str(entity_id).lstrip("-").isdigit() else None,
         point=point_tuple,
         bounds=tuple(bounds) if bounds is not None else None,  # type: ignore[arg-type]
     )
+
+
+def _ax_click_label(label: str) -> str:
+    """Name used for AX lookup: strip trailing URL/preview tails from vision labels.
+
+    Perception often labels a row as ``Name + preview text``; AX usually exposes
+    only ``Name``. Geometry (bounds) remains authoritative when present.
+    """
+    raw = (label or "").strip()
+    if not raw:
+        return "entity"
+    head = re.split(r"\s+(?:https?://|//)", raw, maxsplit=1)[0].strip()
+    head = head.split("|")[0].strip()
+    head = head.rstrip(".…-–— ").strip()
+    return head or raw
 
 
 def open_entity(
@@ -140,7 +187,8 @@ def open_entity(
 
     try:
         runtime.activate(entity.app)
-        ok, message = runtime.click(entity.app, entity.label or "entity", bounds=entity.bounds)
+        click_label = _ax_click_label(entity.label or "entity")
+        ok, message = runtime.click(entity.app, click_label, bounds=entity.bounds)
     except Exception as exc:
         logger.warning("open_entity failed: %s", exc)
         return CapabilityOutcome(

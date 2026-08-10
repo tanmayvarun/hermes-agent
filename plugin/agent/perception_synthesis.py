@@ -43,6 +43,35 @@ _DEFAULT_PERCEPTION_MIN_CONFIDENCE = 0.7
 _DEFAULT_PERCEPTION_PROMPT_SHAPE = "balanced"
 _SCREEN_UNDERSTANDING_TASK = "screen_understanding"
 
+# The three perception instruction variants. Each is invariant for the life of a
+# run, so the live path (``_build_prompt``) puts the applicable one in the system
+# message, where it forms a prefix a provider can cache instead of re-prefilling
+# it inside every per-call user payload. They stay addressable here because the
+# offline prompt benchmark builds its payload without going through that path.
+_INSTRUCTIONS_AX_ONLY = (
+    "Infer screen meaning from AX evidence only. Return strict JSON with "
+    "screen_type, active_surface, likely_next_family, likely_next_target, "
+    "likely_next_text, confidence, avoid_families, supporting_evidence, "
+    "contradictions, needs_followup_observe."
+)
+_INSTRUCTIONS_WITH_SCREENSHOT = (
+    "Infer screen meaning from the screenshot and AX evidence together. "
+    "Report application: the name of the app/program actually shown in the "
+    "pixels (e.g. WhatsApp, Safari, Finder), independent of any window that "
+    "may overlap it. "
+    "Return strict JSON with screen_type, application, active_surface, "
+    "likely_next_family, likely_next_target, likely_next_text, confidence, "
+    "avoid_families, supporting_evidence, contradictions, needs_followup_observe."
+)
+_INSTRUCTIONS_TIMELINE = (
+    "Infer screen meaning from AX evidence only. For message-relevance tasks, "
+    "treat conversation_timeline as the primary source of truth, prefer visible "
+    "timeline rows and links over unrelated chrome, and ignore terminal/file/menu noise. "
+    "Return strict JSON with screen_type, active_surface, likely_next_family, "
+    "likely_next_target, likely_next_text, confidence, avoid_families, "
+    "supporting_evidence, contradictions, needs_followup_observe."
+)
+
 
 def _json_safe(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int, float, str)):
@@ -314,12 +343,7 @@ def _compact_view_packet(
                 ),
             },
         },
-        "instructions": (
-            "Infer screen meaning from AX evidence only. Return strict JSON with "
-            "screen_type, active_surface, likely_next_family, likely_next_target, "
-            "likely_next_text, confidence, avoid_families, supporting_evidence, "
-            "contradictions, needs_followup_observe."
-        ),
+        "instructions": _INSTRUCTIONS_AX_ONLY,
     }
 
 
@@ -654,10 +678,10 @@ def _perception_task_targets(
 ) -> List[Dict[str, Any]]:
     """Return ordered provider/model targets for a perception consultation.
 
-    The primary route is the shared task router. For screen-understanding
-    calls, that router should surface the Ollama Cloud chain first, so the
-    perceptor can naturally step from qwen3.5:cloud -> kimi-k3:cloud ->
-    gemma4:cloud when the current answer is too uncertain.
+    Fast path: small local VLMs first (``HERMES_PERCEPTION_FAST_MODEL``).
+    Escalate: cloud 397B / ``HERMES_PERCEPTION_ESCALATE_MODEL`` when confidence
+    is low. Cloud-only chains remain as the safety net when no local VLM is
+    installed.
     """
     runtime = dict(main_runtime or {})
     task_cfg = {}
@@ -707,6 +731,39 @@ def _perception_task_targets(
             }
         )
 
+    # Env-pinned fast (first) / escalate (last) models.
+    if task_name == _SCREEN_UNDERSTANDING_TASK:
+        fast = str(os.getenv("HERMES_PERCEPTION_FAST_MODEL", "") or "").strip()
+        escalate = str(
+            os.getenv("HERMES_PERCEPTION_ESCALATE_MODEL", "qwen3.5:cloud") or ""
+        ).strip()
+        if fast:
+            # Local daemon — never inherit OLLAMA_BASE_URL=ollama.com from .env.
+            fast_base = str(
+                os.getenv("HERMES_PERCEPTION_FAST_BASE_URL", "http://127.0.0.1:11434/v1")
+                or ""
+            ).strip()
+            _append_target(
+                provider="ollama-remote",
+                model=fast,
+                base_url=fast_base,
+                api_key=str(os.getenv("OLLAMA_API_KEY", "ollama") or "ollama").strip(),
+                source="env:HERMES_PERCEPTION_FAST_MODEL",
+                rank=-2,
+            )
+        if escalate:
+            esc_provider = (
+                "ollama-cloud"
+                if "cloud" in escalate.lower() or escalate.endswith(":cloud")
+                else "ollama"
+            )
+            _append_target(
+                provider=esc_provider,
+                model=escalate,
+                source="env:HERMES_PERCEPTION_ESCALATE_MODEL",
+                rank=10_000,
+            )
+
     # Explicit per-task override wins first when present.
     if task_cfg:
         explicit_provider = str(task_cfg.get("provider") or "").strip()
@@ -753,8 +810,7 @@ def _perception_task_targets(
                         rank=0,
                     )
 
-    # Shared router ranking. For screen-understanding, prefer the cloud-only
-    # multimodal chain and ignore the current runtime's smaller text-only lane.
+    # Shared router ranking. Screen-understanding: local ollama + cloud vision.
     current_provider = "" if task_name == _SCREEN_UNDERSTANDING_TASK else str(runtime.get("provider") or "").strip()
     current_base_url = "" if task_name == _SCREEN_UNDERSTANDING_TASK else str(runtime.get("base_url") or "").strip()
     try:
@@ -768,9 +824,14 @@ def _perception_task_targets(
     except Exception:
         ranked = []
     if task_name == _SCREEN_UNDERSTANDING_TASK:
-        ollama_ranked = [cand for cand in ranked if str(getattr(cand, "provider", "") or "").strip().lower() == "ollama-cloud"]
-        if ollama_ranked:
-            ranked = ollama_ranked
+        vision_ranked = [
+            cand
+            for cand in ranked
+            if str(getattr(cand, "provider", "") or "").strip().lower()
+            in {"ollama", "ollama-remote", "ollama-cloud"}
+        ]
+        if vision_ranked:
+            ranked = vision_ranked
 
     try:
         from agent.auxiliary_client import _resolve_task_provider_model
@@ -811,17 +872,14 @@ def _perception_task_targets(
             rank=idx + 1,
         )
 
-    # For screen understanding, lead with the profile's preferred vision models.
-    # The built-in ranking can float text/code models (kimi-k3, kimi-k2.7-code)
-    # ahead of the vision model; those reject the screenshot and waste a call
-    # each before the loop reaches a model that can actually see. Honouring the
-    # declared preference puts the proven multimodal model (qwen3.5) first.
+    # Lead with preferred vision models (exact tag first, then family).
+    # Env-pinned fast model (rank -2) stays first.
     if task_name == _SCREEN_UNDERSTANDING_TASK and len(targets) > 1:
         try:
             from hermes_cli.model_routing import get_task_profile
 
             preferred = [
-                str(m).split(":", 1)[0].strip().lower()
+                str(m).strip().lower()
                 for m in (get_task_profile(task_name).preferred_models or ())
                 if str(m).strip()
             ]
@@ -829,25 +887,30 @@ def _perception_task_targets(
             preferred = []
         if preferred:
             def _preference_rank(t: Dict[str, Any]) -> int:
-                family = str(t.get("model") or "").split(":", 1)[0].strip().lower()
+                src = str(t.get("source") or "")
+                if src.startswith("env:HERMES_PERCEPTION_FAST_MODEL"):
+                    return -100
+                if src.startswith("env:HERMES_PERCEPTION_ESCALATE_MODEL"):
+                    return 10_000
+                model = str(t.get("model") or "").strip().lower()
+                family = model.split(":", 1)[0]
                 for i, pref in enumerate(preferred):
-                    if family == pref or family.startswith(pref) or pref.startswith(family):
+                    if model == pref or model.endswith("/" + pref):
                         return i
-                return len(preferred)
+                for i, pref in enumerate(preferred):
+                    pref_fam = pref.split(":", 1)[0]
+                    if family == pref_fam:
+                        return len(preferred) + i
+                return len(preferred) * 3
 
-            # Screen understanding is a vision task: a text/code model cannot read
-            # the screenshot, so keeping it in the chain only wastes a call — and
-            # kimi-k3 in particular is extra-usage-only, whose 402 marks the whole
-            # ollama-cloud provider unhealthy and poisons the working vision model.
-            # The shared router still surfaces those models as ollama-cloud
-            # candidates, so reordering is not enough: drop everything outside the
-            # curated vision families (keeping any explicit rank-0 task override).
-            preferred_present = any(_preference_rank(t) < len(preferred) for t in targets)
+            preferred_present = any(_preference_rank(t) < len(preferred) * 3 for t in targets)
             if preferred_present:
                 targets = [
                     t
                     for t in targets
-                    if _preference_rank(t) < len(preferred) or int(t.get("rank", -1)) == 0
+                    if _preference_rank(t) < len(preferred) * 3
+                    or str(t.get("source") or "").startswith("env:HERMES_PERCEPTION_")
+                    or int(t.get("rank", -1)) == 0
                 ]
             targets.sort(key=_preference_rank)
 
@@ -857,9 +920,11 @@ def _perception_task_targets(
 
 
 def _perception_reasoning_config(target: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Only request explicit thinking when the selected perception model is expected
-    to support it. Some fast chat-oriented models reject the flag outright.
+    """Perception is bounded grounding — disable thinking by default.
+
+    Strategic / escalate consultants keep their own higher reasoning. Models that
+    reject the flag still get ``None`` (local ollama already omits it).
+    Override with ``HERMES_PERCEPTION_THINK=1`` for debugging.
     """
     provider = str(target.get("provider") or "").strip().lower()
     model = str(target.get("model") or "").strip().lower()
@@ -869,8 +934,17 @@ def _perception_reasoning_config(target: Dict[str, Any]) -> Optional[Dict[str, A
     if "qwen2.5:32b" in model:
         return None
     if provider in {"ollama-remote", "ollama"}:
+        # Local Ollama: think is controlled via extra_body ``think: false``.
         return None
-    return {"enabled": True, "effort": "low"}
+    think_on = str(os.getenv("HERMES_PERCEPTION_THINK", "") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if think_on:
+        return {"enabled": True, "effort": "low"}
+    return {"enabled": False}
 
 
 def _call_llm_hard_timeout(timeout_s: float, **kwargs: Any) -> Any:
@@ -898,25 +972,62 @@ def _call_llm_hard_timeout(timeout_s: float, **kwargs: Any) -> Any:
     return result.get("value")
 
 
-def _perception_extra_body(main_runtime: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Request JSON-mode output on transports that support it.
+def _perception_extra_body(
+    main_runtime: Optional[Dict[str, Any]] = None,
+    *,
+    target: Optional[Dict[str, Any]] = None,
+    fast_path: bool = False,
+) -> Dict[str, Any]:
+    """Request JSON-mode + think-off on transports that support it.
 
     Ollama's OpenAI-compatible chat endpoint understands ``format=json`` and
     is the current primary route for the live WhatsApp run. Forcing JSON mode
     there materially reduces the chance that the model emits a prose preface
     or other non-JSON wrapper around the perception summary.
+
+    ``think: false`` cuts perception tail latency (classification, not deliberation).
+    Fast path also asks the model to stop after the first JSON object.
     """
     runtime = dict(main_runtime or {})
-    provider = str(runtime.get("provider") or "").strip().lower()
-    base_url = str(runtime.get("base_url") or "").strip()
+    tgt = dict(target or {})
+    provider = str(
+        tgt.get("provider") or runtime.get("provider") or ""
+    ).strip().lower()
+    base_url = str(tgt.get("base_url") or runtime.get("base_url") or "").strip()
     host = ""
     try:
         host = urlparse(base_url).hostname or ""
     except Exception:
         host = ""
+    body: Dict[str, Any] = {}
     if provider in {"ollama", "ollama-remote", "ollama-cloud"} or "ollama" in host:
-        return {"format": "json"}
-    return {}
+        body["format"] = "json"
+        think_on = str(os.getenv("HERMES_PERCEPTION_THINK", "") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if not think_on:
+            body["think"] = False
+            # Some cloud paths honor reasoning_effort=none instead of think.
+            if provider == "ollama-cloud":
+                body["reasoning_effort"] = "none"
+        if fast_path:
+            # Nudge completion to end once the object closes (generation was the
+            # warm-latency bottleneck on local 4b).
+            body["stop"] = ["\n", "\n\n", "```"]
+            opts = dict(body.get("options") or {})
+            try:
+                from plugin.agent.unified_cognition import _FAST_MAX_TOKENS as _fast_cap
+            except Exception:
+                _fast_cap = 200
+            opts["num_predict"] = int(
+                body.get("_num_predict_override") or opts.get("num_predict") or _fast_cap
+            )
+            body["options"] = opts
+            body.pop("_num_predict_override", None)
+    return body
 
 
 def _should_run_perception_llm(view: Dict[str, Any], features: StateFeatures) -> bool:
@@ -1164,35 +1275,18 @@ def _build_prompt(
 ) -> List[Dict[str, Any]]:
     payload = build_perception_prompt_payload(goal, world, view, features, prompt_shape=prompt_shape)
     if task_name == _SCREEN_UNDERSTANDING_TASK:
-        payload["instructions"] = (
-            "Infer screen meaning from the screenshot and AX evidence together. "
-            "Report application: the name of the app/program actually shown in the "
-            "pixels (e.g. WhatsApp, Safari, Finder), independent of any window that "
-            "may overlap it. "
-            "Return strict JSON with screen_type, application, active_surface, "
-            "likely_next_family, likely_next_target, likely_next_text, confidence, "
-            "avoid_families, supporting_evidence, contradictions, needs_followup_observe."
-        )
+        instructions = _INSTRUCTIONS_WITH_SCREENSHOT
     elif _goal_needs_timeline_projection(goal):
-        payload["instructions"] = (
-            "Infer screen meaning from AX evidence only. For message-relevance tasks, "
-            "treat conversation_timeline as the primary source of truth, prefer visible "
-            "timeline rows and links over unrelated chrome, and ignore terminal/file/menu noise. "
-            "Return strict JSON with screen_type, active_surface, likely_next_family, "
-            "likely_next_target, likely_next_text, confidence, avoid_families, "
-            "supporting_evidence, contradictions, needs_followup_observe."
-        )
+        instructions = _INSTRUCTIONS_TIMELINE
+    else:
+        instructions = _INSTRUCTIONS_AX_ONLY
+    # Carried in the system message instead, so the invariant half of the prompt
+    # forms a cacheable prefix rather than trailing the volatile evidence.
+    payload.pop("instructions", None)
     return [
         {
             "role": "system",
-            "content": (
-                "Return strict JSON only. "
-                + (
-                    "Infer screen meaning from screenshot pixels and AX evidence."
-                    if task_name == _SCREEN_UNDERSTANDING_TASK
-                    else "Infer screen meaning from AX evidence."
-                )
-            ),
+            "content": "Return strict JSON only. " + instructions,
         },
         {
             "role": "user",
@@ -1520,7 +1614,9 @@ def synthesize_perception(
                 parsed = consultation.parsed
                 if parsed:
                     candidate_summary = _parse_summary(parsed, goal, view, features_obj)
-                    features_obj.extras["perception_consultation"] = consultation.to_dict()
+                    features_obj.extras["perception_consultation"] = consultation.to_dict(
+                        include_messages=False
+                    )
                     if best_summary is None or candidate_summary.confidence > best_summary.confidence:
                         best_summary = candidate_summary
                         best_consultation = consultation
@@ -1567,7 +1663,7 @@ def synthesize_perception(
     result = summary.to_dict()
     result["cache_key"] = cache_key
     if best_consultation is not None:
-        result["consultation"] = best_consultation.to_dict()
+        result["consultation"] = best_consultation.to_dict(include_messages=False)
     if best_target is not None:
         result["selected_target"] = {
             "provider": best_target.get("provider"),

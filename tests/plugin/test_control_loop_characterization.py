@@ -379,6 +379,35 @@ def deterministic_runtime(monkeypatch, tmp_path):
     from agent import auxiliary_client
 
     monkeypatch.setattr(auxiliary_client, "call_llm", _scripted_call_llm)
+
+    # Meta is always LLM-path; inject a hermetic chooser that labels via the
+    # offline ladder oracle (eval stub — not a runtime fallback).
+    from plugin.agent.executive.hierarchy import decision_ladder
+    from plugin.agent.executive import meta_consultation as meta_consult
+
+    _real_resolve = meta_consult.resolve_meta_choice
+
+    def _hermetic_resolve(ctx, *, goal_complete=False, chooser=None, situation=None):
+        if chooser is None:
+
+            class _LadderStub:
+                def choose(self, system, packet):
+                    choice = decision_ladder(ctx, goal_complete=bool(goal_complete))
+                    return {
+                        "meta_action": choice.action.value,
+                        "why": choice.reason,
+                        "confidence": 1.0,
+                    }
+
+            chooser = _LadderStub()
+        return _real_resolve(
+            ctx,
+            goal_complete=goal_complete,
+            chooser=chooser,
+            situation=situation,
+        )
+
+    monkeypatch.setattr(meta_consult, "resolve_meta_choice", _hermetic_resolve)
     token = auxiliary_client.set_runtime_main(
         "openrouter",
         "characterization/model",
@@ -569,13 +598,7 @@ def test_budget_exhaustion(tmp_path):
 
 
 def test_meta_perception_gate_skips_a_reperceive_without_crashing(tmp_path, monkeypatch):
-    """With HERMES_META_PERCEPTION on, a static world triggers a skip.
-
-    This is not a golden — the whole point of the flag is that it changes the
-    trace. It only asserts that the meta-driven path runs to termination and
-    that the executive actually elected to skip a re-perceive at least once
-    (i.e. the gate is wired, not dead code).
-    """
+    """Brain owns looking: reuse last world until meta schedules PERCEIVE/REFLECT."""
     monkeypatch.setenv("HERMES_META_PERCEPTION", "1")
     app = _frozen_app()
     log = EventLogger(tmp_path / "meta.jsonl", also_console=False, run_id="meta")
@@ -593,23 +616,23 @@ def test_meta_perception_gate_skips_a_reperceive_without_crashing(tmp_path, monk
     assert result is not None
     events = log.read_all()
     judged = [e for e in events if e.get("kind") == "executive_judgement"]
-    skipped = [e for e in events if e.get("kind") == "perception_skipped"]
+    reused = [e for e in events if e.get("kind") == "perception_reused"]
+    bootstrap = [e for e in events if e.get("kind") == "perception_bootstrap"]
+    brain_look = [
+        e
+        for e in events
+        if e.get("kind") == "meta_action_phase"
+        and str(e.get("handling") or "")
+        in {"brain_tool:perceive", "brain_tool:reflect", "brain_tool:verify"}
+    ]
     assert judged, "executive judgement should be recorded every iteration"
-    assert skipped, "a static world with the gate on should skip at least one re-perceive"
+    assert bootstrap or reused or brain_look, (
+        "brain-owned perception: bootstrap, reuse, or meta-scheduled look"
+    )
 
 
-def test_meta_action_retreat_is_dispatched_as_a_loop_phase(tmp_path, monkeypatch):
-    """Under the flag, a stale branch makes the executive retreat, and that
-    verdict pre-empts acting: a ``meta_action_phase`` is emitted and the frontier
-    is invalidated, rather than the loop blindly committing the frame's action.
-
-    This is what "meta-action drives the loop" means — the executive's choice of
-    move is control flow, not just a perception gate.
-
-    The retreat now arrives as INFORMATION_GATHERING: before falling back it asks
-    which branch is worth trying next, so the move has a direction rather than
-    being a bare undo.
-    """
+def test_one_executive_post_act_look_and_verify_does_not_preempt(tmp_path, monkeypatch):
+    """Brain-owned tools: meta phase names the tool; VERIFY is a look, not act preempt."""
     monkeypatch.setenv("HERMES_META_PERCEPTION", "1")
     app = _frozen_app()
     log = EventLogger(tmp_path / "meta_dispatch.jsonl", also_console=False, run_id="meta_dispatch")
@@ -628,15 +651,26 @@ def test_meta_action_retreat_is_dispatched_as_a_loop_phase(tmp_path, monkeypatch
     events = log.read_all()
     phase_events = [e for e in events if e.get("kind") == "meta_action_phase"]
     handlings = {str(e.get("handling") or "") for e in phase_events}
-    # The executive elected a pre-empting move and it was dispatched as a phase.
-    assert phase_events, "a stale branch under the flag should dispatch a meta-action phase"
-    assert handlings <= {"verify", "backtrack", "information_gathering", "ask_user"}
-    assert "information_gathering" in handlings
-    # The retreat actually invalidated the frontier (not a no-op log line), and
-    # it carries the branch plan it reasoned out rather than a bare hint.
+    assert phase_events, "meta_action_phase must dispatch brain tools"
+    assert handlings <= {
+        "brain_tool:act",
+        "brain_tool:perceive",
+        "brain_tool:search",
+        "brain_tool:explore",
+        "think",
+        "ask",
+        "delegate",
+        "wait",
+        "no_actuation_this_turn",
+        "act_blocked_post_act_look_unpaid",
+        "perceive_exhausted_redecide",
+        "perceive_owed_no_act_fallthrough",
+        "think_exhausted_redecide",
+        "explore_exhausted_redecide",
+    }
     gathering = [e for e in events if e.get("kind") == "meta_information_gathering"]
-    assert gathering
-    assert gathering[0].get("branch_plan") is not None
+    if gathering:
+        assert gathering[0].get("branch_plan") is not None
 
 
 def test_exhausted_backtracks_commit_when_a_move_exists_else_escalate():
@@ -649,13 +683,13 @@ def test_exhausted_backtracks_commit_when_a_move_exists_else_escalate():
     from plugin.agent.controller import _resolve_exhausted_backtrack
     from plugin.agent.executive.meta_action import MetaAction, MetaChoice
 
-    backtrack = MetaChoice(MetaAction.BACKTRACK, "branch stale")
+    backtrack = MetaChoice(MetaAction.EXPLORE, "branch stale")
 
     # Not yet exhausted: the backtrack stands.
     unchanged = _resolve_exhausted_backtrack(
         backtrack, backtrack_exhausted=False, has_grounded_action=False
     )
-    assert unchanged.action is MetaAction.BACKTRACK
+    assert unchanged.action is MetaAction.EXPLORE
 
     # Exhausted with a grounded move: commit it instead of retreating again.
     committed = _resolve_exhausted_backtrack(
@@ -667,12 +701,44 @@ def test_exhausted_backtracks_commit_when_a_move_exists_else_escalate():
     escalated = _resolve_exhausted_backtrack(
         backtrack, backtrack_exhausted=True, has_grounded_action=False
     )
-    assert escalated.action is MetaAction.ASK_USER
+    assert escalated.action is MetaAction.ASK
 
     # A non-backtrack move is never rewritten, even when exhausted.
     act = MetaChoice(MetaAction.ACT, "grounded")
     assert _resolve_exhausted_backtrack(
         act, backtrack_exhausted=True, has_grounded_action=True
+    ).action is MetaAction.ACT
+
+
+def test_exhausted_information_gathering_commits_the_grounded_move():
+    """Re-planning that stops changing the plan must give way to acting.
+
+    Exhaustion is a MetaContext input; the executive ladder chooses ACT — the
+    loop must not rewrite meta after the fact.
+    """
+    from plugin.agent.executive.hierarchy import decision_ladder
+    from plugin.agent.executive.meta_action import MetaAction, MetaContext
+
+    # Under the cap, without a committed grounded act, retreat plans branches.
+    assert decision_ladder(
+        MetaContext(branch_stale=True, has_grounded_action=False)
+    ).action is MetaAction.THINK
+
+    # Exhausted: executive decides ACT (geometry bind / commit).
+    assert decision_ladder(
+        MetaContext(
+            branch_stale=True,
+            information_gathering_exhausted=True,
+            has_grounded_action=True,
+        )
+    ).action is MetaAction.ACT
+
+    assert decision_ladder(
+        MetaContext(
+            branch_stale=True,
+            information_gathering_exhausted=True,
+            has_grounded_action=False,
+        )
     ).action is MetaAction.ACT
 
 

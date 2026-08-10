@@ -212,7 +212,7 @@ def test_synthesize_perception_prefers_live_runtime_main(monkeypatch):
         assert summary is not None
         assert seen["provider"] == "ollama-cloud"
         assert seen["model"] == "qwen3.5:cloud"
-        assert seen["reasoning_config"] == {"enabled": True, "effort": "low"}
+        assert seen["reasoning_config"] == {"enabled": False}
     finally:
         auxiliary_client.reset_runtime_main(token)
 

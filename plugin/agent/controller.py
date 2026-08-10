@@ -1,4 +1,17 @@
-"""Closed-loop goal controller — transition-aware observe → act → observe → evaluate."""
+"""Closed-loop goal controller — brain-owned tools (meta-first dispatcher).
+
+The controller does not choose tools. Each iteration:
+
+1. Build context from the current world (no tool run yet; bootstrap look once).
+2. Brain meta decides which tool/capability to run (PERCEIVE / ACT / THINK / …).
+3. Dispatch only that tool. Perception, reflection, and actuation never self-schedule.
+
+Surprise and ``must_executive_reperceive`` are *signals into meta*, not forced
+pre-meta looks by this module. After any non-observe actor result (ok or fail),
+the controller invalidates the pre-act snapshot and owes a brain-scheduled
+PERCEIVE before the next ACT — never ``perceive_exhausted_fall_through``
+onto pre-act geometry.
+"""
 
 from __future__ import annotations
 
@@ -64,7 +77,6 @@ from plugin.agent.transition import (
     update_interaction_context,
     world_fingerprint,
 )
-from plugin.agent.runtime.recovery import maybe_cleanup_for_storage_pressure
 from plugin.agent.transition.post_perceive import (
     feature_get,
     settled_empty_search_results,
@@ -84,15 +96,12 @@ _TRUE_ENV = {"1", "true", "yes", "on"}
 
 
 def _meta_perception_enabled() -> bool:
-    """Whether the executive's meta-action drives control flow.
+    """Whether the brain's meta-action owns tool scheduling (default on).
 
-    On by default: the executive is the driver, not an observer. Its meta-action
-    (VERIFY / BACKTRACK / ASK_USER / THINK / PROBE) governs the loop — gating the
-    top-of-loop re-perceive and pre-empting this frame's grounded decision when
-    the move is a control-flow move rather than a plain act. Set
-    ``HERMES_META_PERCEPTION`` to ``0``/``false``/``no``/``off`` to fall back to
-    the legacy always-perceive loop (the judgement is still computed and
-    recorded for observability either way).
+    When enabled, the controller is a dispatcher: it runs only the tool the
+    brain selected (PERCEIVE / ACT / THINK / EXPLORE / SEARCH / ASK / …).
+    Set ``HERMES_META_PERCEPTION`` to ``0``/``false``/``no``/``off`` only for
+    legacy always-perceive characterization (judgement is still recorded).
     """
     import os
 
@@ -206,40 +215,175 @@ def _prediction_was_contradicted(execution_state: Any) -> bool:
     backwards or did not move, but a move that lands somewhere plausible and
     entirely wrong reads as ordinary progress to them, while the prediction says
     plainly that it was not what was expected.
+
+    Meta thrash prevention (``suppressed_rearm`` / ``surprise_armed=False``)
+    must not re-arm surprise meta on the same predicted surface — but must leave
+    ``matched`` truthful so motor escalate can still see effect-absent
+    (live 154356). This predicate is for *meta surprise*, not mechanism.
     """
     error = getattr(execution_state, "last_prediction_error", None)
     if not isinstance(error, dict) or not error:
         return False
-    return error.get("matched") is False
+    if error.get("matched") is not False:
+        return False
+    # Surprise already consumed: do not re-arm meta surprise.
+    if error.get("suppressed_rearm") or error.get("surprise_armed") is False:
+        return False
+    if error.get("consumed_by_reflect") and error.get("surprise_armed") is not True:
+        return False
+    return True
+
+
+def _effect_was_absent(execution_state: Any) -> bool:
+    """Judgment: predicted effect did not appear (independent of meta latch)."""
+    error = getattr(execution_state, "last_prediction_error", None)
+    if not isinstance(error, dict) or not error:
+        return False
+    if error.get("matched") is False:
+        return True
+    # Explicit effect_absent bit when matched was historically coerced.
+    if error.get("effect_absent") is True:
+        return True
+    return False
+
+
+def _attribution_belief_authority(attrib: Dict[str, Any]) -> str:
+    """Who is allowed to steer the executive from this attribution?
+
+    ``motor`` — actuator reported failure (thin feedback the executive owns).
+    ``multimodal`` — stage1 prediction scored against a later reading.
+    ``ax_settle_diagnostic`` — post-act AX/view TransitionEvaluator (logging only;
+    never a rival chooser).
+    """
+    auth = str(attrib.get("belief_authority") or "").strip().lower()
+    if auth:
+        return auth
+    evidence = attrib.get("evidence") if isinstance(attrib.get("evidence"), dict) else {}
+    if evidence.get("executor_ok") is False:
+        return "motor"
+    return "ax_settle_diagnostic"
 
 
 def _last_action_surprised(execution_state: Any) -> bool:
-    """Did the most recent non-observe action fail to produce the expected world?"""
+    """Executive surprise: motor fail or multimodal prediction contradicted.
+
+    AX settle / TransitionEvaluator regression is diagnostic only — it must not
+    force a look or block the one-executive loop. After an act the executive
+    re-perceives (stage1) and chooses from that accepted world.
+    """
     if _prediction_was_contradicted(execution_state):
         return True
     attrib = getattr(execution_state, "last_attribution", None)
     if not isinstance(attrib, dict) or not attrib:
         return False
+    if _attribution_belief_authority(attrib) != "motor":
+        return False
     effect = str(attrib.get("effect_kind") or "").strip().lower()
     outcome = str(attrib.get("outcome") or "").strip().lower()
     if effect in _SURPRISE_EFFECTS or outcome in _SURPRISE_OUTCOMES:
         return True
-    return _expected_transition_absent(execution_state)
+    if effect in _NO_MOVEMENT_EFFECTS or outcome in _NO_MOVEMENT_OUTCOMES:
+        return True
+    return False
+
+
+def _post_action_look_unpaid(execution_state: Any) -> bool:
+    """True until the executive finishes re-perceive after the last motor write.
+
+    Cycle: act → result → re-perceive → decide. While this is set, the next
+    capability must not run — the executive still owes the look that feeds that
+    decide. Distinct from surprise-relook signals in ``_awaiting_verification``.
+    """
+    return bool(getattr(execution_state, "must_executive_reperceive", False)) or bool(
+        getattr(execution_state, "post_action_reperceive_pending", False)
+    )
 
 
 def _awaiting_verification(execution_state: Any) -> bool:
-    """A non-observe action just fired and its predicted transition is unconfirmed."""
+    """True when the executive owes a look before the next act.
+
+    Includes unpaid post-act re-perceive and motor surprise after a non-observe
+    act. Meta uses this to schedule PERCEIVE; actuation gating for the
+    act→reperceive→decide cycle uses ``_post_action_look_unpaid`` only.
+    """
+    if _post_action_look_unpaid(execution_state):
+        return True
     last_action = str(getattr(execution_state, "last_action", "") or "").strip().lower()
     if not last_action or last_action == "observe":
         return False
-    attrib = getattr(execution_state, "last_attribution", None)
-    if not isinstance(attrib, dict) or not attrib:
+    return _last_action_surprised(execution_state)
+
+
+def _note_post_action_reperceive(runtime: Any, *, open_conversation: str = "", state_sig: str = "") -> None:
+    """After actor returns (ok or fail): executive must re-perceive before deciding again.
+
+    Clears carry-over that would let the next ACT bind pre-act geometry, and
+    resets the consecutive-perceive streak so an owed look cannot
+    ``perceive_exhausted_fall_through`` into actuation on a stale world.
+
+    Also resets ``consecutive_surprise_relooks``: the surprise relook cap is per
+    unmoving world, not per run. A fresh motor act earns a new look budget so
+    the executive can schedule the post-act re-perceive (live 024346).
+    """
+    state = runtime.execution_state
+    state.must_executive_reperceive = True
+    state.post_action_reperceive_pending = True
+    if open_conversation:
+        state.post_action_baseline_open = str(open_conversation)
+    elif not str(getattr(state, "post_action_baseline_open", "") or "").strip():
+        doc = getattr(state, "unified_world_document", None) or {}
+        state.post_action_baseline_open = str(
+            (doc.get("open_conversation") if isinstance(doc, dict) else "") or ""
+        )
+    if state_sig:
+        state.post_action_baseline_sig = str(state_sig)
+    try:
+        state.consecutive_perceives = 0
+    except Exception:
+        pass
+    try:
+        # New act → new look budget (see docstring).
+        state.consecutive_surprise_relooks = 0
+    except Exception:
+        pass
+    try:
+        state.unified_perception_cache = None
+    except Exception:
+        pass
+
+
+def _clear_post_action_reperceive_if_fresh(
+    runtime: Any,
+    *,
+    multimodal_ok: bool,
+    proposal_model: str = "",
+    open_conversation: str = "",
+    state_sig: str = "",
+) -> bool:
+    """Mark the executive's post-act re-perceive as complete.
+
+    Contract: act → result → re-perceive → decide. Idle ``phash_reuse`` is not a
+    re-perceive. ``no_visible_change`` (post-act pixel delta) *is* — the look
+    returned "unchanged," and the executive decides from that result.
+    Open/sig need not change (ComposeSearchQuery keeps search chrome open).
+    """
+    _ = (open_conversation, state_sig)  # call-site/logging compatibility
+    if not multimodal_ok:
         return False
-    outcome = str(attrib.get("outcome") or "").strip().lower()
-    return outcome in (
-        _SURPRISE_OUTCOMES
-        | {TransitionOutcome.PROMISING_UNRESOLVED.value}
-    )
+    model = str(proposal_model or "").strip().lower()
+    if model == "phash_reuse":
+        return False
+    state = runtime.execution_state
+    if not _post_action_look_unpaid(state):
+        return True
+    try:
+        state.must_executive_reperceive = False
+        state.post_action_reperceive_pending = False
+        state.post_action_baseline_open = ""
+        state.post_action_baseline_sig = ""
+    except Exception:
+        return False
+    return True
 
 
 def _resolve_exhausted_backtrack(
@@ -248,34 +392,62 @@ def _resolve_exhausted_backtrack(
     backtrack_exhausted: bool,
     has_grounded_action: bool,
 ) -> "MetaChoice":
-    """Stop an endless BACKTRACK run once retreating provably cannot help.
+    """Compatibility helper: exhaustion is decided inside ``decision_ladder``.
 
-    After enough no-progress backtracks the branch space is exhausted: retreating
-    again is the thrash the first live executive run exposed (backtrack on ~98 of
-    100 iterations). Commit the grounded move if one exists; otherwise escalate,
-    because there is nothing left to ground. Returns ``meta`` unchanged when
-    backtracks are not exhausted or the move is not a backtrack.
+    Prefer passing ``backtrack_exhausted`` into :func:`assess_executive_judgement`
+    / ``MetaContext``. This wrapper re-runs the ladder so tests keep one API.
     """
-    if backtrack_exhausted and meta.action in {
-        MetaAction.BACKTRACK,
-        # Re-aiming the search is a retreat too, and re-planning branches
-        # forever is the same thrash by another name.
-        MetaAction.INFORMATION_GATHERING,
+    if not backtrack_exhausted or meta.action not in {
+        MetaAction.EXPLORE,
+        MetaAction.THINK,
     }:
-        if has_grounded_action:
-            return MetaChoice(MetaAction.ACT, "backtracks exhausted; commit the grounded action")
-        return MetaChoice(MetaAction.ASK_USER, "backtracks exhausted; nothing can be grounded")
-    return meta
+        return meta
+    from plugin.agent.executive.hierarchy import decision_ladder
+    from plugin.agent.executive.meta_action import MetaContext
+
+    return decision_ladder(
+        MetaContext(
+            branch_stale=True,
+            backtrack_exhausted=True,
+            has_grounded_action=has_grounded_action,
+        )
+    )
+
+
+def _resolve_exhausted_information_gathering(
+    meta: "MetaChoice",
+    *,
+    gathering_exhausted: bool,
+    has_grounded_action: bool,
+) -> "MetaChoice":
+    """Compatibility helper: exhaustion is decided inside ``decision_ladder``."""
+    if not gathering_exhausted or meta.action != MetaAction.THINK:
+        return meta
+    from plugin.agent.executive.hierarchy import decision_ladder
+    from plugin.agent.executive.meta_action import MetaContext
+
+    return decision_ladder(
+        MetaContext(
+            branch_stale=True,
+            information_gathering_exhausted=True,
+            has_grounded_action=has_grounded_action,
+        )
+    )
 
 
 def _consume_surprise(execution_state: Any) -> None:
-    """Mark the last surprising attribution as handled so VERIFY fires once.
+    """Mark the last surprise as handled so PERCEIVE fires once.
 
-    A VERIFY turn re-perceives and acknowledges the surprise. If the surprise
-    stayed on the attribution the executive would verify the same one every
-    frame; stamping it verified lets the next frame act on the re-understood
-    world instead of looping. The surprise still lives in ``recent_surprises``,
-    so perception keeps the pattern.
+    The look acknowledges the prediction error. If surprise stayed on the
+    prediction error. If surprise stayed on the attribution / prediction error,
+    the executive would reflect the same one every frame (live zarooratwala
+    123727: 68× brain_tool:reflect after one click). Stamping it consumed lets
+    the next frame act on the re-understood world. The surprise still lives in
+    ``recent_surprises``, so perception keeps the pattern.
+
+    Important (154356): do **not** falsify ``matched``. Meta thrash prevention
+    is ``surprise_armed=False`` / ``consumed_by_reflect``; effect judgment stays
+    honest so motor escalate can still run.
     """
     attrib = getattr(execution_state, "last_attribution", None)
     if isinstance(attrib, dict):
@@ -283,6 +455,16 @@ def _consume_surprise(execution_state: Any) -> None:
         updated["outcome"] = "verified"
         updated["effect_kind"] = "verified"
         execution_state.last_attribution = updated
+    err = getattr(execution_state, "last_prediction_error", None)
+    if isinstance(err, dict) and err:
+        cleared = dict(err)
+        # Keep structural judgment. Only disarm meta re-arm.
+        if cleared.get("matched") is False:
+            cleared["effect_absent"] = True
+        cleared["consumed_by_reflect"] = True
+        cleared["surprise_armed"] = False
+        cleared["suppressed_rearm"] = True
+        execution_state.last_prediction_error = cleared
 
 
 def _observe_capability_reliability(decision: Any, ok: bool) -> None:
@@ -309,31 +491,134 @@ def _observe_capability_reliability(decision: Any, ok: bool) -> None:
         pass
 
 
+def _clear_search_retreat_state(execution_state: Any, *, why: str = "") -> None:
+    """Clear failed-search retreat debt so a fresh SEARCH may arm."""
+    try:
+        from plugin.agent.capabilities.search_episode import (
+            clear_search_episode,
+            clear_search_retreat,
+        )
+
+        clear_search_retreat(execution_state)
+        if str(
+            (getattr(execution_state, "search_episode", None) or {}).get("status") or ""
+        ) == "failed":
+            clear_search_episode(execution_state, why=why or "retreat_cleared")
+    except Exception:
+        execution_state.search_retreat_owed = False
+
+
+def _run_think_replan(
+    runtime: RuntimeState,
+    goal: Goal,
+    *,
+    observe: Any,
+    feats: Any,
+    overlay: Any,
+    log: Any,
+    iteration: int,
+) -> str:
+    """Replan branches after failed search or stale exploration (ex-IG path)."""
+    if not reperception_exhausted(runtime.execution_state):
+        snap_pre = refresh_perception(
+            runtime,
+            goal,
+            observe=observe,
+            action_label="meta_think_replan",
+            log_fn=_perception_log_fn(log, iteration),
+            iteration=iteration,
+        )
+        try:
+            replan_feats = overlay.features(
+                runtime.world_model, goal, worldview_score=snap_pre.worldview
+            )
+        except Exception:
+            replan_feats = feats
+        _multimodal_look(runtime, goal, features=replan_feats, mode="perceive")
+    plan = _plan_next_branches(runtime, goal, feats)
+    runtime.execution_state.consecutive_information_gathering = (
+        int(getattr(runtime.execution_state, "consecutive_information_gathering", 0) or 0)
+        + 1
+    )
+    branch_hint = _invalidate_stale_frontier(
+        runtime,
+        reason="strategic_search",
+        fallback=plan.head or "observe",
+    )
+    if plan.head:
+        runtime.execution_state.state_experience.pending_backtrack_family = plan.head
+        branch_hint = plan.head
+    _note_no_progress_replan(runtime)
+    return branch_hint
+
+
+def _run_explore_revert(
+    runtime: RuntimeState,
+    goal: Goal,
+) -> Any:
+    """Undo wrong branch effects before explore/search broadens (ex-backtrack path)."""
+    _clear_search_retreat_state(
+        runtime.execution_state, why="explore_after_failed_search"
+    )
+    runtime.execution_state.consecutive_backtracks = (
+        int(getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0) + 1
+    )
+    revert_outcome = None
+    try:
+        from plugin.agent.capabilities.base import CapabilityRequest
+        from plugin.agent.capabilities.dispatch import dispatch
+
+        revert_outcome = dispatch(
+            CapabilityRequest(
+                name="revert_effects",
+                app=str(goal.app or "WhatsApp"),
+                extras={
+                    "execution_state": runtime.execution_state,
+                    "goal": goal,
+                    "world_document": getattr(
+                        runtime.execution_state, "unified_world_document", None
+                    ),
+                    "user_intent": "explore_retreat",
+                    "approve": True,
+                },
+            ),
+            get_overlay(goal.app, runtime.world_model),
+        )
+    except Exception as exc:
+        revert_outcome = type(
+            "R",
+            (),
+            {"ok": False, "message": str(exc), "evidence": {}},
+        )()
+    branch_hint = _invalidate_stale_frontier(
+        runtime, reason="executive_explore_retreat", fallback="observe"
+    )
+    _note_no_progress_replan(runtime)
+    try:
+        runtime.execution_state.must_executive_reperceive = True
+        runtime.execution_state.post_action_reperceive_pending = True
+    except Exception:
+        pass
+    return revert_outcome, branch_hint
+
+
 # Meta-actions that unconditionally pre-empt this frame's grounded decision.
-# VERIFY/BACKTRACK/ASK_USER are terminal-ish control moves, and
-# INFORMATION_GATHERING joins them because re-aiming the search is exactly what
-# must happen *instead of* committing this frame's stale-branch action. THINK and
-# PROBE are deliberate detours handled separately (they are bounded and may fall
-# through to acting/observing). PERCEIVE/ACT fall through to the normal decide ->
-# execute path (the re-perceive PERCEIVE wants is gated at the top of the loop).
+# ASK and DELEGATE escalate; WAIT is a short settle that continues.
+# THINK / EXPLORE / PERCEIVE / SEARCH / ACT fall through (bounded detours).
 _META_PREEMPTS = {
-    MetaAction.VERIFY,
-    MetaAction.BACKTRACK,
-    MetaAction.INFORMATION_GATHERING,
-    MetaAction.ASK_USER,
+    MetaAction.ASK,
+    MetaAction.DELEGATE,
 }
 
-# THINK forces the next decision onto the deliberative path; PROBE steers it
-# toward a reveal. Both are bounded so a persistently ambiguous world escalates
-# (falls through to act/observe) instead of thinking or probing forever.
-_MAX_CONSECUTIVE_THINKS = 2
-_MAX_CONSECUTIVE_PROBES = 3
-
-# Backtracking retreats the branch to explore elsewhere. If it repeats this many
-# times with no real move in between, the branch space is exhausted and looking/
-# retreating again cannot help (e.g. perception is starved and nothing can be
-# grounded); the executive escalates to the user instead of thrashing.
-_MAX_CONSECUTIVE_BACKTRACKS = 5
+# Streak caps — single source in meta_action; loop only increments counters.
+from plugin.agent.executive.meta_action import (
+    BACKTRACK_STREAK_CAP as _MAX_CONSECUTIVE_BACKTRACKS,
+    INFORMATION_GATHERING_STREAK_CAP as _MAX_CONSECUTIVE_INFORMATION_GATHERING,
+    PERCEIVE_STREAK_CAP as _MAX_CONSECUTIVE_PERCEIVES,
+    PROBE_STREAK_CAP as _MAX_CONSECUTIVE_PROBES,
+    SEARCH_STREAK_CAP as _MAX_CONSECUTIVE_SEARCHES,
+    THINK_STREAK_CAP as _MAX_CONSECUTIVE_THINKS,
+)
 
 # The domain derives a fine-grained phase (OPEN_SOURCE, FIND_LINK, ...). The
 # workspace records progress against the abstract phase ladder so regression
@@ -372,14 +657,21 @@ def _reading_surface(extras: Dict[str, Any], open_conversation: str) -> str:
     """Distil one surface label the workspace's wipe protection understands.
 
     The workspace only needs a coarse surface (conversation / context_menu /
-    forward_picker / chat_list / search) to know whether an empty open-conversation
-    reading is trustworthy. Derived from generic frontier signals, not from a
-    WhatsApp-only field.
+    selection_mode / forward_picker / chat_list / search) to know whether an
+    empty open-conversation reading is trustworthy. Derived from generic
+    frontier signals, not from a WhatsApp-only field.
     """
     if not isinstance(extras, dict):
         extras = {}
     if extras.get("destination_picker_visible"):
         return "forward_picker"
+    # Selection chrome ("N Selected" + toolbar) is not a context menu.
+    if (
+        extras.get("selection_chrome")
+        or extras.get("selection_count") is not None
+        or str(extras.get("active_surface") or "").strip().lower() == "selection_mode"
+    ):
+        return "selection_mode"
     if extras.get("forward_surface_open") or extras.get("action_menu_visible"):
         return "context_menu"
     if open_conversation or extras.get("source_conversation_visible") or extras.get("latent_conversation_open"):
@@ -1270,6 +1562,379 @@ def _transition_summary_from_attempt(attempt: Any, *, after_features: Any = None
     )
 
 
+
+def _action_has_geometry(raw: Any) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    pt = raw.get("target_point") or raw.get("point")
+    if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+        return True
+    bounds = raw.get("bounds")
+    return isinstance(bounds, (list, tuple)) and len(bounds) >= 4
+
+
+def _frontier_has_grounded_actuation(frontier: Any) -> bool:
+    """True when the affordance frontier already carries a clickable non-observe move."""
+    if not isinstance(frontier, dict):
+        return False
+    for item in frontier.get("observed_actions") or []:
+        if not isinstance(item, dict):
+            continue
+        fam = str(item.get("family") or "").strip().lower()
+        if not fam or fam in {"observe", "request_more_evidence", "scroll", "hover"}:
+            continue
+        if _action_has_geometry(item):
+            return True
+        for act in item.get("actuators") or []:
+            if not isinstance(act, dict):
+                continue
+            pt = act.get("point") or act.get("target_point")
+            if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                return True
+            bounds = act.get("bounds")
+            if isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+                return True
+    return False
+
+
+def _openable_source_geometry(runtime: RuntimeState, feats: Any) -> bool:
+    """True when OPEN_SOURCE can click a visible goal-contact row with bounds.
+
+    Breaks the ACT↔geometry chicken-egg on chat lists: define_action can ground
+    open_entity from inventory, but meta never chose ACT while has_grounded
+    stayed false (live 092106).
+    """
+    try:
+        extras = getattr(feats, "extras", None) or {}
+    except Exception:
+        extras = {}
+    if not isinstance(extras, dict):
+        return False
+    phase = str(extras.get("forward_phase") or "").strip().upper()
+    if not phase:
+        ft = extras.get("forward_task")
+        if isinstance(ft, dict):
+            phase = str(ft.get("derived_phase") or "").strip().upper()
+    if phase not in {"OPEN_SOURCE", "PRECLEAR"}:
+        return False
+    visible = bool(
+        extras.get("source_conversation_visible")
+        or extras.get("source_conversation_rows")
+    )
+    if not visible:
+        ft = extras.get("forward_task") if isinstance(extras.get("forward_task"), dict) else {}
+        preds = ft.get("predicates") if isinstance(ft.get("predicates"), dict) else {}
+        visible = bool(preds.get("source_conversation_visible"))
+    if not visible:
+        return False
+    contact = ""
+    ft = extras.get("forward_task") if isinstance(extras.get("forward_task"), dict) else {}
+    binds = ft.get("bindings") if isinstance(ft.get("bindings"), dict) else {}
+    src_b = binds.get("source_conversation") if isinstance(binds.get("source_conversation"), dict) else {}
+    constraints = src_b.get("constraints") if isinstance(src_b.get("constraints"), dict) else {}
+    contact = str(constraints.get("name") or extras.get("source_contact") or "").strip()
+    if not contact:
+        return False
+    try:
+        from plugin.agent.apps.whatsapp_targets import entity_ok_for_click, in_sidebar_band
+        from plugin.agent.whatsapp_view import contact_matches
+        from plugin.worldmodel.entities.normalize import _clean_label
+    except Exception:
+        return False
+    world = getattr(runtime, "world_model", None)
+    ents = list((getattr(world, "entities", None) or {}).values()) if world is not None else []
+    scene = (getattr(world, "last_scene_graph", None) or {}) if world is not None else {}
+    for e in ents:
+        if not getattr(e, "visible", False):
+            continue
+        try:
+            if not in_sidebar_band(e, ents, scene_graph=scene):
+                continue
+            if not entity_ok_for_click(e):
+                continue
+            blob = (
+                f"{_clean_label(getattr(e, 'label', '') or '')} "
+                f"{_clean_label(getattr(e, 'semantic_role', '') or '')} "
+                f"{_clean_label((getattr(e, 'attributes', None) or {}).get('description', ''))}"
+            )
+            if contact_matches(blob, contact, min_score=0.75):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _actuation_available(runtime: RuntimeState, feats: Any) -> bool:
+    """Whether a *grounded* (geometry-bearing) non-observe move is available.
+
+    Family name alone is not enough — that produced act=0 THINK thrash while
+    sufficiency claimed the evidence was ready.
+    """
+    try:
+        extras = getattr(feats, "extras", None) or {}
+    except Exception:
+        extras = {}
+
+    def _grounded_family(raw: Any) -> bool:
+        if not isinstance(raw, dict):
+            return False
+        fam = str(raw.get("family") or raw.get("action_family") or "").strip().lower()
+        if not fam or fam in {"observe", "request_more_evidence"}:
+            return False
+        return _action_has_geometry(raw)
+
+    brain = extras.get("brain_choice") if isinstance(extras, dict) else None
+    if _grounded_family(brain):
+        return True
+    doc = getattr(runtime.execution_state, "unified_world_document", None)
+    if isinstance(doc, dict):
+        for key in ("suggested_actions", "next_action"):
+            raw = doc.get(key)
+            if _grounded_family(raw):
+                return True
+            if isinstance(raw, list):
+                for item in raw[:8]:
+                    if _grounded_family(item):
+                        return True
+    uni = getattr(runtime.execution_state, "last_unified_proposal", None)
+    if isinstance(uni, dict):
+        if _grounded_family(uni.get("next_action")):
+            return True
+    frontier = getattr(runtime.execution_state, "last_affordance_frontier", None)
+    if _frontier_has_grounded_actuation(frontier):
+        return True
+    if isinstance(extras, dict) and _frontier_has_grounded_actuation(
+        extras.get("affordance_frontier")
+    ):
+        return True
+    if _openable_source_geometry(runtime, feats):
+        return True
+    return False
+
+
+def _invalidate_geometry_for_surface_change(
+    runtime: RuntimeState, *, surface: str, reason: str = ""
+) -> bool:
+    """Drop carried UI geometry when the accepted surface changes."""
+    surf = str(surface or "").strip().lower()
+    prev = str(getattr(runtime.execution_state, "last_accepted_surface", "") or "").strip().lower()
+    runtime.execution_state.last_accepted_surface = surf
+    if not prev or not surf or prev == surf:
+        return False
+    runtime.execution_state.geometry_generation = int(
+        getattr(runtime.execution_state, "geometry_generation", 0) or 0
+    ) + 1
+    # Stale next_action / proposal points belong to the prior surface.
+    uni = getattr(runtime.execution_state, "last_unified_proposal", None)
+    if isinstance(uni, dict):
+        na = uni.get("next_action")
+        if isinstance(na, dict):
+            na = dict(na)
+            na.pop("target_point", None)
+            na.pop("point", None)
+            na.pop("bounds", None)
+            na["geometry_invalidated"] = reason or f"surface {prev}->{surf}"
+            uni["next_action"] = na
+            uni["surface"] = surf
+            runtime.execution_state.last_unified_proposal = uni
+    doc = getattr(runtime.execution_state, "unified_world_document", None)
+    if isinstance(doc, dict) and str(doc.get("surface") or "").strip().lower() != surf:
+        # Keep document but force a multimodal look before acting on old objects.
+        runtime.execution_state.must_executive_reperceive = True
+    return True
+
+
+def _multimodal_look(
+    runtime: RuntimeState,
+    goal: Goal,
+    *,
+    features: Any,
+    mode: str = "perceive",
+) -> bool:
+    """Run stage-1 unified cognition as a brain look tool (PERCEIVE).
+
+    AX refresh alone is not a perceptor look — without this, reflect reused
+    stale vision geometry across surface changes.
+    """
+    try:
+        from plugin.agent.unified_cognition import (
+            consult_unified_cognition,
+            unified_cognition_enabled,
+        )
+    except Exception:
+        return False
+    if not unified_cognition_enabled():
+        return False
+    try:
+        runtime.execution_state.perception_mode = str(mode or "perceive")
+    except Exception:
+        pass
+    # AX/app_view often knows the open chat before the accepted document does.
+    # Prefer the live view so post-act choice does not keep open='• Search'.
+    try:
+        overlay = get_overlay(goal.app, runtime.world_model)
+        view = overlay.view(runtime.world_model) if overlay is not None else {}
+        open_c = str((view or {}).get("open_conversation") or "").strip()
+        if open_c and hasattr(features, "extras") and isinstance(features.extras, dict):
+            prior = str(features.extras.get("open_conversation") or "").strip().lower()
+            if (not prior) or prior in {"• search", "• search|", "search", "q search"}:
+                features.extras["open_conversation"] = open_c
+        doc = getattr(runtime.execution_state, "unified_world_document", None)
+        if open_c and isinstance(doc, dict):
+            prior_doc = str(doc.get("open_conversation") or "").strip().lower()
+            if (not prior_doc) or prior_doc in {"• search", "• search|", "search", "q search"}:
+                doc["open_conversation"] = open_c
+    except Exception:
+        pass
+    try:
+        proposal = consult_unified_cognition(
+            goal, runtime.world_model, features, runtime.execution_state
+        )
+    except Exception:
+        return False
+    if proposal is None:
+        return False
+    model = str(getattr(proposal, "model", "") or "")
+    try:
+        runtime.execution_state.last_unified_proposal = {
+            "frame": int(getattr(runtime.execution_state, "unified_frame", 0) or 0),
+            "evidence_gaps": [str(g) for g in (proposal.evidence_gaps or []) if str(g).strip()],
+            "coverage": proposal.coverage,
+            "confidence": float(proposal.confidence or 0.0),
+            "surface": str((proposal.observed_state or {}).get("surface") or "").strip(),
+            "probe_available": bool(getattr(proposal, "recommended_probe", None)),
+            "next_action": dict(proposal.next_action or {}),
+            "look_mode": str(mode or "perceive"),
+            "model": model,
+        }
+    except Exception:
+        pass
+    surf = str((proposal.observed_state or {}).get("surface") or "").strip().lower()
+    if surf:
+        _invalidate_geometry_for_surface_change(
+            runtime, surface=surf, reason=f"multimodal_look:{mode}"
+        )
+    open_after = ""
+    try:
+        open_after = str((proposal.observed_state or {}).get("open_conversation") or "").strip()
+        if not open_after:
+            open_after = str(
+                (getattr(runtime.execution_state, "unified_world_document", None) or {}).get(
+                    "open_conversation"
+                )
+                or ""
+            ).strip()
+    except Exception:
+        open_after = ""
+    _clear_post_action_reperceive_if_fresh(
+        runtime,
+        multimodal_ok=True,
+        proposal_model=model,
+        open_conversation=open_after,
+        state_sig=str(getattr(runtime.execution_state, "last_state_signature", "") or ""),
+    )
+    return True
+
+
+def _note_failed_motor(
+    runtime: RuntimeState,
+    *,
+    family: str,
+    target: str = "",
+    point: Any = None,
+) -> None:
+    from plugin.agent.brain import motor_fingerprint
+
+    key = motor_fingerprint(family, target, point)
+    if not key or key == "||":
+        return
+    runtime.execution_state.last_failed_motor_key = key
+    keys = list(getattr(runtime.execution_state, "avoid_motor_keys", None) or [])
+    if key not in keys:
+        keys.append(key)
+    runtime.execution_state.avoid_motor_keys = keys[-16:]
+
+
+def _note_open_source_failure(
+    runtime: RuntimeState,
+    decision: Any,
+    *,
+    reason: str = "",
+) -> Dict[str, Any]:
+    """Recoverable open failure: kill bad geometry, force a fresh look, escalate.
+
+    More important than never missing: after a wrong open click the agent must
+    not reuse the same eid/point or burn looks on stale perception — it must
+    re-perceive and retry with a different strategy (VLM point, then search).
+    """
+    fam = str(getattr(decision, "action_family", "") or "").strip().lower()
+    if fam not in {"open_entity", "open_contact"}:
+        return {}
+    _note_failed_motor(
+        runtime,
+        family=fam,
+        target=str(getattr(decision, "semantic_target", "") or ""),
+        point=getattr(decision, "target_point", None),
+    )
+    # Drop phash / carried perception so the next look is not frame-1 reuse.
+    try:
+        runtime.execution_state.unified_perception_cache = {}
+    except Exception:
+        pass
+    runtime.execution_state.geometry_generation = int(
+        getattr(runtime.execution_state, "geometry_generation", 0) or 0
+    ) + 1
+    runtime.execution_state.must_executive_reperceive = True
+    runtime.execution_state.post_action_reperceive_pending = True
+    # Clear stale proposal geometry tied to the failed click.
+    uni = getattr(runtime.execution_state, "last_unified_proposal", None)
+    if isinstance(uni, dict):
+        na = uni.get("next_action")
+        if isinstance(na, dict):
+            na = dict(na)
+            na.pop("target_point", None)
+            na.pop("point", None)
+            na.pop("bounds", None)
+            na["geometry_invalidated"] = reason or "open_source_failure"
+            uni["next_action"] = na
+            runtime.execution_state.last_unified_proposal = uni
+
+    hints = runtime.world_model.overlay_hints
+    if hints is None:
+        runtime.world_model.overlay_hints = {}
+        hints = runtime.world_model.overlay_hints
+    repair = dict(hints.get("open_repair") or {})
+    failed_ids = [int(x) for x in (repair.get("failed_entity_ids") or []) if str(x).lstrip("-").isdigit()]
+    eid = getattr(decision, "target_entity_id", None)
+    if eid is not None:
+        try:
+            eid_i = int(eid)
+            if eid_i not in failed_ids:
+                failed_ids.append(eid_i)
+        except (TypeError, ValueError):
+            pass
+    attempts = int(repair.get("attempts") or 0) + 1
+    prefer = "vlm_point"
+    if attempts >= 2:
+        prefer = "compose_search_query"
+    repair.update(
+        {
+            "failed_entity_ids": failed_ids[-8:],
+            "attempts": attempts,
+            "prefer": prefer,
+            "last_reason": str(reason or "")[:200],
+            "last_target": str(getattr(decision, "semantic_target", "") or "")[:120],
+        }
+    )
+    hints["open_repair"] = repair
+    try:
+        runtime.execution_state.open_repair = dict(repair)
+    except Exception:
+        pass
+    # Mirror into features extras on the next observe via overlay_hints.
+    return repair
+
+
 def run_goal_closed_loop(
     runtime: RuntimeState,
     goal: Goal,
@@ -1284,17 +1949,48 @@ def run_goal_closed_loop(
     retention_floor: float = 0.35,
     engine: Optional[DecisionEngine] = None,
 ) -> GoalResult:
-    """
-    Trajectory-aware closed loop:
+    """Brain-owned tools closed loop (controller is a dispatcher).
 
-    observe → update belief + interaction context → if goal done: success
-    → affordances → experience filter → choose one action
-    → execute → TransitionMonitor → re-observe → evaluate outcome
-    → on PROMISING_UNRESOLVED: bounded branch exploration (not immediate regression)
-    → suppress / continue / backtrack only after clear contradiction or budget
+    Per iteration while the goal is incomplete and under budget:
+
+    1. Context from the current world (bootstrap look once; else reuse).
+    2. Brain meta chooses the tool/capability for this turn.
+    3. Dispatch only that tool: PERCEIVE → perceptor; ACT →
+       ``define_action_step`` then actor; other metas → their handlers.
+
+    Surprise / low worldview / dead motors set signals for meta — they do not
+    force a look ahead of the brain's choice.
     """
+    # Live goal processes (HERMES_LIVE_GOAL=1) must have passed package evals
+    # before the closed loop starts — same role as server boot before API calls.
+    try:
+        from plugin.evals.check import require_live_eval_preflight
+
+        require_live_eval_preflight()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        import os
+
+        if str(os.getenv("HERMES_LIVE_GOAL", "") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            raise SystemExit(f"live eval preflight failed: {exc}") from exc
 
     eng = engine or get_decision_engine()
+    # Goal tokens for branch/selection consistency + revert_effects analyze.
+    try:
+        refs: List[str] = []
+        for attr in ("link_query", "content_query", "query", "contact", "target_contact"):
+            val = str(getattr(goal, attr, "") or "").strip()
+            if val and val not in refs:
+                refs.append(val)
+        runtime.execution_state.goal_referents = refs
+    except Exception:
+        pass
     if settle_s <= 0.05:
         monitor_timeout = 0.35
         monitor_poll = 0.05
@@ -1544,52 +2240,38 @@ def run_goal_closed_loop(
         # then abort every turn on a disturbance the agent caused itself.
         _reclaim_foreground(runtime, goal, log=log, iteration=iteration)
 
-        # Meta-perception gate: reuse the prior snapshot instead of paying for a
-        # re-perceive that cannot tell us more. Two conditions must both hold:
-        #  - the world is provably static (the last action moved nothing), so
-        #    reusing the previous snapshot is lossless; and
-        #  - the executive's last judgement did not want another look (it chose
-        #    to act/backtrack, not perceive/probe).
-        # This is the executive driving perception rather than the old
-        # always-perceive default, without the risk of reusing a stale view
-        # after an action that actually changed the world.
-        # A surprise means our model of what happened is wrong, so a fresh look —
-        # carrying the failed attempt — is the only thing that can diagnose it.
-        # That look is bought on a budget: once several of them have gone by with
-        # the world still not moving, re-reading the same screen has stopped
-        # paying and the reuse gate opens again while the executive broadens the
-        # search instead.
-        surprise_demands_relook = _last_action_surprised(
-            runtime.execution_state
-        ) and not reperception_exhausted(runtime.execution_state)
-        skip_reperception = (
-            meta_perception_enabled
-            and prev_snap_pre is not None
-            and prev_static_streak >= 1
-            and prev_meta_suppress
-            and not surprise_demands_relook
+        # Reuse the last look until the executive schedules PERCEIVE.
+        # Bootstrap once so meta is not blind. Post-act / surprise flags are
+        # meta signals for that schedule — not a side-channel look.
+        # Open reveal episodes (pending unpaid overlay look) must not reuse a
+        # stale conversation belief — that skipped menu ingest (live 142848).
+        must_executive_look = bool(
+            getattr(runtime.execution_state, "must_executive_reperceive", False)
         )
-        if surprise_demands_relook:
-            # This is where a surprise actually spends one of its re-looks.
-            runtime.execution_state.consecutive_surprise_relooks = (
-                int(getattr(runtime.execution_state, "consecutive_surprise_relooks", 0) or 0) + 1
+        _rh = getattr(runtime.execution_state, "reveal_handoff", None)
+        reveal_episode_pending = (
+            isinstance(_rh, dict)
+            and bool(str(_rh.get("surface") or "").strip())
+            and not bool(_rh.get("failed_reveal"))
+            and str(_rh.get("status") or "").strip().lower()
+            not in {"failed_reveal", "failed"}
+            and (
+                bool(_rh.get("incomplete_reveal"))
+                or str(_rh.get("status") or "").strip().lower()
+                in {"pending_perception", "pending", ""}
             )
-        if skip_reperception:
-            snap_pre = prev_snap_pre
-            _log_cycle(
-                log,
-                iteration=iteration,
-                phase="perception_skipped",
-                payload={
-                    "reason": "executive judged re-perception low value on a stable world",
-                    "meta_suppressed": prev_meta_suppress,
-                    "static_streak": prev_static_streak,
-                    "last_meta_action": getattr(
-                        runtime.execution_state, "last_meta_action", None
-                    ),
-                },
-            )
-        else:
+        )
+        surprise_demands_relook = (
+            _last_action_surprised(runtime.execution_state) or must_executive_look
+        ) and not reperception_exhausted(runtime.execution_state)
+        try:
+            if surprise_demands_relook or reveal_episode_pending:
+                # Hint only; brain still chooses PERCEIVE via meta.
+                runtime.execution_state.perception_mode = "reflect"
+        except Exception:
+            pass
+
+        if prev_snap_pre is None or reveal_episode_pending:
             snap_pre = refresh_perception(
                 runtime,
                 goal,
@@ -1598,6 +2280,40 @@ def run_goal_closed_loop(
                 log_fn=_perception_log_fn(log, iteration),
                 iteration=iteration,
             )
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase=(
+                    "perception_bootstrap"
+                    if prev_snap_pre is None
+                    else "perception_reveal_episode"
+                ),
+                payload={
+                    "reason": (
+                        "no prior world; initial look for brain meta"
+                        if prev_snap_pre is None
+                        else "reveal episode pending — fresh look, no reuse"
+                    ),
+                    "reveal_episode_pending": reveal_episode_pending,
+                    "must_executive_look": must_executive_look,
+                },
+            )
+        else:
+            snap_pre = prev_snap_pre
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="perception_reused",
+                payload={
+                    "reason": "executive reuses last world until meta PERCEIVE",
+                    "must_executive_look": must_executive_look,
+                    "surprise_demands_relook": surprise_demands_relook,
+                    "last_meta_action": getattr(
+                        runtime.execution_state, "last_meta_action", None
+                    ),
+                },
+            )
+
         observation = snap_pre.observation
         patch = snap_pre.patch
         wv = snap_pre.worldview
@@ -1608,7 +2324,7 @@ def run_goal_closed_loop(
         # When Terminal/other chrome covers the target app, vision correctly
         # reports desktop_obscured_target / window_management — but there is
         # no AX affordance to click. Recover by forcing the app frontmost and
-        # re-observing once before decide.
+        # re-observing once before define_action_step.
         if target_app_obscured(feats_pre, view):
             app_name = str(goal.app or runtime.world_model.active_app or "").strip()
             recovered = recover_obscured_target_app(app_name)
@@ -1701,29 +2417,72 @@ def run_goal_closed_loop(
                 status="warn",
             )
 
-        storage_cleanup = maybe_cleanup_for_storage_pressure(
-            runtime,
-            view=view,
-            features=feats_pre,
-            observation_texts=[
-                getattr(node, "name", "") or getattr(node, "description", "")
-                for node in (observation.nodes or [])
-            ],
-            execution_message=str((runtime.execution_state.last_result or {}).get("message") or ""),
-            reason_hint=str(goal.description or goal.kind),
+        # Storage pressure is a meta/decision housekeeping signal — not a silent
+        # side-channel. Record blockers for the meta packet; cleanup runs only
+        # when meta/decision names relieve_host_storage (or last-resort below).
+        from plugin.agent.capabilities.housekeeping import (
+            admissible_housekeeping_capabilities,
+            attach_housekeeping_context,
+            blockers_from_features,
+            is_meta_housekeeping_verb,
         )
-        if storage_cleanup is not None:
-            _log_cycle(
-                log,
-                iteration=iteration,
-                phase="storage_cleanup",
-                payload=storage_cleanup.to_dict(),
-                status="ok",
-            )
-            _wait(max(settle_s, 0.4), "storage pressure cleanup")
-            continue
+        from plugin.agent.runtime.recovery import detect_storage_pressure
 
-        # Forward: suppress identical Observe before decide
+        _hk_blockers = blockers_from_features(feats_pre, view=view)
+        _obs_texts = [
+            getattr(node, "name", "") or getattr(node, "description", "")
+            for node in (observation.nodes or [])
+        ]
+        _feats_for_pressure: Dict[str, Any] = {}
+        if isinstance(feats_pre, dict):
+            _feats_for_pressure = feats_pre
+        elif feats_pre is not None and hasattr(feats_pre, "extras"):
+            _ex = getattr(feats_pre, "extras", None) or {}
+            if isinstance(_ex, dict):
+                _feats_for_pressure = dict(_ex)
+                if "perception_llm" in _ex:
+                    _feats_for_pressure = {"perception_llm": _ex.get("perception_llm"), **_ex}
+        _storage_ev = detect_storage_pressure(
+            view=view,
+            features=_feats_for_pressure,
+            observation_texts=_obs_texts,
+            execution_message=str((runtime.execution_state.last_result or {}).get("message") or ""),
+        )
+        if _storage_ev and not _hk_blockers.get("storage_pressure"):
+            _hk_blockers["storage_pressure"] = True
+            _hk_blockers["system_warnings"] = list(
+                dict.fromkeys(
+                    list(_hk_blockers.get("system_warnings") or [])
+                    + [str(e)[:120] for e in _storage_ev[:3]]
+                )
+            )
+        # Fold OCR/label lines that carry the app-quoted reclaim amount.
+        if _hk_blockers.get("storage_pressure"):
+            _hk_blockers["system_warnings"] = list(
+                dict.fromkeys(
+                    list(_hk_blockers.get("system_warnings") or [])
+                    + [
+                        str(t)[:120]
+                        for t in _obs_texts
+                        if t
+                        and (
+                            "free up" in str(t).lower()
+                            or "mb" in str(t).lower()
+                            or "storage" in str(t).lower()
+                        )
+                    ][:4]
+                )
+            )
+        _hk_blockers = attach_housekeeping_context(
+            _hk_blockers,
+            last_action=str(getattr(runtime.execution_state, "last_action", "") or ""),
+            observation_texts=_obs_texts,
+        )
+        _hk_caps = admissible_housekeeping_capabilities(_hk_blockers)
+        runtime.execution_state.last_housekeeping_blockers = _hk_blockers  # type: ignore[attr-defined]
+        runtime.execution_state.last_housekeeping_capabilities = _hk_caps  # type: ignore[attr-defined]
+
+        # Forward: suppress identical Observe before define_action_step
         if goal.kind == "whatsapp_forward_message":
             _apply_forward_observe_stagnation(
                 runtime,
@@ -1792,24 +2551,26 @@ def run_goal_closed_loop(
                 status="ok",
             )
 
+        # Low retention / worldview / fusion conflict → *advisory* signal into
+        # meta. Do NOT set must_executive_reperceive here: that flag is the hard
+        # post-act look debt (sanitize forces perceive). Live 094313 re-armed it
+        # every frame at retention≈0.34 and trapped meta in perceive forever
+        # after a successful ComposeSearchQuery.
+        soft_look_hints: list[str] = []
         if patch.retention < retention_floor and runtime.execution_state.iteration > 0:
-            _wait(settle_s, "identity retention collapse — re-observe")
-            snap = refresh_perception(
-                runtime,
-                goal,
-                observe=observe,
-                action_label="reobserve_low_retention",
-                log_fn=_perception_log_fn(log, iteration),
+            soft_look_hints.append("retention_low")
+            _log_cycle(
+                log,
                 iteration=iteration,
+                phase="retention_low_signal",
+                payload={
+                    "retention": patch.retention,
+                    "floor": retention_floor,
+                    "handling": "meta_signal:advisory_perceive",
+                },
+                status="warn",
             )
-            patch = snap.patch or patch
-            runtime.execution_state.bump_world_id(significant=True)
-            wv = snap.worldview
-            view = snap.view
-            observation = snap.observation or observation
-            state_sig = _semantic_state_signature(view=view, features=feats_pre, world_id=runtime.execution_state.world_id)
 
-        # Low worldview / fusion conflict → re-perceive (skip thrash when hyps remain)
         ref = goal.ensure_reference() if goal.contact else None
         n_hyps = len((ref.search_hypotheses if ref else None) or [goal.contact]) or 1
         hyp_i = int(getattr(runtime.execution_state, "search_hypothesis_index", 0) or 0)
@@ -1822,6 +2583,9 @@ def run_goal_closed_loop(
             mean_b = float((patch.worldview_score or {}).get("mean_belief") or 0)
             skip = (not needs_reobs) and node_n >= 80 and mean_b >= 0.7 and wv >= 0.45
             if not skip:
+                soft_look_hints.append(
+                    "needs_reobserve" if needs_reobs else "worldview_low"
+                )
                 _log_cycle(
                     log,
                     iteration=iteration,
@@ -1830,24 +2594,14 @@ def run_goal_closed_loop(
                         "worldview_score": patch.worldview_score,
                         "threshold": WORLDVIEW_LOW,
                         "needs_reobserve": needs_reobs,
+                        "handling": "meta_signal:advisory_perceive",
                     },
                     status="fail" if wv < WORLDVIEW_LOW else "ok",
                 )
-                _wait(max(settle_s, 0.4), "low worldview / fusion conflict — re-observe")
-                snap = refresh_perception(
-                    runtime,
-                    goal,
-                    observe=observe,
-                    action_label="reobserve_low_worldview",
-                    log_fn=_perception_log_fn(log, iteration),
-                    iteration=iteration,
-                )
-                patch = snap.patch or patch
-                runtime.execution_state.bump_world_id(significant=True)
-                wv = snap.worldview
-                view = snap.view
-                observation = snap.observation or observation
-                state_sig = _semantic_state_signature(view=view, features=feats_pre, world_id=runtime.execution_state.world_id)
+        try:
+            runtime.execution_state.perception_soft_signals = soft_look_hints[:6]
+        except Exception:
+            pass
 
         # Goal check BEFORE acting — overrides iteration budget when satisfied
         goal_status: GoalStatus = evaluate_goal(goal, runtime.world_model)
@@ -1876,32 +2630,48 @@ def run_goal_closed_loop(
                 iterations=iteration,
             )
 
+        # Brain meta first: build features from the current world without
+        # running define_action_step()/actuator. Those run only when meta is ACT.
+        overlay = get_overlay(goal.app, runtime.world_model)
+        feats = overlay.features(runtime.world_model, goal, worldview_score=wv)
+        coverage = float(wv or 0.0)
+        # Surface change invalidates geometry carried from the prior node.
+        try:
+            _surf_now = str(
+                (view or {}).get("screen")
+                or (getattr(runtime.execution_state, "unified_world_document", None) or {}).get("surface")
+                or ""
+            ).strip().lower()
+            # Prefer canonical surface names when present on the world document.
+            _doc_surf = str(
+                (getattr(runtime.execution_state, "unified_world_document", None) or {}).get("surface")
+                or ""
+            ).strip().lower()
+            if _doc_surf:
+                _surf_now = _doc_surf
+            if _invalidate_geometry_for_surface_change(
+                runtime, surface=_surf_now, reason="accepted_surface_changed"
+            ):
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="geometry_invalidated",
+                    payload={"surface": _surf_now, "generation": getattr(runtime.execution_state, "geometry_generation", 0)},
+                    status="warn",
+                )
+                has_grounded_action = False
+            else:
+                has_grounded_action = _actuation_available(runtime, feats)
+        except Exception:
+            has_grounded_action = _actuation_available(runtime, feats)
+        decision = None  # filled only on MetaAction.ACT
         before_world_id = runtime.execution_state.world_id
         before_fp = world_fingerprint(runtime.world_model, view)
         before_view = dict(view)
         before_feats = _feature_dict(runtime, goal, wv)
-
-        # Per-turn token so any reading persisted during decide() (e.g. the
-        # unified proposal's evidence_gaps / coverage / belief patch) can be
-        # matched to *this* loop turn. execution_state.iteration only advances on
-        # executed actions, so it cannot be used as the frame here.
         runtime.execution_state.decision_frame = iteration
-        decision = eng.decide(
-            goal,
-            runtime.world_model,
-            runtime.execution_state,
-            worldview_score=wv,
-            state_signature=state_sig,
-            state_experience=experience,
-        )
-        overlay = get_overlay(goal.app, runtime.world_model)
-        feats = overlay.features(runtime.world_model, goal, worldview_score=wv)
 
-        # --- Executive judgement: one authoritative act-vs-perceive verdict ---
-        # Computed and recorded every iteration for observability. Under
-        # HERMES_META_PERCEPTION it also gates the next iteration's re-perceive.
-        has_grounded_action = bool(decision) and str(decision.action or "").strip().lower() != "observe"
-        coverage = float(wv or 0.0)
+        # --- Brain meta: what tool/capability to run this turn ---
         # Fold this frame's reading into the workspace before judging: the
         # executive must read task state (open conversation, phase, bindings)
         # from the one authoritative record, not from whichever store was last
@@ -1960,8 +2730,8 @@ def run_goal_closed_loop(
         if backtrack_exhausted and blocking_uncertainties:
             # The branch space is spent: every retreat has failed. Abandon the
             # open questions this exploration was testing so the executive stops
-            # re-searching them (they drop out of blocking) and escalates instead
-            # of hunting the same unanswerable thing forever.
+            # re-searching them (they drop out of blocking). Meta (LLM) then
+            # chooses act / ask_user / broaden — do not pre-seed hard_block.
             for q in blocking_uncertainties:
                 settle_exploration_question(
                     runtime.execution_state,
@@ -1969,12 +2739,14 @@ def run_goal_closed_loop(
                     answered=False,
                     evidence="branch space exhausted",
                 )
-        hard_block = backtrack_exhausted and not has_grounded_action
         if action_surprised:
             # Record the surprise into the bounded history perception attends to,
             # so the model sees the pattern of recent failures, not just the last.
             _attrib = getattr(runtime.execution_state, "last_attribution", None) or {}
             _ev = _attrib.get("evidence") if isinstance(_attrib.get("evidence"), dict) else {}
+            _pred = getattr(runtime.execution_state, "last_prediction_error", None) or {}
+            if not isinstance(_pred, dict):
+                _pred = {}
             runtime.execution_state.note_surprise(
                 {
                     "iteration": iteration,
@@ -1984,6 +2756,8 @@ def run_goal_closed_loop(
                     "outcome": str(_attrib.get("outcome") or ""),
                     "failure_domain": str(_attrib.get("likely_failure_domain") or ""),
                     "world_change_score": _ev.get("change_score"),
+                    "predicted_surface": _pred.get("predicted_surface"),
+                    "observed_surface": _pred.get("observed_surface"),
                     "notes": [str(n) for n in (_attrib.get("notes") or []) if str(n).strip()][:3],
                 }
             )
@@ -2015,11 +2789,18 @@ def run_goal_closed_loop(
                 contradiction_count = len(_ws_now.unresolved_contradictions)
             except Exception:
                 contradiction_count = 0
+        # "Stuck" is for THINK only when looking would not help. Missing
+        # geometry with observe_has_value still true is a PERCEIVE case.
+        observe_still_helps = True
+        _uni_for_stuck = getattr(runtime.execution_state, "last_unified_proposal", None)
+        if isinstance(_uni_for_stuck, dict) and _uni_for_stuck.get("next_action"):
+            observe_still_helps = False
         stuck_without_route = (
             not has_grounded_action
             and not action_surprised
             and not blocking_uncertainties
             and not backtrack_exhausted
+            and not observe_still_helps
         )
         ambiguous = contradiction_count > 0 or stuck_without_route
         steps_remaining = max(0, step_budget - iteration + 1)
@@ -2029,6 +2810,9 @@ def run_goal_closed_loop(
         # a submodule, owns the completion judgement.
         contract = contract_status(runtime.execution_state)
         contract_complete = bool(contract.get("all_satisfied"))
+        # Streak counters on execution_state are meta inputs (read inside
+        # assess_executive_judgement). Do not rewrite meta.action to ACT here —
+        # the executive alone chooses every MetaAction.
         sufficiency, meta = assess_executive_judgement(
             runtime.execution_state,
             blocking_uncertainties=blocking_uncertainties,
@@ -2038,19 +2822,16 @@ def run_goal_closed_loop(
             previously_suppressed=prev_meta_suppress,
             last_action_surprised=action_surprised,
             awaiting_verification=awaiting_verification,
-            hard_block=hard_block,
             probe_available=probe_available,
             ambiguous=ambiguous,
             steps_remaining=steps_remaining,
             goal_complete=contract_complete,
-        )
-        # Backtracks exhausted: stop retreating (commit or escalate). Without this
-        # the executive prefers BACKTRACK (higher value than a thin ACT) forever,
-        # which is the thrash the first live run exposed.
-        meta = _resolve_exhausted_backtrack(
-            meta,
-            backtrack_exhausted=backtrack_exhausted,
-            has_grounded_action=has_grounded_action,
+            blockers=dict(
+                getattr(runtime.execution_state, "last_housekeeping_blockers", None) or {}
+            ),
+            housekeeping_capabilities=list(
+                getattr(runtime.execution_state, "last_housekeeping_capabilities", None) or []
+            ),
         )
         beliefs_payload: Dict[str, Any] = {}
         _ws = workspace_of(runtime.execution_state)
@@ -2083,6 +2864,10 @@ def run_goal_closed_loop(
                 "has_grounded_action": has_grounded_action,
                 "last_action_surprised": action_surprised,
                 "awaiting_verification": awaiting_verification,
+                "post_action_look_owed": bool(
+                    getattr(runtime.execution_state, "post_action_reperceive_pending", False)
+                    or getattr(runtime.execution_state, "must_executive_reperceive", False)
+                ),
                 "blocking_uncertainties": [str(q) for q in blocking_uncertainties][:8],
                 "static_streak": static_streak,
                 "beliefs": beliefs_payload,
@@ -2091,6 +2876,32 @@ def run_goal_closed_loop(
                     "pending": [str(s) for s in (contract.get("pending") or [])],
                     "constraints": [str(c) for c in (contract.get("constraints") or [])],
                     "all_satisfied": contract_complete,
+                },
+                # Streak budgets — required to reconstruct unique meta situations.
+                "streaks": {
+                    "surprise_relooks": int(
+                        getattr(runtime.execution_state, "consecutive_surprise_relooks", 0) or 0
+                    ),
+                    "perceives": int(
+                        getattr(runtime.execution_state, "consecutive_perceives", 0) or 0
+                    ),
+                    "thinks": int(
+                        getattr(runtime.execution_state, "consecutive_thinks", 0) or 0
+                    ),
+                    "probes": int(
+                        getattr(runtime.execution_state, "consecutive_probes", 0) or 0
+                    ),
+                    "backtracks": int(
+                        getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0
+                    ),
+                    "information_gathering": int(
+                        getattr(
+                            runtime.execution_state,
+                            "consecutive_information_gathering",
+                            0,
+                        )
+                        or 0
+                    ),
                 },
             },
         )
@@ -2106,7 +2917,7 @@ def run_goal_closed_loop(
         # the multimodal fast path; a reactive frame (clear intention, grounded
         # low-risk move, known transition) keeps the fast path. This is the
         # design's two-mode executive expressed as the fast-path gate the deep
-        # path already honours via force_deliberation. THINK/PROBE set the same
+        # path already honours via force_deliberation. THINK/EXPLORE set the same
         # flag for their own reasons; setting it here is idempotent.
         if (
             meta_perception_enabled
@@ -2116,19 +2927,15 @@ def run_goal_closed_loop(
             runtime.execution_state.force_deliberation = True
 
         # --- Meta-action as a real loop phase ---
-        # Under HERMES_META_PERCEPTION the executive's meta-action does not only
-        # gate perception: VERIFY / BACKTRACK / ASK_USER are control-flow moves
-        # that pre-empt executing this frame's grounded decision. ACT / THINK /
-        # PERCEIVE / PROBE fall through to the normal decide -> execute path.
         if meta_perception_enabled and meta.action in _META_PREEMPTS:
             _log_cycle(
                 log,
                 iteration=iteration,
                 phase="meta_action_phase",
                 payload={"meta_action": meta.to_dict(), "handling": meta.action.value},
-                status="warn" if meta.action == MetaAction.ASK_USER else "ok",
+                status="warn",
             )
-            if meta.action == MetaAction.ASK_USER:
+            if meta.action == MetaAction.ASK:
                 return _finish_failure(
                     "executive escalated to the user: no self-serve move resolves the block",
                     {
@@ -2141,96 +2948,74 @@ def run_goal_closed_loop(
                     },
                     iterations=iteration,
                 )
-            if meta.action == MetaAction.INFORMATION_GATHERING:
-                # The branch has stopped converging. Before retreating anywhere,
-                # gather information about the action space itself: which
-                # branches are still worth trying, and in what order. The plan's
-                # head becomes the direction of the retreat, so the agent moves
-                # somewhere it reasoned about rather than to whichever untried
-                # family happened to sit nearest on the frontier.
-                plan = _plan_next_branches(runtime, goal, feats)
-                runtime.execution_state.consecutive_backtracks = (
-                    int(getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0) + 1
-                )
-                branch_hint = _invalidate_stale_frontier(
-                    runtime,
-                    reason="strategic_search",
-                    fallback=plan.head or "observe",
-                )
-                if plan.head:
-                    runtime.execution_state.state_experience.pending_backtrack_family = plan.head
-                    branch_hint = plan.head
-                _note_no_progress_replan(runtime)
-                _log_cycle(
-                    log,
-                    iteration=iteration,
-                    phase="meta_information_gathering",
-                    payload={
-                        "branch_plan": plan.to_dict(),
-                        "branch_hint": branch_hint,
-                        "branch": runtime.execution_state.exploration_branch.to_dict(),
-                        "consecutive_backtracks": runtime.execution_state.consecutive_backtracks,
+            if meta.action == MetaAction.DELEGATE:
+                return _finish_failure(
+                    "executive delegate runtime not configured: escalate instead",
+                    {
+                        "meta_action": meta.to_dict(),
+                        "app_view": view,
+                        "blocking_uncertainties": [str(q) for q in blocking_uncertainties][:8],
                     },
-                    status="warn",
+                    iterations=iteration,
                 )
-            elif meta.action == MetaAction.BACKTRACK:
-                # The branch has gone stale. Retreat by invalidating the current
-                # frontier so the next decision explores elsewhere, instead of
-                # committing this frame's stale-branch action.
-                runtime.execution_state.consecutive_backtracks = (
-                    int(getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0) + 1
-                )
-                branch_hint = _invalidate_stale_frontier(
-                    runtime, reason="executive_backtrack", fallback="observe"
-                )
-                _note_no_progress_replan(runtime)
-                _log_cycle(
-                    log,
-                    iteration=iteration,
-                    phase="meta_backtrack",
-                    payload={
-                        "branch_hint": branch_hint,
-                        "branch": runtime.execution_state.exploration_branch.to_dict(),
-                        "consecutive_backtracks": runtime.execution_state.consecutive_backtracks,
-                    },
-                    status="warn",
-                )
-            elif meta.action == MetaAction.VERIFY:
-                # The last action surprised us; we have already re-perceived this
-                # frame. Consume the surprise so we verify it once, then spend the
-                # turn confirming rather than committing a move we cannot trust.
-                _consume_surprise(runtime.execution_state)
-                # Verifying is a real move, not a retreat: the backtrack run ends.
-                runtime.execution_state.consecutive_backtracks = 0
-            # A terminal control move is neither a think nor a probe streak.
-            runtime.execution_state.consecutive_thinks = 0
-            runtime.execution_state.consecutive_probes = 0
-            # These control moves want a fresh look next iteration, so the gate
-            # must not reuse the prior snapshot after one. The exception is a
-            # retreat taken *because* re-looking has stopped paying: none of
-            # these phases executes anything, so the world cannot have moved,
-            # and forcing a re-read of it would contradict the very judgement
-            # that produced the retreat.
-            retreat_on_spent_budget = meta.action in {
-                MetaAction.BACKTRACK,
-                MetaAction.INFORMATION_GATHERING,
-            } and reperception_exhausted(runtime.execution_state)
-            prev_meta_suppress = retreat_on_spent_budget
-            _wait(settle_s, f"executive {meta.action.value}")
+
+        if meta_perception_enabled and meta.action == MetaAction.WAIT:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="meta_wait",
+                payload={"meta_action": meta.to_dict()},
+            )
+            _wait(max(settle_s, 1.0), "executive wait")
             continue
 
-        # --- THINK / PROBE: deliberate detours that steer the next decision ---
-        # Unlike the terminal preempts these are bounded: a world that stays
-        # ambiguous or unreveal-able escalates to acting/observing rather than
-        # thinking or probing in place forever (the re-search failure class).
+        # --- THINK: bounded deliberation; replan when search retreat or branch stale ---
         if meta_perception_enabled and meta.action == MetaAction.THINK:
             runtime.execution_state.consecutive_backtracks = 0
             runtime.execution_state.consecutive_probes = 0
             think_n = int(getattr(runtime.execution_state, "consecutive_thinks", 0) or 0) + 1
             runtime.execution_state.consecutive_thinks = think_n
+            branch_stale = (
+                prev_meta_suppress
+                or static_streak >= 2
+                or reperception_exhausted(runtime.execution_state)
+            )
+            retreat_or_stale = bool(
+                getattr(runtime.execution_state, "search_retreat_owed", False)
+            ) or branch_stale
+            if retreat_or_stale and think_n <= _MAX_CONSECUTIVE_THINKS:
+                _clear_search_retreat_state(
+                    runtime.execution_state, why="think_after_failed_search"
+                )
+                branch_hint = _run_think_replan(
+                    runtime,
+                    goal,
+                    observe=observe,
+                    feats=feats,
+                    overlay=overlay,
+                    log=log,
+                    iteration=iteration,
+                )
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_think_replan",
+                    payload={
+                        "meta_action": meta.to_dict(),
+                        "branch_hint": branch_hint,
+                        "retreat_or_stale": retreat_or_stale,
+                        "consecutive_information_gathering": int(
+                            getattr(
+                                runtime.execution_state,
+                                "consecutive_information_gathering",
+                                0,
+                            )
+                            or 0
+                        ),
+                    },
+                    status="warn",
+                )
             if think_n <= _MAX_CONSECUTIVE_THINKS:
-                # Force the next decision onto the deliberative path (skip the
-                # multimodal fast path so the enumerate/score/consult reasoner runs).
                 runtime.execution_state.force_deliberation = True
                 _log_cycle(
                     log,
@@ -2248,55 +3033,491 @@ def run_goal_closed_loop(
                 payload={
                     "meta_action": meta.to_dict(),
                     "consecutive_thinks": think_n,
-                    "handling": "exhausted_fall_through",
+                    "handling": "think_exhausted_redecide",
                 },
                 status="warn",
             )
-            runtime.execution_state.consecutive_thinks = 0
-        elif meta_perception_enabled and meta.action == MetaAction.PROBE:
+            prev_meta_suppress = False
+            _wait(settle_s, "executive think exhausted")
+            continue
+
+        # Any non-preempting frame (we are about to observe/act normally) breaks a
+        # retreat / think run: the branch is no longer being retreated.
+        # PERCEIVE streak is managed below (look vs redecide when budget spent).
+        # EXPLORE actuates reveal stages (like SEARCH) — do not clear its streak here.
+        if meta.action not in {MetaAction.PERCEIVE, MetaAction.EXPLORE, MetaAction.SEARCH}:
             runtime.execution_state.consecutive_backtracks = 0
+            runtime.execution_state.consecutive_information_gathering = 0
             runtime.execution_state.consecutive_thinks = 0
-            probe_n = int(getattr(runtime.execution_state, "consecutive_probes", 0) or 0) + 1
-            runtime.execution_state.consecutive_probes = probe_n
-            if probe_n <= _MAX_CONSECUTIVE_PROBES:
-                # Steer the next decision toward a reveal: invalidate the current
-                # frontier so the model re-explores what a reversible action would
-                # expose, and force the deliberative path to pick it.
-                branch_hint = _invalidate_stale_frontier(
-                    runtime, reason="executive_probe", fallback="observe"
-                )
-                runtime.execution_state.force_deliberation = True
+            runtime.execution_state.consecutive_probes = 0
+            runtime.execution_state.consecutive_perceives = 0
+
+        # --- PERCEIVE: bounded looks, then ACT to bind geometry via define_action ---
+        if meta.action == MetaAction.PERCEIVE:
+            look_owed = _awaiting_verification(runtime.execution_state)
+            perceive_n = int(
+                getattr(runtime.execution_state, "consecutive_perceives", 0) or 0
+            ) + 1
+            if look_owed:
+                perceive_n = 1
+            runtime.execution_state.consecutive_perceives = perceive_n
+            if perceive_n <= _MAX_CONSECUTIVE_PERCEIVES or look_owed:
+                try:
+                    runtime.execution_state.perception_mode = "perceive"
+                except Exception:
+                    pass
+                surprise_look = bool(surprise_demands_relook or action_surprised)
+                if surprise_look:
+                    runtime.execution_state.consecutive_surprise_relooks = (
+                        int(
+                            getattr(
+                                runtime.execution_state, "consecutive_surprise_relooks", 0
+                            )
+                            or 0
+                        )
+                        + 1
+                    )
+                    _consume_surprise(runtime.execution_state)
                 _log_cycle(
                     log,
                     iteration=iteration,
-                    phase="meta_probe",
+                    phase="meta_action_phase",
                     payload={
                         "meta_action": meta.to_dict(),
-                        "branch_hint": branch_hint,
-                        "consecutive_probes": probe_n,
+                        "handling": "brain_tool:perceive",
+                        "consecutive_perceives": perceive_n,
+                        "look_owed": look_owed,
+                        "surprise_look": surprise_look,
                     },
                 )
+                snap_pre = refresh_perception(
+                    runtime,
+                    goal,
+                    observe=observe,
+                    action_label="meta_perceive",
+                    log_fn=_perception_log_fn(log, iteration),
+                    iteration=iteration,
+                )
+                try:
+                    look_feats = overlay.features(
+                        runtime.world_model, goal, worldview_score=snap_pre.worldview
+                    )
+                except Exception:
+                    look_feats = feats
+                multimodal_ok = _multimodal_look(
+                    runtime, goal, features=look_feats, mode="perceive"
+                )
+                still_owed = _awaiting_verification(runtime.execution_state)
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="brain_tool_look",
+                    payload={
+                        "mode": "perceive",
+                        "multimodal": multimodal_ok,
+                        "meta": "perceive",
+                        "consecutive_perceives": perceive_n,
+                        "look_owed": look_owed,
+                        "still_owed": still_owed,
+                    },
+                )
+                # Do not clear the post-act owe here — _multimodal_look clears it
+                # only when stage1 was fresh. Failed/phash looks keep the owe.
                 prev_meta_suppress = False
-                _wait(settle_s, "executive probe")
+                prev_static_streak = static_streak
+                prev_snap_pre = snap_pre
+                prev_state_sig = state_sig
+                _wait(settle_s, "executive perceive")
+                continue
+            # Look still owed: keep perceiving; never actuate without MetaAction.ACT.
+            if _awaiting_verification(runtime.execution_state):
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_action_phase",
+                    payload={
+                        "meta_action": meta.to_dict(),
+                        "consecutive_perceives": perceive_n,
+                        "handling": "perceive_owed_no_act_fallthrough",
+                    },
+                    status="warn",
+                )
+                runtime.execution_state.consecutive_perceives = 0
+                prev_meta_suppress = False
+                prev_static_streak = static_streak
+                prev_snap_pre = None
+                prev_state_sig = state_sig
+                _wait(settle_s, "executive perceive owed")
+                continue
+            # Streak spent: leave counter high so next judgement sees
+            # perceive_streak_exhausted and may choose ACT — do not actuate here.
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="meta_action_phase",
+                payload={
+                    "meta_action": meta.to_dict(),
+                    "consecutive_perceives": perceive_n,
+                    "handling": "perceive_exhausted_redecide",
+                },
+                status="warn",
+            )
+            prev_meta_suppress = False
+            prev_static_streak = static_streak
+            prev_snap_pre = snap_pre
+            prev_state_sig = state_sig
+            _wait(settle_s, "executive perceive exhausted")
+            continue
+
+        # --- ACT (or exhausted THINK/PERCEIVE fall-through) ---
+        # Executive cycle: act → result → re-perceive → decide. While the
+        # post-act look is unpaid, do not run define_action / motor — including
+        # PERCEIVE fallthrough. Never clear the debt to "unblock" ACT (live
+        # 033711). Surprise-relook exhaustion alone must not gate actuation
+        # here; that is handled by meta after the look is paid.
+        if _post_action_look_unpaid(runtime.execution_state):
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="meta_action_phase",
+                payload={
+                    "meta_action": meta.to_dict(),
+                    "handling": "act_blocked_post_act_look_unpaid",
+                    "post_action_reperceive_pending": bool(
+                        getattr(
+                            runtime.execution_state,
+                            "post_action_reperceive_pending",
+                            False,
+                        )
+                    ),
+                    "must_executive_reperceive": bool(
+                        getattr(
+                            runtime.execution_state,
+                            "must_executive_reperceive",
+                            False,
+                        )
+                    ),
+                },
+                status="warn",
+            )
+            prev_meta_suppress = False
+            prev_static_streak = static_streak
+            prev_snap_pre = None
+            prev_state_sig = state_sig
+            _wait(settle_s, "act blocked; post-act look unpaid")
+            continue
+        # ACT commits; SEARCH actuates find-stage capabilities only. No silent
+        # fallthrough from THINK/PERCEIVE — those redecide when spent.
+        may_actuate = bool(getattr(meta, "may_actuate", False)) or (
+            meta.action is MetaAction.ACT
+        )
+        if not may_actuate:
+            # Last-resort: if storage pressure persists and meta keeps skipping
+            # offered housekeeping, run relieve once as a named capability call
+            # (not a nameless side-channel).
+            _blockers_now = dict(
+                getattr(runtime.execution_state, "last_housekeeping_blockers", None) or {}
+            )
+            _ignore_n = int(
+                getattr(runtime.execution_state, "housekeeping_ignore_streak", 0) or 0
+            )
+            if _blockers_now.get("storage_pressure"):
+                runtime.execution_state.housekeeping_ignore_streak = _ignore_n + 1  # type: ignore[attr-defined]
+            else:
+                runtime.execution_state.housekeeping_ignore_streak = 0  # type: ignore[attr-defined]
+            if (
+                _blockers_now.get("storage_pressure")
+                and int(getattr(runtime.execution_state, "housekeeping_ignore_streak", 0) or 0)
+                >= 2
+            ):
+                from plugin.agent.capabilities.base import CapabilityRequest
+                from plugin.agent.capabilities.dispatch import dispatch
+
+                try:
+                    _lr_feats = _feature_dict(runtime, goal, wv)
+                except Exception:
+                    _lr_feats = dict(_feats_for_pressure)
+                _hk_outcome = dispatch(
+                    CapabilityRequest(
+                        name="relieve_host_storage",
+                        app=str(goal.app or "WhatsApp"),
+                        extras={
+                            "view": view,
+                            "features": _lr_feats,
+                            "observation_texts": _obs_texts,
+                            "reason": "last_resort_storage_pressure",
+                        },
+                    ),
+                    get_overlay(goal.app, runtime.world_model),
+                )
+                runtime.execution_state.housekeeping_ignore_streak = 0  # type: ignore[attr-defined]
+                runtime.execution_state.last_action = "relieve_host_storage"
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="housekeeping_act",
+                    payload={
+                        "capability": "relieve_host_storage",
+                        "source": "last_resort",
+                        "outcome": {
+                            "ok": _hk_outcome.ok,
+                            "message": _hk_outcome.message,
+                            "evidence": dict(_hk_outcome.evidence or {}),
+                        },
+                    },
+                    status="ok" if _hk_outcome.ok else "warn",
+                )
+                _wait(max(settle_s, 0.4), "last-resort housekeeping")
                 continue
             _log_cycle(
                 log,
                 iteration=iteration,
-                phase="meta_probe",
+                phase="meta_action_phase",
                 payload={
                     "meta_action": meta.to_dict(),
-                    "consecutive_probes": probe_n,
-                    "handling": "exhausted_fall_through",
+                    "handling": "no_actuation_this_turn",
                 },
                 status="warn",
             )
-            runtime.execution_state.consecutive_probes = 0
+            prev_meta_suppress = bool(getattr(meta, "suppress_observe", False))
+            prev_static_streak = static_streak
+            prev_snap_pre = snap_pre
+            prev_state_sig = state_sig
+            _wait(settle_s, f"executive {meta.action.value}")
+            continue
 
-        # Any non-preempting frame (we are about to observe/act normally) breaks a
-        # backtrack / think / probe run: the branch is no longer being retreated.
-        runtime.execution_state.consecutive_backtracks = 0
-        runtime.execution_state.consecutive_thinks = 0
-        runtime.execution_state.consecutive_probes = 0
+        # Meta-named housekeeping capability: dispatch without goal decision.
+        _meta_cap = str(getattr(meta, "capability", "") or "").strip().lower()
+        if _meta_cap and is_meta_housekeeping_verb(_meta_cap):
+            from plugin.agent.capabilities.base import CapabilityRequest
+            from plugin.agent.capabilities.dispatch import dispatch
+
+            _hk_extras: Dict[str, Any] = {
+                "view": view,
+                "observation_texts": _obs_texts,
+                "reason": str(meta.reason or "meta housekeeping"),
+                "world": runtime.world_model,
+                "dialogs": list(
+                    (getattr(feats_pre, "extras", {}) or {}).get("dialogs") or []
+                )
+                if feats_pre is not None
+                else list((view or {}).get("dialogs") or []),
+            }
+            try:
+                _hk_extras["features"] = _feature_dict(runtime, goal, wv)
+            except Exception:
+                _hk_extras["features"] = {}
+            _hk_outcome = dispatch(
+                CapabilityRequest(
+                    name=_meta_cap,
+                    app=str(goal.app or "WhatsApp"),
+                    extras=_hk_extras,
+                ),
+                get_overlay(goal.app, runtime.world_model),
+            )
+            runtime.execution_state.housekeeping_ignore_streak = 0  # type: ignore[attr-defined]
+            runtime.execution_state.last_action = _meta_cap
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="housekeeping_act",
+                payload={
+                    "meta_action": meta.to_dict(),
+                    "capability": _meta_cap,
+                    "source": "meta",
+                    "outcome": {
+                        "ok": _hk_outcome.ok,
+                        "message": _hk_outcome.message,
+                        "evidence": dict(_hk_outcome.evidence or {}),
+                    },
+                },
+                status="ok" if _hk_outcome.ok else "warn",
+            )
+            prev_meta_suppress = bool(getattr(meta, "suppress_observe", False))
+            prev_static_streak = static_streak
+            prev_snap_pre = snap_pre
+            prev_state_sig = state_sig
+            _wait(max(settle_s, 0.4), f"housekeeping {_meta_cap}")
+            continue
+
+        if meta.action is MetaAction.SEARCH:
+            runtime.execution_state.consecutive_backtracks = 0
+            runtime.execution_state.consecutive_information_gathering = 0
+            runtime.execution_state.consecutive_thinks = 0
+            runtime.execution_state.consecutive_probes = 0
+            runtime.execution_state.consecutive_perceives = 0
+            search_n = int(
+                getattr(runtime.execution_state, "consecutive_searches", 0) or 0
+            ) + 1
+            runtime.execution_state.consecutive_searches = search_n
+            if search_n > _MAX_CONSECUTIVE_SEARCHES:
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_search",
+                    payload={
+                        "meta_action": meta.to_dict(),
+                        "consecutive_searches": search_n,
+                        "handling": "search_exhausted_redecide",
+                    },
+                    status="warn",
+                )
+                prev_meta_suppress = False
+                _wait(settle_s, "executive search exhausted")
+                continue
+        elif meta.action is MetaAction.EXPLORE:
+            search_failed = str(
+                (getattr(runtime.execution_state, "search_episode", None) or {}).get(
+                    "status"
+                )
+                or ""
+            ) == "failed"
+            retreat_owed = bool(
+                getattr(runtime.execution_state, "search_retreat_owed", False)
+            ) or search_failed
+            if retreat_owed:
+                revert_outcome, branch_hint = _run_explore_revert(runtime, goal)
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_explore_retreat",
+                    payload={
+                        "meta_action": meta.to_dict(),
+                        "branch_hint": branch_hint,
+                        "revert_effects": {
+                            "ok": bool(getattr(revert_outcome, "ok", False)),
+                            "message": str(getattr(revert_outcome, "message", "") or "")[
+                                :200
+                            ],
+                            "realization": str(
+                                getattr(revert_outcome, "realization", "") or ""
+                            ),
+                        },
+                    },
+                    status="warn",
+                )
+            runtime.execution_state.consecutive_backtracks = 0
+            runtime.execution_state.consecutive_information_gathering = 0
+            runtime.execution_state.consecutive_thinks = 0
+            runtime.execution_state.consecutive_searches = 0
+            runtime.execution_state.consecutive_perceives = 0
+            probe_n = int(
+                getattr(runtime.execution_state, "consecutive_probes", 0) or 0
+            ) + 1
+            runtime.execution_state.consecutive_probes = probe_n
+            if probe_n > _MAX_CONSECUTIVE_PROBES:
+                stance = str(
+                    getattr(runtime.execution_state, "last_affordance_stance", "") or ""
+                ).strip().lower()
+                grounded_n = len(
+                    list(
+                        getattr(
+                            runtime.execution_state,
+                            "last_grounded_affordance_set",
+                            None,
+                        )
+                        or []
+                    )
+                )
+                handoff = getattr(runtime.execution_state, "reveal_handoff", None)
+                reveal_failed = isinstance(handoff, dict) and (
+                    bool(handoff.get("failed_reveal"))
+                    or str(handoff.get("status") or "").strip().lower()
+                    in {"failed_reveal", "failed"}
+                )
+                # Probe budget spent: always leave EXPLORE — ACT with escalated
+                # route (or act_clear commit). Never explore_exhausted_redecide
+                # with sticky incomplete debt (live 142848).
+                handling = (
+                    "explore_exhausted_act_clear"
+                    if stance == "act_clear" or grounded_n > 0
+                    else "explore_exhausted_act_escalate"
+                )
+                meta = MetaChoice(
+                    MetaAction.ACT,
+                    (
+                        "explore exhausted — goal act clear, commit"
+                        if handling == "explore_exhausted_act_clear"
+                        else "explore exhausted — act escalated route, do not re-explore"
+                    ),
+                    {
+                        "act": 1.0,
+                        handling: 1.0,
+                        "grounded_n": float(grounded_n),
+                        "reveal_episode_failed": 1.0 if reveal_failed else 0.0,
+                    },
+                )
+                runtime.execution_state.consecutive_probes = 0
+                # Mark episode terminal so sync cannot re-seed route debt.
+                if isinstance(handoff, dict) and not reveal_failed:
+                    try:
+                        runtime.execution_state.reveal_handoff = {
+                            **dict(handoff),
+                            "failed_reveal": True,
+                            "status": "failed_reveal",
+                            "incomplete_reveal": False,
+                        }
+                    except Exception:
+                        pass
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="meta_explore",
+                    payload={
+                        "meta_action": meta.to_dict(),
+                        "consecutive_probes": probe_n,
+                        "handling": handling,
+                        "affordance_stance": stance,
+                        "grounded_n": grounded_n,
+                    },
+                    status="warn",
+                )
+        else:
+            runtime.execution_state.consecutive_searches = 0
+
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="meta_action_phase",
+            payload={
+                "meta_action": meta.to_dict(),
+                "handling": (
+                    "brain_tool:search"
+                    if meta.action is MetaAction.SEARCH
+                    else (
+                        "brain_tool:explore"
+                        if meta.action is MetaAction.EXPLORE
+                        else "brain_tool:act"
+                    )
+                ),
+                "consecutive_searches": int(
+                    getattr(runtime.execution_state, "consecutive_searches", 0) or 0
+                ),
+                "consecutive_probes": int(
+                    getattr(runtime.execution_state, "consecutive_probes", 0) or 0
+                ),
+            },
+        )
+        runtime.execution_state.decision_frame = iteration
+        # Brain capability: define how to act (perceptor evidence + consultation),
+        # then hand a complete Action to the actor.
+        decision = eng.define_action_step(
+            goal,
+            runtime.world_model,
+            runtime.execution_state,
+            worldview_score=wv,
+            state_signature=state_sig,
+            state_experience=experience,
+        )
+        # Do not clear must_executive_reperceive / post_action_reperceive_pending
+        # here. Only a fresh multimodal look clears the post-act owe; clearing
+        # before ACT allowed perceive→fallthrough onto pre-act geometry.
+        overlay = get_overlay(goal.app, runtime.world_model)
+        feats = overlay.features(runtime.world_model, goal, worldview_score=wv)
+        before_world_id = runtime.execution_state.world_id
+        before_fp = world_fingerprint(runtime.world_model, view)
+        before_view = dict(view)
+        before_feats = _feature_dict(runtime, goal, wv)
 
         # Low resolution confidence: observe to refine; ask only after attempts
         policy = str(feats.extras.get("resolution_policy") or "")
@@ -2347,17 +3568,159 @@ def run_goal_closed_loop(
         # inside a decision trace and its scoring nowhere at all.
         pred_error = getattr(runtime.execution_state, "last_prediction_error", None)
         if isinstance(pred_error, dict) and pred_error:
+            mismatched = pred_error.get("matched") is False
+            # Mechanism follows effect judgment, not meta surprise latch.
+            effect_absent = _effect_was_absent(runtime.execution_state) or mismatched
             _log_cycle(
                 log,
                 iteration=iteration,
-                phase="prediction_error" if pred_error.get("matched") is False else "prediction_held",
+                phase="prediction_error" if mismatched else "prediction_held",
                 payload={
                     "message": str(pred_error.get("verdict") or ""),
                     "detail": str(pred_error.get("verdict") or ""),
                     **{k: v for k, v in pred_error.items() if k != "verdict"},
                 },
-                status="warn" if pred_error.get("matched") is False else "ok",
+                status="warn" if mismatched else "ok",
             )
+            # Motor reported ok but the world did not match the prediction
+            # (e.g. reveal_actions → still conversation). Record the failed
+            # latch so ACT cannot re-issue the same family+point, and reverse
+            # the provisional reliability credit taken at gesture time.
+            # Runs even when meta surprise was consumed (suppressed_rearm).
+            if effect_absent:
+                step = getattr(runtime.execution_state, "last_plan_step", None)
+                # Causal attribution: close the attempt that made the prediction.
+                # A later PERCEIVE/observe must not become the blamed family.
+                fam = str(
+                    pred_error.get("action_family")
+                    or pred_error.get("family")
+                    or pred_error.get("capability")
+                    or getattr(
+                        runtime.execution_state, "last_act_family", None
+                    )
+                    or ""
+                ).strip().lower()
+                if fam in {"observe", "perception", "perceive", "look", ""}:
+                    fam = str(
+                        getattr(step, "action_family", "")
+                        or getattr(runtime.execution_state, "last_action", "")
+                        or pred_error.get("expected_capability")
+                        or ""
+                    ).strip().lower()
+                if fam in {"observe", "perception", "perceive", "look"}:
+                    fam = str(
+                        getattr(
+                            runtime.execution_state, "last_instrumental_family", ""
+                        )
+                        or ""
+                    ).strip().lower()
+                attempt_id = str(
+                    pred_error.get("attempt_id")
+                    or getattr(runtime.execution_state, "active_attempt_id", "")
+                    or ""
+                )
+                _note_failed_motor(
+                    runtime,
+                    family=fam,
+                    target=str(
+                        pred_error.get("target")
+                        or getattr(step, "semantic_target", "")
+                        or ""
+                    ),
+                    point=getattr(step, "target_point", None) if step is not None else None,
+                )
+                try:
+                    runtime.execution_state.last_effect_attempt_id = attempt_id
+                except Exception:
+                    pass
+                reveal_esc: Dict[str, Any] = {}
+                if fam in {
+                    "reveal_actions",
+                    "revealactions",
+                    "right_click",
+                    "context_click",
+                }:
+                    # Even when reflect later coerces matched=True, the first
+                    # overlay miss must rotate the reveal motor (153213).
+                    try:
+                        from plugin.agent.capabilities.reveal_actions import (
+                            escalate_failed_reveal,
+                        )
+
+                        reveal_esc = escalate_failed_reveal(
+                            runtime.execution_state,
+                            target=str(
+                                getattr(step, "semantic_target", "") or ""
+                            ),
+                            point=(
+                                getattr(step, "target_point", None)
+                                if step is not None
+                                else None
+                            ),
+                            last_gesture=str(
+                                getattr(
+                                    runtime.execution_state, "reveal_probe_mode", ""
+                                )
+                                or "context_click"
+                            ),
+                        )
+                    except Exception:
+                        reveal_esc = {}
+                if step is not None:
+                    _observe_capability_reliability(step, False)
+                runtime.execution_state.must_executive_reperceive = True
+                open_repair = {}
+                referent_mismatch: Dict[str, Any] = {}
+                if step is not None and fam in {"open_entity", "open_contact"}:
+                    open_repair = _note_open_source_failure(
+                        runtime,
+                        step,
+                        reason=str(pred_error.get("verdict") or "prediction_mismatch"),
+                    )
+                    # Motor ok + wrong semantic entity → REFERENT_MISMATCH
+                    # (distinct from GROUNDING). Invalidate binding; no identical retry.
+                    try:
+                        from plugin.agent.role_binding import (
+                            apply_referent_mismatch,
+                            role_for_action_family,
+                        )
+
+                        role = role_for_action_family(fam) or "source_container"
+                        label = str(getattr(step, "semantic_target", "") or "")
+                        hints = runtime.world_model.overlay_hints
+                        if hints is None:
+                            runtime.world_model.overlay_hints = {}
+                            hints = runtime.world_model.overlay_hints
+                        ft = dict(hints.get("forward_task") or {})
+                        new_ft = apply_referent_mismatch(
+                            runtime.execution_state,
+                            role=role,
+                            candidate_label=label,
+                            forward_task=ft,
+                        )
+                        if isinstance(new_ft, dict):
+                            hints["forward_task"] = new_ft
+                        referent_mismatch = {
+                            "role": role,
+                            "label": label[:120],
+                            "class": "REFERENT_MISMATCH",
+                        }
+                    except Exception as exc:
+                        referent_mismatch = {"error": str(exc)[:120]}
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="execution_effect_missing",
+                    payload={
+                        "family": fam,
+                        "message": "gesture ok but predicted transition absent",
+                        "prediction_error": pred_error,
+                        "open_repair": open_repair or None,
+                        "reveal_escalation": reveal_esc or None,
+                        "referent_mismatch": referent_mismatch or None,
+                    },
+                    status="fail",
+                )
 
         narration = str(getattr(runtime.execution_state, "last_perception_narration", "") or "")
         if narration:
@@ -2526,6 +3889,101 @@ def run_goal_closed_loop(
             continue
 
         execution = execute.execute(decision)
+        # Find-stage latch: every resolve/compose/type outcome must update the
+        # search episode (complete / fail+retreat) even if the executor forked
+        # around dispatch (live 212533 / 213012).
+        # Stale/foreground refusals are handled inside note_find_stage_outcome
+        # (must NOT arm search_retreat — live 202457).
+        try:
+            from plugin.agent.capabilities.search_episode import note_find_stage_outcome
+
+            note_find_stage_outcome(
+                runtime.execution_state,
+                family=str(
+                    getattr(decision, "action_family", None)
+                    or getattr(decision, "action", "")
+                    or ""
+                ),
+                ok=bool(getattr(execution, "ok", False)),
+                message=str(getattr(execution, "message", "") or ""),
+            )
+        except Exception:
+            pass
+        # Thin motor feedback only. World belief comes from the next executive
+        # re-perceive (stage1), not from AX settle. Success *or* failure: owe
+        # act → re-perceive → decide before the next capability.
+        if str(decision.action or "").strip().lower() != "observe":
+            _note_post_action_reperceive(
+                runtime,
+                open_conversation=str((view or {}).get("open_conversation") or ""),
+                state_sig=str(state_sig or ""),
+            )
+            # Stamp what *this* act claimed the next world should show. Surprise
+            # is inferred on the post-act look (prediction_error), not from AX
+            # settle heuristics.
+            try:
+                from plugin.agent.unified_cognition import stamp_act_intention
+
+                stamped = stamp_act_intention(runtime.execution_state, decision)
+            except Exception:
+                stamped = {}
+            if stamped:
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="act_intention",
+                    payload=stamped,
+                )
+            # Actor motors reveal via context_click and skips reveal_actions();
+            # still record handoff so the next perceive must ground affordance_set.
+            try:
+                fam = str(
+                    getattr(decision, "action_family", None)
+                    or getattr(decision, "action", "")
+                    or ""
+                ).strip().lower()
+                if fam in {"reveal_actions", "revealactions", "right_click", "context_click"}:
+                    exec_ok = bool(getattr(execution, "ok", False))
+                    if exec_ok:
+                        from plugin.agent.capabilities.reveal_actions import (
+                            current_reveal_probe_mode,
+                            note_reveal_probe_handoff,
+                        )
+
+                        gesture = ""
+                        try:
+                            gesture = str(
+                                getattr(decision, "gesture", None)
+                                or getattr(
+                                    getattr(runtime, "execution_state", None),
+                                    "reveal_probe_mode",
+                                    "",
+                                )
+                                or ""
+                            ).strip().lower()
+                        except Exception:
+                            gesture = ""
+                        if gesture not in {"context_click", "hover"}:
+                            gesture = current_reveal_probe_mode(runtime.execution_state)
+                        note_reveal_probe_handoff(
+                            runtime.execution_state, gesture=gesture
+                        )
+                        _log_cycle(
+                            log,
+                            iteration=iteration,
+                            phase="reveal_handoff",
+                            payload={
+                                "incomplete_reveal": True,
+                                "substrate": "addressable_entity",
+                                "discovery": "pending_perception",
+                                "surface": "context_menu",
+                                "probe_gesture": gesture,
+                            },
+                        )
+            except Exception:
+                pass
+            prev_meta_suppress = False
+            prev_snap_pre = None
 
         # The continuity gate refused this click: the target rectangle no longer
         # held what the decision asked for, so the actuator declined rather than
@@ -2553,8 +4011,7 @@ def run_goal_closed_loop(
                 status="warn",
             )
             if aborts <= MAX_CONSECUTIVE_STALE_ABORTS:
-                # Force a fresh look: the world demonstrably moved, so the
-                # meta-perception gate must not hand back the stale snapshot.
+                # Look owed already set above; keep snap invalid.
                 prev_meta_suppress = False
                 prev_snap_pre = None
                 continue
@@ -2630,15 +4087,20 @@ def run_goal_closed_loop(
                 goal=goal,
             )
             runtime.execution_state.hypothesis_layers.apply(attrib)
-            runtime.execution_state.last_attribution = attrib.to_dict()
-            _apply_actuation_suppression(runtime, decision, attrib.to_dict())
+            motor_attrib = attrib.to_dict()
+            motor_attrib["belief_authority"] = "motor"
+            runtime.execution_state.last_attribution = motor_attrib
+            _note_post_action_reperceive(runtime)
+            prev_meta_suppress = False
+            prev_snap_pre = None
+            _apply_actuation_suppression(runtime, decision, motor_attrib)
             runtime.execution_state.world_exploration_needed = True
             experience.pending_backtrack_family = "observe"
             _log_cycle(
                 log,
                 iteration=iteration,
                 phase="transition_attribution",
-                payload=attrib.to_dict(),
+                payload=motor_attrib,
                 status="fail",
             )
             log_policy_event(
@@ -2679,6 +4141,15 @@ def run_goal_closed_loop(
             if evidence_q:
                 runtime.execution_state.set_search_query_hint(evidence_q, ttl=4)
                 runtime.world_model.overlay_hints["search_query"] = evidence_q
+                # Recorded from the keystrokes, which is the only account of the
+                # query that does not depend on reading the field back. The view
+                # derives its own, and on the frames that matter it cannot: the
+                # field's text gets taken for the open chat's title instead, so
+                # the query goes missing exactly when it is needed to recognise
+                # that echo. Sourcing the memory from the view therefore never
+                # populated it at all in the case it exists for. The hint above
+                # expires after four cycles; this is kept until superseded.
+                runtime.world_model.last_search_query = evidence_q
             try:
                 from plugin.perception.interpreters.execution import ExecutionInterpreter
                 from plugin.perception.fusion.engine import get_fusion_engine
@@ -2845,7 +4316,9 @@ def run_goal_closed_loop(
             world_id=after_world_id,
         )
         runtime.execution_state.last_transition = attempt.to_dict()
-        attrib_dict = attempt.attribution or {}
+        attrib_dict = dict(attempt.attribution or {})
+        # AX settle / TransitionEvaluator is diagnostic — not executive belief.
+        attrib_dict["belief_authority"] = "ax_settle_diagnostic"
         runtime.execution_state.last_attribution = attrib_dict
         # The world moved, so a further look has something new to read: the
         # diagnostic re-look budget is restored. Only a run of moves that leave
@@ -2869,6 +4342,20 @@ def run_goal_closed_loop(
         effect_kind = str(attrib_dict.get("effect_kind") or attempt.effect_kind or "")
         action_family = str(attrib_dict.get("action_family") or decision.action_family or "")
         target_label = str(decision.semantic_target or attrib_dict.get("semantic_target") or "")
+        if (
+            action_family in {"open_entity", "open_contact"}
+            and effect_kind in {"no_transition", "actuator_failed", "not_attempted", "no_effect"}
+        ):
+            repair = _note_open_source_failure(
+                runtime, decision, reason=f"effect_kind={effect_kind}"
+            )
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="open_source_repair",
+                payload={"open_repair": repair, "effect_kind": effect_kind},
+                status="warn",
+            )
         # Record where the screen went into the workspace — the one authoritative
         # transition history the executive reasons over.
         _before_extras = _feats_extras(before_feats)
@@ -3281,6 +4768,7 @@ def run_goal_closed_loop(
                 after_feats=after_feats,
                 log=log,
                 iteration=iteration,
+                goal=goal,
             )
 
         transition_confirmation = confirm_transition_with_llm(
@@ -3386,7 +4874,38 @@ def run_goal_closed_loop(
             _maybe_learn_success(runtime, goal, post_goal if post_goal.succeeded else goal_status)
             return _finish_success(post_goal.evidence or attempt.to_dict(), iterations=iteration)
 
-        if attempt.outcome == TransitionOutcome.PROMISING_UNRESOLVED.value:
+        # Geometry miss is activity without advancement — do not credit progress.
+        geom_miss = False
+        try:
+            res = getattr(runtime.execution_state, "last_result", None) or {}
+            if isinstance(res, dict) and str(res.get("status") or "") == "geometry_mismatch":
+                geom_miss = True
+            closure = getattr(runtime.execution_state, "last_effect_closure", None) or {}
+            if isinstance(closure, dict) and closure.get("geometry_mismatch"):
+                geom_miss = True
+        except Exception:
+            geom_miss = False
+        if geom_miss:
+            try:
+                runtime.execution_state.last_effect_closure = {
+                    **(dict(getattr(runtime.execution_state, "last_effect_closure", None) or {})),
+                    "geometry_mismatch": True,
+                    "modes": list(
+                        (getattr(runtime.execution_state, "last_effect_closure", None) or {}).get(
+                            "modes"
+                        )
+                        or []
+                    )
+                    + ["geometry_mismatch"],
+                }
+                runtime.execution_state.must_executive_reperceive = True
+            except Exception:
+                pass
+
+        if (
+            attempt.outcome == TransitionOutcome.PROMISING_UNRESOLVED.value
+            and not geom_miss
+        ):
             goal_last_progress_at = time.monotonic()
             # Enter / continue bounded local branch — do NOT thrash observe or revise intent
             assessment = attempt.assessment or {}
@@ -3585,17 +5104,71 @@ def run_goal_closed_loop(
             continue
 
         if attempt.outcome == TransitionOutcome.REGRESSION.value:
-            runtime.execution_state.record_failure(f"regression:{decision.action_family}")
-            key = runtime.execution_state.action_key(decision)
-            runtime.execution_state.prohibited_actions[key] = max(
-                runtime.execution_state.prohibited_actions.get(key, 0), 4
+            # AX settle "regression" is logged, but must not ban the capability
+            # or block actuation — the next executive stage1 look owns the story.
+            runtime.execution_state.record_failure(f"regression_diagnostic:{decision.action_family}")
+            # Object-scoped invoke that lost the patient → referent repair debt.
+            fam_l = str(decision.action_family or "").strip().lower()
+            notes = " ".join(
+                str(n)
+                for n in (
+                    list((attempt.assessment or {}).get("notes") or [])
+                    + list(getattr(attempt, "reasons", None) or [])
+                )
+            ).lower()
+            if fam_l == "invoke_affordance" and any(
+                tok in notes
+                for tok in (
+                    "wrong_target",
+                    "target_deselected",
+                    "wrong_target_visible",
+                )
+            ):
+                try:
+                    step = decision
+                    fp = ""
+                    try:
+                        from plugin.agent.brain import motor_fingerprint
+
+                        fp = motor_fingerprint(
+                            fam_l,
+                            str(getattr(step, "semantic_target", "") or ""),
+                            getattr(step, "target_point", None),
+                        )
+                    except Exception:
+                        fp = str(
+                            getattr(runtime.execution_state, "last_failed_motor_key", "")
+                            or ""
+                        )
+                    prev = dict(
+                        getattr(runtime.execution_state, "last_effect_closure", None)
+                        or {}
+                    )
+                    runtime.execution_state.last_effect_closure = {
+                        **prev,
+                        "referent_repair_owed": True,
+                        "fingerprint": fp or prev.get("fingerprint") or "",
+                        "modes": list(prev.get("modes") or [])
+                        + ["wrong_target", "referent_mismatch"],
+                        "action_family": fam_l,
+                    }
+                    if fp:
+                        runtime.execution_state.last_failed_motor_key = fp
+                except Exception:
+                    pass
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="ax_settle_regression_diagnostic",
+                payload={
+                    "action_family": decision.action_family,
+                    "outcome": attempt.outcome,
+                    "note": "AX settle regression ignored for executive belief; "
+                    "must_executive_reperceive owns the next look",
+                    "must_executive_reperceive": True,
+                },
+                status="warn",
             )
-            branch = runtime.execution_state.exploration_branch
-            if branch.active:
-                branch.contradiction_count += 1
-            runtime.execution_state.exploration_branch = ExplorationBranch()
-            runtime.execution_state.world_exploration_needed = True
-            experience.pending_backtrack_family = _frontier_backtrack_hint(branch)
             _maybe_advance_reference_hypothesis(
                 runtime,
                 goal,
@@ -3723,9 +5296,45 @@ def _reclaim_foreground(runtime: RuntimeState, goal: Goal, *, log: Any, iteratio
         return False
     app_name = str(goal.app or runtime.world_model.active_app or "").strip()
     if not app_name:
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="foreground_reclaim",
+            payload={"skip_reason": "no_task_app", "reclaimed": False},
+            status="skip",
+        )
         return False
     holder = foreground_app_name()
-    if not holder or foreground_matches_task(goal, foreground=holder):
+    if not holder:
+        # Fail-open, but leave a breadcrumb — silent skips made 092106
+        # impossible to audit when Cursor was visibly frontmost.
+        _log_cycle(
+            log,
+            iteration=iteration,
+            phase="foreground_reclaim",
+            payload={
+                "app": app_name,
+                "skip_reason": "unknown_foreground_fail_open",
+                "reclaimed": False,
+            },
+            status="skip",
+        )
+        return False
+    if foreground_matches_task(goal, foreground=holder):
+        # Only sample matches so the log is not flooded when WhatsApp stays front.
+        if int(iteration or 0) % 10 == 1:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="foreground_reclaim",
+                payload={
+                    "app": app_name,
+                    "holder": clean_app_display(holder),
+                    "skip_reason": "already_task_app",
+                    "reclaimed": False,
+                },
+                status="skip",
+            )
         return False
 
     try:
@@ -3861,8 +5470,39 @@ def _note_forward_observe(runtime: RuntimeState, state_sig: str) -> None:
 def _bind_forward_after_execution(runtime: RuntimeState, decision: Action) -> None:
     hints = _forward_hints(runtime)
     fam = (decision.action_family or "").lower()
-    if fam == "select_content" and decision.target_entity_id is not None:
+    if fam in {"select_content", "reveal_actions"} and decision.target_entity_id is not None:
         selected_id = int(decision.target_entity_id)
+        # Refuse to latch selection on a left-rail chat-list echo.
+        try:
+            from plugin.agent.apps.whatsapp_targets import in_sidebar_band
+
+            ents = list(runtime.world_model.entities.values())
+            se = runtime.world_model.entities.get(selected_id)
+            if se is not None and in_sidebar_band(
+                se,
+                ents,
+                scene_graph=getattr(runtime.world_model, "last_scene_graph", None) or {},
+            ):
+                return
+        except Exception:
+            pass
+        # Honest predicates: do not latch selected / OPEN_FORWARD from a motor
+        # that left incomplete_reveal or geometry_mismatch — phase is a view of
+        # world evidence, not intent (live 232919 overclaim → rollback thrash).
+        handoff = getattr(runtime.execution_state, "reveal_handoff", None)
+        if isinstance(handoff, dict) and handoff.get("incomplete_reveal"):
+            return
+        closure = getattr(runtime.execution_state, "last_effect_closure", None)
+        if isinstance(closure, dict) and (
+            closure.get("geometry_mismatch") or closure.get("expected_overlay_missing")
+        ):
+            return
+        result = getattr(runtime.execution_state, "last_result", None)
+        if isinstance(result, dict):
+            if str(result.get("status") or "") == "geometry_mismatch":
+                return
+            if not result.get("ok", True):
+                return
         hints["source_object_entity_id"] = selected_id
         ft = dict(hints.get("forward_task") or {})
         state = ForwardTaskState.from_dict(ft)
@@ -3872,11 +5512,50 @@ def _bind_forward_after_execution(runtime: RuntimeState, decision: Action) -> No
         source_binding.confidence = max(source_binding.confidence, 0.7)
         source_binding.evidence = [f"latently_selected entity_id={selected_id}"]
         state.predicates.source_object_visible = True
-        state.predicates.source_object_selected = True
+        # Selection chrome / action surface must corroborate before selected=True.
+        extras = {}
+        try:
+            feats = getattr(runtime.execution_state, "last_features", None)
+            extras = getattr(feats, "extras", None) if feats is not None else {}
+            if not isinstance(extras, dict) and isinstance(feats, dict):
+                extras = feats.get("extras") or {}
+        except Exception:
+            extras = {}
+        surf = str(
+            (extras or {}).get("active_surface")
+            or getattr(runtime.execution_state, "last_surface", "")
+            or ""
+        ).strip().lower()
+        action_surface = surf in {
+            "context_menu",
+            "action_menu",
+            "selection_mode",
+            "forward_picker",
+            "dialog",
+        }
+        grounded = False
+        try:
+            from plugin.agent.affordance_frontier import grounded_affordance_set_of
+
+            grounded = bool(grounded_affordance_set_of(runtime.execution_state))
+        except Exception:
+            grounded = bool(
+                getattr(runtime.execution_state, "last_grounded_affordance_set", None)
+            )
+        # select_content may latch selected when motor ok; reveal needs surface/set.
+        if fam == "select_content" or action_surface or grounded:
+            state.predicates.source_object_selected = True
         state.derive_phase(leftover=False)
         hints["forward_task"] = state.to_dict()
     if fam == "forward_message":
         hints["forward_commit_started"] = True
+        try:
+            import time as _time
+
+            if float(getattr(runtime.execution_state, "instrumental_commit_at", 0.0) or 0.0) <= 0.0:
+                runtime.execution_state.instrumental_commit_at = float(_time.monotonic())
+        except Exception:
+            pass
 
 
 def _forward_predicate_gate_after_transition(
@@ -3887,6 +5566,7 @@ def _forward_predicate_gate_after_transition(
     after_feats: Any,
     log: Optional[EventLogger],
     iteration: int,
+    goal: Any = None,
 ) -> None:
     """Do not keep unsupported phase beliefs after failed transitions."""
     hints = _forward_hints(runtime)
@@ -3950,3 +5630,75 @@ def _forward_predicate_gate_after_transition(
         aft = feature_get(after_feats, "forward_task")
         if isinstance(aft, dict):
             hints["forward_task"] = aft
+            ft = aft
+        # Post-act identity verify: surface may have changed, but the open
+        # entity must still satisfy the role's identity contract.
+        fam = str(decision.action_family or "").strip().lower()
+        if fam in {"open_entity", "open_contact"}:
+            try:
+                from plugin.agent.role_binding import (
+                    apply_referent_mismatch,
+                    role_for_action_family,
+                    verify_bound_identity,
+                )
+
+                role = role_for_action_family(fam) or "source_container"
+                open_name = str(
+                    feature_get(after_feats, "open_conversation")
+                    or feature_get(after_feats, "active_conversation")
+                    or ""
+                ).strip()
+                goal_obj = goal
+                if goal_obj is None:
+                    goal_obj = {
+                        "contact": str(
+                            feature_get(after_feats, "goal_contact") or ""
+                        ),
+                        "link_query": "",
+                        "target_contact": "",
+                    }
+                # Skip when the goal has no contact referent — nothing to verify.
+                contact_ref = str(
+                    getattr(goal_obj, "contact", None)
+                    or (goal_obj.get("contact") if isinstance(goal_obj, dict) else "")
+                    or ""
+                ).strip()
+                world_fact = {
+                    "label": open_name,
+                    "title": open_name,
+                    "text": open_name,
+                    "kind": "conversation",
+                    "open_conversation": open_name,
+                }
+                ok, proposal = verify_bound_identity(
+                    role=role,
+                    world_fact=world_fact,
+                    goal=goal_obj,
+                )
+                # Only fire when we have an open title *and* a goal referent.
+                # Empty open is "not yet perceived", not a mismatch.
+                if open_name and contact_ref and not ok:
+                    new_ft = apply_referent_mismatch(
+                        runtime.execution_state,
+                        role=role,
+                        candidate_label=str(
+                            getattr(decision, "semantic_target", "") or open_name
+                        ),
+                        forward_task=dict(hints.get("forward_task") or ft),
+                    )
+                    if isinstance(new_ft, dict):
+                        hints["forward_task"] = new_ft
+                    _log_cycle(
+                        log,
+                        iteration=iteration,
+                        phase="referent_mismatch",
+                        payload={
+                            "role": role,
+                            "open_conversation": open_name,
+                            "proposal": proposal.to_dict(),
+                            "class": "REFERENT_MISMATCH",
+                        },
+                        status="fail",
+                    )
+            except Exception:
+                pass

@@ -63,15 +63,31 @@ def _state_after_noop(*, prediction=None, expectation=None) -> ExecutionState:
 # --- surprise: a transition that did not happen is evidence --------------------
 
 
-def test_a_predicted_transition_that_never_happens_is_a_surprise():
-    """The dominant AX-blind failure: the press reports success, nothing opens.
+def test_ax_settle_noop_is_not_executive_surprise():
+    """AX settle no-transition is diagnostic; executive re-perceives instead.
 
-    Nothing in the result says anything is wrong — only the gap between what we
-    predicted and what the runtime measured does. Without reading that gap the
-    executive had no signal at all, and re-issued the dead click forever.
+    Motor ok + must_executive_reperceive drives the next look. AX regression /
+    no_effect must not force VERIFY or rival the multimodal SoT.
     """
     state = _state_after_noop(prediction={"predicted_outcome": "ConversationOpen(Kulvinder Ji)"})
+    state.last_action = "open_entity"
     assert _expected_transition_absent(state)
+    assert not _last_action_surprised(state)
+    state.must_executive_reperceive = True
+    from plugin.agent.controller import _awaiting_verification
+
+    assert _awaiting_verification(state)
+
+
+def test_motor_fail_attribution_is_executive_surprise():
+    state = ExecutionState()
+    state.last_action = "open_entity"
+    state.last_attribution = {
+        "outcome": "no_effect",
+        "effect_kind": "no_transition",
+        "belief_authority": "motor",
+        "evidence": {"executor_ok": False, "attempted": True},
+    }
     assert _last_action_surprised(state)
 
 
@@ -86,9 +102,11 @@ def test_a_no_op_we_never_predicted_anything_about_is_not_a_surprise():
     assert not _last_action_surprised(state)
 
 
-def test_the_unified_expectation_counts_as_a_prediction():
+def test_the_unified_expectation_still_marks_absent_transition():
+    """Expectation is still detected for diagnostics; it is not executive surprise."""
     state = _state_after_noop(expectation={"surface": "conversation"})
-    assert _last_action_surprised(state)
+    assert _expected_transition_absent(state)
+    assert not _last_action_surprised(state)
 
 
 def test_an_action_that_never_landed_does_not_condemn_the_world():
@@ -99,9 +117,16 @@ def test_an_action_that_never_landed_does_not_condemn_the_world():
     assert not _expected_transition_absent(state)
 
 
-def test_consuming_the_surprise_lets_the_next_frame_act():
-    """VERIFY acknowledges a surprise once; it must not re-verify it forever."""
-    state = _state_after_noop(prediction={"predicted_outcome": "ConversationOpen"})
+def test_consuming_motor_surprise_lets_the_next_frame_act():
+    """Consume stamps verified so a motor surprise does not loop forever."""
+    state = ExecutionState()
+    state.last_action = "open_entity"
+    state.last_attribution = {
+        "outcome": "no_effect",
+        "effect_kind": "no_transition",
+        "belief_authority": "motor",
+        "evidence": {"executor_ok": False},
+    }
     assert _last_action_surprised(state)
     _consume_surprise(state)
     assert not _last_action_surprised(state)
@@ -143,15 +168,37 @@ def test_relooks_are_exhausted_once_the_budget_is_spent():
     assert reperception_exhausted(state)
 
 
-def test_a_spent_relook_budget_stops_verifying_and_broadens_the_search():
+def test_consume_surprise_clears_sticky_prediction_error():
+    """Live 123727: REFLECT must consume surprise or meta reflects forever."""
+    from plugin.agent.controller import _consume_surprise, _last_action_surprised
+
+    state = ExecutionState()
+    state.last_prediction_error = {
+        "matched": False,
+        "predicted": "ConversationOpen",
+        "observed": "LIST",
+    }
+    state.last_attribution = {
+        "belief_authority": "motor",
+        "effect_kind": "no_transition",
+        "outcome": "no_effect",
+    }
+    assert _last_action_surprised(state) is True
+    _consume_surprise(state)
+    assert _last_action_surprised(state) is False
+    assert state.last_prediction_error.get("consumed_by_reflect") is True
+    assert state.last_attribution.get("effect_kind") == "verified"
+
+
+def test_a_spent_relook_budget_stops_looking_and_broadens_the_search():
     """Re-reading a world that will not move has to stop paying eventually.
 
-    While re-looks remain, a surprise wins the frame and we verify. Once they are
-    spent the same surprise must not keep winning, or the agent re-reads the same
-    screen for the rest of the run instead of trying somewhere else.
+    While re-looks remain, a surprise wins REFLECT (look + explain). Once they
+    are spent the same surprise must not keep winning — *unless* post-act debt
+    is still unpaid (that debt is hard; see test below / live 033711).
     """
     ctx = MetaContext(awaiting_verification=True, last_action_surprised=True)
-    assert decision_ladder(ctx).action is MetaAction.VERIFY
+    assert decision_ladder(ctx).action is MetaAction.PERCEIVE
 
     spent = MetaContext(
         awaiting_verification=True,
@@ -159,7 +206,18 @@ def test_a_spent_relook_budget_stops_verifying_and_broadens_the_search():
         reperception_exhausted=True,
         branch_stale=True,
     )
-    assert decision_ladder(spent).action is MetaAction.INFORMATION_GATHERING
+    assert decision_ladder(spent).action is MetaAction.THINK
+
+    # Unpaid motor write: still rung-1 PERCEIVE even with exhausted surprise budget.
+    unpaid = MetaContext(
+        awaiting_verification=True,
+        post_action_look_owed=True,
+        last_action_surprised=False,
+        reperception_exhausted=True,
+        branch_stale=True,
+        has_grounded_action=True,
+    )
+    assert decision_ladder(unpaid).action is MetaAction.PERCEIVE
 
 
 # --- topology: what was measured updates what can be done ----------------------
@@ -257,7 +315,7 @@ def _branch_state() -> ExecutionState:
 
 def test_a_stale_branch_asks_where_to_go_rather_than_only_retreating():
     ctx = MetaContext(branch_stale=True)
-    assert decision_ladder(ctx).action is MetaAction.INFORMATION_GATHERING
+    assert decision_ladder(ctx).action is MetaAction.THINK
 
 
 def test_the_branch_plan_falls_back_to_the_frontier_untried_first(monkeypatch):

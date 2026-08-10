@@ -233,6 +233,40 @@ def test_forward_task_state_does_not_bind_source_object_without_observed_convers
     assert state.derived_phase == "OPEN_SOURCE"
 
 
+def test_forward_task_state_sees_source_contact_on_chat_list():
+    """Chat list with goal contact visible must set source_conversation_visible.
+
+    Live 092106 kept the predicate false while Pallavi sat in the left rail,
+    so OPEN_SOURCE never knew there was a row to open.
+    """
+    wm = _seed(
+        [
+            _entity(1, label="Chats", etype="static", bounds=(40, 20, 80, 24), actions=[]),
+            _entity(2, label="Q Search", etype="static", bounds=(40, 50, 200, 28), actions=[]),
+            _entity(3, label="Kulvinder", etype="static", bounds=(40, 200, 220, 40), actions=[]),
+            _entity(
+                4,
+                label="I zarooratwala Kulvinder",
+                etype="static",
+                bounds=(40, 240, 260, 36),
+                actions=[],
+            ),
+        ]
+    )
+    view = WhatsAppWorldView(
+        screen="LIST",
+        open_conversation="",
+        visible_contacts=["Kulvinder"],
+        conversation_messages=[],
+        conversation_timeline=[],
+    )
+    state = build_forward_task_state(_goal(), wm, view, leftover=False)
+
+    assert state.predicates.source_conversation_open is False
+    assert state.predicates.source_conversation_visible is True
+    assert state.derived_phase == "OPEN_SOURCE"
+
+
 def test_forward_task_state_binds_source_object_on_search_results_when_conversation_is_open():
     wm = _seed(
         [
@@ -265,6 +299,108 @@ def test_forward_task_state_binds_source_object_on_search_results_when_conversat
     assert state.binding("source_object").status in {"provisional", "confirmed"}
     assert state.predicates.source_object_visible is True
     assert state.derived_phase in {"FIND_LINK", "OPEN_SOURCE", "OPEN_FORWARD", "PICK_SOURCE"}
+
+
+def test_source_object_prefers_conversation_pane_over_sidebar_preview():
+    """Live zarooratwala stall: sidebar preview must not own source_object."""
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Pallavi",
+        target_contact="Tanmay",
+        link_query="zarooratwala",
+    )
+    wm = _seed(
+        [
+            _entity(1, label="WhatsApp", etype="window", bounds=(100.0, 25.0, 1710.0, 979.0), actions=[]),
+            _entity(
+                80,
+                label="J/ zarooratwala Pallavi|",
+                etype="static",
+                bounds=(249.0, 154.0, 142.0, 12.0),
+                actions=[],
+            ),
+            _entity(
+                70,
+                label="https://photos.app.goo.gl/eL5gt2uT5Mf4134X6 zarooratwala",
+                etype="static",
+                bounds=(1430.0, 607.0, 200.0, 20.0),
+                actions=[],
+            ),
+            _entity(3, label="Pallavi", etype="static", bounds=(619.0, 45.0, 47.0, 15.0), actions=[]),
+            _entity(4, label="Type a message", etype="textfield", bounds=(700.0, 900.0, 600.0, 40.0)),
+        ]
+    )
+    view = WhatsAppWorldView(
+        screen="CONVERSATION",
+        open_conversation="Pallavi",
+        conversation_messages=[
+            {
+                "entity_id": 70,
+                "text": "https://photos.app.goo.gl/eL5gt2uT5Mf4134X6 zarooratwala",
+                "x": 1430.0,
+                "y": 607.0,
+            }
+        ],
+        conversation_timeline=[
+            {
+                "message_ids": [80],
+                "entity_ids": [80],
+                "text": "J/ zarooratwala Pallavi|",
+                "top_y": 154.0,
+                "x": 249.0,
+            },
+            {
+                "message_ids": [70],
+                "entity_ids": [70],
+                "text": "https://photos.app.goo.gl/eL5gt2uT5Mf4134X6 zarooratwala",
+                "urls": ["https://photos.app.goo.gl/eL5gt2uT5Mf4134X6"],
+                "top_y": 607.0,
+                "x": 1430.0,
+            },
+        ],
+    )
+    prior = {
+        "bindings": {
+            "source_object": {
+                "name": "source_object",
+                "resolved_entity_id": 80,
+                "status": "provisional",
+                "confidence": 0.6,
+                "evidence": ["prior sidebar echo"],
+                "candidate_entity_ids": [80, 70],
+            }
+        },
+        "predicates": {"source_object_selected": False},
+    }
+    state = build_forward_task_state(goal, wm, view, leftover=False, prior=prior)
+    obj = state.binding("source_object")
+    assert 80 not in obj.candidate_entity_ids
+    assert obj.resolved_entity_id == 70
+    assert obj.status in {"provisional", "confirmed", "ambiguous"}
+
+
+def test_bind_forward_after_execution_refuses_sidebar_entity():
+    runtime = RuntimeState()
+    runtime.world_model = _seed(
+        [
+            _entity(1, label="WhatsApp", etype="window", bounds=(100.0, 25.0, 1710.0, 979.0), actions=[]),
+            _entity(
+                80,
+                label="J/ zarooratwala Pallavi|",
+                etype="static",
+                bounds=(249.0, 154.0, 142.0, 12.0),
+                actions=[],
+            ),
+        ]
+    )
+    decision = Action(
+        action="RevealActions",
+        action_family="reveal_actions",
+        target_entity_id=80,
+        semantic_target="zarooratwala",
+    )
+    _bind_forward_after_execution(runtime, decision)
+    assert "source_object_entity_id" not in (runtime.world_model.overlay_hints or {})
 
 
 def test_contact_card_label_noise_does_not_become_dialog():
@@ -483,12 +619,13 @@ def test_visible_source_conversation_row_beats_observe_in_open_source():
     assert open_contacts, "visible source chat rows should be actionable"
     assert any((a.semantic_target or "").lower() == "kulvinder ji" for a in open_contacts)
 
+    # Candidates still enumerate the row; decide no longer ranks them — Observe.
     runtime = RuntimeState(world_model=wm)
     engine = DecisionEngine(selector_enabled=False)
-    chosen = engine.decide(goal, wm, runtime.execution_state)
+    chosen = engine.define_action_step(goal, wm, runtime.execution_state)
     assert chosen is not None
-    assert chosen.action_family == "open_contact"
-    assert (chosen.semantic_target or "").lower() == "kulvinder ji"
+    assert chosen.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (chosen.rationale or "")
 
 
 def test_active_cognitive_subgraph_filters_out_off_scope_rows():
@@ -1242,12 +1379,12 @@ def test_decision_keeps_scroll_without_entity_grounding():
     assert any(a.action_family == "scroll_content" for a in cands)
 
     wm.last_capability_graph = feats.extras["capability_graph"]
-    decision = DecisionEngine().decide(_goal(), wm, ExecutionState())
+    decision = DecisionEngine().define_action_step(_goal(), wm, ExecutionState())
     whatsapp_mod.rank_conversation_messages = original_rank
+    # Scroll remains enumerable; decide no longer picks from candidates.
     assert decision is not None
-    assert decision.action_family in {"select_content", "scroll_content"}
-    assert decision.action_family != "observe"
-    assert decision.target_entity_id is not None or decision.action_family == "scroll_content"
+    assert decision.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (decision.rationale or "")
 
 
 def test_llm_ranked_conversation_messages_surface_select_content():

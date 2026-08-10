@@ -185,6 +185,22 @@ class TransitionConfirmation:
         }
 
 
+# Invariant across calls, so it belongs in the system message where it forms a
+# cacheable prefix, rather than inside the user JSON that is rebuilt each time.
+_CONFIRMATION_SYSTEM_PROMPT = (
+    "You are a transition confirmation model. Your job is to validate whether a "
+    "recent action succeeded enough for the controller to keep the new latent "
+    "state: decide whether the action appears to have landed the intended "
+    "surface or target.\n"
+    "\n"
+    "Return only strict JSON with keys: confirmed, confidence, "
+    "confirmed_surface, confirmed_target, confirmed_open_conversation, "
+    "confirmed_source_object_selected, needs_followup_observe, reason. Use the "
+    "supplied screen evidence only. Prefer saying unconfirmed if the evidence is "
+    "weak or contradictory. Be conservative about marking success."
+)
+
+
 def _confirmation_prompt(
     goal: Goal,
     world: WorldModel,
@@ -226,23 +242,11 @@ def _confirmation_prompt(
             "conversation_context": list(features_obj.extras.get("conversation_context_text") or [])[:100],
         },
         "interaction_context": interaction_context.to_dict(),
-        "instructions": (
-            "Decide whether the action appears to have successfully landed the "
-            "intended surface or target. Return strict JSON with keys: confirmed, "
-            "confidence, confirmed_surface, confirmed_target, confirmed_open_conversation, "
-            "confirmed_source_object_selected, needs_followup_observe, reason. "
-            "Use the supplied screen evidence only. Prefer saying unconfirmed if the "
-            "evidence is weak or contradictory. Be conservative about marking success."
-        ),
     }
     return [
         {
             "role": "system",
-            "content": (
-                "You are a transition confirmation model. Return only strict JSON. "
-                "Your job is to validate whether a recent action succeeded enough "
-                "for the controller to keep the new latent state."
-            ),
+            "content": _CONFIRMATION_SYSTEM_PROMPT,
         },
         {
             "role": "user",

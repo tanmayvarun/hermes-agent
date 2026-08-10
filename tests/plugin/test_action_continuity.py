@@ -90,11 +90,16 @@ def test_an_intact_target_commits():
     assert verdict.may_commit is True
 
 
-def test_a_target_that_scrolled_away_stops_the_click():
-    """Empty is not the same as unchanged: the row we chose is not there."""
+def test_empty_ocr_on_reversible_target_is_unconfirmed_not_a_hard_stop():
+    """Empty ≠ wrong. Live OCR often misses a tight row; refusing stalls forever.
+
+    Wrong text (another contact in the rectangle) still hard-refuses above.
+    Empty read-back fails open for reversible opens so a correct click proceeds;
+    irreversible Send still refuses (covered separately).
+    """
     verdict = _assess(ReadBack(lines=(), matched=False, method="ocr", detail="no text found"))
-    assert verdict.state == FOCUS_DISTURBED
-    assert verdict.may_commit is False
+    assert verdict.state == INDETERMINATE
+    assert verdict.may_commit is True
 
 
 def test_change_away_from_the_target_is_never_even_observed():
@@ -345,6 +350,40 @@ def test_ax_click_clicks_normally_when_the_target_is_confirmed(monkeypatch):
 # read rectangle clipped mid-word, OCR returned 'ala' out of "zarooratwala", and
 # the gate refused a correct click twice. A wrong click is caught by the
 # transition machinery; a refused correct click just stalls the run.
+
+
+def test_empty_ocr_on_reversible_target_fails_open():
+    """No text ≠ wrong text. Empty read-back must not stall open_entity forever."""
+    from plugin.perception.continuity.relevance import assess_continuity
+    from plugin.perception.continuity.witness import ReadBack, expectation_from
+
+    expectation = expectation_from(
+        (142.0, 183.0, 47.0, 16.0), label="Pallavi https://photos.app.goo.gl/x", irreversible=False
+    )
+    verdict = assess_continuity(
+        expectation=expectation,
+        perceived_surface=None,
+        live_surface=None,
+        observation=ReadBack(method="ocr", lines=(), matched=False, detail="no text found"),
+    )
+    assert verdict.may_commit is True
+    assert verdict.state == INDETERMINATE
+
+
+def test_empty_ocr_on_irreversible_target_still_refuses():
+    from plugin.perception.continuity.relevance import assess_continuity
+    from plugin.perception.continuity.witness import ReadBack, expectation_from
+
+    expectation = expectation_from(
+        (100.0, 800.0, 80.0, 30.0), label="Send", irreversible=True
+    )
+    verdict = assess_continuity(
+        expectation=expectation,
+        perceived_surface=None,
+        live_surface=None,
+        observation=ReadBack(method="ocr", lines=(), matched=False, detail="no text found"),
+    )
+    assert verdict.may_commit is False
 
 
 def test_a_clipped_word_fragment_confirms_rather_than_contradicts():

@@ -33,6 +33,13 @@ def bind_goal(execution_state: Any, goal: Any) -> Optional[ExecutiveWorkspace]:
     workspace = workspace_of(execution_state)
     if workspace is None or goal is None:
         return workspace
+    # Keep the authored Goal on execution_state so meta referent-search and
+    # branch fitness can read contact / link_query without only GoalState.
+    if getattr(execution_state, "goal", None) is None:
+        try:
+            execution_state.goal = goal
+        except Exception:
+            pass
     if not workspace.goal.kind:
         workspace.goal = GoalState.from_goal(goal)
     return workspace
@@ -283,6 +290,283 @@ def workspace_blocking_uncertainties(execution_state: Any) -> list:
     return workspace.questions.blocking_uncertainties()
 
 
+def _destination_search_needed(execution_state: Any) -> bool:
+    """True when SEARCH is the correct epistemic move for an unresolved destination.
+
+    Generic rule (``search_applicability``): known criteria + entity not visible
+    + searchable scope available. Visible-but-unselected is ACT select; selected
+    is ACT commit; missing search facility is EXPLORE — not a Forward-only patch
+    (live 203259 / architect review).
+    """
+    if execution_state is None:
+        return False
+    try:
+        from plugin.agent.executive.search_applicability import (
+            attach_search_opportunities,
+            entity_resolution_search_needed,
+        )
+
+        attach_search_opportunities(execution_state)
+        return bool(entity_resolution_search_needed(execution_state))
+    except Exception:
+        return False
+
+
+def _route_discovery_meta_kwargs(
+    execution_state: Any, referent_signals: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Populate MetaContext fields for effect-closed route discovery.
+
+    Reveal is a bounded episode: pending unpaid look may advise EXPLORE;
+    ``failed_reveal`` / probe exhaustion terminates incomplete debt so meta
+    can ACT (escalated gesture) or THINK — not monopolize EXPLORE forever.
+    Success path: grounded set or perceptor ``act_clear`` clears debt.
+    """
+    out: Dict[str, Any] = {
+        "route_discovery_owed": False,
+        "incomplete_reveal": False,
+        "expected_overlay_missing": False,
+        "forbid_content_act_fingerprint": "",
+        "referent_repair_owed": False,
+        "role_identity_search_owed": False,
+        "act_clear": False,
+        "reveal_episode_failed": False,
+        "reveal_prefer_capability": "",
+        "intention_explore_active": False,
+        "intention_locally_exhausted": False,
+    }
+    if execution_state is None:
+        return out
+    # IntentionFrame signals (generic intent-level retry).
+    try:
+        from plugin.agent.executive.intention_frame import (
+            IntentionStatus,
+            active_intention_frame,
+            apply_derived_status,
+            is_local_route_exhausted,
+        )
+
+        iframe = active_intention_frame(execution_state)
+        if iframe is not None:
+            apply_derived_status(iframe)
+            pred = str(iframe.intention.success_predicate or "")
+            if pred == "forward_affordance_grounded":
+                exhausted = is_local_route_exhausted(iframe) or iframe.status in {
+                    IntentionStatus.EXHAUSTED.value,
+                    IntentionStatus.BLOCKED.value,
+                }
+                out["intention_locally_exhausted"] = bool(exhausted)
+                out["intention_explore_active"] = bool(
+                    not exhausted
+                    and iframe.status == IntentionStatus.ACTIVE.value
+                    and (
+                        bool(iframe.method_frontier.eligible_methods())
+                        or bool(iframe.pending_effect_verification)
+                    )
+                )
+                # Episode-failed for meta only when intention is exhausted.
+                if exhausted:
+                    out["reveal_episode_failed"] = True
+                elif out["intention_explore_active"]:
+                    out["reveal_episode_failed"] = False
+    except Exception:
+        pass
+    handoff = getattr(execution_state, "reveal_handoff", None)
+    handoff_failed = False
+    handoff_pending = False
+    if isinstance(handoff, dict):
+        handoff_failed = bool(handoff.get("failed_reveal")) or str(
+            handoff.get("status") or ""
+        ).strip().lower() in {"failed_reveal", "failed"}
+        handoff_pending = (
+            not handoff_failed
+            and bool(str(handoff.get("surface") or "").strip())
+            and bool(handoff.get("incomplete_reveal"))
+        )
+        # Only a *pending* unpaid look counts as incomplete for meta debt.
+        out["incomplete_reveal"] = bool(handoff_pending)
+        out["reveal_episode_failed"] = bool(handoff_failed)
+    closure = getattr(execution_state, "last_effect_closure", None)
+    if isinstance(closure, dict):
+        modes = [str(m) for m in (closure.get("modes") or []) if str(m).strip()]
+        out["expected_overlay_missing"] = "expected_overlay_missing" in modes or bool(
+            closure.get("expected_overlay_missing")
+        )
+        # Closure incomplete only while the episode is still open — not after
+        # a terminal failed_reveal (live 142848 EXPLORE monopoly).
+        if closure.get("incomplete_reveal") and not handoff_failed:
+            out["incomplete_reveal"] = True
+        if closure.get("referent_repair_owed"):
+            out["referent_repair_owed"] = True
+        mode_blob = " ".join(modes).lower()
+        mismatch_role = str(closure.get("referent_mismatch_role") or "").strip().lower()
+        # Typed role mismatch: container/destination → SEARCH re-resolve;
+        # object/selection → ACT repair. Do not conflate with GROUNDING.
+        if "referent_mismatch" in mode_blob or "referent_mismatch" in modes:
+            if mismatch_role in {"source_container", "destination"} or (
+                not mismatch_role and closure.get("referent_search_needed")
+            ):
+                out["role_identity_search_owed"] = True
+                out["referent_repair_owed"] = False
+            else:
+                out["referent_repair_owed"] = True
+        elif any(
+            tok in mode_blob
+            for tok in (
+                "wrong_target",
+                "target_deselected",
+                "selection_inconsistent",
+            )
+        ):
+            out["referent_repair_owed"] = True
+        if closure.get("referent_search_needed") and mismatch_role in {
+            "source_container",
+            "destination",
+            "",
+        }:
+            out["role_identity_search_owed"] = True
+        fp = str(closure.get("fingerprint") or "").strip()
+        if fp:
+            out["forbid_content_act_fingerprint"] = fp
+    sel = getattr(execution_state, "last_selection_consistency", None)
+    if isinstance(sel, dict) and sel.get("applicable") and sel.get("consistent") is False:
+        out["referent_repair_owed"] = True
+    if not out["forbid_content_act_fingerprint"]:
+        out["forbid_content_act_fingerprint"] = str(
+            getattr(execution_state, "last_failed_motor_key", "") or ""
+        ).strip()
+    grounded_n = 0
+    try:
+        from plugin.agent.affordance_frontier import grounded_affordance_set_of
+
+        grounded_n = len(grounded_affordance_set_of(execution_state) or [])
+    except Exception:
+        grounded_n = len(
+            list(getattr(execution_state, "last_grounded_affordance_set", None) or [])
+        )
+    content_known = bool(
+        referent_signals.get("complete")
+        or referent_signals.get("content_located")
+        or str(referent_signals.get("chosen_label") or "").strip()
+    )
+    address_known = bool(referent_signals.get("address_known"))
+    # Route discovery only while a probe still has information value:
+    # pending unpaid look, or content known + empty grounded + budget left.
+    # Terminal failed_reveal does *not* keep route debt (escalation → ACT).
+    reveal_attempts = int(
+        getattr(execution_state, "reveal_gesture_attempts", 0) or 0
+    )
+    prefer = str(
+        getattr(execution_state, "reveal_prefer_capability", "") or ""
+    ).strip()
+    out["reveal_prefer_capability"] = prefer
+    failed_motor = str(
+        getattr(execution_state, "last_failed_motor_key", "") or ""
+    ).strip()
+    probe_budget_left = not handoff_failed
+    out["route_discovery_owed"] = bool(
+        not handoff_failed
+        and (
+            out["incomplete_reveal"]
+            or out["expected_overlay_missing"]
+            or (
+                content_known
+                and address_known
+                and grounded_n == 0
+                and not bool(referent_signals.get("failed"))
+                and probe_budget_left
+                and (reveal_attempts > 0 or bool(prefer) or bool(failed_motor))
+                # Prefer-capability after failed escalate is ACT evidence, not
+                # a reason to keep EXPLORE latched once the episode failed.
+                and not bool(prefer and handoff_failed)
+            )
+        )
+    )
+    # Perceptor act-clear: only when stance is honest (geometry-backed) or the
+    # grounded affordance_set already has actuators. Do not infer from QC +
+    # overlay surface alone — that over-claimed clear without a clickable
+    # control (live 171627 Observe thrash).
+    stance = str(getattr(execution_state, "last_affordance_stance", "") or "").strip().lower()
+    act_clear = stance == "act_clear"
+    if not act_clear:
+        uni = getattr(execution_state, "last_unified_proposal", None)
+        if isinstance(uni, dict):
+            if str(uni.get("affordance_stance") or "").strip().lower() == "act_clear":
+                act_clear = True
+    out["act_clear"] = bool(act_clear or grounded_n > 0)
+    # Stamp epistemic milestone once SearchResult commits a chosen label.
+    try:
+        import time as _time
+
+        if content_known and float(
+            getattr(execution_state, "epistemic_success_at", 0.0) or 0.0
+        ) <= 0.0:
+            execution_state.epistemic_success_at = float(_time.monotonic())
+        # Clear sticky reveal/route debt whenever control is grounded *or*
+        # perceptor says act_clear — not only on the first grounded stamp.
+        if grounded_n > 0 or act_clear:
+            if grounded_n > 0 and float(
+                getattr(execution_state, "affordance_grounded_at", 0.0) or 0.0
+            ) <= 0.0:
+                execution_state.affordance_grounded_at = float(_time.monotonic())
+            out["incomplete_reveal"] = False
+            out["expected_overlay_missing"] = False
+            out["route_discovery_owed"] = False
+            out["act_clear"] = True
+            out["reveal_episode_failed"] = False
+            try:
+                if isinstance(handoff, dict):
+                    execution_state.reveal_handoff = None
+            except Exception:
+                pass
+            if isinstance(closure, dict) and (
+                closure.get("incomplete_reveal")
+                or closure.get("expected_overlay_missing")
+            ):
+                try:
+                    execution_state.last_effect_closure = {
+                        **dict(closure),
+                        "incomplete_reveal": False,
+                        "expected_overlay_missing": False,
+                    }
+                except Exception:
+                    pass
+        elif handoff_failed:
+            # Terminal probe: no meta incomplete/route compulsion; escalation
+            # prefs on execution_state remain for the next ACT choice.
+            out["incomplete_reveal"] = False
+            out["route_discovery_owed"] = False
+            out["reveal_episode_failed"] = True
+            if isinstance(closure, dict) and closure.get("incomplete_reveal"):
+                try:
+                    execution_state.last_effect_closure = {
+                        **dict(closure),
+                        "incomplete_reveal": False,
+                    }
+                except Exception:
+                    pass
+        # Clear referent repair once selection is consistent again.
+        if (
+            isinstance(sel, dict)
+            and sel.get("applicable")
+            and sel.get("consistent") is True
+        ):
+            out["referent_repair_owed"] = False
+            if isinstance(closure, dict) and closure.get("referent_repair_owed"):
+                try:
+                    execution_state.last_effect_closure = {
+                        **dict(getattr(execution_state, "last_effect_closure", None) or closure),
+                        "referent_repair_owed": False,
+                    }
+                except Exception:
+                    pass
+            if float(getattr(execution_state, "referent_selected_at", 0.0) or 0.0) <= 0.0:
+                execution_state.referent_selected_at = float(_time.monotonic())
+    except Exception:
+        pass
+    return out
+
+
 def assess_executive_judgement(
     execution_state: Any,
     *,
@@ -298,6 +582,9 @@ def assess_executive_judgement(
     ambiguous: bool = False,
     steps_remaining: Optional[int] = None,
     goal_complete: bool = False,
+    meta_chooser: Optional[Any] = None,
+    blockers: Optional[Dict[str, Any]] = None,
+    housekeeping_capabilities: Optional[list] = None,
 ):
     """Compute this frame's sufficiency and meta-action, and record them.
 
@@ -306,19 +593,21 @@ def assess_executive_judgement(
     can consult one authoritative judgement of act-vs-perceive instead of the
     old always-perceive default. Whether it *drives* control flow is decided by
     the caller; this function only computes and records.
+
+    Meta-action is always LLM-chosen (``meta_chooser`` injectable for tests).
+    There is no ladder fallback and no env kill switch.
     """
     from plugin.agent.executive.hierarchy import (
         ModeContext,
         cognitive_mode,
-        decision_ladder,
         mode_triggers,
     )
     from plugin.agent.executive.meta_action import (
-        MetaAction,
         MetaContext,
         reperception_exhausted,
         select_meta_action,
     )
+    from plugin.agent.executive.meta_consultation import resolve_meta_choice
     from plugin.agent.executive.perception_query import from_sufficiency
     from plugin.agent.executive.sufficiency import SufficiencyInputs, assess_sufficiency
 
@@ -344,7 +633,15 @@ def assess_executive_judgement(
     # unmoved is the same condition reached by a different road: this branch has
     # stopped converging, so it is stale and the executive should broaden rather
     # than re-read the screen again.
-    relooks_exhausted = reperception_exhausted(execution_state)
+    #
+    # Post-act debt is separate: while the executive has not finished
+    # re-perceive after a motor write, surprise-relook exhaustion must not
+    # skip rung-1 and jump to the next decide (live 033711).
+    post_action_look_owed = bool(
+        getattr(execution_state, "post_action_reperceive_pending", False)
+        or getattr(execution_state, "must_executive_reperceive", False)
+    )
+    relooks_exhausted = reperception_exhausted(execution_state) and not post_action_look_owed
     branch_stale = previously_suppressed or streak >= 2 or relooks_exhausted
     question_settled = bool(
         blocking
@@ -352,38 +649,38 @@ def assess_executive_judgement(
         and all(question_already_settled(execution_state, q) for q in blocking)
     )
 
-    meta_ctx = MetaContext(
-        sufficiency=sufficiency,
-        has_grounded_action=bool(has_grounded_action),
-        awaiting_verification=bool(awaiting_verification),
-        last_action_surprised=bool(last_action_surprised),
-        branch_stale=branch_stale,
-        question_settled=question_settled,
-        reperception_exhausted=relooks_exhausted,
-        hard_block=bool(hard_block),
-        probe_available=bool(probe_available),
-        ambiguous=bool(ambiguous),
-        steps_remaining=int(steps_remaining) if steps_remaining is not None else 99,
+    # Streak budgets live on execution_state; the executive consumes them as
+    # meta inputs. The loop must not rewrite the resulting MetaChoice to ACT.
+    from plugin.agent.executive.meta_action import (
+        BACKTRACK_STREAK_CAP,
+        INFORMATION_GATHERING_STREAK_CAP,
+        PERCEIVE_STREAK_CAP,
+        PROBE_STREAK_CAP,
+        SEARCH_STREAK_CAP,
+        THINK_STREAK_CAP,
     )
-    # Two expressions of the same policy: the value scorer weighs moves, the
-    # ladder states the precedence plainly. The ladder is authoritative for the
-    # live loop (explicit precedence is what the runtime should walk), but we
-    # keep the scorer's value breakdown for the trace and defer to it on the
-    # ladder's terminal fallback so we never escalate to the user spuriously.
-    scored = select_meta_action(meta_ctx)
-    ladder = decision_ladder(meta_ctx, goal_complete=bool(goal_complete))
-    meta = ladder
-    if (
-        ladder.action == MetaAction.ASK_USER
-        and not hard_block
-        and str(ladder.reason or "").startswith("fallback")
-    ):
-        meta = scored
-    # Carry the value breakdown so the trace shows *why* each move scored as it
-    # did, even when the ladder (not the scorer) chose.
-    merged_scores = dict(scored.scores)
-    merged_scores.update({f"ladder_{k}": v for k, v in (ladder.scores or {}).items()})
-    meta.scores = merged_scores
+
+    backtrack_exhausted = (
+        int(getattr(execution_state, "consecutive_backtracks", 0) or 0)
+        >= BACKTRACK_STREAK_CAP
+    )
+    information_gathering_exhausted = (
+        int(getattr(execution_state, "consecutive_information_gathering", 0) or 0)
+        >= INFORMATION_GATHERING_STREAK_CAP
+    )
+    think_exhausted = (
+        int(getattr(execution_state, "consecutive_thinks", 0) or 0) >= THINK_STREAK_CAP
+    )
+    probe_exhausted = (
+        int(getattr(execution_state, "consecutive_probes", 0) or 0) >= PROBE_STREAK_CAP
+    )
+    perceive_streak_exhausted = (
+        int(getattr(execution_state, "consecutive_perceives", 0) or 0)
+        >= PERCEIVE_STREAK_CAP
+    )
+    search_exhausted = (
+        int(getattr(execution_state, "consecutive_searches", 0) or 0) >= SEARCH_STREAK_CAP
+    )
 
     contradictions = 0
     workspace = workspace_of(execution_state)
@@ -394,15 +691,15 @@ def assess_executive_judgement(
         except Exception:
             contradictions = 0
         phase = str(getattr(workspace, "phase", "") or "").strip().lower()
-    # The remaining deliberation triggers, populated from signals available here
-    # (they were declared but never set, so those modes could never fire):
-    #  - new_goal: the first judgement of a run, before any meta-action recorded;
-    #  - high_consequence: an irreversible commit is one step away (phase near
-    #    the terminal rung), so the executive should reason, not react;
-    #  - no_matching_procedure: nothing to do — no grounded move, no useful probe,
-    #    and a look would not help — which is exactly when to consult the model.
+    # Mode triggers must be known *before* meta choice so the LLM packet
+    # includes the same discriminators mined from live executive_judgement.
     new_goal = getattr(execution_state, "last_meta_action", None) is None
-    high_consequence = phase in {"invoke_forward", "choose_destination", "act_on_content", "commit"}
+    high_consequence = phase in {
+        "invoke_forward",
+        "choose_destination",
+        "act_on_content",
+        "commit",
+    }
     no_matching_procedure = (
         not has_grounded_action
         and not probe_available
@@ -419,14 +716,250 @@ def assess_executive_judgement(
         last_action_surprised=bool(last_action_surprised),
     )
     mode = cognitive_mode(mode_ctx)
+    triggers = mode_triggers(mode_ctx)
+    soft = [
+        str(s)
+        for s in (getattr(execution_state, "perception_soft_signals", None) or [])
+        if str(s).strip()
+    ][:4]
+    for sig in soft:
+        if sig not in triggers:
+            triggers.append(sig)
     query = from_sufficiency(sufficiency)
+    contract = contract_status(execution_state) if execution_state is not None else {}
+
+    from plugin.agent.executive.meta_situation import MetaSituation
+
+    from plugin.agent.capabilities.housekeeping import (
+        admissible_housekeeping_capabilities,
+    )
+
+    blocker_view = dict(blockers or {})
+    hk_caps = [
+        dict(c)
+        for c in (housekeeping_capabilities or [])
+        if isinstance(c, dict) and str(c.get("name") or "").strip()
+    ]
+    if not hk_caps and blocker_view:
+        hk_caps = admissible_housekeeping_capabilities(blocker_view)
+
+    situation = MetaSituation(
+        cognitive_mode=mode,
+        mode_triggers=list(triggers),
+        static_streak=streak,
+        coverage=coverage,
+        evidence_gaps=[str(g) for g in (evidence_gaps or []) if str(g).strip()][:6],
+        blocking_uncertainties=[str(q) for q in blocking if str(q).strip()][:6],
+        perception_query=query.to_dict() if hasattr(query, "to_dict") else {},
+        goal_contract={
+            "satisfied": list(contract.get("satisfied") or []),
+            "pending": list(contract.get("pending") or []),
+            "constraints": list(contract.get("constraints") or []),
+            "all_satisfied": bool(
+                goal_complete or contract.get("all_satisfied")
+            ),
+        },
+        phase=phase or str(contract.get("phase") or ""),
+        last_meta_action=str(getattr(execution_state, "last_meta_action", "") or ""),
+        last_action=str(getattr(execution_state, "last_action", "") or ""),
+        consecutive_surprise_relooks=int(
+            getattr(execution_state, "consecutive_surprise_relooks", 0) or 0
+        ),
+        consecutive_perceives=int(
+            getattr(execution_state, "consecutive_perceives", 0) or 0
+        ),
+        consecutive_thinks=int(getattr(execution_state, "consecutive_thinks", 0) or 0),
+        consecutive_probes=int(getattr(execution_state, "consecutive_probes", 0) or 0),
+        consecutive_backtracks=int(
+            getattr(execution_state, "consecutive_backtracks", 0) or 0
+        ),
+        consecutive_information_gathering=int(
+            getattr(execution_state, "consecutive_information_gathering", 0) or 0
+        ),
+        consecutive_searches=int(
+            getattr(execution_state, "consecutive_searches", 0) or 0
+        ),
+        blockers=blocker_view,
+        housekeeping_capabilities=hk_caps,
+    )
+
+    fitness = getattr(execution_state, "last_branch_fitness", None)
+    if not isinstance(fitness, dict) or not fitness:
+        try:
+            from plugin.agent.capabilities.branch_fitness import (
+                compute_branch_fitness,
+                needed_evidence_kinds_for_goal,
+            )
+            from plugin.agent.apps.registry import get_overlay
+
+            doc = getattr(execution_state, "unified_world_document", None)
+            doc = dict(doc) if isinstance(doc, dict) else {}
+            overlay = get_overlay(
+                str(getattr(getattr(execution_state, "goal", None), "app", None) or "WhatsApp"),
+                None,
+            )
+            enrich = getattr(overlay, "enrich_world_document", None)
+            if callable(enrich):
+                doc = enrich(doc)
+            goal_obj = getattr(execution_state, "goal", None)
+            fitness = compute_branch_fitness(
+                doc,
+                needed_kinds=needed_evidence_kinds_for_goal(goal_obj),
+                goal=goal_obj,
+                goal_referents=list(getattr(execution_state, "goal_referents", None) or []),
+                selection_consistency=getattr(
+                    execution_state, "last_selection_consistency", None
+                ),
+            )
+            execution_state.last_branch_fitness = fitness
+            execution_state.last_branch_consistency = fitness
+        except Exception:
+            fitness = {}
+    branch_unfit = isinstance(fitness, dict) and fitness.get("admissible") is False
+
+    referent_signals: Dict[str, Any] = {}
+    try:
+        from plugin.agent.capabilities.resolve_entity import open_matches_referent
+        from plugin.agent.capabilities.search_episode import (
+            goal_search_criteria,
+            meta_referent_search_signals,
+        )
+
+        doc = getattr(execution_state, "unified_world_document", None)
+        surf = ""
+        if isinstance(doc, dict):
+            surf = str(doc.get("surface") or "")
+        goal_obj = getattr(execution_state, "goal", None)
+        ws = workspace_of(execution_state)
+        # Prefer authored Goal; fall back to workspace GoalState (subject/query).
+        if goal_obj is None and ws is not None and getattr(ws, "goal", None) is not None:
+            goal_obj = ws.goal
+        open_c = ""
+        if ws is not None:
+            open_c = str(getattr(ws, "open_conversation", "") or "").strip()
+        if not open_c and isinstance(doc, dict):
+            open_c = str(doc.get("open_conversation") or "").strip()
+        contact, link_q, _dest = goal_search_criteria(goal_obj)
+        # Identity match only — participant CSVs / weak containment must not
+        # clear referent-search debt (live 214626: group header named Pallavi).
+        if open_c and contact:
+            source_open = bool(open_matches_referent(open_c, contact))
+        else:
+            source_open = False
+        content_located = False
+        try:
+            extras = {}
+            if isinstance(doc, dict):
+                extras = doc
+            content_located = bool(
+                extras.get("source_content_visible")
+                or extras.get("timeline_query_hit")
+                or extras.get("query_in_timeline")
+            )
+            if not content_located and link_q and isinstance(doc, dict):
+                from plugin.agent.source_query_binding import document_locates_source_query
+
+                # Soft locate requires query identity — not "any URL in chat".
+                content_located = document_locates_source_query(doc, link_q)
+        except Exception:
+            content_located = False
+        referent_signals = meta_referent_search_signals(
+            execution_state,
+            phase=phase or str(contract.get("phase") or ""),
+            source_chat_open=source_open,
+            surface=surf,
+            goal=goal_obj,
+            content_located=content_located,
+        )
+        if search_exhausted:
+            referent_signals["exhausted"] = True
+    except Exception:
+        referent_signals = {}
+
+    meta_ctx = MetaContext(
+        sufficiency=sufficiency,
+        has_grounded_action=bool(has_grounded_action),
+        awaiting_verification=bool(awaiting_verification) or post_action_look_owed,
+        last_action_surprised=bool(last_action_surprised),
+        post_action_look_owed=post_action_look_owed,
+        branch_stale=branch_stale,
+        question_settled=question_settled,
+        reperception_exhausted=relooks_exhausted,
+        hard_block=bool(hard_block),
+        probe_available=bool(probe_available),
+        ambiguous=bool(ambiguous),
+        steps_remaining=int(steps_remaining) if steps_remaining is not None else 99,
+        backtrack_exhausted=backtrack_exhausted,
+        information_gathering_exhausted=information_gathering_exhausted,
+        think_exhausted=think_exhausted,
+        probe_exhausted=probe_exhausted,
+        perceive_streak_exhausted=perceive_streak_exhausted,
+        branch_unfit=branch_unfit,
+        branch_fitness=fitness if isinstance(fitness, dict) else None,
+        referent_search_needed=bool(referent_signals.get("needed")),
+        search_episode_incomplete=bool(referent_signals.get("incomplete")),
+        search_episode_complete=bool(referent_signals.get("complete")),
+        search_episode_failed=bool(referent_signals.get("failed")),
+        search_exhausted=bool(referent_signals.get("exhausted") or search_exhausted),
+        search_retreat_owed=bool(
+            referent_signals.get("retreat_owed")
+            or getattr(execution_state, "search_retreat_owed", False)
+        ),
+        search_progress=referent_signals.get("progress")
+        if isinstance(referent_signals.get("progress"), dict)
+        else getattr(execution_state, "last_search_progress", None),
+        search_episode=referent_signals.get("episode")
+        if isinstance(referent_signals.get("episode"), dict)
+        else None,
+        address_known=bool(referent_signals.get("address_known")),
+        retrieve_ready=bool(referent_signals.get("retrieve_ready")),
+        search_has_criteria=bool(
+            referent_signals.get("has_criteria")
+            if "has_criteria" in referent_signals
+            else True
+        ),
+        destination_search_needed=_destination_search_needed(execution_state),
+        **_route_discovery_meta_kwargs(execution_state, referent_signals),
+    )
+    # Entity-resolution SEARCH owns the next epistemic move: do not let latent
+    # route-discovery EXPLORE compete with picker type_query (live 203259).
+    if bool(getattr(meta_ctx, "destination_search_needed", False)):
+        meta_ctx.route_discovery_owed = False
+        meta_ctx.incomplete_reveal = False
+        meta_ctx.expected_overlay_missing = False
+        meta_ctx.intention_explore_active = False
+    # Role identity failure owns SEARCH until a new eligible candidate binds.
+    if bool(getattr(meta_ctx, "role_identity_search_owed", False)):
+        meta_ctx.referent_search_needed = True
+        meta_ctx.retrieve_ready = False
+        meta_ctx.referent_repair_owed = False
+        meta_ctx.route_discovery_owed = False
+        meta_ctx.intention_explore_active = False
+    # Live: LLM chooses the meta-action (text stack / meta_choice). Ladder and
+    # scorer remain as offline fallback + advisory scores for the trace — never
+    # silently replace an ASK_USER fallback with the scorer.
+    scored = select_meta_action(meta_ctx)
+    meta = resolve_meta_choice(
+        meta_ctx,
+        goal_complete=bool(goal_complete or situation.goal_contract.get("all_satisfied")),
+        chooser=meta_chooser,
+        situation=situation,
+    )
+    merged_scores = dict(scored.scores or {})
+    merged_scores.update({f"scorer_{k}": v for k, v in (scored.scores or {}).items()})
+    for k, v in (meta.scores or {}).items():
+        merged_scores[k] = v
+    meta.scores = merged_scores
 
     if execution_state is not None:
         execution_state.last_sufficiency = sufficiency.to_dict()
         execution_state.last_meta_action = meta.action.value
         execution_state.last_cognitive_mode = mode
-        execution_state.last_mode_triggers = mode_triggers(mode_ctx)
+        execution_state.last_mode_triggers = triggers
         execution_state.last_perception_query = query.to_dict()
+        # Next look (if any) inherits reflect mode when meta chose REFLECT.
+        if meta.action.value == "reflect":
+            execution_state.perception_mode = "reflect"
     return sufficiency, meta
 
 

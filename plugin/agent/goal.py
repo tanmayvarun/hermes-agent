@@ -126,6 +126,27 @@ class Goal:
 
         return cls(kind="unknown", app=app, prompt=prompt)
 
+    def needed_evidence_kinds(self) -> list[str]:
+        """Coarse world evidence kinds this goal needs (not label strings)."""
+        if self.kind in {"whatsapp_forward_message", "whatsapp_read_message"} or self.link_query:
+            return [
+                "message",
+                "message_bubble",
+                "link",
+                "content",
+                "chat_row",
+                "search_result_row",
+            ]
+        if self.kind in {"whatsapp_voice_call", "whatsapp_video_call"}:
+            return ["chat_row", "search_result_row", "conversation", "button"]
+        return [
+            "chat_row",
+            "search_result_row",
+            "conversation",
+            "message",
+            "message_bubble",
+        ]
+
     @property
     def description(self) -> str:
         if self.prompt:

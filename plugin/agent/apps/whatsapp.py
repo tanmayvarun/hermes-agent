@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from plugin.agent.features import StateFeatures
 from plugin.agent.goal import Goal, GoalStatus
@@ -23,6 +23,22 @@ from plugin.worldmodel.entities.normalize import _clean_label
 from plugin.worldmodel.model import WorldModel
 from plugin.worldmodel.scene.focus import attach_active_cognitive_subgraph
 
+# Host observation: WhatsApp search segments that restrict the result space to
+# media-only grids (tag as filter_chip+restricts=media). Not a recovery rule.
+_MEDIA_RESTRICT_FILTERS = frozenset(
+    {
+        "videos",
+        "photos",
+        "gifs",
+        "audio",
+        "voice",
+        "documents",
+        "stickers",
+        "gifs & stickers",
+        "image",
+    }
+)
+
 _RESULT_CHROME = {
     "search",
     "search results",
@@ -40,6 +56,22 @@ _RESULT_CHROME = {
     "chat",
     "chats",
 }
+
+# Result-scope filter chips (Links / Messages / All …) — distinct from the
+# Search field chrome label, which must not be typed as an active filter.
+_RESULT_SCOPE_FILTERS = frozenset(
+    {
+        "messages",
+        "links",
+        "all",
+        "chats",
+        "groups",
+        "unread",
+        "favourites",
+        "favorites",
+        "archived",
+    }
+)
 
 _SOURCE_ROW_ACTION_CHROME = (
     "start voice call",
@@ -168,6 +200,131 @@ def _conversation_context_rows(view: WhatsAppWorldView) -> List[Dict[str, Any]]:
             }
         )
     return out
+
+
+def _sidebar_filtered_entity_ids(
+    hit_ids: Sequence[int],
+    world: WorldModel,
+    ents: Sequence[Any],
+    *,
+    in_sidebar_fn: Any,
+) -> List[int]:
+    """Keep conversation-pane content ids; drop left-rail chat-list echoes.
+
+    Timeline matching historically accepted sidebar preview rows that contain
+    the query ("J/ zarooratwala Pallavi|"), which then became provisional
+    source_object and sent RevealActions to ~(360,151) forever.
+    """
+    scene = getattr(world, "last_scene_graph", None) or {}
+    kept: List[int] = []
+    for eid in hit_ids:
+        try:
+            eid_i = int(eid)
+        except (TypeError, ValueError):
+            continue
+        e = world.entities.get(eid_i)
+        if e is None or not getattr(e, "visible", True):
+            continue
+        try:
+            if in_sidebar_fn(e, ents, scene_graph=scene):
+                continue
+        except TypeError:
+            try:
+                if in_sidebar_fn(e, ents):
+                    continue
+            except Exception:
+                pass
+        except Exception:
+            pass
+        kept.append(eid_i)
+    return list(dict.fromkeys(kept))
+
+
+def _entity_blob_has_url(blob: str) -> bool:
+    b = str(blob or "").lower()
+    return (
+        "http://" in b
+        or "https://" in b
+        or ".goo." in b
+        or ".com/" in b
+        or ".com?" in b
+        or b.rstrip(".").endswith(".com")
+    )
+
+
+def _entity_query_blob(world: WorldModel, eid: int) -> str:
+    e = world.entities.get(int(eid))
+    if e is None:
+        return ""
+    return (
+        f"{e.label or ''} {e.semantic_role or ''} "
+        f"{(e.attributes or {}).get('description', '')}"
+    )
+
+
+def _entity_supports_source_query(world: WorldModel, eid: int, query: str) -> bool:
+    from plugin.agent.source_query_binding import text_locates_source_query
+
+    return text_locates_source_query(_entity_query_blob(world, eid), query)
+
+
+def _rank_source_object_hits(
+    hit_ids: Sequence[int],
+    world: WorldModel,
+    *,
+    query: str = "",
+) -> List[int]:
+    """Prefer URL/message content farther right (conversation pane) over list echoes.
+
+    When any URL-bearing hit exists, drop plain-text substring matches so an
+    outgoing caption like "zarooratwala Pallavi" cannot outrank
+    https://www.zarooratwala.com (live 024851).
+
+    ``matches_goal`` is recall-only — query identity outranks an opaque bool
+    (live 214025: YouTube matches_goal must lose to zarooratwala).
+    """
+
+    def _blob(eid: int) -> str:
+        return _entity_query_blob(world, eid).lower()
+
+    ids = [int(x) for x in hit_ids]
+    q = str(query or "").strip()
+    if q:
+        # Drop host-contradicting distractors before ranking.
+        from plugin.agent.source_query_binding import host_contradicts_query, query_supported_by_text
+
+        kept: List[int] = []
+        for eid in ids:
+            blob = _entity_query_blob(world, eid)
+            if host_contradicts_query(blob, q) and not query_supported_by_text(blob, q):
+                continue
+            kept.append(eid)
+        # If everything was a distractor, keep empty — do not bind YouTube.
+        ids = kept
+
+    url_ids = [eid for eid in ids if _entity_blob_has_url(_blob(eid))]
+    if url_ids:
+        ids = url_ids
+
+    def _score(eid: int) -> tuple:
+        e = world.entities.get(int(eid))
+        if e is None:
+            return (0, 0, 0, 0.0, 0.0, int(eid))
+        blob = _blob(eid)
+        has_url = 1 if _entity_blob_has_url(blob) else 0
+        query_ok = 1 if (q and _entity_supports_source_query(world, eid, q)) else (0 if q else 1)
+        # Opaque perception bool only helps among query-eligible hits.
+        matches_goal = (
+            1
+            if query_ok and (e.attributes or {}).get("matches_goal")
+            else 0
+        )
+        b = e.bounds or (0, 0, 0, 0)
+        x = float(b[0]) if len(b) >= 1 else 0.0
+        y = float(b[1]) if len(b) >= 2 else 0.0
+        return (query_ok, has_url, matches_goal, x, -y, int(eid))
+
+    return sorted(ids, key=_score, reverse=True)
 
 
 def _conversation_timeline_rows(view: WhatsAppWorldView) -> List[Dict[str, Any]]:
@@ -395,6 +552,12 @@ def build_forward_task_state(
     observed_conversation = _conversation_surface_observed(view)
     timeline_rows = _conversation_timeline_rows(view) if observed_conversation else []
 
+    # Source chat is open — drop open-click repair so we don't keep escalating.
+    if on_source:
+        hints = getattr(world, "overlay_hints", None)
+        if isinstance(hints, dict) and hints.get("open_repair"):
+            hints.pop("open_repair", None)
+
     # --- source_conversation ---
     conv_b = state.binding("source_conversation")
     conv_b.constraints = {"name": source}
@@ -440,6 +603,18 @@ def build_forward_task_state(
                 if not ids and row.get("entity_id") is not None and str(row.get("entity_id")).strip().isdigit():
                     ids = [int(row.get("entity_id"))]
                 for eid in ids:
+                    # Drop left-rail preview echoes before they own source_object.
+                    e_hit = world.entities.get(int(eid))
+                    if e_hit is not None:
+                        try:
+                            if in_sidebar_band(
+                                e_hit,
+                                ents,
+                                scene_graph=getattr(world, "last_scene_graph", None) or {},
+                            ):
+                                continue
+                        except Exception:
+                            pass
                     if eid not in hits:
                         hits.append(eid)
                     if eid not in timeline_hit_ids:
@@ -477,6 +652,36 @@ def build_forward_task_state(
         hit_ids.append(int(e.id))
     if hit_ids:
         hit_ids = list(dict.fromkeys(hit_ids))
+    # Hard gate: never bind select→forward geometry to sidebar chat-list echoes.
+    hit_ids = _sidebar_filtered_entity_ids(hit_ids, world, ents, in_sidebar_fn=in_sidebar_band)
+    timeline_hit_ids = [eid for eid in timeline_hit_ids if eid in set(hit_ids)]
+    hit_ids = _rank_source_object_hits(hit_ids, world, query=query)
+    # Drop a prior bind only when that entity is still visible *and* is a
+    # left-rail echo. Occluded content (missing from the tree) must keep its
+    # latent selection so OPEN_FORWARD can invoke Forward.
+    prior_resolved = obj_b.resolved_entity_id
+    if prior_resolved is not None:
+        try:
+            prior_resolved = int(prior_resolved)
+        except (TypeError, ValueError):
+            prior_resolved = None
+        if prior_resolved is not None and prior_resolved not in hit_ids:
+            pe = world.entities.get(prior_resolved)
+            if pe is not None and getattr(pe, "visible", True):
+                try:
+                    sidebar_prior = bool(
+                        in_sidebar_band(
+                            pe,
+                            ents,
+                            scene_graph=getattr(world, "last_scene_graph", None) or {},
+                        )
+                    )
+                except Exception:
+                    sidebar_prior = False
+                if sidebar_prior:
+                    obj_b.resolved_entity_id = None
+                    if obj_b.status in {"provisional", "ambiguous", "confirmed"}:
+                        obj_b.status = "unresolved"
     obj_b.candidate_entity_ids = hit_ids[:12]
     source_hits = (
         find_query_entities(ents, source, in_sidebar_fn=in_sidebar_band)
@@ -527,10 +732,12 @@ def build_forward_task_state(
         source_hit_ids.append(int(e.id))
     if source_hit_ids:
         source_hit_ids = list(dict.fromkeys(source_hit_ids))
-    if observed_conversation and not source_hit_ids and source:
-        # Fallback: scan raw sidebar entities directly. Some AX trees expose
-        # contact rows as static/button hybrids that the generic resolver
-        # can miss until the header is corrected.
+    if not on_source and not source_hit_ids and source:
+        # List/search OR open-conversation without a resolved header: scan the
+        # left rail for the goal contact. Previously this only ran when a
+        # conversation surface was already observed, so a chat-list frame with
+        # Pallavi visible kept source_conversation_visible=False forever
+        # (live 092106).
         for e in ents:
             if not e.visible or not in_sidebar_band(e, ents, scene_graph=getattr(world, "last_scene_graph", None) or {}):
                 continue
@@ -578,9 +785,20 @@ def build_forward_task_state(
                     llm_ranked_ids.append(eid)
         llm_ranked_text = str(conversation_relevance.get("likely_source_message_text") or "").strip()
         if llm_ranked_ids:
+            llm_ranked_ids = _sidebar_filtered_entity_ids(
+                llm_ranked_ids, world, ents, in_sidebar_fn=in_sidebar_band
+            )
+            # Candidate recall may include any link; binding requires query proof.
+            if query:
+                llm_ranked_ids = [
+                    eid
+                    for eid in llm_ranked_ids
+                    if _entity_supports_source_query(world, eid, query)
+                ]
             for eid in reversed(llm_ranked_ids[:6]):
                 if eid not in hit_ids:
                     hit_ids.insert(0, eid)
+            hit_ids = _rank_source_object_hits(hit_ids, world, query=query)
             if not source_hit_ids:
                 source_hit_ids = list(dict.fromkeys(llm_ranked_ids[:6]))
     hints = getattr(world, "overlay_hints", None) or {}
@@ -592,27 +810,44 @@ def build_forward_task_state(
             selected_id = int(selected_id)
         except (TypeError, ValueError):
             selected_id = None
-        if selected_id is not None and selected_id in world.entities:
-            se = world.entities[selected_id]
-            if se.visible and selected_id in hit_ids:
-                selected_ok = True
-            elif se.visible and query and query.lower() in (
-                f"{se.label} {se.semantic_role} {(se.attributes or {}).get('description', '')}"
-            ).lower():
-                selected_ok = True
-                if selected_id not in hit_ids:
-                    hit_ids.insert(0, selected_id)
-                    obj_b.candidate_entity_ids = hit_ids[:12]
-
-        if not on_source:
-            obj_b.status = "provisional" if source_hit_ids else "unresolved"
-            obj_b.resolved_entity_id = source_hit_ids[0] if source_hit_ids else None
-            obj_b.confidence = 0.45 if source_hit_ids else 0.0
-            obj_b.evidence = (
-                [f"source timeline match entity_id={source_hit_ids[0]}"]
-                if source_hit_ids
-                else ["source conversation not open"]
+    if selected_id is not None and selected_id in world.entities:
+        se = world.entities[selected_id]
+        # Sidebar latch is not a content selection.
+        sidebar_selected = False
+        try:
+            sidebar_selected = bool(
+                in_sidebar_band(
+                    se,
+                    ents,
+                    scene_graph=getattr(world, "last_scene_graph", None) or {},
+                )
             )
+        except Exception:
+            sidebar_selected = False
+        if sidebar_selected:
+            selected_id = None
+            hints.pop("source_object_entity_id", None)
+        elif se.visible and selected_id in hit_ids:
+            selected_ok = True
+        elif se.visible and query and query.lower() in (
+            f"{se.label} {se.semantic_role} {(se.attributes or {}).get('description', '')}"
+        ).lower():
+            # Only accept query-text latch when not a left-rail echo.
+            selected_ok = True
+            if selected_id not in hit_ids:
+                hit_ids.insert(0, selected_id)
+                hit_ids = _rank_source_object_hits(hit_ids, world, query=query)
+                obj_b.candidate_entity_ids = hit_ids[:12]
+
+    if selected_id is not None and not on_source:
+        obj_b.status = "provisional" if source_hit_ids else "unresolved"
+        obj_b.resolved_entity_id = source_hit_ids[0] if source_hit_ids else None
+        obj_b.confidence = 0.45 if source_hit_ids else 0.0
+        obj_b.evidence = (
+            [f"source timeline match entity_id={source_hit_ids[0]}"]
+            if source_hit_ids
+            else ["source conversation not open"]
+        )
     elif len(hit_ids) == 0:
         if prior_selected and obj_b.resolved_entity_id is not None:
             obj_b.status = "confirmed"
@@ -671,6 +906,26 @@ def build_forward_task_state(
         obj_b.status = "confirmed"
         obj_b.confidence = max(obj_b.confidence, 0.9 if selected_ok else 0.75)
 
+    # Hard binding validator: provisional/confirmed source_object must support
+    # source_query. Candidate relevance (any URL in Pallavi) is not identity.
+    if query and obj_b.resolved_entity_id is not None:
+        if not _entity_supports_source_query(world, int(obj_b.resolved_entity_id), query):
+            obj_b.evidence = list(obj_b.evidence or []) + [
+                f"binding_rejected: entity_id={obj_b.resolved_entity_id} lacks {query!r}"
+            ]
+            obj_b.resolved_entity_id = None
+            obj_b.status = "unresolved"
+            obj_b.confidence = 0.0
+            p_tmp = state.predicates
+            p_tmp.source_object_selected = False
+            # Keep only query-eligible candidates visible to downstream.
+            obj_b.candidate_entity_ids = [
+                eid
+                for eid in (obj_b.candidate_entity_ids or [])
+                if _entity_supports_source_query(world, int(eid), query)
+            ]
+            hit_ids = list(obj_b.candidate_entity_ids)
+
     # --- destination ---
     dest_b = state.binding("destination")
     dest_b.constraints = {"name": dest}
@@ -706,7 +961,24 @@ def build_forward_task_state(
     # Forward CTA ≠ destination picker
     p.forward_surface_open = bool(has_forward_verb and not picker_only)
     p.destination_picker_visible = bool(picker_only)
-    p.destination_selected = bool(on_dest and picker_only)
+    # Destination selected = a recipient matching the goal dest is chosen
+    # *inside the picker*. Open conversation title == dest is not enough
+    # (and must not conflate background source-selection chrome).
+    dest_row_selected = False
+    if picker_only and dest:
+        for e in ents:
+            if not getattr(e, "visible", True):
+                continue
+            lab = entity_display_text(e).strip()
+            if not lab:
+                continue
+            if not contact_matches(lab, dest, min_score=0.7):
+                continue
+            attrs = getattr(e, "attributes", None) or {}
+            if bool(attrs.get("selected")) or bool(getattr(e, "selected", False)):
+                dest_row_selected = True
+                break
+    p.destination_selected = bool(picker_only and dest_row_selected)
     p.forward_completed = bool(
         on_dest
         and not on_source
@@ -814,6 +1086,100 @@ class WhatsAppOverlay:
     # (destination picking, done) the source object no longer gates progress.
     _SOURCE_HUNT_PHASES = {"FIND_LINK", "OPEN_FORWARD"}
 
+    def enrich_world_document(self, document: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Tag WhatsApp search filter chips as typed observations (not recovery).
+
+        Core branch fitness only reads ``kind=filter_chip`` / ``restricts``;
+        this overlay owns host-specific label recognition.
+        """
+        doc = dict(document) if isinstance(document, dict) else {}
+        objects = [dict(o) for o in (doc.get("objects") or []) if isinstance(o, dict)]
+        tagged = False
+
+        def _chip_label(raw: str) -> str:
+            return re.sub(r"^[\s•·]+", "", str(raw or "")).strip()
+
+        active_filter = ""
+        for obj in objects:
+            text = _chip_label(str(obj.get("text") or obj.get("label") or ""))
+            token = text.split()[0].lower() if text else ""
+            kind = str(obj.get("kind") or "").strip().lower()
+            if token in _MEDIA_RESTRICT_FILTERS or text.lower() in _MEDIA_RESTRICT_FILTERS:
+                obj["kind"] = "filter_chip"
+                obj["restricts"] = "media"
+                if text:
+                    obj["text"] = text.split()[0] if text.split() else text
+                active_filter = active_filter or token
+                tagged = True
+            elif token in _RESULT_SCOPE_FILTERS or (
+                kind in {"chip", "tab", "segment"} and token in _RESULT_SCOPE_FILTERS
+            ):
+                # Links / Messages / All / Chats are real search-result filters —
+                # not conversation chrome. Tag so the critic can refuse a
+                # conversation patch while this surface remains active.
+                obj["kind"] = "filter_chip"
+                obj["restricts"] = "result_scope"
+                obj["active_filter"] = token
+                if text:
+                    obj["text"] = text.split()[0] if text.split() else text
+                active_filter = active_filter or token
+                tagged = True
+            elif kind in {"chip", "tab", "segment"} and token in _RESULT_CHROME:
+                # Other result chrome (e.g. media) already handled above; keep
+                # typed chip kind for non-scope leftovers without inventing scope.
+                if token in _MEDIA_RESTRICT_FILTERS:
+                    obj["kind"] = "filter_chip"
+                    obj["restricts"] = "media"
+                    tagged = True
+
+        open_c = _chip_label(str(doc.get("open_conversation") or ""))
+        open_tok = open_c.split()[0].lower() if open_c else ""
+        if open_tok in _MEDIA_RESTRICT_FILTERS and not any(
+            str(o.get("kind") or "").lower() == "filter_chip" for o in objects
+        ):
+            objects.insert(
+                0,
+                {
+                    "id": "filter_chip_ax",
+                    "kind": "filter_chip",
+                    "text": open_c.split()[0] if open_c.split() else open_c,
+                    "restricts": "media",
+                    "matches_goal": False,
+                },
+            )
+            active_filter = active_filter or open_tok
+            tagged = True
+        elif open_tok in _RESULT_SCOPE_FILTERS and not any(
+            str(o.get("kind") or "").lower() == "filter_chip" for o in objects
+        ):
+            objects.insert(
+                0,
+                {
+                    "id": "filter_chip_ax",
+                    "kind": "filter_chip",
+                    "text": open_c.split()[0] if open_c.split() else open_c,
+                    "restricts": "result_scope",
+                    "active_filter": open_tok,
+                    "matches_goal": False,
+                },
+            )
+            active_filter = active_filter or open_tok
+            tagged = True
+
+        if tagged or objects != list(doc.get("objects") or []):
+            doc["objects"] = objects
+        if active_filter:
+            doc["active_filter"] = active_filter
+            # Filtered Links/Messages results are still search_results scope.
+            surf = str(doc.get("surface") or "").strip().lower()
+            if surf in {"", "conversation", "search_results", "search"}:
+                # Do not upgrade conversation here — critic owns surface authority.
+                # Only annotate when already search-like or blank.
+                if surf in {"", "search", "search_results"}:
+                    doc["primary_surface"] = "search_results"
+                    doc["search_scope"] = "filtered" if active_filter else "global"
+        return doc
+
     def affordance_priors(self, surface: str) -> List[Dict[str, Any]]:
         """Latent actions the app knows exist on a surface before any object proves it.
 
@@ -849,15 +1215,28 @@ class WhatsAppOverlay:
         """
         if not isinstance(forward_task, dict) or not forward_task:
             return []
+        out: List[str] = []
+        preds = forward_task.get("predicates")
+        if not isinstance(preds, dict):
+            preds = {}
+        # Destination picker open but recipient not chosen → executive SEARCH
+        # question (live 184742). Distinct from source-object hunt.
+        if bool(preds.get("destination_picker_visible")) and not bool(
+            preds.get("destination_selected")
+        ):
+            out.append("destination_contact_unresolved")
         phase = str(forward_task.get("derived_phase") or "").strip().upper()
-        if phase not in self._SOURCE_HUNT_PHASES:
-            return []
-        bindings = forward_task.get("bindings")
-        src = bindings.get("source_object") if isinstance(bindings, dict) else None
-        status = str((src or {}).get("status") or "").strip().lower() if isinstance(src, dict) else ""
-        if status in {"unresolved", "ambiguous"}:
-            return ["source_object_unresolved"]
-        return []
+        if phase in self._SOURCE_HUNT_PHASES:
+            bindings = forward_task.get("bindings")
+            src = bindings.get("source_object") if isinstance(bindings, dict) else None
+            status = (
+                str((src or {}).get("status") or "").strip().lower()
+                if isinstance(src, dict)
+                else ""
+            )
+            if status in {"unresolved", "ambiguous"}:
+                out.append("source_object_unresolved")
+        return out
 
     def features(self, world: WorldModel, goal: Goal, *, worldview_score: float = 1.0) -> StateFeatures:
         from plugin.agent.apps.whatsapp_semantics import apply_semantic_types
@@ -978,7 +1357,49 @@ class WhatsAppOverlay:
                         source_contact_rows.append(name)
             if source_contact_rows:
                 source_contact_rows = list(dict.fromkeys(source_contact_rows))
+        # Empty-hit + garbled field (live 202832: Pallavipo / No results) must
+        # reach compose as search_empty so the dead query is not retyped.
+        from plugin.agent.capabilities.compose_search_query import (
+            goal_evidence_tokens,
+            query_looks_corrupted,
+            ui_shows_no_search_results,
+        )
+
+        visible_labels = [
+            _clean_label(getattr(e, "label", "") or getattr(e, "semantic_role", "") or "")
+            for e in ents
+            if getattr(e, "visible", True)
+        ][:24]
+        no_results_chrome = ui_shows_no_search_results(
+            view.open_conversation,
+            *visible_labels,
+            *list(view.visible_contacts or [])[:8],
+        )
+        evidence_tokens = goal_evidence_tokens(goal)
+        field_corrupted = bool(q) and query_looks_corrupted(q, evidence_tokens)
+        if not field_corrupted and view.open_conversation:
+            field_corrupted = query_looks_corrupted(
+                str(view.open_conversation), evidence_tokens
+            )
+        search_empty = bool(
+            no_results_chrome
+            or (
+                bool(q)
+                and bool(view.search_visible or view.search_focused)
+                and not search_result_rows
+                and not view.visible_contacts
+                and not source_contact_rows
+            )
+            or field_corrupted
+        )
         open_c = view.open_conversation or ""
+        try:
+            from plugin.agent.world_critic import is_search_field_echo
+        except Exception:  # pragma: no cover
+            is_search_field_echo = lambda _t: False  # type: ignore
+        # AX search chrome ("Q Search|") is not an open chat title.
+        if open_c and is_search_field_echo(open_c):
+            open_c = ""
         winner_name = None if resolution is None else resolution.winner_name
         conv_match = bool(name_needle or needle) and (
             contact_matches(open_c, resolve_name, min_score=0.55)
@@ -1141,6 +1562,8 @@ class WhatsAppOverlay:
             needs_reobserve=bool((world.last_worldview_score or {}).get("needs_reobserve")),
             extras={
                 "search_query": q,
+                "search_empty": search_empty,
+                "search_field_corrupted": field_corrupted,
                 "search_visible": bool(view.search_visible),
                 "visible_contacts": view.visible_contacts[:12],
                 "open_conversation": view.open_conversation,
@@ -1195,10 +1618,26 @@ class WhatsAppOverlay:
                 "composer_mic_visible": mic_visible,
                 "forward_phase": forward_phase,
                 "forward_task": forward_task_dict,
+                "open_repair": dict((world.overlay_hints or {}).get("open_repair") or {}),
+                "capture_frame": dict(getattr(world, "last_capture_frame", None) or {}),
                 **selected_object_meta,
                 "end_call_fail_streak": int((world.overlay_hints or {}).get("end_call_fail_streak") or 0),
             },
         )
+        try:
+            from plugin.perception.display_topology import build_task_surface
+
+            ts = build_task_surface(
+                str(world.active_app or "WhatsApp"),
+                capture_frame=getattr(world, "last_capture_frame", None),
+            )
+            feats.extras["task_surface"] = ts.to_dict()
+            world.overlay_hints = dict(world.overlay_hints or {})
+            world.overlay_hints["task_surface"] = ts.to_dict()
+        except Exception:
+            feats.extras["task_surface"] = dict(
+                (world.overlay_hints or {}).get("task_surface") or {}
+            )
         conversation_relevance = None
         if goal.kind == "whatsapp_forward_message" and conversation_context_rows:
             try:

@@ -226,3 +226,59 @@ def test_vision_interpreter_uses_ocr_confidence():
 
     assert len(hyps) == 1
     assert math.isclose(hyps[0].confidence, 0.43, rel_tol=0.0, abs_tol=1e-6)
+
+
+class _Box:
+    """Stand-in for a Vision bounding box: normalized, bottom-left origin."""
+
+    def __init__(self, x: float, y: float, w: float, h: float) -> None:
+        self.origin = type("O", (), {"x": x, "y": y})()
+        self.size = type("S", (), {"width": w, "height": h})()
+
+
+def test_vision_boxes_are_converted_to_top_left_image_pixels():
+    """Vision measures in fractions from the bottom; everything else counts
+    pixels from the top.
+
+    Neither half of that conversion announces itself when it is wrong. Skipping
+    the scale yields boxes under a pixel wide, which read as an OCR that found
+    nothing; skipping the flip mirrors every box about the horizontal midline,
+    which reads as the perceptor naming one row and the click landing on
+    another -- the failure this engine was added to fix, reintroduced by its
+    own geometry.
+    """
+    from plugin.perception.ocr.engines import _bbox_from_vision
+
+    # A band across the top of a 1000x500 image: Vision reports it near y=1.0.
+    x, y, w, h = _bbox_from_vision(_Box(0.1, 0.9, 0.5, 0.05), 1000.0, 500.0)
+    assert math.isclose(x, 100.0) and math.isclose(w, 500.0)
+    assert math.isclose(y, 25.0), "a box near Vision's y=1.0 belongs at the top of the image"
+    assert math.isclose(h, 25.0)
+
+    # And a band across the bottom lands at the bottom.
+    _, y_low, _, h_low = _bbox_from_vision(_Box(0.1, 0.0, 0.5, 0.05), 1000.0, 500.0)
+    assert math.isclose(y_low + h_low, 500.0)
+
+    # Junk in, empty box out, rather than an exception mid-observation.
+    assert _bbox_from_vision(None, 1000.0, 500.0) == (0.0, 0.0, 0.0, 0.0)
+
+
+def test_the_native_engine_leads_the_cold_start_order_for_ui_screens():
+    """Before any success rate is measured, the fast engine should be first.
+
+    Measured on the same window capture, easyocr took 14-16s and VisionKit
+    0.7-1.0s for text at least as good. A live run spent 165s of a four-minute
+    attempt inside easyocr; on a screen the agent is about to act on, a read
+    that slow describes a screen that has moved on.
+    """
+    from plugin.perception.ocr.selector import OCRSelector
+
+    class _Stub:
+        def __init__(self, engine_id: str) -> None:
+            self.engine_id = engine_id
+
+    selector = OCRSelector()
+    engines = [_Stub("easyocr"), _Stub("paddleocr"), _Stub("visionkit")]
+    assert selector.rank(engines, use_case="whatsapp chat")[0].engine_id == "visionkit"
+    # A document still prefers the layout-aware engine.
+    assert selector.rank(engines, use_case="pdf invoice scan")[0].engine_id == "paddleocr"

@@ -10,6 +10,8 @@ from plugin.agent.capabilities.compose_search_query import (
     compose_search_query,
     goal_evidence_tokens,
     is_bare_entity_query,
+    query_looks_corrupted,
+    ui_shows_no_search_results,
 )
 from plugin.agent.capabilities.dispatch import can_dispatch, dispatch
 from plugin.agent.capabilities.base import CapabilityRequest
@@ -57,6 +59,8 @@ def test_goal_evidence_tokens_are_a_bag_not_a_joined_query():
     tokens = goal_evidence_tokens(_goal())
     assert "Pallavi" in tokens
     assert "zarooratwala" in tokens
+    # Bag is goal evidence only — do not inject invented intent labels.
+    assert "link" not in {t.lower() for t in tokens}
     # No single pre-joined template string is required to be present.
     assert "Pallavi zarooratwala" not in tokens
 
@@ -75,7 +79,7 @@ def test_compose_uses_author_judgment_not_contact_link_join():
 
 
 def test_dispatch_compose_passes_goal_evidence():
-    author = _FakeAuthor(chosen="pallavi invoice link")
+    author = _FakeAuthor(chosen="pallavi invoice groceries")
     outcome = dispatch(
         CapabilityRequest(
             name="compose_search_query",
@@ -85,7 +89,7 @@ def test_dispatch_compose_passes_goal_evidence():
         overlay=object(),
     )
     assert outcome.ok
-    assert outcome.evidence["chosen"] == "pallavi invoice link"
+    assert outcome.evidence["chosen"] == "pallavi invoice groceries"
 
 
 def test_bare_entity_query_detection():
@@ -123,6 +127,36 @@ def test_author_query_for_goal_helper():
     assert author_query_for_goal(_goal(), author=author) == "custom authored"
 
 
+def test_llm_query_author_uses_decision_not_perception(monkeypatch):
+    """032207 regression: authorship must not call the vision perception pin."""
+    from types import SimpleNamespace
+
+    from plugin.agent.capabilities.compose_search_query import LlmQueryAuthor
+
+    seen: dict[str, object] = {}
+
+    def fake_consult(task, messages, **kwargs):
+        seen["task"] = task
+        seen["usecase"] = kwargs.get("usecase")
+        return SimpleNamespace(
+            parsed={"chosen": "zarooratwala Pallavi", "queries": [{"q": "zarooratwala Pallavi"}]},
+            raw_response='{"chosen":"zarooratwala Pallavi"}',
+        )
+
+    monkeypatch.setattr(
+        "plugin.agent.reasoning_consultation.consult_reasoning",
+        fake_consult,
+    )
+
+    payload = LlmQueryAuthor(timeout_s=5).author(
+        "system",
+        {"evidence_tokens": ["Pallavi", "zarooratwala"]},
+    )
+    assert seen["task"] == "decision"
+    assert seen["usecase"] == "compose_search_query"
+    assert payload.get("chosen") == "zarooratwala Pallavi"
+
+
 def test_compose_refuses_dead_prior_and_falls_back():
     """After no_results, authorship must not re-emit the same string."""
     author = _FakeAuthor(chosen="Pallavi zarooratwala WhatsApp")
@@ -154,7 +188,8 @@ def test_strip_host_app_from_authored_query():
 
 def test_model_choice_of_compose_search_query_passes_through():
     """When the brain elects to author a fresh query, the runtime carries that
-    choice — it no longer rewrites it into locate/open based on search state."""
+    choice — it no longer rewrites it into locate/open based on search state.
+    GroundedUiTarget geometry for the Search field is part of the contract."""
     world = WorldModel(active_app="WhatsApp")
     features = StateFeatures(
         conversation_open=True,
@@ -168,7 +203,10 @@ def test_model_choice_of_compose_search_query_passes_through():
         observed_state={"surface": "conversation", "open_conversation": "Pallavi"},
         next_action={
             "family": "compose_search_query",
-            "text": "",
+            "text": "zarooratwala",
+            "target_label": "Search",
+            "target_id": "search_field",
+            "target_point": [150.0, 90.0],
             "confidence": 0.9,
         },
         confidence=0.9,
@@ -177,7 +215,57 @@ def test_model_choice_of_compose_search_query_passes_through():
     assert reason == "admissible"
     assert action is not None
     assert action.action_family == "compose_search_query"
+    assert action.target_point is not None
     assert action.grounding_reason == "unified_multimodal"
+
+
+def test_compose_search_query_without_geometry_is_inadmissible():
+    world = WorldModel(active_app="WhatsApp")
+    proposal = UnifiedProposal(
+        observed_state={"surface": "chat_list"},
+        next_action={"family": "compose_search_query", "text": "zarooratwala"},
+        confidence=0.9,
+    )
+    action, reason = proposal_to_action(proposal, _goal(), world, StateFeatures())
+    assert action is None
+    assert "without_geometry" in reason
+
+
+def test_compose_search_rejects_contact_entity_as_type_target():
+    """Live 095344: Pallavi contact id must not become the type target."""
+    from plugin.worldmodel.entities.entity import Entity
+
+    world = WorldModel(active_app="WhatsApp")
+    world.entities[900000] = Entity(
+        id=900000,
+        entity_type="button",
+        semantic_role="Pallavi",
+        label="Pallavi",
+        role="AXButton",
+        actions=["click"],
+        bounds=(2000.0, 340.0, 250.0, 40.0),
+        attributes={},
+        visible=True,
+    )
+    proposal = UnifiedProposal(
+        observed_state={"surface": "conversation", "open_conversation": "Pallavi"},
+        next_action={
+            "family": "compose_search_query",
+            "text": "zarooratwala Pallavi",
+            "target_label": "Pallavi",
+            "target_id": 900000,
+            "target_point": [150.0, 90.0],
+            "coordinate_space": "screen",
+            "confidence": 0.9,
+        },
+        confidence=0.9,
+    )
+    action, reason = proposal_to_action(proposal, _goal(), world, StateFeatures())
+    assert reason == "admissible"
+    assert action is not None
+    assert action.target_entity_id is None
+    assert action.semantic_target == "Search"
+    assert action.target_point == (150, 90)
 
 
 def test_reveal_actions_choice_passes_through():
@@ -221,7 +309,13 @@ def test_locate_content_choice_passes_through():
     )
     proposal = UnifiedProposal(
         observed_state={"surface": "conversation", "open_conversation": "Pallavi"},
-        next_action={"family": "locate_content", "text": "zarooratwala", "confidence": 0.9},
+        next_action={
+            "family": "locate_content",
+            "text": "zarooratwala",
+            "target_label": "Find",
+            "target_point": [320.0, 40.0],
+            "confidence": 0.9,
+        },
         confidence=0.9,
     )
     action, reason = proposal_to_action(proposal, _goal(), world, features)
@@ -229,3 +323,40 @@ def test_locate_content_choice_passes_through():
     assert action is not None
     assert action.action_family == "locate_content"
     assert action.text == "zarooratwala"
+    assert action.target_point is not None
+
+
+def test_the_perceptor_does_not_get_to_supply_the_search_string():
+    """Authoring the query belongs to the author, not to whatever saw the screen.
+
+    The perceptor fills a ``text`` on its proposal as a side job, and while a
+    non-empty value won, that guess replaced the authored query outright. What
+    it guesses is the bare contact name -- the one thing this capability's own
+    prompt forbids ("do not merely echo one entity name") -- so live runs typed
+    'Kulvinder' and landed in a crowded result list, while the single run where
+    the perceptor happened to return nothing authored 'zarooratwala link
+    Kulvinder' and put the target row on screen at once.
+
+    Asserted against the source because the branch sits inside the live
+    executor, where reaching it for real needs a running app and a model.
+    """
+    import inspect
+
+    from plugin.experiments import run_forward_message
+
+    source = inspect.getsource(run_forward_message)
+    start = source.index("author_query_for_goal(")
+    window = source[max(0, start - 1200) : start + 400]
+    assert "step.text" not in window, (
+        "the compose_search_query branch must author the query, "
+        "not fall back to the text the perceptor proposed"
+    )
+
+
+def test_live_202832_pallavipo_query_looks_corrupted():
+    """Typed zarooratwala Pallavi; field drifted to zaropratwala Pallavipo."""
+    tokens = goal_evidence_tokens(_goal())
+    assert query_looks_corrupted("zaropratwala Pallavipo", tokens)
+    assert query_looks_corrupted("a zaropratwala Pallavipol", tokens)
+    assert not query_looks_corrupted("zarooratwala Pallavi", tokens)
+    assert ui_shows_no_search_results("WhatsApp for Mac", "No results")

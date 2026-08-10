@@ -65,50 +65,105 @@ that perception (or the world document) has already made:
 These are not a second world model. They are views of the model-owned world
 document plus host declarations, shaped for capability execution.
 
+## Three layers of vocabulary
+
+1. **Meta-actions** — kind of executive step (`think` / `perceive` / `search` /
+   `act` / …). Chosen by meta consultation.
+2. **General capabilities** — catalog verbs over substrates (this section).
+3. **Motor primitives** — `click` / `type` / `scroll` / …
+
+**`MetaAction.SEARCH` owns find-among-many.** It interrogates a
+`candidate_set` against a referent/criteria (query → retrieve/filter → rank)
+until `SearchResult.chosen` (or fail). Stage capabilities run under SEARCH;
+`MetaAction.ACT` commits (`open_entity` / `select_content` / …) only when the
+target is known. This is distinct from `INFORMATION_GATHERING` (strategic
+replan over action-space branches — not UI query authorship).
+
+The runtime tracks `search_episode`
+(`querying` → `retrieving` → `ranking` → `complete` | `failed`). Incomplete
+episodes rewrite meta ACT→SEARCH and forbid commit verbs under SEARCH.
+
 ## General capability catalog
 
-Capabilities compose the agent. Search is the first fully realized member;
-others are contracted so they grow the same way.
+Capabilities compose the agent under the active meta. Find stages are realized
+under SEARCH; commit verbs under ACT.
 
 | Capability | Substrate | Contract | Status |
 | --- | --- | --- | --- |
-| `compose_search_query` | `task_evidence` | Author a search-box string from goal evidence, world document, and prior attempts. Does not hardcode a query template. Realization may inject via type+submit (mechanism). | **realized** (LLM author + type inject) |
-| `resolve_entity` | `candidate_set` | Choose which visible candidate matches a goal referent (destination/source/…). Self markers like `(you)` are evidence, not a template. Does not claim forward/send succeeded. Realization may open/click the chosen row (mechanism). | **realized** (heuristic + optional LLM ranker) |
+| `search` | `candidate_set` | Legacy name — executive owns `MetaAction.SEARCH`; not an ACT verb. | contract |
+| `compose_search_query` | `task_evidence` | **SEARCH stage:** author a search-box string from goal evidence. Does not complete search. | **realized** |
+| `resolve_entity` | `candidate_set` | **SEARCH stage (rank):** choose which visible candidate matches a referent. | **realized** |
 | `locate_content` | `searchable_surface` | Make content matching `query` reachable, or report exhaustion. Never claims relevance. | **realized** (native find + scroll scan) |
-| `open_entity` | `addressable_entity` | Navigate into the named entity (conversation, channel, thread). | **realized** (resolve + click) |
+| `open_entity` | `addressable_entity` | Navigate into the named entity. **ACT commit** after search completes — not a substitute for ranking. | **realized** (resolve + click) |
 | `select_content` | `addressable_entity` | Focus a content object inside an open surface without navigating away. | **realized** (resolve + click) |
 | `reveal_actions` | `addressable_entity` | Expose the affordance set for an entity without committing. | **realized** (context-click / hover) |
 | `invoke_affordance` | `affordance_set` | Activate a *named reversible* affordance. Refuses Send/Delete. | **realized** (named click) |
 | `dismiss_transient` | `transient_chrome` | Clear an overlay that is not the task. | **realized** (dismiss chord / Escape) |
+| `revert_effects` | `effect_trace` | Cross-task rollback: analyze forward leg + world → approve `RevertPlan` → execute realizations. Same verb for selection undo, undoing a send (via Delete), undoing a file copy/edit. | **realized** (Escape-class); contracted Delete/trash/Undo |
 | `commit_irreversible` | gated target | Send / delete / confirm. Always a gated primitive; never bundled. | **realized** (allowlisted gated click) |
+
+### `revert_effects` is overloaded across tasks
+
+**Graph nomenclature:** `backtrack` ≡ `revert` ≡ `rollback` — one concept. Meta
+`BACKTRACK` and catalog `revert_effects` (aliases `backtrack` / `rollback`) are
+the same retreat: undo the current branch’s effects, then broaden.
+
+**Start anywhere:** recovery must work with an empty `effect_trace` (user left
+bad chrome on). Judgment uses **branch fitness** (goal needed evidence kinds ×
+world objects × typed blockers such as `filter_chip` / selection chrome). Host
+overlays may *tag* filter chips; core must not match chip label string sets or
+force-rewrite meta for a named trap.
+
+```text
+user/brain/meta: backtrack | rollback | unfit branch
+  → revert_effects
+       analyze(effect_trace LIFO undo_hint, then blocking chrome) → RevertPlan
+       approve (auto only for low-risk allowlisted steps)
+       execute realizations (+ look debt between steps)
+```
+
+| Forward effect / blocker | Realization (mechanism) | Risk |
+| --- | --- | --- |
+| Selection chrome / filter_chip / menu / picker | `press_escape` | low |
+| Message already sent | `delete_committed_message` → `commit_irreversible(Delete)` | high (gated) |
+| File copied | `remove_copied_file` → trash / delete copy | high (gated) |
+| File / text edited | `undo_edit` → host Undo | medium |
+
+Escape-class aliases (`clear_selection_escape`, `clear_search_filter`, …)
+normalize to `press_escape`. Irreversible undo steps **compose**
+`commit_irreversible`. High-risk plans never auto-approve.
 
 ### Composition for forward_message (not a bundled plan)
 
 The model composes these; the runtime does not encode WhatsApp's menu tree:
 
 ```text
-compose_search_query             # when AX is chrome-only / entity not addressable
-  → type_query(chosen)
-  → resolve_entity(source)       # Pallavi vs Pallavi Ather Gen3, …
+meta SEARCH (source / content referent)   # find-among-many mode
+  → compose_search_query                  # stage: author
+  → retrieve candidates                   # perceive / locate
+  → resolve_entity                        # stage: rank → SearchResult.chosen
+meta ACT
+  → open_entity(chosen)                   # COMMIT
+  → locate_content / select / reveal / invoke_affordance(Forward)
+meta SEARCH (destination)                 # picker space
+  → resolve_entity
+meta ACT
   → open_entity(chosen)
-  → locate_content(query)        # only if open chat matches source referent
-  → select_content(message)      # when focus helps
-  → reveal_actions(message)
-  → invoke_affordance(Forward)   # reversible
-  → resolve_entity(destination)  # Tanmay vs Tanmay (you), …
-  → open_entity(chosen)
-  → commit_irreversible(Send)    # irreversible gate
+  → commit_irreversible(Send)
 ```
 
 `compose_search_query` is agentic search authorship: the model (via the
 capability's LLM realization) decides how to combine evidence tokens. The
-runtime must not invent templates such as ``contact + link_query``.
+runtime must not invent templates such as ``contact + link_query``. Authorship
+alone never means search is done.
 
 `resolve_entity` is agentic candidate choice: rank visible rows against the
 goal referent (source on search results, destination on the forward picker).
-The runtime must not hardcode ``always pick (you)`` or open WhatsApp's
-top search hit when a point or resolved label exists. Keyboard Down+Return
-is a last-resort mechanism only when there is no point and no candidates.
+The runtime must not hardcode ``always pick (you)``, open the top hit, or
+promote `matches_goal` directly to `open_entity` while ranking is unfinished.
+Query-echo rows (self-echo of the typed string) are demoted when better-fitting
+candidates exist. Keyboard Down+Return is a last-resort mechanism only when
+there is no point and no candidates.
 
 Skip any step whose postcondition is already true on screen. `dismiss_transient`
 recovers from a wrong menu. New prompts will grow more compositions later;
@@ -120,14 +175,17 @@ contract does not change when a variant is added.
 
 ## Division of vocabulary
 
-The model sees two layers:
+The model sees three layers:
 
-1. **Motor primitives** — `click`, `type`, `scroll`, `hover`, `right_click`,
-   `press_escape`, `observe`. Always available; fine-grained when no capability
-   applies.
+1. **Meta-actions** — kind of step (`search` vs `act` vs `perceive` vs
+   `information_gathering` / strategic replan). Executive owns completion debt.
 2. **General capabilities** — named operations from this catalog that have at
    least one realization for the current host. Prefer these when the intent
-   matches; they collapse mechanical search space.
+   matches; they collapse mechanical search space. Find stages under SEARCH;
+   commit under ACT.
+3. **Motor primitives** — `click`, `type`, `scroll`, `hover`, `right_click`,
+   `press_escape`, `observe`. Always available; fine-grained when no capability
+   applies.
 
 ## Growth model
 

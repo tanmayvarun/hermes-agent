@@ -22,6 +22,10 @@ Usage:
 
     # re-ask the model about the same scenes (fresh, comparable, offline GUI)
     python -m plugin.experiments.perceptor_eval --frames <dir> --live
+
+    # multimodal fusion bake-off across models (gold-annotated corpus)
+    python -m plugin.experiments.perceptor_eval \\
+        --models ollama-cloud/gpt-oss:120b,ollama-cloud/qwen3.5:397b --limit 8
 """
 
 from __future__ import annotations
@@ -684,6 +688,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--frames", type=Path, default=DEFAULT_FRAMES)
     parser.add_argument("--live", action="store_true", help="re-ask the model about each recorded scene")
+    parser.add_argument(
+        "--models",
+        default="",
+        help="comma-separated provider/model specs for a live fusion bake-off "
+        "(e.g. ollama-cloud/gpt-oss:120b,ollama-cloud/qwen3.5:397b). Implies --live.",
+    )
     parser.add_argument("--limit", type=int, default=0, help="only score the first N frames")
     parser.add_argument("--since", type=int, default=0, help="only score frames numbered >= N")
     parser.add_argument("--json", type=Path, default=None, help="write the full report here")
@@ -698,6 +708,29 @@ def main() -> int:
         help="run world-critic high-level representation update suite (no GUI)",
     )
     args = parser.parse_args()
+
+    model_specs = [s.strip() for s in str(args.models or "").split(",") if s.strip()]
+    if model_specs:
+        # Multi-model fusion bake-off over the harvested eval corpus (gold
+        # annotations), not the raw recording directory. That is the check for
+        # "which model fuses AX + screenshot correctly".
+        from plugin.evals.corpus import DEFAULT_CORPUS_DIR, DEFAULT_RECORD_DIR
+        from plugin.evals.fusion import bake_off, render_bake_off
+        from plugin.evals.annotations import annotate, load_overrides
+        from plugin.evals.corpus import load_fixtures
+
+        fixtures = annotate(load_fixtures(DEFAULT_CORPUS_DIR), overrides=load_overrides())
+        report = bake_off(
+            fixtures,
+            model_specs,
+            record_dir=Path(DEFAULT_RECORD_DIR),
+            limit=args.limit or 8,
+        )
+        print(render_bake_off(report))
+        if args.json:
+            args.json.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+            print(f"\nfull report: {args.json}")
+        return 0
 
     report = evaluate(args.frames, live=args.live, limit=args.limit, since=args.since)
     print(render_report(report))

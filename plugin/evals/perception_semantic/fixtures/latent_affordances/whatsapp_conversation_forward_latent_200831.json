@@ -1,0 +1,242 @@
+{
+  "id": "whatsapp_conversation_forward_latent_200831",
+  "phenomena": [
+    "latent_affordances",
+    "partial_observation",
+    "task_conditioning"
+  ],
+  "app": "WhatsApp",
+  "note": "Live 200831 step 40: content located in Pallavi chat but Forward latent (no dropdown/context menu). Agent exhausted reveal_actions/select_content and timed out on max steps. Forward is latent; require reveal/hover; forbid commit.",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 40,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "msg_link",
+          "kind": "message",
+          "text": "zarooratwala.com",
+          "matches_goal": true,
+          "owner_surface": "conversation"
+        }
+      ],
+      "beliefs": [],
+      "progress": {
+        "phase": "invoke_forward",
+        "objective": "reveal Forward affordance on source message"
+      }
+    },
+    "observation": {
+      "frame": 40,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "active_interaction_surface": "conversation",
+      "ax_evidence": [
+        {
+          "id": 10,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [110.0, 25.0, 1581.0, 979.0]
+        },
+        {
+          "id": 20,
+          "role": "AXGroup",
+          "label": "conversation_pane",
+          "parent_id": 10,
+          "parent_label": "WhatsApp",
+          "parent_role": "AXWindow",
+          "bounds": [400.0, 80.0, 1200.0, 900.0]
+        },
+        {
+          "id": 21,
+          "role": "AXStaticText",
+          "label": "ZarooratWala - Fresh Groceries",
+          "parent_id": 20,
+          "parent_label": "conversation_pane",
+          "parent_role": "AXGroup",
+          "bounds": [900.0, 240.0, 400.0, 80.0]
+        }
+      ],
+      "ax_node_count": 3,
+      "search_query": "",
+      "search_visible": false
+    },
+    "perception_objective": {
+      "intent": "reveal_forward",
+      "objective": "Is the Forward control visible, or only latent until hover/reveal on the zarooratwala message?",
+      "questions": [
+        "Is a context menu or Forward CTA currently visible?",
+        "Is Forward a latent affordance requiring hover/reveal_actions?"
+      ]
+    },
+    "last_action": {
+      "family": "observe",
+      "target": ""
+    },
+    "affordance_frontier": {
+      "surface": "conversation",
+      "observed_actions": [],
+      "latent_actions": [
+        {
+          "family": "invoke_affordance",
+          "label": "Forward",
+          "available_after": "reveal_actions",
+          "node_scope": "current"
+        }
+      ]
+    }
+  },
+  "screenshot": "",
+  "record_dir": "",
+  "metamorphic_of": "",
+  "metamorphic_transform": "",
+  "gold": {
+    "surfaces": [
+      {
+        "id": "conversation",
+        "type": "conversation",
+        "foreground": true
+      }
+    ],
+    "claims": [
+      {
+        "predicate": "source_content_visible",
+        "value": true,
+        "owner_surface": "conversation",
+        "subject": "zarooratwala",
+        "semantic_role": "source_content"
+      },
+      {
+        "predicate": "context_menu_visible",
+        "value": false,
+        "owner_surface": "conversation",
+        "subject": "",
+        "semantic_role": ""
+      },
+      {
+        "predicate": "forward_control_visible",
+        "value": false,
+        "owner_surface": "conversation",
+        "subject": "",
+        "semantic_role": "latent_affordance"
+      }
+    ],
+    "affordances": [
+      {
+        "family": "reveal_actions",
+        "target": "source_message",
+        "surface": "conversation"
+      },
+      {
+        "family": "hover",
+        "target": "source_message",
+        "surface": "conversation"
+      }
+    ],
+    "forbidden": [
+      {
+        "predicate": "forward_ready",
+        "value": true,
+        "reason": "Forward CTA not visible without reveal"
+      }
+    ],
+    "acceptable_actions": [
+      {
+        "family": "reveal_actions",
+        "surface": "conversation",
+        "text": "zarooratwala"
+      },
+      {
+        "family": "hover",
+        "surface": "conversation",
+        "text": "message_bubble"
+      },
+      {
+        "family": "observe",
+        "surface": "conversation",
+        "text": ""
+      }
+    ],
+    "forbidden_actions": [
+      "commit_forward",
+      "invoke_forward",
+      "type_destination"
+    ]
+  },
+  "annotated_response": {
+    "world_model": {
+      "frame": 40,
+      "surface": "conversation",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "msg_link",
+          "kind": "message_bubble",
+          "text": "ZarooratWala - Fresh Groceries",
+          "matches_goal": true,
+          "owner_surface": "conversation",
+          "point": [1050, 260]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "source_content_visible",
+          "value": true,
+          "owner_surface": "conversation",
+          "subject": "zarooratwala",
+          "confidence": 0.95,
+          "evidence": ["message bubble visible in conversation"]
+        },
+        {
+          "predicate": "context_menu_visible",
+          "value": false,
+          "owner_surface": "conversation",
+          "confidence": 0.99,
+          "evidence": ["no AX/menu overlay"]
+        },
+        {
+          "predicate": "forward_control_visible",
+          "value": false,
+          "owner_surface": "conversation",
+          "semantic_role": "latent_affordance",
+          "confidence": 0.95,
+          "evidence": ["Forward only listed as latent until reveal"]
+        }
+      ],
+      "layers": [
+        {
+          "role": "container",
+          "name": "Pallavi",
+          "state": "active",
+          "objects": []
+        }
+      ]
+    },
+    "affordance_stance": "explore_needed",
+    "suggested_actions": [
+      {
+        "rank": 1,
+        "family": "reveal_actions",
+        "text": "zarooratwala",
+        "confidence": 0.9,
+        "why": "Forward is latent; reveal context menu on source message"
+      },
+      {
+        "rank": 2,
+        "family": "hover",
+        "text": "message_bubble",
+        "confidence": 0.8,
+        "why": "dropdown arrow may appear only on hover"
+      }
+    ]
+  },
+  "contaminated_response": null
+}

@@ -127,7 +127,7 @@ def judge_inventory_rewrite(
         from plugin.agent.reasoning_consultation import consult_reasoning
 
         consultation = consult_reasoning(
-            "perception",
+            "decision",
             [
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {
@@ -136,8 +136,9 @@ def judge_inventory_rewrite(
                     + json.dumps(packet, ensure_ascii=False, default=str)[:6000],
                 },
             ],
+            usecase="critic_coherence",
             caller=lambda **kwargs: _call_llm_hard_timeout(timeout_s, **kwargs),
-            call_kwargs={"task": "perception", "timeout": timeout_s},
+            call_kwargs={"timeout": timeout_s},
             temperature=0.0,
             max_tokens=200,
         )
@@ -205,7 +206,7 @@ def judge_surface_transition(
         from plugin.agent.reasoning_consultation import consult_reasoning
 
         consultation = consult_reasoning(
-            "perception",
+            "decision",
             [
                 {"role": "system", "content": _SURFACE_SYSTEM_PROMPT},
                 {
@@ -214,8 +215,9 @@ def judge_surface_transition(
                     + json.dumps(packet, ensure_ascii=False, default=str)[:2000],
                 },
             ],
+            usecase="surface_transition",
             caller=lambda **kwargs: _call_llm_hard_timeout(timeout_s, **kwargs),
-            call_kwargs={"task": "perception", "timeout": timeout_s},
+            call_kwargs={"timeout": timeout_s},
             temperature=0.0,
             max_tokens=200,
         )

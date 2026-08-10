@@ -19,10 +19,13 @@ marker="/tmp/hermes_forward_zarooratwala_launch_${stamp}.txt"
   echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$marker"
 
+# Terminal.app starts a clean shell — pass preflight/recording hints explicitly.
+PREFLIGHT="${HERMES_EVAL_PREFLIGHT_DONE:-0}"
 cat > "$wrapper_path" <<EOF
 #!/bin/bash
 set -euo pipefail
 export HERMES_RUN_STAMP="$stamp"
+export HERMES_EVAL_PREFLIGHT_DONE="$PREFLIGHT"
 exec "$script_path"
 EOF
 chmod +x "$wrapper_path"

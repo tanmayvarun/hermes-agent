@@ -144,6 +144,20 @@ _NON_OPENABLE_KINDS = {
     "composer",
     "message_input",
     "textbox",
+    # Content under a picker/list is not a contact row — keeping it out stops a
+    # goal-matched message from polluting destination resolve_entity candidates.
+    "message",
+    "message_link_preview",
+    "link",
+    "attachment",
+    "media",
+    "image",
+    "video",
+    "audio",
+    "document",
+    "button",
+    "label",
+    "status",
 }
 
 
@@ -284,11 +298,19 @@ def open_matches_referent(open_title: str, referent: str) -> bool:
 
     Exact / base-name / self-marker matches count. Mere substring containment
     (``Pallavi Ather Gen3`` for referent ``Pallavi``) does **not**.
+    Multi-party headers (``Pallavi, Papaji, Rekha, You``) are membership lists,
+    not conversation identity — never treat them as the referent's chat.
     """
     title = _clean_label(open_title)
     ref = _clean_label(referent)
     if not title or not ref:
         return False
+    # Group participant CSVs: membership ≠ open identity (live 214626).
+    parts = [p.strip() for p in title.split(",") if p.strip()]
+    if len(parts) >= 2:
+        low_parts = [p.lower() for p in parts]
+        if "you" in low_parts or len(parts) >= 3:
+            return False
     if title.lower() == ref.lower():
         return True
     title_base = _base_name(title).lower()
@@ -569,10 +591,11 @@ class LlmEntityResolver:
         ]
         try:
             consultation = consult_reasoning(
-                "perception",
+                "decision",
                 messages,
+                usecase="resolve_entity",
                 caller=lambda **kwargs: _call_llm_hard_timeout(self.timeout_s, **kwargs),
-                call_kwargs={"task": "perception", "timeout": self.timeout_s},
+                call_kwargs={"timeout": self.timeout_s},
                 temperature=0.1,
                 max_tokens=256,
             )

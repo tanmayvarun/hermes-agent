@@ -48,34 +48,64 @@ def _surface_state_from_view(view: Dict[str, Any], phase: str) -> SurfaceState:
     base = str(view.get("app") or view.get("active_app") or view.get("window_name") or "").strip().lower()
     if not base and str(view.get("screen") or view.get("screen_kind") or "").strip():
         base = "whatsapp_main_window"
+    if "whatsapp" in base or not base:
+        base = "whatsapp"
     sidebar = ""
     main = ""
     overlay = ""
     screen = str(view.get("screen") or view.get("screen_kind") or view.get("wa_screen") or "").strip().lower()
     active_surface = str(view.get("active_surface") or "").strip().lower()
+    open_conv = str(view.get("open_conversation") or "").strip()
+    empty_main = bool(view.get("empty_placeholder") or view.get("main_empty"))
+    win = str(view.get("window_name") or "").strip().lower()
+    if "whatsapp for mac" in win and not open_conv:
+        empty_main = True
     if bool(view.get("blocking_overlay")) or screen == "dialog":
         overlay = "dialog"
-    elif active_surface == "call_picker" or phase == "calling":
-        overlay = "call_picker"
+    elif active_surface in {"call_picker", "context_menu", "action_menu", "menu"} or phase == "calling":
+        overlay = active_surface if active_surface else "call_picker"
     elif active_surface == "menu":
         overlay = "menu"
     if screen in {"search", "search_results"} or bool(view.get("search_query")) or bool(view.get("search_focused")):
-        sidebar = "search_results" if bool(view.get("visible_contacts")) else "search"
-        main = "conversation" if bool(view.get("open_conversation")) else "search_results"
-    elif screen == "conversation" or bool(view.get("open_conversation")):
-        sidebar = "search_results" if bool(view.get("visible_contacts")) else "list"
-        main = "conversation"
+        sidebar = "search_results" if (
+            bool(view.get("visible_contacts")) or screen == "search_results"
+        ) else "search"
+        # Search sidebar can coexist with an already-open conversation main.
+        if open_conv:
+            main = "conversation"
+        elif empty_main:
+            main = "empty_placeholder"
+        else:
+            main = "search_results" if sidebar == "search_results" else "empty_placeholder"
+    elif screen == "conversation" or open_conv:
+        sidebar = "search_results" if bool(view.get("search_query")) else (
+            "list" if bool(view.get("visible_contacts")) or screen == "list" else "list"
+        )
+        main = "conversation" if open_conv else (
+            "empty_placeholder" if empty_main else "conversation"
+        )
     elif screen == "list" or bool(view.get("visible_contacts")):
         sidebar = "list"
-        main = "list"
+        main = "empty_placeholder" if empty_main or not open_conv else "conversation"
     else:
-        sidebar = "unknown"
-        main = "unknown"
+        sidebar = "list" if bool(view.get("visible_contacts")) else "unknown"
+        main = "empty_placeholder" if empty_main else "unknown"
+    active = overlay or (
+        "sidebar" if sidebar in {"search", "search_results"} and not open_conv else "main"
+    )
+    if active == "sidebar":
+        active_name = sidebar
+    elif active == "main":
+        active_name = main
+    else:
+        active_name = overlay or main or sidebar
     return SurfaceState(
         base_surface=base or "unknown",
         sidebar_surface=sidebar or "unknown",
         main_surface=main or "unknown",
         overlay_surface=overlay,
+        active_interaction_surface=active_name,
+        regions={"sidebar": sidebar or "unknown", "main": main or "unknown", "overlay": overlay},
     )
 
 

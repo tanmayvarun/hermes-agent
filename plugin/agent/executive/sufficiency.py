@@ -182,13 +182,19 @@ def assess_sufficiency(inputs: SufficiencyInputs) -> DecisionSufficiency:
             reason="observation stale, no new evidence",
         )
 
+    # "Sufficient" without a grounded UI move is a lie — it drove THINK thrash
+    # with act=0 while the ladder skipped ACT. Evidence readiness is not actuation.
     return DecisionSufficiency(
-        sufficient_to_act=True,
-        observe_has_value=False,
+        sufficient_to_act=bool(inputs.has_grounded_action),
+        observe_has_value=not inputs.has_grounded_action,
         suppress_observe=False,
-        needs_exploration=False,
-        useful_information_actions=[],
-        sufficient_for_which_actions=grounded or ["grounded_action"],
+        needs_exploration=not inputs.has_grounded_action,
+        useful_information_actions=[] if inputs.has_grounded_action else ["observe"],
+        sufficient_for_which_actions=grounded,
         confidence=round(max(0.6, cov), 3),
-        reason="evidence sufficient to act",
+        reason=(
+            "evidence sufficient to act"
+            if inputs.has_grounded_action
+            else "evidence ready but no grounded action geometry yet"
+        ),
     )

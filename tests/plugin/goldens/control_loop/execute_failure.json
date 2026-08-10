@@ -1,20 +1,8 @@
 {
   "decision_families": [
-    "type_query",
-    "type_query"
+    "observe"
   ],
-  "executed": [
-    {
-      "action": "Type",
-      "family": "type_query",
-      "target": "Search"
-    },
-    {
-      "action": "Type",
-      "family": "type_query",
-      "target": "Search"
-    }
-  ],
+  "executed": [],
   "final_surface": "chat_list",
   "iterations": [
     {
@@ -25,21 +13,8 @@
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Type",
-          "family": "type_query",
-          "target": "Search"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Type",
-          "family": "type_query",
-          "ok": false,
-          "target": "Search"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 1,
       "observations": 1,
       "outcomes": []
@@ -52,7 +27,13 @@
       "outcomes": []
     },
     {
-      "decisions": [],
+      "decisions": [
+        {
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
+        }
+      ],
       "executions": [],
       "iteration": 3,
       "observations": 1,
@@ -66,21 +47,8 @@
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Type",
-          "family": "type_query",
-          "target": "Search"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Type",
-          "family": "type_query",
-          "ok": false,
-          "target": "Search"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 5,
       "observations": 1,
       "outcomes": []

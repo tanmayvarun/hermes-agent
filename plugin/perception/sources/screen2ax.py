@@ -9,8 +9,14 @@ from plugin.perception.sources.base import ObservationBundle, timed_observe
 class Screen2AxSource:
     source_id = "screen2ax"
 
-    def __init__(self, screenshot_path: str | None = None) -> None:
+    def __init__(
+        self,
+        screenshot_path: str | None = None,
+        *,
+        include_overlays: bool = False,
+    ) -> None:
         self.screenshot_path = screenshot_path
+        self.include_overlays = include_overlays
 
     def observe(self, app: str) -> ObservationBundle:
         def _fn(app_name: str) -> Observation:
@@ -36,7 +42,10 @@ class Screen2AxSource:
             # off the critical path.
             if not stub.screenshot_path:
                 stub, _err = attach_screenshot_to_observation(
-                    stub, app_name=app_name, require_screenshot=False
+                    stub,
+                    app_name=app_name,
+                    require_screenshot=False,
+                    include_overlays=self.include_overlays,
                 )
             # Force OCR: this source's whole job is to recover content from pixels,
             # independent of AX coverage (the AX tree may be blind on this surface).

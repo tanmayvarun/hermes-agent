@@ -522,6 +522,25 @@ class ExecutiveWorkspace:
         prior = self._conversation.value
         surface = _norm(proposal.surface).lower()
 
+        # Search-field chrome is not a conversation referent. Refuse it the same
+        # way the world critic does, so AX "Q Search|" cannot own the workspace.
+        try:
+            from plugin.agent.world_critic import is_search_field_echo
+        except Exception:  # pragma: no cover
+            is_search_field_echo = lambda _t: False  # type: ignore
+        if proposed and is_search_field_echo(proposed):
+            verdict.decisions.append(
+                CommitDecision(
+                    "open_conversation",
+                    "reject",
+                    "search-field chrome is not an open conversation",
+                    prior,
+                    proposed,
+                    prior,
+                )
+            )
+            return
+
         if proposed == prior:
             verdict.decisions.append(
                 CommitDecision("open_conversation", "unchanged", "same value", prior, proposed, prior)

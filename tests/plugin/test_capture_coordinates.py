@@ -157,3 +157,80 @@ def test_a_model_point_lands_on_screen_through_scale_and_origin():
     assert _to_screen_point([100, 200], 2.0, (1.5, 42.5)) == (202, 442)
     # Without an origin the same point is short by the window corner.
     assert _to_screen_point([100, 200], 2.0) == (200, 400)
+
+
+def test_fusion_carries_the_capture_transform_and_ocr_read():
+    """Merging what is on screen must not discard measurements of the frame.
+
+    Fusion reconciles competing accounts of the *contents*. The pixel-to-point
+    transform and the OCR read are not accounts of anything -- they are
+    measurements of the capture itself -- and the fused observation was
+    dropping both. With no transform the world fell back to the identity, so
+    every vision coordinate was scaled by 2.67 instead of 1.34 and a click
+    aimed at a message resolved to (2271, 1550) on a 1710x1107 display, off the
+    screen entirely. With no OCR read there was nothing to measure against, so
+    coordinates could only ever be the model's guess.
+    """
+    from plugin.perception.fusion.engine import get_fusion_engine
+    from plugin.perception.observation import AxNode, Observation
+    from plugin.perception.sources.base import ObservationBundle
+
+    ax = Observation(
+        timestamp=0.0,
+        app_name="WhatsApp",
+        window_name="WhatsApp",
+        nodes=[AxNode(role="AXButton", name="Search", bbox=(10.0, 10.0, 40.0, 20.0))],
+        screenshot_path="/tmp/shot.png",
+        meta={"capture_frame": {"origin_x": 0.0, "origin_y": 39.0, "scale": 2.0}},
+    )
+    ocr = Observation(
+        timestamp=0.0,
+        app_name="WhatsApp",
+        window_name="WhatsApp",
+        nodes=[AxNode(role="AXStaticText", name="Kulvinder Ji", bbox=(90.0, 228.0, 71.0, 19.0))],
+        screenshot_path="/tmp/shot.png",
+        source="screen2ax:visionkit",
+        meta={"ocr": {"lines": [{"text": "Kulvinder Ji", "bounds": [90.0, 228.0, 71.0, 19.0]}]}},
+    )
+
+    frame = get_fusion_engine().fuse_bundles(
+        [
+            ObservationBundle(source_id="pyobjc_ax", observation=ax, coverage_self=0.6),
+            ObservationBundle(source_id="screen2ax", observation=ocr, coverage_self=0.6),
+        ],
+        app="WhatsApp",
+    )
+    meta = frame.to_observation().meta
+
+    assert meta.get("capture_frame") == {"origin_x": 0.0, "origin_y": 39.0, "scale": 2.0}
+    assert meta.get("ocr", {}).get("lines"), "the OCR read must survive fusion"
+    # And the fusion report is still there beside them.
+    assert meta.get("fused_frame") is True
+
+
+def test_the_world_learns_the_transform_from_a_fused_observation():
+    """The end of the same wire: it has to reach the world, not just the meta."""
+    from plugin.perception.capture_frame import CaptureFrame
+    from plugin.perception.observation import AxNode, Observation
+    from plugin.worldmodel.model import WorldModel
+
+    world = WorldModel(active_app="WhatsApp")
+    world.ingest(
+        Observation(
+            timestamp=0.0,
+            app_name="WhatsApp",
+            window_name="WhatsApp",
+            nodes=[AxNode(role="AXStaticText", name="Kulvinder Ji", bbox=(90.0, 228.0, 71.0, 19.0))],
+            screenshot_path="/tmp/shot.png",
+            source="fused:pyobjc_ax+screen2ax",
+            meta={
+                "fused_frame": True,
+                "capture_frame": {"origin_x": 0.0, "origin_y": 39.0, "scale": 2.0},
+                "ocr": {"lines": [{"text": "Kulvinder Ji", "bounds": [90.0, 228.0, 71.0, 19.0]}]},
+            },
+        )
+    )
+
+    assert CaptureFrame.from_dict(world.last_capture_frame).scale == 2.0
+    assert CaptureFrame.from_dict(world.last_capture_frame).origin_y == 39.0
+    assert world.last_ocr_lines and world.last_ocr_lines[0]["text"] == "Kulvinder Ji"

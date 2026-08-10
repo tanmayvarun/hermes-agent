@@ -5,27 +5,34 @@
 ## Contract
 
 ```text
-sensors + affordance frontier → multimodal perceptor → proposal packet
+stage0 assemble (screenshot + OCR geometry + AX + passive frontier)
                 ↓
-     world critic (accept / reject / edit + reasons)
+stage1 multimodal → world proposal + suggested_actions[] (why)
                 ↓
-        accepted world document
+world critic (accept / reject / edit + reasons)
                 ↓
-   decision consultation (which capability advances the goal?)
+current-node affordance closure (same-node reversible probes / soft fold)
                 ↓
-   capabilities + motors admissible on that node
+accepted world + closed frontier + suggestion whys
                 ↓
-     runtime facts written back as evidence
+executive / brain — one capability (or request another look)
+                ↓
+runtime execute → thin motor feedback (ok/fail)
+                ↓
+must re-perceive (stage1) before next capability
 ```
 
-The perceptor does heavy multimodal work. It does **not** commit belief state,
-and it does **not** get the last word on the next move. The critic merges a
-residual update into the prior accepted document; the decision-maker then picks
-one capability over that accepted world.
+**One-executive contract:** Screenshot multimodal (+ critic) is the sole source
+of truth for the world document. AX + OCR ground clicks only. Post-act AX settle
+/ TransitionEvaluator is diagnostic logging — it must not set executive surprise
+or preempt the brain with VERIFY. After any non-observe act,
+`must_executive_reperceive` forces the next stage1 look.
 
-What the perceptor is given, and the ranked action frontier it returns, are
-described in [affordance-frontier.md](affordance-frontier.md). The critic and
-the decision stage below operate on the document that call produces.
+Stage1 proposes the world and may visually rank suggestions; it does not
+commit belief or execute. The critic settles the world document. Affordance
+closure then completes the **current UI node** (including stimulus-revealed
+options). The brain picks one move over that closed set. See
+[affordance-frontier.md](affordance-frontier.md).
 
 ## Decision consultation
 
@@ -40,9 +47,10 @@ motor. It is consulted with four inputs and returns one capability:
 | goal | source conversation, content query, destination |
 
 Output is `{capability, target, why, confidence}` — never coordinates, menu
-paths, or click scripts. Grounding stays with the perceptor: when the decision
-keeps a pointer-shaped family, the perceptor's `target_point` / `target_id`
-ride along.
+paths, or click scripts. Grounding uses the accepted world `objects` (and
+frontier targets): pointer-shaped families resolve to `target_id` /
+`target_point` from the perceived inventory, not from a perceptor-ranked
+`next_action`.
 
 Phases are derived from the accepted world, not from a stored recipe:
 

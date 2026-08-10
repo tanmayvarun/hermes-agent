@@ -1,44 +1,8 @@
 {
   "decision_families": [
-    "open_contact",
-    "open_contact",
-    "open_contact",
-    "open_contact",
-    "open_contact",
-    "open_contact"
+    "observe"
   ],
-  "executed": [
-    {
-      "action": "Click",
-      "family": "open_contact",
-      "target": "ZarooratWala"
-    },
-    {
-      "action": "Click",
-      "family": "open_contact",
-      "target": "ZarooratWala"
-    },
-    {
-      "action": "Click",
-      "family": "open_contact",
-      "target": "ZarooratWala"
-    },
-    {
-      "action": "Click",
-      "family": "open_contact",
-      "target": "ZarooratWala"
-    },
-    {
-      "action": "Click",
-      "family": "open_contact",
-      "target": "ZarooratWala"
-    },
-    {
-      "action": "Click",
-      "family": "open_contact",
-      "target": "ZarooratWala"
-    }
-  ],
+  "executed": [],
   "final_surface": "chat_list",
   "iterations": [
     {
@@ -49,136 +13,52 @@
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "target": "ZarooratWala"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "ok": true,
-          "target": "ZarooratWala"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 1,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "target": "ZarooratWala"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "ok": true,
-          "target": "ZarooratWala"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 2,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
       "decisions": [
         {
-          "action": "Click",
-          "family": "open_contact",
-          "target": "ZarooratWala"
+          "action": "Observe",
+          "family": "observe",
+          "target": ""
         }
       ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "ok": true,
-          "target": "ZarooratWala"
-        }
-      ],
+      "executions": [],
       "iteration": 3,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "target": "ZarooratWala"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "ok": true,
-          "target": "ZarooratWala"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 4,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "target": "ZarooratWala"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "ok": true,
-          "target": "ZarooratWala"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 5,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "target": "ZarooratWala"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "ok": true,
-          "target": "ZarooratWala"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 6,
-      "observations": 2,
-      "outcomes": [
-        "no_effect"
-      ]
+      "observations": 1,
+      "outcomes": []
     }
   ],
   "result": {

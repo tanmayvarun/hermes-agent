@@ -357,8 +357,12 @@ def _kind_of(role: str, label: str, declared_kind: str = "") -> str:
     return "static"
 
 
-def _family_for(kind: str, role: str, label: str) -> str:
+def _family_for(kind: str, role: str, label: str, *, description: str = "") -> str:
     if kind == "input":
+        # Sidebar Search is contact-query authorship, not an in-picker type_query.
+        blob = f"{label} {description}".strip().lower()
+        if "search" in blob:
+            return "compose_search_query"
         return "type_query"
     if kind == "button":
         return "commit_irreversible" if is_irreversible_affordance(label) else "invoke_affordance"
@@ -366,6 +370,12 @@ def _family_for(kind: str, role: str, label: str) -> str:
         return "open_entity"
     if kind == "message":
         return "select_content"
+    # WhatsApp Electron: sidebar Search is often AXStaticText ("• Search" / "Q Search").
+    blob = f"{label} {description}".strip().lower()
+    if blob in {"search", "q search", "• search", "search…", "search..."} or (
+        "search" in blob and "result" not in blob and len(blob) < 48
+    ):
+        return "compose_search_query"
     return ""
 
 
@@ -439,10 +449,11 @@ def observed_from_ax(
         if not isinstance(item, dict):
             continue
         label = _clean(item.get("label") or item.get("description"))
+        description = _clean(item.get("description"))
         role = str(item.get("role") or "")
         actions = [str(a) for a in (item.get("actions") or [])]
         kind = _kind_of(role, label, "")
-        family = _family_for(kind, role, label)
+        family = _family_for(kind, role, label, description=description)
         if not family:
             continue
         if not label and kind != "input":
@@ -799,6 +810,33 @@ def _best_per_label(latents: Sequence[Affordance]) -> List[Affordance]:
     return sorted(best.values(), key=lambda a: -float(a.confidence))
 
 
+def _actuators_from_grounded(match: Any) -> Tuple[List[Dict[str, Any]], Optional[int]]:
+    target = getattr(match, "target", None) or {}
+    if not isinstance(target, dict):
+        target = {}
+    point = target.get("point")
+    entity_id = target.get("entity_id")
+    actuators: List[Dict[str, Any]] = []
+    if entity_id is not None:
+        try:
+            actuators.append(
+                {"type": "ax_press", "target_id": int(entity_id), "confidence": 0.85}
+            )
+        except (TypeError, ValueError):
+            entity_id = None
+    if point:
+        actuators.append(
+            {"type": "coordinate_click", "point": list(point), "confidence": 0.9}
+        )
+    eid: Optional[int] = None
+    if entity_id is not None:
+        try:
+            eid = int(entity_id)
+        except (TypeError, ValueError):
+            eid = None
+    return actuators, eid
+
+
 def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> AffordanceFrontier:
     """Close the frontier's loop: move latent actions a probe revealed to observed.
 
@@ -806,6 +844,8 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
     it exposes. This consumes its :class:`RevealResult`: any latent affordance
     whose label the reveal grounded becomes an observed action carrying the real
     target, so the executive can invoke it directly instead of re-deriving it.
+    Grounded menu items that were not pre-listed as latents are also ingested
+    as observed invoke_affordance entries (complete affordance_set thoroughness).
     """
     actions = list(getattr(reveal_result, "actions", []) or [])
     grounded = {
@@ -823,19 +863,16 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
         if match is None:
             still_latent.append(latent)
             continue
-        point = match.target.get("point")
-        entity_id = match.target.get("entity_id")
-        actuators: List[Dict[str, Any]] = []
-        if entity_id is not None:
-            actuators.append({"type": "ax_press", "target_id": int(entity_id), "confidence": 0.85})
-        if point:
-            actuators.append({"type": "coordinate_click", "point": list(point), "confidence": 0.9})
+        actuators, eid = _actuators_from_grounded(match)
+        if not actuators:
+            still_latent.append(latent)
+            continue
         promoted.append(
             Affordance(
                 id=f"revealed_{_norm(latent.target_label)}",
                 family=latent.family,
                 status=STATUS_OBSERVED,
-                target_id=int(entity_id) if entity_id is not None else None,
+                target_id=eid,
                 target_label=latent.target_label,
                 available_now=True,
                 actuators=actuators,
@@ -843,6 +880,32 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
                 risk=latent.risk,
                 reversible=latent.reversible,
                 evidence=[Evidence(SOURCE_TRANSITION_MEMORY, "grounded by reveal_actions")],
+            )
+        )
+        grounded.pop(_norm(latent.target_label), None)
+    # Menu items seen in perception but not pre-declared as latents still belong
+    # in the affordance_set so invoke_affordance has complete geometry.
+    observed_labels = {_norm(a.target_label) for a in frontier.observed_actions + promoted}
+    for key, match in list(grounded.items()):
+        if key in observed_labels:
+            continue
+        actuators, eid = _actuators_from_grounded(match)
+        if not actuators:
+            continue
+        label = str(getattr(match, "label", "") or key)
+        irreversible = is_irreversible_affordance(label)
+        promoted.append(
+            Affordance(
+                id=f"revealed_{key}",
+                family="commit_irreversible" if irreversible else "invoke_affordance",
+                status=STATUS_OBSERVED,
+                target_id=eid,
+                target_label=label,
+                available_now=True,
+                actuators=actuators,
+                confidence=float(getattr(match, "confidence", 0.85) or 0.85),
+                reversible=not irreversible,
+                evidence=[Evidence(SOURCE_VISION_OBJECT, "menu item grounded after reveal")],
             )
         )
     frontier.observed_actions = frontier.observed_actions + promoted
@@ -853,6 +916,212 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
     if promoted:
         frontier.unknown_frontiers = []
     return frontier
+
+
+def publish_grounded_affordance_set(
+    execution_state: Any, frontier: Optional[AffordanceFrontier]
+) -> List[Dict[str, Any]]:
+    """Persist grounded menu controls as the affordance_set substrate.
+
+    Same thoroughness contract as materialize_vision_entities for addressable
+    objects: label + actuators/geometry + provenance, ready for invoke.
+    """
+    out: List[Dict[str, Any]] = []
+    if frontier is None:
+        if execution_state is not None:
+            try:
+                execution_state.last_grounded_affordance_set = []
+            except Exception:
+                pass
+        return out
+    for aff in frontier.observed_actions:
+        if aff.family not in {"invoke_affordance", "commit_irreversible"}:
+            continue
+        if not aff.actuators:
+            continue
+        out.append(aff.to_dict())
+    if execution_state is not None:
+        try:
+            execution_state.last_grounded_affordance_set = list(out)
+            if out:
+                handoff = getattr(execution_state, "reveal_handoff", None)
+                if isinstance(handoff, dict):
+                    # Discovery complete: overlay ingested into affordance_set.
+                    execution_state.reveal_handoff = None
+        except Exception:
+            pass
+    return out
+
+
+def grounded_affordance_set_of(execution_state: Any) -> List[Dict[str, Any]]:
+    raw = getattr(execution_state, "last_grounded_affordance_set", None) if execution_state else None
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict)]
+    return []
+
+
+def finalize_reveal_handoff(
+    execution_state: Any, frontier: Optional[AffordanceFrontier]
+) -> Dict[str, Any]:
+    """After a post-reveal perceive: publish affordance_set or count a failed look.
+
+    Returns a small status dict for logging/tests. Clears handoff on success;
+    after ``ttl`` unsuccessful looks marks ``failed_reveal``.
+    """
+    status: Dict[str, Any] = {"active": False}
+    if execution_state is None:
+        return status
+    handoff = getattr(execution_state, "reveal_handoff", None)
+    if not isinstance(handoff, dict) or not str(handoff.get("surface") or "").strip():
+        publish_grounded_affordance_set(execution_state, frontier)
+        status["grounded"] = len(grounded_affordance_set_of(execution_state))
+        return status
+    status["active"] = True
+    grounded = publish_grounded_affordance_set(execution_state, frontier)
+    if grounded:
+        status["complete"] = True
+        status["grounded"] = len(grounded)
+        try:
+            from plugin.agent.executive.intention_frame import (
+                IntentionStatus,
+                TerminationReason,
+                active_intention_frame,
+                evaluate_intention_success,
+                pop_intention_frame,
+            )
+
+            iframe = active_intention_frame(execution_state)
+            if iframe is not None and evaluate_intention_success(
+                iframe,
+                affordance_stance=str(
+                    getattr(execution_state, "last_affordance_stance", "") or ""
+                ),
+                grounded_forward=True,
+            ):
+                iframe.status = IntentionStatus.ACHIEVED.value
+                iframe.termination_reason = TerminationReason.SUCCESS.value
+                iframe.pending_effect_verification = False
+                status["intention_achieved"] = iframe.intention.id
+                pop_intention_frame(execution_state)
+        except Exception:
+            pass
+        return status
+    looks = int(handoff.get("looks") or 0) + 1
+    ttl = int(handoff.get("ttl") or 2)
+    handoff = dict(handoff)
+    handoff["looks"] = looks
+    if looks >= ttl:
+        # Method settle window expired without grounded affordances → rotate
+        # method under the same EXPLORE intention. Episode is terminal only
+        # when the IntentionFrame has no eligible methods left (architect).
+        try:
+            from plugin.agent.capabilities.reveal_actions import escalate_failed_reveal
+
+            step = getattr(execution_state, "last_plan_step", None)
+            esc = escalate_failed_reveal(
+                execution_state,
+                target=str(
+                    handoff.get("target")
+                    or getattr(step, "semantic_target", "")
+                    or ""
+                ),
+                point=(
+                    handoff.get("target_point")
+                    if handoff.get("target_point") is not None
+                    else (getattr(step, "target_point", None) if step is not None else None)
+                ),
+                last_gesture=str(
+                    handoff.get("probe_gesture")
+                    or getattr(execution_state, "reveal_probe_mode", "")
+                    or "context_click"
+                ),
+            )
+            status["escalation"] = esc
+            handoff["escalation"] = esc
+        except Exception as exc:
+            status["escalation_error"] = str(exc)[:120]
+
+        locally_exhausted = False
+        intention_status = ""
+        try:
+            from plugin.agent.executive.intention_frame import (
+                IntentionStatus,
+                active_intention_frame,
+                apply_derived_status,
+                is_local_route_exhausted,
+            )
+
+            iframe = active_intention_frame(execution_state)
+            if iframe is not None:
+                iframe.pending_effect_verification = False
+                apply_derived_status(iframe)
+                locally_exhausted = is_local_route_exhausted(iframe) or iframe.status in {
+                    IntentionStatus.EXHAUSTED.value,
+                    IntentionStatus.BLOCKED.value,
+                }
+                intention_status = str(iframe.status or "")
+                status["intention_id"] = iframe.intention.id
+                status["intention_status"] = intention_status
+                status["eligible_methods"] = list(
+                    iframe.method_frontier.eligible_methods()
+                )
+        except Exception:
+            # Legacy: no frame → treat escalate prefs as still having methods
+            # until prefer select_content has also been attempted.
+            prefer = str(
+                getattr(execution_state, "reveal_prefer_capability", "") or ""
+            ).strip()
+            mode = str(getattr(execution_state, "reveal_probe_mode", "") or "")
+            locally_exhausted = prefer == "select_content" and mode == "select_content"
+
+        status["looks"] = looks
+        status["ttl"] = ttl
+        status["grounded"] = 0
+        if locally_exhausted:
+            handoff["failed_reveal"] = True
+            handoff["status"] = "failed_reveal"
+            handoff["incomplete_reveal"] = False
+            status["failed_reveal"] = True
+            status["episode_terminal"] = True
+            try:
+                execution_state.reveal_handoff = {
+                    "status": "failed_reveal",
+                    "failed_reveal": True,
+                    "incomplete_reveal": False,
+                    "surface": str(handoff.get("surface") or ""),
+                    "target": handoff.get("target"),
+                    "target_point": handoff.get("target_point"),
+                    "escalation": handoff.get("escalation"),
+                    "looks": looks,
+                    "ttl": ttl,
+                    "intention_status": intention_status,
+                }
+            except Exception:
+                pass
+            return status
+
+        # Methods remain: close this method's settle look, keep intention open.
+        handoff["failed_reveal"] = False
+        handoff["incomplete_reveal"] = False
+        handoff["looks"] = 0
+        handoff["status"] = "method_ineffective_advance"
+        status["method_advance"] = True
+        status["failed_reveal"] = False
+        try:
+            execution_state.reveal_handoff = handoff
+        except Exception:
+            pass
+        return status
+    else:
+        status["pending"] = True
+    try:
+        execution_state.reveal_handoff = handoff
+    except Exception:
+        pass
+    status["looks"] = looks
+    status["ttl"] = ttl
+    status["grounded"] = 0
+    return status
 
 
 def build_affordance_frontier(

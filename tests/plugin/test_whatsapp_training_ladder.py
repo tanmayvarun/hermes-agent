@@ -305,7 +305,7 @@ def test_stage_06_high_risk_selector_uses_dedicated_task_and_risk_gate_for_forwa
         return _llm_response('{"choice": "Forward", "confidence": 0.94, "reason": "forward chrome visible"}')
 
     engine = DecisionEngine(selector_enabled=True, selector_caller=fake_selector)
-    decision = engine.decide(goal, wm, ExecutionState())
+    decision = engine.define_action_step(goal, wm, ExecutionState())
 
     assert decision is not None
     assert decision.action_family in {"forward_message", "select_content", "type_query"}
@@ -354,7 +354,7 @@ def test_stage_07_high_risk_selector_surfaces_forward_risk_and_goal_context():
         return _llm_response('{"choice": "Forward", "confidence": 0.91, "reason": "forward chrome visible"}')
 
     engine = DecisionEngine(selector_enabled=True, selector_caller=fake_selector)
-    decision = engine.decide(goal, wm, ExecutionState())
+    decision = engine.define_action_step(goal, wm, ExecutionState())
 
     assert decision is not None
     assert decision.action_family in {"forward_message", "select_content", "type_query"}

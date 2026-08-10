@@ -25,6 +25,10 @@ from plugin.evals.temporal import analyse_temporal_runs, summarize_temporal
 from plugin.evals.corpus import DEFAULT_CORPUS_DIR, coverage_report, load_fixtures
 from plugin.evals.gates import blocking_failures, compare_to_baseline, run_gates
 from plugin.evals.metrics import MetricResult, evaluate_all
+from plugin.evals.fusion import summarize_fusion
+from plugin.evals.affordance_exploration import summarize_affordance_exploration
+from plugin.evals.post_open_pipeline import summarize_post_open_pipeline
+from plugin.evals.golden.score import summarize_golden
 from plugin.evals.resolution import summarize_resolution
 from plugin.evals.sufficiency import summarize_sufficiency
 
@@ -72,6 +76,19 @@ def build_report(
         # Brain-gated entity resolution, graded across domains (chat/files/tabs)
         # to prove the gate is semantic-general, not WhatsApp string rules.
         "resolution": summarize_resolution(),
+        # Multimodal fusion: did the recorded screen_understanding reply fuse
+        # AX-blind frames into the gold surface / goal objects / allowed action?
+        "fusion": summarize_fusion(fixtures) if fixtures else {"fixtures_scored": 0},
+        # Zarooratwala-grounded same-node latent/hidden closure + brain reperceive.
+        "affordance_exploration": (
+            summarize_affordance_exploration(fixtures) if fixtures else {"fixtures_scored": 0}
+        ),
+        # Piecewise open→hunt: perception / critic / brain / AX chrome trap.
+        "post_open_pipeline": (
+            summarize_post_open_pipeline(fixtures) if fixtures else {"fixtures_scored": 0}
+        ),
+        # Module-layered golden corpus (eval-only, zarooratwala-seeded v1).
+        "golden_v1": summarize_golden(fixture_corpus=corpus_dir),
     }
     if closed_loop:
         outcomes = analyse_runs(recent_runs(runs_dir, run_limit))
@@ -98,6 +115,74 @@ def render(report: Dict[str, Any]) -> str:
     rates = (report.get("annotations") or {}).get("rates") or {}
     if rates:
         lines.append(f"  ground truth coverage: {rates}")
+
+    fusion = report.get("fusion") or {}
+    if fusion.get("fixtures_scored"):
+        lines.append("")
+        lines.append("[fusion]")
+        lines.append(
+            f"  mean={fusion.get('mean_fusion_score')}  "
+            f"fixtures={fusion.get('fixtures_scored')}"
+        )
+        for metric in fusion.get("metrics") or []:
+            value = metric.get("value")
+            rendered = f"{value:.2%}" if isinstance(value, float) else "n/a"
+            lines.append(
+                f"  {str(metric.get('name') or ''):<36} {rendered:>8}  "
+                f"scored={metric.get('scored', 0)}"
+            )
+
+    explor = report.get("affordance_exploration") or {}
+    if explor.get("fixtures_scored") or explor.get("metrics"):
+        lines.append("")
+        lines.append("[affordance_exploration]")
+        lines.append(
+            f"  mean={explor.get('mean_closure_score')}  "
+            f"fixtures={explor.get('fixtures_scored')}"
+        )
+        for metric in explor.get("metrics") or []:
+            value = metric.get("value")
+            rendered = f"{value:.2%}" if isinstance(value, float) else "n/a"
+            lines.append(
+                f"  {str(metric.get('name') or ''):<42} {rendered:>8}  "
+                f"scored={metric.get('scored', 0)}"
+            )
+
+    pipe = report.get("post_open_pipeline") or {}
+    if pipe.get("fixtures_scored") or pipe.get("metrics"):
+        lines.append("")
+        lines.append("[post_open_pipeline]")
+        lines.append(
+            f"  mean={pipe.get('mean_pipeline_score')}  "
+            f"trajectories={pipe.get('fixtures_scored')}  "
+            f"piece_means={pipe.get('piece_means')}"
+        )
+        for metric in pipe.get("metrics") or []:
+            value = metric.get("value")
+            rendered = f"{value:.2%}" if isinstance(value, float) else "n/a"
+            lines.append(
+                f"  {str(metric.get('name') or ''):<42} {rendered:>8}  "
+                f"scored={metric.get('scored', 0)}"
+            )
+            for ex in (metric.get("examples") or [])[:2]:
+                lines.append(f"      e.g. {ex}")
+
+    golden = report.get("golden_v1") or {}
+    if golden.get("cases_total") or golden.get("modules"):
+        lines.append("")
+        lines.append("[golden_v1]")
+        lines.append(
+            f"  mean={golden.get('mean_accuracy')}  cases={golden.get('cases_total')}"
+        )
+        for module, block in (golden.get("modules") or {}).items():
+            value = block.get("accuracy")
+            rendered = f"{value:.2%}" if isinstance(value, float) else "n/a"
+            lines.append(
+                f"  {str(module):<14} {rendered:>8}  "
+                f"{block.get('passed', 0)}/{block.get('cases', 0)}"
+            )
+            for fail in (block.get("failures") or [])[:2]:
+                lines.append(f"      FAIL {fail.get('case_id')} {fail.get('failures')}")
 
     lines.append("")
     failures = report.get("gate_failures") or []

@@ -47,9 +47,9 @@ def test_retrieval_is_ranked_by_value():
     assert values == sorted(values, reverse=True)
 
 
-def test_probe_shortlist_is_reversible():
+def test_explore_shortlist_is_reversible():
     registry = default_registry()
-    shortlist = registry.shortlist_for(meta_action="probe", limit=9)
+    shortlist = registry.shortlist_for(meta_action="explore", limit=9)
     assert all(not d.is_irreversible for d in shortlist)
 
 

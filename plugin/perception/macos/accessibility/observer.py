@@ -170,15 +170,59 @@ def _measure_capture_frame(
     return CaptureFrame.measure(width_px, window_bounds)
 
 
+def resolve_screenshot_capture_mode(*, include_overlays: bool) -> str:
+    """Which capture strategy to use for the next observation screenshot.
+
+    ``window`` — ``screencapture -l <layer-0 id>``. Correct for ordinary looks
+    (ignores occluding apps) but **drops macOS context menus**, which live on
+    non-zero window layers (live 150708: menu open on display, absent in agent
+    pixels → VLM truthfully reported "no context menu").
+
+    ``overlay_display`` — display-region composite over the task window bounds
+    (all on-screen layers in that rect). Use when a reveal handoff / overlay
+    surface is expected so Forward/Reply appear in the image the perceptor sees.
+    """
+    return "overlay_display" if include_overlays else "window"
+
+
+def _save_pil_rgb(image: Any, dest: Path) -> bool:
+    try:
+        rgb = image.convert("RGB") if hasattr(image, "convert") else image
+        rgb.save(str(dest))
+        return dest.exists() and dest.stat().st_size > 0
+    except Exception:
+        return False
+
+
+def _capture_overlay_display_region(
+    shot: Path, window_bounds: tuple[float, float, float, float]
+) -> tuple[bool, str]:
+    """Composite all on-screen layers inside the task window's screen rect."""
+    try:
+        from plugin.perception.continuity.witness import capture_rect
+    except Exception as exc:
+        return False, f"overlay_import: {exc}"
+    img = capture_rect(window_bounds)
+    if img is None:
+        return False, "overlay_rect: empty"
+    if not _save_pil_rgb(img, shot):
+        return False, "overlay_rect: save failed"
+    return True, ""
+
+
 def _capture_screen_screenshot(
-    *, app_name: str = "WhatsApp"
+    *, app_name: str = "WhatsApp", include_overlays: bool = False
 ) -> tuple[Optional[str], Optional[str], CaptureFrame]:
     """Capture the target app's window to a temp PNG, or return an explicit error.
 
-    Prefers a window-scoped grab (``screencapture -l <id>``) so an occluding
-    window cannot leak into perception. If the app has no on-screen window at all
-    (minimized / another Space), the agent raises it and re-resolves rather than
-    perceiving the wrong app; a full-screen grab is the last resort only.
+    Default prefers a window-scoped grab (``screencapture -l <id>``) so an
+    occluding window cannot leak into perception. When ``include_overlays`` is
+    set (reveal handoff / expected context_menu), use a display-region composite
+    over the task window bounds so floating menus are in the pixels.
+
+    If the app has no on-screen window at all (minimized / another Space), the
+    agent raises it and re-resolves rather than perceiving the wrong app; a
+    full-screen grab is the last resort only.
 
     Also returns the transform from the resulting image's pixels back to screen
     points. A window-scoped Retina grab is offset by the window's origin and
@@ -188,6 +232,7 @@ def _capture_screen_screenshot(
     fd, path = tempfile.mkstemp(suffix=".png", prefix=f"{app_name.lower().replace(' ', '_')}_obs_")
     os.close(fd)
     shot = Path(path)
+    mode = resolve_screenshot_capture_mode(include_overlays=include_overlays)
 
     def _run(cmd: list[str]) -> tuple[bool, str]:
         try:
@@ -214,10 +259,26 @@ def _capture_screen_screenshot(
         # foreign app happens to be frontmost (the exact drift we must avoid).
         _raise_app(app_name)
         found = _window_frame_for_app(app_name)
-    if found is not None:
+
+    if mode == "overlay_display" and found is not None:
+        _win_id, window_bounds = found
+        ok, err = _capture_overlay_display_region(shot, window_bounds)
+        if ok:
+            return str(shot), None, _measure_capture_frame(shot, window_bounds)
+        if err:
+            errors.append(err)
+        # Fall through to full-screen (still composites menus) before window -l.
+        ok, err = _run(["screencapture", "-x", str(shot)])
+        if ok:
+            return str(shot), None, _measure_capture_frame(shot, _main_screen_bounds())
+        if err:
+            errors.append(f"full-screen: {err}")
+
+    if found is not None and mode == "window":
         win_id, window_bounds = found
         # -l scopes to the window; -o drops the drop-shadow border. The window
-        # server composites just this window, so z-order / occlusion is moot.
+        # server composites just this window, so z-order / occlusion is moot —
+        # and so are context menus on other layers (hence overlay_display).
         ok, err = _run(["screencapture", "-x", "-o", "-l", str(win_id), str(shot)])
         if ok:
             return str(shot), None, _measure_capture_frame(shot, window_bounds)
@@ -306,10 +367,14 @@ class MacAppTreeObserver:
                     im.save(path)
                     screenshot_path = path
                 else:
-                    screenshot_path, screenshot_error = _capture_screen_screenshot(app_name=app_name)
+                    screenshot_path, screenshot_error, _frame = _capture_screen_screenshot(
+                        app_name=app_name
+                    )
             except Exception as exc:  # noqa: BLE001 - prefer a recoverable fallback
                 screenshot_error = str(exc)
-                screenshot_path, capture_error = _capture_screen_screenshot(app_name=app_name)
+                screenshot_path, capture_error, _frame = _capture_screen_screenshot(
+                    app_name=app_name
+                )
                 if not screenshot_path and capture_error:
                     screenshot_error = f"{screenshot_error}; screenshot_fallback={capture_error}"
                 # Screenshot failed, but we can still recover the AX tree so the
@@ -366,6 +431,7 @@ def attach_screenshot_to_observation(
     *,
     app_name: str,
     require_screenshot: bool = False,
+    include_overlays: bool = False,
 ) -> tuple[Observation, Optional[str]]:
     """Best-effort attach a screenshot to an observation that lacks one.
 
@@ -375,14 +441,23 @@ def attach_screenshot_to_observation(
     attaches its path so AX + pixels travel together in one observation — the
     redundant, complete input the perceptor was designed around. Returns the
     (possibly mutated) observation and any capture error.
+
+    ``include_overlays`` selects display-region capture so context menus are in
+    the pixels (see :func:`resolve_screenshot_capture_mode`).
     """
     if obs.screenshot_path:
         return obs, None
-    screenshot_path, screenshot_error, frame = _capture_screen_screenshot(app_name=app_name)
+    mode = resolve_screenshot_capture_mode(include_overlays=include_overlays)
+    screenshot_path, screenshot_error, frame = _capture_screen_screenshot(
+        app_name=app_name, include_overlays=include_overlays
+    )
     if screenshot_path:
         obs.screenshot_path = screenshot_path
         obs.meta = dict(obs.meta or {})
-        obs.meta["screenshot_source"] = "screencapture"
+        obs.meta["screenshot_source"] = (
+            "overlay_display" if mode == "overlay_display" else "screencapture"
+        )
+        obs.meta["screenshot_capture_mode"] = mode
         # Travel the transform with the pixels. Anything that measures a
         # rectangle on this image (OCR, the vision model) owes a conversion back
         # to screen points before the result can be clicked, and re-deriving it
@@ -394,6 +469,7 @@ def attach_screenshot_to_observation(
     if screenshot_error:
         obs.meta = dict(obs.meta or {})
         obs.meta["screenshot_error"] = screenshot_error
+        obs.meta["screenshot_capture_mode"] = mode
         # In strict mode a missing screenshot is a degraded observation: the
         # caller asked for pixels and we could not provide them.
         if require_screenshot:
@@ -455,7 +531,9 @@ class PyObjCFallbackObserver:
             "children": [],
             "id": "pyobjc-fallback",
         }
-        screenshot_path, screenshot_error = _capture_screen_screenshot(app_name=app_name)
+        screenshot_path, screenshot_error, _frame = _capture_screen_screenshot(
+            app_name=app_name
+        )
         return observation_from_tree(
             tree,
             app_name=app_name,

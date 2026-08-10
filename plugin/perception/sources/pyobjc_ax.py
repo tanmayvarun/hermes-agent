@@ -21,8 +21,11 @@ from plugin.perception.sources.base import (
 class PyObjcAxSource:
     source_id = "pyobjc_ax"
 
-    def __init__(self, *, with_screenshot: bool = True) -> None:
+    def __init__(
+        self, *, with_screenshot: bool = True, include_overlays: bool = False
+    ) -> None:
         self.with_screenshot = with_screenshot
+        self.include_overlays = include_overlays
 
     def observe(self, app: str) -> ObservationBundle:
         from plugin.perception.macos.accessibility.ax_tree import observe_app_ax
@@ -33,6 +36,7 @@ class PyObjcAxSource:
                 bundle.observation,
                 app_name=app,
                 require_screenshot=False,
+                include_overlays=self.include_overlays,
             )
             bundle.observation = obs
             # The raw summary caches screenshot=… so refresh it after attaching.

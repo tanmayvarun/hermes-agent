@@ -132,10 +132,16 @@ def _stage_alignment_bias(action: Action, features: StateFeatures, goal: Goal) -
 
 
 def perception_synthesis_bonus(action: Action, features: StateFeatures, goal: Goal) -> float:
-    """Let the perception LLM nudge candidate scoring without hardcoding app logic."""
+    """Legacy perception nudge for candidate scoring.
+
+    Unified cognition leaves ``likely_next_*`` empty — the brain chooses. When
+    the reading is from ``unified_cognition``, only stage-alignment bias remains.
+    """
     synth = features.extras.get("perception_llm") or {}
     if not isinstance(synth, dict):
         return 0.0
+    if str(synth.get("source") or "") == "unified_cognition":
+        return _stage_alignment_bias(action, features, goal)
     try:
         conf = max(0.0, min(1.0, float(synth.get("confidence", 0.0) or 0.0)))
     except (TypeError, ValueError):
@@ -200,7 +206,10 @@ def predicted_value_delta(action: Action, features: StateFeatures, goal: Goal) -
     promoted_family = ""
     promoted_target = ""
     promoted_confidence = 0.0
-    if isinstance(perception_summary, dict):
+    # Unified path: brain already chose; do not re-promote via likely_next_*.
+    synth = features.extras.get("perception_llm") if isinstance(features.extras, dict) else None
+    unified_reading = isinstance(synth, dict) and str(synth.get("source") or "") == "unified_cognition"
+    if isinstance(perception_summary, dict) and not unified_reading:
         promoted_family = str(perception_summary.get("likely_next_family") or "").strip().lower()
         promoted_target = str(perception_summary.get("likely_next_target") or "").strip().lower()
         try:
@@ -468,7 +477,9 @@ def _forward_value_delta(
     promoted_family = ""
     promoted_target = ""
     promoted_confidence = 0.0
-    if isinstance(perception_summary, dict):
+    synth = features.extras.get("perception_llm") if isinstance(features.extras, dict) else None
+    unified_reading = isinstance(synth, dict) and str(synth.get("source") or "") == "unified_cognition"
+    if isinstance(perception_summary, dict) and not unified_reading:
         promoted_family = str(perception_summary.get("likely_next_family") or "").strip().lower()
         promoted_target = str(perception_summary.get("likely_next_target") or "").strip().lower()
         try:

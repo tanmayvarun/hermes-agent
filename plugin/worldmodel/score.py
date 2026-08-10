@@ -84,17 +84,41 @@ def compute_worldview_score(
     retention = float(patch.retention) if patch.retention is not None else 1.0
     ret_n = 1.0 if retention <= 0.0 and not patch.matched_ids else max(0.0, min(1.0, retention))
 
-    cov = obs.coverage
-    if cov is None:
-        cov = 1.0 if len(obs.nodes) > 0 else 0.0
+    node_count = len(obs.nodes)
+    app_content_node_count, chrome_only_node_count = _content_node_counts(obs)
+    has_shot = bool(
+        getattr(obs, "screenshot_path", None) or getattr(obs, "screenshot", None)
+    )
+    try:
+        from plugin.perception.coverage_quality import compute_coverage_quality
+
+        cq = compute_coverage_quality(
+            nodes=list(obs.nodes or []),
+            has_screenshot=has_shot,
+            ax_transport_ok=True,
+        )
+        cov = float(cq.task_coverage)
+        coverage_quality = cq.to_dict()
+    except Exception:
+        cov = obs.coverage
+        if cov is None:
+            cov = 0.2 if node_count > 0 else 0.0
+        # Never treat tiny shell trees as full coverage.
+        if node_count <= 3 and float(cov) >= 0.99:
+            cov = 0.2
+        coverage_quality = {}
     cov = max(0.0, min(1.0, float(cov)))
 
     agree = source_agreement
     if agree is None and fusion_meta:
         agree = fusion_meta.get("agreement")
+    assemble_mode = bool(
+        isinstance(fusion_meta, dict) and fusion_meta.get("fusion_mode") == "assemble"
+    )
     if agree is None:
-        # Unknown agreement (single source) — neutral, not floored high
-        agree = 0.65 if len(obs.nodes) > 0 else 0.0
+        # Assemble-only (and other non-rival paths) have no agreement signal.
+        # Do not invent a mid penalty that thrash-reobserves a usable tree.
+        agree = 1.0 if app_content_node_count > 0 else (0.5 if node_count > 0 else 0.0)
     agree = max(0.0, min(1.0, float(agree)))
 
     mean_belief = _mean_entity_belief_confidence(entities or [])
@@ -105,16 +129,21 @@ def compute_worldview_score(
     sem = semantic_consistency
     if sem is None:
         conflict_n = 0
-        if fusion_meta:
+        if fusion_meta and not assemble_mode:
             conflict_n = int(fusion_meta.get("conflict_count") or len(fusion_meta.get("conflicts") or []))
         sem = max(0.3, 0.9 - 0.05 * conflict_n) if not obs.degraded else 0.5
+        # Assemble + chrome-only must not claim perfect semantic consistency.
+        if assemble_mode and not obs.degraded and app_content_node_count > 0:
+            sem = 1.0
+        elif assemble_mode and app_content_node_count == 0:
+            sem = min(float(sem), 0.35)
     sem = max(0.0, min(1.0, float(sem)))
 
     needs = bool(getattr(patch, "needs_reobserve", False))
-    if fusion_meta and fusion_meta.get("needs_reobserve"):
+    # Rival fusion used to set needs_reobserve from agreement/conflicts. Assembly
+    # never does; only real emptiness (handled below) may escalate.
+    if fusion_meta and fusion_meta.get("needs_reobserve") and not assemble_mode:
         needs = True
-    node_count = len(obs.nodes)
-    app_content_node_count, chrome_only_node_count = _content_node_counts(obs)
     task_sufficient = app_content_node_count >= 3 or bool(
         any(
             bool(getattr(node, "value", None))
@@ -128,6 +157,10 @@ def compute_worldview_score(
         needs = True
     if node_count <= 1:
         needs = True
+    # Chrome-only shell: force reobserve / OCR path.
+    if app_content_node_count == 0 and node_count > 0:
+        needs = True
+        task_sufficient = False
 
     degraded = bool(obs.degraded) or cov < 0.5 or agree < 0.35 or mean_belief < 0.4 or needs or not task_sufficient
     # Belief-centric overall (no artificial agreement floors)
@@ -138,6 +171,8 @@ def compute_worldview_score(
         overall = min(overall, 0.55)
     if node_count <= 1:
         overall = min(overall, 0.2)
+    if app_content_node_count == 0:
+        overall = min(overall, 0.35)
 
     components = {
         "node_count": node_count,
@@ -149,6 +184,7 @@ def compute_worldview_score(
         "fusion": fusion_meta or {},
         "mean_belief": round(mean_belief, 4),
         "needs_reobserve": needs,
+        "coverage_quality": coverage_quality,
     }
     return WorldViewScore(
         overall=round(overall, 4),

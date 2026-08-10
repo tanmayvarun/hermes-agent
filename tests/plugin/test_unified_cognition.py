@@ -167,16 +167,34 @@ def test_type_without_text_is_rejected():
     assert reason == "type_without_text"
 
 
-def test_keyboard_action_needs_no_entity_grounding():
+def test_type_query_without_field_geometry_is_rejected():
+    # Cmd+F invent is closed — typing requires a grounded search-field site.
     world = WorldModel(active_app="WhatsApp")
     action, reason = proposal_to_action(
         _proposal(family="type", text="Pallavi"), _goal(), world
+    )
+    assert action is None
+    assert reason == "type_query_without_geometry"
+
+
+def test_type_query_with_screen_point_is_admissible():
+    world = WorldModel(active_app="WhatsApp")
+    action, reason = proposal_to_action(
+        _proposal(
+            family="type",
+            text="Pallavi",
+            target_point=[223, 93],
+            coordinate_space="screen",
+        ),
+        _goal(),
+        world,
     )
     assert reason == "admissible"
     assert action is not None
     assert action.action == "Type"
     assert action.text == "Pallavi"
     assert action.action_family == "type_query"
+    assert action.target_point == (223, 93)
 
 
 def test_open_entity_kept_when_ax_starved_but_row_is_visible():
@@ -260,7 +278,7 @@ def test_open_entity_allowed_after_typed_search_still_closed():
 
 
 def test_search_results_visible_promote_open_result_row():
-    """Visible search results should open the matching row, not re-search."""
+    """Promote-row short-circuit removed: without unified, decide Observes."""
     from plugin.agent.decision import DecisionEngine
 
     world = WorldModel(active_app="WhatsApp")
@@ -288,23 +306,10 @@ def test_search_results_visible_promote_open_result_row():
     }
     world.tracker._entities = dict(world.entities)
     world.tracker._next_id = 3
-    features = StateFeatures(
-        app="WhatsApp",
-        screen_bucket="search",
-        query_matches_goal=True,
-        has_named_entity=True,
-        conversation_open=False,
-        extras={
-            "result_surface_visible": True,
-            "search_query": "Pallavi",
-            "search_result_rows": ["Pallavi Ji"],
-            "visible_contacts": ["Pallavi Ji"],
-        },
-    )
-    action = DecisionEngine().decide(Goal(kind="whatsapp_voice_call", contact="Pallavi"), world, ExecutionState())
+    action = DecisionEngine().define_action_step(Goal(kind="whatsapp_voice_call", contact="Pallavi"), world, ExecutionState())
     assert action is not None
-    assert action.action_family == "open_contact"
-    assert action.semantic_target == "Pallavi Ji"
+    assert action.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (action.rationale or "")
 
 
 def test_open_entity_is_not_hijacked_by_a_pending_compose():
@@ -513,12 +518,22 @@ def test_the_document_cannot_grow_without_bound():
 
 
 def _fast_path_with(monkeypatch, proposal, execution_state):
-    """Run the fast path against a fixed proposal, skipping the model call."""
+    """Run the fast path against a fixed proposal, skipping the model call.
+
+    Brain is stubbed to keep the proposal's pre-filled ``next_action`` so tests
+    can assert grounding / admissibility without a live decision LLM.
+    """
+    import plugin.agent.brain as brain
     import plugin.agent.unified_cognition as uc
     from plugin.agent.decision import DecisionEngine
 
     monkeypatch.setenv("HERMES_UNIFIED_COGNITION", "1")
     monkeypatch.setattr(uc, "consult_unified_cognition", lambda *a, **k: proposal)
+
+    def _keep_action(p, *a, **k):
+        return {"applied": bool((getattr(p, "next_action", None) or {}).get("family")), "stub": True}
+
+    monkeypatch.setattr(brain, "choose_next_capability", _keep_action)
 
     world, _ = _world_with_entity()
     features = StateFeatures(app="WhatsApp", extras={})
@@ -654,22 +669,45 @@ def test_packet_carries_the_action_topology_not_just_the_objects():
         assert latent["available_now"] is False
 
 
-def test_ranked_next_actions_are_ordered_and_the_head_becomes_the_action():
+def test_suggested_actions_parse_with_why_and_do_not_fill_next_action():
+    """Stage1 rankings are advisory; brain alone fills next_action."""
     parsed = _parse_proposal(
         {
             "world_model": {"surface": "conversation"},
-            "next_actions": [
-                {"rank": 2, "family": "hover", "target_id": 42, "confidence": 0.7},
-                {"rank": 1, "family": "reveal_actions", "target_id": 42, "confidence": 0.88,
-                 "expected_progress": 0.79, "reason": "most likely to reveal Forward"},
+            "confidence": 0.88,
+            "suggested_actions": [
+                {"rank": 2, "family": "hover", "target_id": 42, "confidence": 0.7, "why": "toolbar"},
+                {
+                    "rank": 1,
+                    "family": "reveal_actions",
+                    "target_id": 42,
+                    "confidence": 0.88,
+                    "why": "most likely to reveal Forward",
+                },
             ],
         },
         frame=2,
     )
 
-    assert [a["family"] for a in parsed.next_actions] == ["reveal_actions", "hover"]
-    assert parsed.next_action["family"] == "reveal_actions"
+    assert [a["family"] for a in parsed.suggested_actions] == ["reveal_actions", "hover"]
+    assert parsed.suggested_actions[0]["why"] == "most likely to reveal Forward"
+    assert parsed.next_action == {}
     assert parsed.confidence == 0.88
+
+
+def test_legacy_next_actions_map_into_suggested_actions():
+    parsed = _parse_proposal(
+        {
+            "world_model": {"surface": "conversation"},
+            "next_actions": [
+                {"rank": 1, "family": "reveal_actions", "confidence": 0.9, "reason": "legacy"},
+            ],
+        },
+        frame=2,
+    )
+    assert parsed.suggested_actions[0]["family"] == "reveal_actions"
+    assert parsed.suggested_actions[0]["why"] == "legacy"
+    assert parsed.next_action == {}
 
 
 def test_an_unpromising_alternative_is_dropped_but_the_best_move_never_is():
@@ -689,7 +727,7 @@ def test_an_unpromising_alternative_is_dropped_but_the_best_move_never_is():
     assert [a["family"] for a in weak_only] == ["scroll"]
 
 
-def test_a_single_next_action_still_parses_as_a_one_move_frontier():
+def test_a_single_legacy_next_action_is_advisory_not_executed_head():
     parsed = _parse_proposal(
         {
             "world_model": {"surface": "conversation"},
@@ -697,43 +735,43 @@ def test_a_single_next_action_still_parses_as_a_one_move_frontier():
         },
         frame=3,
     )
-    assert parsed.next_action["family"] == "press_escape"
+    assert parsed.next_action == {}
     assert [a["family"] for a in parsed.next_actions] == ["press_escape"]
 
 
-def test_the_consulted_head_stays_first_and_the_model_ranking_supplies_siblings():
+def test_ranked_action_candidates_are_brain_head_only():
     from plugin.agent.unified_cognition import ranked_action_candidates
 
     proposal = UnifiedProposal(
         next_action={"family": "resolve_entity", "text": "Pallavi", "confidence": 0.8},
         next_actions=[
-            {"family": "resolve_entity", "text": "Pallavi", "confidence": 0.8},
             {"family": "locate_content", "text": "zarooratwala", "confidence": 0.7},
         ],
+        recommended_probe={"family": "hover", "target_id": 42, "reason": "reveal Forward"},
     )
     families = [a["family"] for a in ranked_action_candidates(proposal)]
 
-    assert families == ["resolve_entity", "locate_content"]
+    # Perception siblings / probes are not auto-executed; brain must choose.
+    assert families == ["resolve_entity"]
 
 
-def test_an_inadmissible_first_choice_falls_to_the_next_ranked_move(monkeypatch):
-    """A considered alternative beats sending the run to the slow reasoner."""
+def test_an_inadmissible_brain_head_falls_through_to_slow_path(monkeypatch):
+    """Brain owns choice; an inadmissible head does not auto-run a probe."""
     proposal = UnifiedProposal(
         observed_state={"surface": "conversation"},
         next_action={"family": "click", "confidence": 0.9},
-        next_actions=[
-            {"family": "click", "confidence": 0.9},
-            {"family": "type", "text": "Pallavi", "confidence": 0.8, "expected_progress": 0.6},
-        ],
+        recommended_probe={
+            "family": "type",
+            "text": "Pallavi",
+            "reason": "type into focused field",
+        },
         confidence=0.9,
     )
 
     action, features = _fast_path_with(monkeypatch, proposal, ExecutionState())
 
-    assert action is not None
-    assert action.action_family == "type_query"
+    assert action is None
     trace = features.extras["unified_cognition"]
-    assert trace["action_rank"] == 1
     assert trace["rejected_siblings"] == ["click:pointer_action_without_target"]
 
 
@@ -765,3 +803,191 @@ def test_the_model_may_abandon_a_branch():
     )
     assert parsed.backtrack["to"] == "chat_list"
     assert parsed.world_model["exhausted"] == ["scrolled to the top"]
+
+
+def test_act_clear_rewrites_reveal_suggestion_on_open_menu():
+    """When Forward is already inventoried on a menu, do not advise re-reveal."""
+    from plugin.agent.unified_cognition import apply_affordance_stance
+
+    proposal = _parse_proposal(
+        {
+            "world_model": {
+                "surface": "context_menu",
+                "objects": [
+                    {
+                        "id": "fwd",
+                        "kind": "menu_item",
+                        "text": "Forward",
+                        "point": [1270, 332],
+                    }
+                ],
+            },
+            "suggested_actions": [
+                {
+                    "rank": 1,
+                    "family": "reveal_actions",
+                    "text": "Forward",
+                    "confidence": 0.9,
+                    "why": "explore",
+                }
+            ],
+            "affordance_qc": {"expected_found": True, "missing": []},
+            "affordance_stance": "explore_needed",
+        },
+        frame=9,
+    )
+    apply_affordance_stance(proposal, goal=_goal())
+    assert proposal.affordance_stance == "act_clear"
+    assert proposal.suggested_actions[0]["family"] == "invoke_affordance"
+    assert proposal.suggested_actions[0].get("target_point") == [1270.0, 332.0]
+
+
+def test_act_clear_attaches_geometry_when_suggestion_already_invoke():
+    """Even if the model already chose invoke, stamp the control point (173658)."""
+    from plugin.agent.unified_cognition import apply_affordance_stance
+
+    proposal = _parse_proposal(
+        {
+            "world_model": {
+                "surface": "context_menu",
+                "objects": [
+                    {
+                        "id": "fwd",
+                        "kind": "menu_item",
+                        "text": "Forward",
+                        "point": [1272, 279],
+                    }
+                ],
+            },
+            "suggested_actions": [
+                {
+                    "rank": 1,
+                    "family": "invoke_affordance",
+                    "text": "Click 'Forward'",
+                    "confidence": 0.9,
+                    "why": "menu open",
+                }
+            ],
+            "affordance_qc": {"expected_found": True, "missing": []},
+            "affordance_stance": "act_clear",
+        },
+        frame=11,
+    )
+    apply_affordance_stance(proposal, goal=_goal())
+    assert proposal.affordance_stance == "act_clear"
+    assert proposal.suggested_actions[0].get("target_point") == [1272.0, 279.0]
+    assert proposal.suggested_actions[0].get("text") == "Forward"
+
+
+def test_label_only_menu_verb_is_not_act_clear():
+    """Verb text without point/bounds must not claim act_clear (live 171627)."""
+    from plugin.agent.unified_cognition import apply_affordance_stance
+
+    proposal = _parse_proposal(
+        {
+            "world_model": {
+                "surface": "context_menu",
+                "objects": [
+                    {
+                        "id": "fwd",
+                        "kind": "menu_item",
+                        "text": "Forward",
+                    }
+                ],
+            },
+            "suggested_actions": [
+                {
+                    "rank": 1,
+                    "family": "invoke_affordance",
+                    "text": "Forward",
+                    "confidence": 0.9,
+                }
+            ],
+            "affordance_qc": {"expected_found": True, "missing": []},
+            "affordance_stance": "act_clear",
+        },
+        frame=10,
+    )
+    apply_affordance_stance(proposal, goal=_goal())
+    assert proposal.affordance_stance != "act_clear"
+    assert proposal.affordance_stance == "explore_needed"
+
+
+def test_overlay_verb_invoke_does_not_rebind_to_content_url():
+    """Menu Forward must ground to the control, not the source URL message."""
+    world = WorldModel(active_app="WhatsApp")
+    menu = Entity(
+        id=7,
+        entity_type="control",
+        semantic_role="menu_item",
+        role="AXMenuItem",
+        label="Forward",
+        bounds=(1200, 300, 140, 40),
+        visible=True,
+    )
+    content = Entity(
+        id=9,
+        entity_type="message",
+        semantic_role="message",
+        role="AXStaticText",
+        label="https://example.test/zarooratwala",
+        bounds=(280, 320, 200, 40),
+        visible=True,
+    )
+    world.entities[7] = menu
+    world.entities[9] = content
+    proposal = UnifiedProposal(
+        observed_state={"surface": "context_menu"},
+        world_model={"surface": "context_menu"},
+        next_action={
+            "family": "invoke_affordance",
+            "text": "Forward",
+            "confidence": 0.9,
+        },
+        confidence=0.9,
+    )
+    action, err = proposal_to_action(proposal, _goal(), world)
+    assert action is not None, err
+    assert getattr(action, "target_entity_id", None) != 9
+    assert getattr(action, "target_entity_id", None) == 7 or getattr(
+        action, "target_point", None
+    ) is not None
+
+
+def test_overlay_verb_without_geometry_is_refused():
+    """Overlay invoke must not click the content URL when menu geometry is missing."""
+    world = WorldModel(active_app="WhatsApp")
+    content = Entity(
+        id=9,
+        entity_type="message",
+        semantic_role="message",
+        role="AXStaticText",
+        label="https://example.test/zarooratwala",
+        bounds=(280, 320, 200, 40),
+        visible=True,
+    )
+    world.entities[9] = content
+    proposal = UnifiedProposal(
+        observed_state={"surface": "context_menu"},
+        world_model={
+            "surface": "context_menu",
+            "objects": [
+                {"id": "fwd", "kind": "menu_item", "text": "Forward"},
+                {
+                    "id": "url",
+                    "kind": "message",
+                    "text": "https://example.test/zarooratwala",
+                    "point": [310, 340],
+                },
+            ],
+        },
+        next_action={
+            "family": "invoke_affordance",
+            "text": "Forward",
+            "confidence": 0.9,
+        },
+        confidence=0.9,
+    )
+    action, err = proposal_to_action(proposal, _goal(), world)
+    assert action is None
+    assert err == "overlay_verb_without_geometry"

@@ -1,21 +1,7 @@
 {
-  "decision_families": [
-    "open_contact",
-    "select_content"
-  ],
-  "executed": [
-    {
-      "action": "Click",
-      "family": "open_contact",
-      "target": "ZarooratWala"
-    },
-    {
-      "action": "Click",
-      "family": "select_content",
-      "target": "https://zarooratwala.com/charger"
-    }
-  ],
-  "final_surface": "conversation",
+  "decision_families": [],
+  "executed": [],
+  "final_surface": "chat_list",
   "iterations": [
     {
       "decisions": [],
@@ -25,48 +11,18 @@
       "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "target": "ZarooratWala"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "open_contact",
-          "ok": true,
-          "target": "ZarooratWala"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 1,
-      "observations": 2,
-      "outcomes": [
-        "promising_unresolved"
-      ]
+      "observations": 1,
+      "outcomes": []
     },
     {
-      "decisions": [
-        {
-          "action": "Click",
-          "family": "select_content",
-          "target": "https://zarooratwala.com/charger"
-        }
-      ],
-      "executions": [
-        {
-          "action": "Click",
-          "family": "select_content",
-          "ok": true,
-          "target": "https://zarooratwala.com/charger"
-        }
-      ],
+      "decisions": [],
+      "executions": [],
       "iteration": 2,
-      "observations": 2,
-      "outcomes": [
-        "promising_unresolved"
-      ]
+      "observations": 1,
+      "outcomes": []
     }
   ],
   "result": {

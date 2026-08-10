@@ -140,16 +140,15 @@ def test_narration_survives_a_missing_proposal():
 
 
 def test_extras_carry_the_family_recommendation():
-    """Decision promotion and candidate scoring read these keys.
+    """Perception extras are scene-only — brain chooses the capability.
 
-    ``policy.value.perception_synthesis_bonus`` and the family promotion in
-    ``DecisionEngine.decide`` both key off likely_next_family; losing it is what
-    would send the agent back to Observe forever.
+    ``likely_next_*`` stay empty so candidate scoring cannot treat perception as
+    a rival planner. Surface / coverage / contradictions remain load-bearing.
     """
     proposal = _proposal()
     extras = unified_perception_extras(proposal, _accepted_verdict(proposal))
-    assert extras["likely_next_family"] == "open_entity"
-    assert extras["likely_next_target"] == "Kulvinder Ji"
+    assert extras["likely_next_family"] == ""
+    assert extras["likely_next_target"] == ""
     assert extras["active_surface"] == "search"
     assert extras["screen_type"] == "search"
     assert extras["confidence"] == pytest.approx(0.72)
@@ -221,6 +220,54 @@ def test_perception_cycle_does_not_run_a_second_perceptor(monkeypatch):
     of 42 model calls on an 11-action live run.
     """
     assert _count_legacy_perceptor_calls(monkeypatch, unified="1") == 0
+
+
+def test_the_decision_path_keeps_no_legacy_perceptor():
+    """The second call site is gone from the decision engine, not merely gated.
+
+    It sat behind ``selector_enabled or selector_caller or non_observe_count ==
+    0``, which read as a narrow fallback and was not one: ``candidates`` is
+    first bound hundreds of lines further down the same function, so evaluating
+    that third clause raised UnboundLocalError, the bare except swallowed it,
+    the count stayed zero and the gate was true on every fall-through. Each one
+    bought a second vision call over the frame unified cognition had already
+    read, and its reading then overwrote the authoritative perception_summary.
+    """
+    from plugin.agent import decision
+
+    assert not hasattr(decision, "synthesize_perception")
+
+
+def test_the_last_reading_survives_a_skipped_perception(monkeypatch):
+    """Stale perception_llm no longer drives decide — unified owns the choice.
+
+    With hermetic unified off, decide Observes rather than promoting from a
+    cached likely_next_family. That is the contract after fallthrough removal.
+    """
+    from plugin.agent.decision import DecisionEngine
+    from plugin.agent.goal import Goal
+    from plugin.agent.runtime.state import ExecutionState
+    from plugin.worldmodel.model import WorldModel
+
+    world = WorldModel()
+    world.active_app = "WhatsApp"
+    world.last_perception_synthesis = {
+        "source": "unified_cognition",
+        "summary": {
+            "screen_type": "search",
+            "active_surface": "search_results",
+            "likely_next_family": "open_contact",
+            "likely_next_target": "Kulvinder Ji",
+            "confidence": 0.81,
+        },
+    }
+
+    decision = DecisionEngine().define_action_step(
+        Goal(kind="whatsapp_forward_message", contact="Kulvinder"), world, ExecutionState()
+    )
+    assert decision is not None
+    assert decision.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (decision.rationale or "")
 
 
 def test_legacy_perceptor_still_runs_when_unified_is_off(monkeypatch):

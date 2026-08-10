@@ -97,34 +97,52 @@ def _parse_resolution(goal: Goal, rows: Sequence[Dict[str, Any]], resolution: An
             }
         )
 
+    status = str(getattr(resolution, "status", "") or "").strip().lower()
     selected_ids = [int(x) for x in (getattr(resolution, "selected_source_entity_ids", None) or []) if str(x).strip()]
+    # High-precision: never fall back to "first visible row" when discovery
+    # said not_found / binding blocked (live 214025 YouTube distractor).
+    if status in {"not_found", "needs_more_context"} or bool(
+        (getattr(resolution, "raw", {}) or {}).get("binding_blocked")
+    ):
+        selected_ids = []
     if not selected_ids and ranked_rows:
-        top = [item for item in ranked_rows if float(item.get("score") or 0.0) >= _DEFAULT_RELEVANCE_THRESHOLD]
+        top = [
+            item
+            for item in ranked_rows
+            if float(item.get("score") or 0.0) >= _DEFAULT_RELEVANCE_THRESHOLD
+            and "binding_ineligible" not in str(item.get("reason") or "").lower()
+        ]
         selected_ids.extend([int(item["entity_id"]) for item in top[:3]])
-    if not selected_ids and ranked_rows:
-        selected_ids.append(int(ranked_rows[0]["entity_id"]))
+    # Deliberately no unthresholded ranked_rows[0] fallback — that elevated
+    # container+type-only distractors into source_object.
 
     likely_text = str(getattr(resolution, "selected_object_text", "") or "").strip()
     if not likely_text and selected_ids:
         row = row_by_id.get(selected_ids[0]) or {}
         likely_text = str(row.get("text") or row.get("label") or "").strip()
 
-    summary = str((getattr(resolution, "raw", {}) or {}).get("summary") or "").strip()
+    raw = getattr(resolution, "raw", {}) or {}
+    summary = str(raw.get("summary") or "").strip()
     evidence = list(getattr(resolution, "evidence", []) or [])
-    contradictions = list(getattr(resolution, "contradictions", []) or [])
+    contradictions = list(getattr(resolution, "contradictions", None) or [])
+    if not contradictions and isinstance(raw, dict):
+        contradictions = list(raw.get("contradictions") or [])
     if not summary and selected_ids:
         summary = f"Selected message entity_id={selected_ids[0]}"
+    elif not summary and not selected_ids:
+        summary = "No binding-eligible source message in visible window"
 
     return ConversationMessageRelevance(
         summary=summary,
-        confidence=float(getattr(resolution, "confidence", 0.0) or 0.0),
+        confidence=float(getattr(resolution, "confidence", 0.0) or 0.0) if selected_ids else 0.0,
         ranked_messages=ranked_rows,
         likely_source_message_ids=selected_ids[:5],
-        likely_source_message_text=likely_text,
+        likely_source_message_text=likely_text if selected_ids else "",
         supporting_evidence=[str(x) for x in evidence if str(x)],
         contradictions=[str(x) for x in contradictions if str(x)],
         needs_followup_observe=bool(getattr(resolution, "status", "") == "needs_more_context")
-        or bool((getattr(resolution, "raw", {}) or {}).get("needs_followup_observe")),
+        or bool((getattr(resolution, "raw", {}) or {}).get("needs_followup_observe"))
+        or (not selected_ids and bool(ranked_rows)),
         raw=_json_safe(getattr(resolution, "raw", {}) or {}),
     )
 

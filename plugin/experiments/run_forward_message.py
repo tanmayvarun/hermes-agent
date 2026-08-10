@@ -55,6 +55,13 @@ def _bind_forward_runtime_main() -> None:
         ollama_key = os.getenv("OLLAMA_API_KEY", "").strip()
     if not ollama_base:
         ollama_base = "https://ollama.com/v1"
+    # Terminal-launched runs do not inherit shell dotenv. Export what we
+    # resolved so later os.getenv("OLLAMA_API_KEY") readers see the same key
+    # that set_runtime_main received (and so the bind breadcrumb is truthful).
+    if ollama_key and not (os.getenv("OLLAMA_API_KEY") or "").strip():
+        os.environ["OLLAMA_API_KEY"] = ollama_key
+    if ollama_base and not (os.getenv("OLLAMA_BASE_URL") or "").strip():
+        os.environ["OLLAMA_BASE_URL"] = ollama_base
     from agent.auxiliary_client import set_runtime_main
 
     set_runtime_main(
@@ -85,15 +92,18 @@ def _bind_forward_runtime_main() -> None:
         from agent.auxiliary_client import get_runtime_main_snapshot
 
         runtime = get_runtime_main_snapshot()
+        bound_key = (ollama_key or os.getenv("OLLAMA_API_KEY") or "").strip()
         print(
             "[runtime_bind] "
             f"provider={runtime.get('provider') or _FORWARD_RUNTIME_PROVIDER} "
             f"model={runtime.get('model') or _FORWARD_RUNTIME_MODEL} "
             f"base_url={runtime.get('base_url') or ollama_base} "
             f"aux_policy={os.getenv('HERMES_AUXILIARY_PROVIDER_POLICY') or ''} "
-            f"ollama_api_key_present={bool((os.getenv('OLLAMA_API_KEY') or '').strip())} "
-            f"ollama_api_key_len={len((os.getenv('OLLAMA_API_KEY') or '').strip())} "
-            f"ollama_api_key_sha1={(hashlib.sha1((os.getenv('OLLAMA_API_KEY') or '').strip().encode('utf-8')).hexdigest()[:10] if (os.getenv('OLLAMA_API_KEY') or '').strip() else '')}",
+            f"ollama_api_key_present={bool(bound_key)} "
+            f"ollama_api_key_len={len(bound_key)} "
+            f"ollama_api_key_sha1="
+            f"{(hashlib.sha1(bound_key.encode('utf-8')).hexdigest()[:10] if bound_key else '')} "
+            f"ollama_api_key_source={'process_env' if (os.getenv('OLLAMA_API_KEY') or '').strip() else ('dotenv' if ollama_key else 'missing')}",
             flush=True,
         )
     except Exception:
@@ -129,6 +139,12 @@ def run_forward_message_live(
     max_iterations: int = 20,
     max_stepcount: Optional[int] = None,
 ) -> bool:
+    # Agent startup ≡ server boot: green evals before any live prompt turn.
+    from plugin.evals.check import mark_live_goal_process, require_eval_check_or_exit
+
+    mark_live_goal_process()
+    require_eval_check_or_exit(reason="whatsapp forward live agent startup")
+
     goal_obj = Goal(
         kind="whatsapp_forward_message",
         contact=source_contact,
@@ -457,6 +473,7 @@ def run_forward_message_live(
                 from plugin.agent.capabilities.compose_search_query import (
                     author_query_for_goal,
                 )
+                from plugin.agent.world_critic import sidebar_search_forbidden
 
                 try:
                     view_now, feats_now, _ = build_view_features(runtime, goal_obj)
@@ -464,7 +481,28 @@ def run_forward_message_live(
                     view_now, feats_now = {}, {}
                 extras_now = feats_now.get("extras") if isinstance(feats_now, dict) else {}
                 feats_shim = _types.SimpleNamespace(extras=extras_now or {})
-                chosen = (step.text or "").strip() or author_query_for_goal(
+                # Authored here, always, and never taken from the proposal that
+                # selected this action. Composing a query is a judgement about
+                # what to type next -- it weighs which goal tokens disambiguate
+                # and which earlier queries came back empty -- and the perceptor
+                # is answering a different question, namely what is on screen.
+                # It filled the field in anyway, and because a non-empty value
+                # used to win, its answer replaced the authored one: it returned
+                # the bare contact name, the specialist's prompt forbids exactly
+                # that ("do not merely echo one entity name"), and live runs
+                # typed 'Kulvinder' into a crowded result list. The one run
+                # where it happened to return nothing authored 'zarooratwala
+                # link Kulvinder' and put the target row on screen immediately.
+                if sidebar_search_forbidden(runtime.execution_state):
+                    return ExecResult(
+                        ok=False,
+                        backend="none",
+                        message=(
+                            "compose_search_query refused: sidebar search motor "
+                            "forbidden on this surface (use local filter type_query)"
+                        ),
+                    )
+                chosen = author_query_for_goal(
                     goal_obj,
                     world_document=view_now if isinstance(view_now, dict) else None,
                     features=feats_shim,
@@ -475,39 +513,61 @@ def run_forward_message_live(
                         backend="ax",
                         message="compose_search_query produced no query",
                     )
-                return ax_type(APP, chosen, into=target or "Search", submit=False)
+                from plugin.agent.actor import (
+                    brief_from_brain_choice,
+                    exec_backend_for_actor_result,
+                    execute_actor,
+                )
+
+                doc = getattr(runtime.execution_state, "unified_world_document", None) or {}
+                # Pack only grounded fields. Never open_search_ui / Cmd+F —
+                # that invents a Search latch. Geometry comes from the world
+                # document (target_id / Search label) via the actor handoff.
+                next_action = {
+                    "family": "compose_search_query",
+                    "text": chosen,
+                    "target_label": target or "Search",
+                    "field_role": "sidebar_search",
+                    "open_search_ui": False,
+                }
+                # Carry perceptor/brain geometry when the plan step had it.
+                for key in ("target_point", "target_id", "bounds", "coordinate_space"):
+                    val = getattr(step, key, None) if step is not None else None
+                    if val is not None and val != "":
+                        next_action[key] = val
+                # PlanStep stores entity id as target_entity_id (not target_id).
+                ent_id = getattr(step, "target_entity_id", None) if step is not None else None
+                if ent_id is not None and ent_id != "" and not next_action.get("target_id"):
+                    next_action["target_id"] = ent_id
+                # Mark filter chrome so actor keeps AX Search over nearby chat_rows
+                # (live 215556: pad-hit on first row stripped Q Search geometry).
+                from plugin.agent.capabilities.action_area import label_looks_like_filter
+
+                if label_looks_like_filter(str(next_action.get("target_label") or "")):
+                    next_action["geometry_source"] = "ax_plan_step"
+                brief = brief_from_brain_choice(
+                    next_action,
+                    doc if isinstance(doc, dict) else {},
+                    app=APP,
+                    capability="compose_search_query",
+                )
+                result = execute_actor(brief)
+                return ExecResult(
+                    ok=bool(result.ok),
+                    backend=exec_backend_for_actor_result(result),
+                    message=str(result.message or result.status),
+                )
             if fam == "resolve_entity" or act == "resolveentity":
-                # ResolveEntity is semantic judgment over the candidate_set, not
-                # a motor primitive: decide which visible row is the goal
-                # referent, then open it (open_entity is the mechanism). The
-                # skill owns its own confidence and escalation — a confident
-                # deterministic pick, an LLM tiebreak, or an abstain when an
-                # irreversible choice stays ambiguous. An abstain surfaces as a
-                # non-ok result so the loop re-plans instead of guessing.
-                import types as _types
-
-                from plugin.agent.capabilities.resolve_entity import (
-                    brief_from_context,
-                )
-                from plugin.agent.capabilities.resolve_entity import (
-                    resolve_entity as _resolve_entity_cap,
-                )
-
-                try:
-                    view_now, feats_now, _ = build_view_features(runtime, goal_obj)
-                except Exception:
-                    view_now, feats_now = {}, {}
-                extras_now = feats_now.get("extras") if isinstance(feats_now, dict) else {}
-                feats_shim = _types.SimpleNamespace(extras=extras_now or {})
+                # Ranking only — stamp SearchResult.chosen via dispatch. Opening
+                # is ACT + open_entity (live 213012: resolve→ax_click left the
+                # episode stuck in ranking when AX missed).
+                from plugin.agent.apps.whatsapp import WhatsAppOverlay
+                from plugin.agent.capabilities.base import CapabilityRequest
+                from plugin.agent.capabilities.dispatch import dispatch
 
                 referent = (target or "").strip()
                 dest = (getattr(goal_obj, "target_contact", "") or "").strip()
                 src = (getattr(goal_obj, "contact", "") or "").strip()
-                # Role fixes the consequence class the skill gates on: opening
-                # the source conversation is reversible, choosing a forward
-                # destination is irreversible. Infer it from which goal contact
-                # the referent names; when the referent is blank/other, fall
-                # back to the surface (an unopened source resolves the source).
                 if referent and src and referent.lower() == src.lower():
                     role = "source"
                 elif referent and dest and referent.lower() == dest.lower():
@@ -520,37 +580,55 @@ def run_forward_message_live(
                         or any(t in open_c for t in src.lower().split() if len(t) > 2)
                     )
                     role = "destination" if src_open else "source"
+                doc = getattr(runtime.execution_state, "unified_world_document", None)
+                if not isinstance(doc, dict):
+                    doc = {}
+                outcome = dispatch(
+                    CapabilityRequest(
+                        name="resolve_entity",
+                        app=APP,
+                        arg=referent,
+                        extras={
+                            "goal": goal_obj,
+                            "role": role,
+                            "execution_state": runtime.execution_state,
+                            "world": runtime.world_model,
+                            "world_document": doc,
+                        },
+                    ),
+                    WhatsAppOverlay(),
+                )
+                if outcome.ok and isinstance(outcome.evidence, dict):
+                    ent_id = outcome.evidence.get("id") or outcome.evidence.get("entity_id")
+                    if ent_id is not None:
+                        runtime.execution_state.last_target_id = ent_id
+                return ExecResult(
+                    ok=bool(outcome.ok),
+                    backend="capability",
+                    message=str(
+                        outcome.message or outcome.capability or "resolve_entity"
+                    ),
+                )
+            if act == "type" or fam == "type_query":
+                from plugin.agent.actor import (
+                    brief_from_plan_step,
+                    exec_backend_for_actor_result,
+                    execute_actor,
+                )
 
-                brief = brief_from_context(
-                    goal_obj,
-                    referent=referent,
-                    role=role,
-                    features=feats_shim,
-                    world_document=view_now if isinstance(view_now, dict) else None,
+                doc = getattr(runtime.execution_state, "unified_world_document", None) or {}
+                brief = brief_from_plan_step(
+                    step,
+                    doc if isinstance(doc, dict) else {},
+                    app=APP,
+                    execution_state=runtime.execution_state,
                 )
-                outcome = _resolve_entity_cap(brief)
-                if not outcome.ok:
-                    return ExecResult(
-                        ok=False,
-                        backend="none",
-                        message=(outcome.message or "resolve_entity did not resolve a candidate"),
-                    )
-                chosen = str(outcome.evidence.get("chosen") or "").strip()
-                if not chosen:
-                    return ExecResult(ok=False, backend="none", message="resolve_entity chose nothing")
-                ent = resolve_whatsapp_target(
-                    runtime.world_model,
-                    chosen,
-                    action="click",
-                    action_family="open_entity",
-                    target_entity_id=outcome.evidence.get("id"),
+                result = execute_actor(brief)
+                return ExecResult(
+                    ok=bool(result.ok),
+                    backend=exec_backend_for_actor_result(result),
+                    message=str(result.message or result.status),
                 )
-                if ent is not None:
-                    runtime.execution_state.last_target_id = ent.id
-                    return ax_click(APP, ent.label or chosen, bounds=ent.bounds)
-                return ax_click(APP, chosen)
-            if act == "type":
-                return ax_type(APP, step.text or "", into=target or "Search", submit=False)
             if fam == "end_call" or target.lower() in {"end call", "decline"}:
                 ent = resolve_whatsapp_target(
                     runtime.world_model,
@@ -623,11 +701,95 @@ def run_forward_message_live(
             )
 
             if can_dispatch(fam or act):
+                # Overloaded revert: always analyze→approve→execute via dispatch
+                # (never skip to a bare Escape gesture that drops the plan gate).
+                _cap_name = (fam or act or "").strip().lower().replace("-", "_")
+                if _cap_name in {
+                    "revert_effects",
+                    "revert",
+                    "rollback",
+                    "rollback_effects",
+                }:
+                    outcome = dispatch_from_step(
+                        step,
+                        app=APP,
+                        overlay=WhatsAppOverlay(),
+                        world=runtime.world_model,
+                        execution_state=runtime.execution_state,
+                        goal=goal_obj,
+                    )
+                    return ExecResult(
+                        ok=bool(outcome.ok),
+                        backend="capability",
+                        message=str(outcome.message or outcome.capability or "revert_effects"),
+                    )
+                # Actor handoff first: complete brief from brain geometry → motor.
+                # Incomplete briefs fall through to legacy capability dispatch.
+                from plugin.agent.actor import (
+                    brief_from_plan_step,
+                    exec_backend_for_actor_result,
+                    execute_actor,
+                    validate_brief,
+                )
+
+                doc = getattr(runtime.execution_state, "unified_world_document", None) or {}
+                if isinstance(doc, dict):
+                    try:
+                        from plugin.agent.unified_cognition import stamp_task_surface
+
+                        doc = stamp_task_surface(
+                            doc,
+                            world=runtime.world_model,
+                            execution_state=runtime.execution_state,
+                            app=APP,
+                        )
+                        runtime.execution_state.unified_world_document = doc
+                    except Exception:
+                        pass
+                brief = brief_from_plan_step(
+                    step,
+                    doc if isinstance(doc, dict) else {},
+                    app=APP,
+                    execution_state=runtime.execution_state,
+                )
+                brief_ok, _why = validate_brief(brief)
+                # Ranking / query-authorship are judgment capabilities — never
+                # shortcut them to a click brief (resolve_entity→click skipped
+                # fail_search_episode and re-entered SEARCH; live 212533).
+                _judgment_caps = {
+                    "resolve_entity",
+                    "resolveentity",
+                    "search",
+                    "compose_search_query",
+                    "composesearchquery",
+                }
+                _use_actor = (
+                    brief_ok
+                    and brief.gesture
+                    in {
+                        "click",
+                        "context_click",
+                        "hover",
+                        "type",
+                        "press_escape",
+                    }
+                    and _cap_name not in _judgment_caps
+                )
+                if _use_actor:
+                    result = execute_actor(brief)
+                    if result.status != "incomplete_brief":
+                        return ExecResult(
+                            ok=bool(result.ok),
+                            backend=exec_backend_for_actor_result(result),
+                            message=str(result.message or result.status),
+                        )
                 outcome = dispatch_from_step(
                     step,
                     app=APP,
                     overlay=WhatsAppOverlay(),
                     world=runtime.world_model,
+                    execution_state=runtime.execution_state,
+                    goal=goal_obj,
                 )
                 ent_id = None
                 if isinstance(getattr(outcome, "evidence", None), dict):
@@ -649,13 +811,25 @@ def run_forward_message_live(
     )
 
     def _observe() -> Observation:
+        from plugin.agent.unified_cognition import expects_overlay_perception
+
         return _live_observe(
-            log, app=APP, step=runtime.execution_state.iteration or 0, with_screenshot=True
+            log,
+            app=APP,
+            step=runtime.execution_state.iteration or 0,
+            with_screenshot=True,
+            include_overlays=expects_overlay_perception(runtime.execution_state),
         )
 
     def _observe_with_screenshot() -> Observation:
+        from plugin.agent.unified_cognition import expects_overlay_perception
+
         return _live_observe(
-            log, app=APP, step=runtime.execution_state.iteration or 0, with_screenshot=True
+            log,
+            app=APP,
+            step=runtime.execution_state.iteration or 0,
+            with_screenshot=True,
+            include_overlays=expects_overlay_perception(runtime.execution_state),
         )
 
     def _wait_cb(seconds: float, reason: str) -> None:
@@ -711,6 +885,11 @@ def run_forward_message(
     max_iterations: int = 20,
     max_stepcount: Optional[int] = None,
 ) -> Tuple[bool, EventLogger]:
+    from plugin.evals.check import mark_live_goal_process, require_eval_check_or_exit
+
+    mark_live_goal_process()
+    require_eval_check_or_exit(reason="whatsapp forward live agent startup")
+
     run_id = f"wa-forward-live-{int(time.time())}"
     log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)

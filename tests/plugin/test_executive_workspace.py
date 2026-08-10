@@ -31,10 +31,16 @@ def test_judgement_records_cognitive_mode_and_is_deliberative_on_a_new_goal():
     from plugin.agent.executive.hierarchy import DELIBERATIVE
     from plugin.agent.executive.sync import assess_executive_judgement, bind_goal
 
+    class _Chooser:
+        def choose(self, system, packet):
+            return {"meta_action": "perceive", "why": "new goal look", "confidence": 0.8}
+
     state = ExecutionState()
     bind_goal(state, Goal(kind="whatsapp_forward_message", contact="ZarooratWala", target_contact="Pallavi"))
 
-    assess_executive_judgement(state, has_grounded_action=False)
+    assess_executive_judgement(
+        state, has_grounded_action=False, meta_chooser=_Chooser()
+    )
 
     assert state.last_cognitive_mode == DELIBERATIVE
     assert "new_goal" in (state.last_mode_triggers or [])

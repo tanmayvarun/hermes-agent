@@ -1,0 +1,49 @@
+{
+  "runs_scanned": 3,
+  "runs": [
+    {
+      "run": "forward_zarooratwala_live_20260807_143423.jsonl",
+      "event_counts": {
+        "executive_judgement": 100,
+        "meta_action_phase": 1
+      },
+      "candidates_written": 2
+    },
+    {
+      "run": "forward_zarooratwala_live_20260807_142152.jsonl",
+      "event_counts": {
+        "executive_judgement": 89,
+        "meta_action_phase": 5,
+        "perception_summary": 2,
+        "planner_decision": 2,
+        "act_intention": 2,
+        "transition_eval": 2,
+        "transition_attribution": 2,
+        "verification": 2,
+        "prediction_held": 1
+      },
+      "candidates_written": 17
+    },
+    {
+      "run": "forward_zarooratwala_live_20260807_140032.jsonl",
+      "event_counts": {
+        "executive_judgement": 65,
+        "meta_action_phase": 51,
+        "perception_summary": 9,
+        "planner_decision": 9,
+        "act_intention": 7,
+        "transition_eval": 5,
+        "transition_attribution": 7,
+        "verification": 5,
+        "prediction_held": 5,
+        "prediction_error": 1,
+        "execution_effect_missing": 1,
+        "stalled": 2
+      },
+      "candidates_written": 40
+    }
+  ],
+  "candidates_total": 59,
+  "out_dir": "/Users/tanmayvarun/tanmay/ai/hermes-agent-dir/hermes-agent/plugin/evals/golden/candidates",
+  "note": "Candidates are not gold. Promote into corpus/vN after human labeling."
+}

@@ -306,9 +306,111 @@ def _context_match(query: ContentQuery, obj: ContentObject) -> float:
     return best
 
 
+def _content_identity_required(query: ContentQuery) -> bool:
+    """True when semantic_reference is a content/link query, not merely a contact."""
+    ref = _clean(query.semantic_reference)
+    if not ref:
+        return False
+    kind = _clean(query.goal_kind).lower()
+    if "forward" in kind or "message" in kind or "link" in kind:
+        # link_query is preferred into semantic_reference by build_content_query.
+        return True
+    return bool(query.target_types)
+
+
+def _enforce_content_identity(
+    query: ContentQuery,
+    resolution: ObjectResolution,
+    visible: Sequence[ContentObject],
+) -> ObjectResolution:
+    """High-precision gate after deterministic or LLM selection."""
+    if not _content_identity_required(query):
+        return resolution
+    try:
+        from plugin.agent.source_query_binding import (
+            host_contradicts_query,
+            query_supported_by_text,
+        )
+    except Exception:
+        return resolution
+
+    ref = _clean(query.semantic_reference)
+    by_id = {str(obj.id): obj for obj in visible}
+    selected_id = str(resolution.selected_object_id or "")
+    selected_obj = by_id.get(selected_id)
+    if selected_obj is None and resolution.selected_source_entity_ids:
+        want = set(int(x) for x in resolution.selected_source_entity_ids)
+        for obj in visible:
+            if any(int(x) in want for x in (obj.source_entity_ids or [])):
+                selected_obj = obj
+                break
+    if selected_obj is None:
+        return resolution
+    blob = _object_text_blob(selected_obj)
+    if query_supported_by_text(blob, ref) and not (
+        host_contradicts_query(blob, ref) and not query_supported_by_text(blob, ref)
+    ):
+        return resolution
+    # Prefer any other visible object that actually supports the query.
+    for obj in visible:
+        cand_blob = _object_text_blob(obj)
+        if query_supported_by_text(cand_blob, ref):
+            return ObjectResolution(
+                status="resolved",
+                selected_object_id=obj.id,
+                candidates=list(resolution.candidates or []),
+                confidence=max(0.7, float(resolution.confidence or 0.0)),
+                evidence=list(resolution.evidence or []) + ["identity_gate_reselected"],
+                next_information_actions=[],
+                selected_source_entity_ids=list(obj.source_entity_ids or []),
+                selected_object_text=obj.display_text,
+                raw={
+                    **_json_safe(resolution.raw or {}),
+                    "identity_gate": "reselected",
+                    "rejected_object_id": selected_id,
+                },
+            )
+    return ObjectResolution(
+        status="not_found",
+        selected_object_id=None,
+        candidates=list(resolution.candidates or []),
+        confidence=0.0,
+        evidence=list(resolution.evidence or []) + ["identity_gate_rejected"],
+        next_information_actions=[
+            "search_within_container",
+            "scroll_timeline",
+            "inspect_more_context",
+        ],
+        selected_source_entity_ids=[],
+        selected_object_text="",
+        raw={
+            **_json_safe(resolution.raw or {}),
+            "identity_gate": "rejected",
+            "binding_blocked": True,
+            "contradictions": ["semantic_query_unsupported"],
+            "rejected_object_id": selected_id,
+        },
+    )
+
+
+def _object_text_blob(obj: ContentObject) -> str:
+    parts = [
+        getattr(obj, "text", ""),
+        getattr(obj, "title", ""),
+        getattr(obj, "url", ""),
+        getattr(obj, "filename", ""),
+        getattr(obj, "display_text", ""),
+    ]
+    meta = getattr(obj, "metadata", None) or {}
+    if isinstance(meta, dict):
+        parts.append(meta.get("description") or "")
+    return " ".join(_clean(p) for p in parts if p)
+
+
 def _score_object(query: ContentQuery, obj: ContentObject) -> RankedContentObject:
     score = 0.0
     reasons: List[str] = []
+    contradictions: List[str] = []
 
     if obj.visible:
         score += 0.03
@@ -386,9 +488,46 @@ def _score_object(query: ContentQuery, obj: ContentObject) -> RankedContentObjec
         score += 0.05
         reasons.append("sender_match")
 
+    # High-precision identity gate: container+type relevance must not bind a
+    # distractor URL (live 214025: YouTube in Pallavi ≠ zarooratwala).
+    if _content_identity_required(query):
+        try:
+            from plugin.agent.source_query_binding import (
+                evaluate_source_object_match,
+                host_contradicts_query,
+                query_supported_by_text,
+            )
+
+            blob = _object_text_blob(obj)
+            ref = _clean(query.semantic_reference)
+            gm = evaluate_source_object_match(
+                text=blob,
+                kind=str(getattr(obj, "object_type", "") or ""),
+                query=ref,
+                container_open=str(getattr(obj, "container_id", "") or ""),
+                expected_container=_clean(query.source_container),
+                perception_matches_goal=False,
+            )
+            if host_contradicts_query(blob, ref) and not query_supported_by_text(blob, ref):
+                score = 0.0
+                contradictions.append("url_host_contradicts_query")
+                reasons.append("binding_ineligible_host_mismatch")
+            elif not gm.semantic_query_match:
+                # Keep as low-recall candidate; never win final binding.
+                score = min(score, 0.12)
+                contradictions.append("semantic_query_absent")
+                reasons.append("binding_ineligible_query_absent")
+            else:
+                reasons.append("semantic_query_supported")
+                score = min(1.0, score + 0.15)
+        except Exception:
+            pass
+
     score = max(0.0, min(1.0, score))
     if not reasons:
         reasons.append("weak_candidate")
+    if contradictions:
+        reasons.extend(contradictions)
     return RankedContentObject(object_id=obj.id, score=round(score, 4), reasons=reasons, object=obj)
 
 
@@ -416,6 +555,24 @@ def _resolution_cache_key(query: ContentQuery, context: DiscoveryContext, object
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+# Static across every call, so it lives in the system message where a provider
+# can cache the prefix, rather than being re-sent inside the per-call user JSON.
+_RESOLUTION_SYSTEM_PROMPT = (
+    "You are a generic object-discovery synthesizer. You interpret normalized "
+    "content objects from accessibility-derived rows. Given a goal query and a "
+    "collection of visible content objects, select the object that best "
+    "satisfies the goal. The adapter already exposed the visible objects; do "
+    "not invent hidden ones, ids, or app-specific step plans.\n"
+    "\n"
+    "Return only strict JSON with keys: summary, confidence, "
+    "selected_object_id, ranked_objects, selected_source_entity_ids, "
+    "selected_object_text, supporting_evidence, contradictions, "
+    "next_information_actions, needs_followup_observe. Each ranked_objects item "
+    "must include object_id, score, and reason. Prefer the object whose "
+    "identity and container best match the goal."
+)
 
 
 def _build_prompt(
@@ -450,25 +607,11 @@ def _build_prompt(
             }
             for obj in objects[:window]
         ],
-        "instructions": (
-            "You are a generic object-discovery synthesizer. Given a goal query and "
-            "a collection of visible content objects, select the object that best "
-            "satisfies the goal. The adapter already exposed the visible objects; "
-            "do not invent hidden ones or app-specific step plans. Return strict JSON "
-            "with keys: summary, confidence, selected_object_id, ranked_objects, "
-            "selected_source_entity_ids, selected_object_text, supporting_evidence, "
-            "contradictions, next_information_actions, needs_followup_observe. Each "
-            "ranked_objects item must include object_id, score, and reason. Prefer the "
-            "object whose identity and container best match the goal."
-        ),
     }
     return [
         {
             "role": "system",
-            "content": (
-                "You interpret normalized content objects from accessibility-derived "
-                "rows. Return only strict JSON. Do not invent objects or ids."
-            ),
+            "content": _RESOLUTION_SYSTEM_PROMPT,
         },
         {
             "role": "user",
@@ -621,8 +764,9 @@ class ObjectDiscoveryEngine:
                 resolution = _parse_llm_resolution(parsed, visible)
                 resolution.raw = {
                     **_json_safe(resolution.raw),
-                    "consultation": consultation.to_dict(),
+                    "consultation": consultation.to_dict(include_messages=False),
                 }
+                resolution = _enforce_content_identity(query, resolution, visible)
                 if world is not None:
                     setattr(world, _CACHE_ATTR, {"cache_key": cache_key, "summary": resolution.to_dict()})
                 return resolution
@@ -636,22 +780,70 @@ class ObjectDiscoveryEngine:
             best = ranked[0]
             selected_obj = best.object
             confidence = float(best.score or 0.0)
-            status = "resolved" if confidence >= 0.8 and gap >= 0.08 else "ambiguous"
-            evidence = list(best.reasons)
-            next_actions = []
-            if status != "resolved":
-                next_actions = ["inspect_more_context", "search_within_container", "open_candidate"]
-            resolution = ObjectResolution(
-                status=status,
-                selected_object_id=best.object_id,
-                candidates=ranked,
-                confidence=confidence,
-                evidence=evidence,
-                next_information_actions=next_actions,
-                selected_source_entity_ids=list(selected_obj.source_entity_ids if selected_obj is not None else []),
-                selected_object_text="" if selected_obj is None else selected_obj.display_text,
-                raw={"cache_key": cache_key, "top_score": top_score, "gap": gap, "deterministic": True},
-            )
+            # Identity-sensitive queries: never elevate a distractor that only
+            # matches container/type (YouTube in the right chat).
+            binding_blocked = False
+            if _content_identity_required(query):
+                reasons_l = {str(r).lower() for r in (best.reasons or [])}
+                if (
+                    "binding_ineligible_host_mismatch" in reasons_l
+                    or "binding_ineligible_query_absent" in reasons_l
+                    or confidence < 0.35
+                ):
+                    binding_blocked = True
+            if binding_blocked:
+                blocked_reasons = [
+                    r
+                    for r in (best.reasons or [])
+                    if "ineligible" in str(r).lower() or "contradict" in str(r).lower()
+                ] or ["semantic_query_unsupported"]
+                resolution = ObjectResolution(
+                    status="not_found",
+                    selected_object_id=None,
+                    candidates=ranked,
+                    confidence=0.0,
+                    evidence=list(best.reasons),
+                    next_information_actions=[
+                        "search_within_container",
+                        "scroll_timeline",
+                        "inspect_more_context",
+                    ],
+                    selected_source_entity_ids=[],
+                    selected_object_text="",
+                    raw={
+                        "cache_key": cache_key,
+                        "top_score": top_score,
+                        "gap": gap,
+                        "deterministic": True,
+                        "binding_blocked": True,
+                        "contradictions": blocked_reasons,
+                    },
+                )
+            else:
+                status = "resolved" if confidence >= 0.8 and gap >= 0.08 else "ambiguous"
+                evidence = list(best.reasons)
+                next_actions = []
+                if status != "resolved":
+                    next_actions = ["inspect_more_context", "search_within_container", "open_candidate"]
+                resolution = ObjectResolution(
+                    status=status,
+                    selected_object_id=best.object_id,
+                    candidates=ranked,
+                    confidence=confidence,
+                    evidence=evidence,
+                    next_information_actions=next_actions,
+                    selected_source_entity_ids=list(
+                        selected_obj.source_entity_ids if selected_obj is not None else []
+                    ),
+                    selected_object_text="" if selected_obj is None else selected_obj.display_text,
+                    raw={
+                        "cache_key": cache_key,
+                        "top_score": top_score,
+                        "gap": gap,
+                        "deterministic": True,
+                    },
+                )
+                resolution = _enforce_content_identity(query, resolution, visible)
 
         if world is not None:
             setattr(world, _CACHE_ATTR, {"cache_key": cache_key, "summary": resolution.to_dict()})

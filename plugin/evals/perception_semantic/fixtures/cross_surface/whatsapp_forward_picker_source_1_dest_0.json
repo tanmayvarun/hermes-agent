@@ -1,0 +1,427 @@
+{
+  "id": "whatsapp_forward_picker_source_1_dest_0",
+  "phenomena": [
+    "nested_surfaces",
+    "cross_surface_selection",
+    "foreground_authority",
+    "selection_state_typing"
+  ],
+  "app": "WhatsApp",
+  "note": "Canonical cross-surface contamination (live 184742 / user screenshot 6:54PM). Background source-message selection chrome must not satisfy destination_selected on the foreground Send-to picker.",
+  "record_dir": "cross_surface_184742",
+  "screenshot": "frame_0001.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 12,
+      "surface": "selection_mode",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "src_msg",
+          "kind": "message",
+          "text": "zarooratwala.com",
+          "matches_goal": true,
+          "selected": true,
+          "owner_surface": "conversation"
+        }
+      ],
+      "beliefs": [],
+      "layers": [],
+      "progress": {"phase": "choose_destination", "objective": "select destination", "notes": ""},
+      "attempts": [],
+      "exhausted": []
+    },
+    "observation": {
+      "frame": 13,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "active_interaction_surface": "forward_picker",
+      "ax_node_count": 12,
+      "ax_content_node_count": 8,
+      "ax_evidence": [
+        {
+          "id": 10,
+          "role": "AXWindow",
+          "label": "WhatsApp",
+          "bounds": [110.0, 25.0, 1581.0, 979.0]
+        },
+        {
+          "id": 20,
+          "role": "AXGroup",
+          "label": "bottom_selection_toolbar",
+          "parent_id": 10,
+          "parent_label": "WhatsApp",
+          "parent_role": "AXWindow",
+          "bounds": [400.0, 920.0, 900.0, 60.0]
+        },
+        {
+          "id": 21,
+          "role": "AXStaticText",
+          "label": "1 Selected",
+          "parent_id": 20,
+          "parent_label": "bottom_selection_toolbar",
+          "parent_role": "AXGroup",
+          "bounds": [420.0, 935.0, 120.0, 24.0]
+        },
+        {
+          "id": 30,
+          "role": "AXSheet",
+          "label": "send_to_dialog",
+          "parent_id": 10,
+          "parent_label": "WhatsApp",
+          "parent_role": "AXWindow",
+          "bounds": [520.0, 120.0, 720.0, 700.0]
+        },
+        {
+          "id": 31,
+          "role": "AXStaticText",
+          "label": "Send to",
+          "parent_id": 30,
+          "parent_label": "send_to_dialog",
+          "parent_role": "AXSheet",
+          "bounds": [540.0, 140.0, 120.0, 28.0]
+        },
+        {
+          "id": 32,
+          "role": "AXTextField",
+          "label": "Search",
+          "parent_id": 30,
+          "parent_label": "send_to_dialog",
+          "parent_role": "AXSheet",
+          "bounds": [560.0, 180.0, 640.0, 36.0]
+        },
+        {
+          "id": 33,
+          "role": "AXStaticText",
+          "label": "Frequently contacted",
+          "parent_id": 30,
+          "parent_label": "send_to_dialog",
+          "parent_role": "AXSheet",
+          "bounds": [560.0, 240.0, 200.0, 20.0]
+        },
+        {
+          "id": 34,
+          "role": "AXButton",
+          "label": "Papaji",
+          "parent_id": 30,
+          "parent_label": "send_to_dialog",
+          "parent_role": "AXSheet",
+          "bounds": [560.0, 280.0, 400.0, 40.0]
+        },
+        {
+          "id": 35,
+          "role": "AXButton",
+          "label": "Forward",
+          "parent_id": 20,
+          "parent_label": "bottom_selection_toolbar",
+          "parent_role": "AXGroup",
+          "bounds": [1200.0, 930.0, 100.0, 36.0],
+          "enabled": false
+        }
+      ],
+      "sources": [
+        {"source": "screenshot", "state": "on"},
+        {"source": "accessibility", "state": "on"},
+        {"source": "ocr", "state": "off"}
+      ]
+    },
+    "perception_objective": {
+      "questions": [
+        "Which surfaces are present and which is the foreground interaction surface?",
+        "What selection state belongs to the foreground destination picker vs background surfaces?",
+        "Is destination Tanmay visible or selected inside the destination picker?",
+        "Which grounded actions advance destination resolution within the picker?"
+      ],
+      "focus": "forward_picker",
+      "depth": "deep",
+      "objective": "Resolve destination selection for Tanmay within the foreground destination picker; do not attribute background selection chrome to destination_selected",
+      "completion_condition": "destination_selected for Tanmay inside picker, or picker search path clear",
+      "active_interaction_surface": "forward_picker",
+      "destination_visible": false,
+      "destination_selected": false,
+      "destination_search_available": true
+    },
+    "affordance_frontier": {
+      "surface": "forward_picker",
+      "observed_actions": [
+        {"family": "type_query", "text": "Search", "node_scope": "current"},
+        {"family": "invoke_affordance", "text": "Papaji", "node_scope": "current"}
+      ],
+      "latent_actions": [],
+      "probe_actions": []
+    }
+  },
+  "gold": {
+    "surfaces": [
+      {"id": "conversation", "type": "conversation", "foreground": false},
+      {"id": "forward_picker", "type": "destination_picker", "foreground": true}
+    ],
+    "claims": [
+      {
+        "predicate": "source_message_selected_count",
+        "value": 1,
+        "owner_surface": "conversation",
+        "semantic_role": "source_message_selection"
+      },
+      {
+        "predicate": "destination_selected_count",
+        "value": 0,
+        "owner_surface": "forward_picker",
+        "semantic_role": "destination_selection"
+      },
+      {
+        "predicate": "destination_selected",
+        "value": false,
+        "owner_surface": "forward_picker",
+        "semantic_role": "destination_selection"
+      },
+      {
+        "predicate": "destination_search_visible",
+        "value": true,
+        "owner_surface": "forward_picker"
+      },
+      {
+        "predicate": "destination_visible",
+        "value": false,
+        "owner_surface": "forward_picker",
+        "subject": "Tanmay"
+      }
+    ],
+    "affordances": [
+      {
+        "family": "type_query",
+        "target": "destination_search",
+        "surface": "forward_picker"
+      }
+    ],
+    "forbidden": [
+      {
+        "predicate": "destination_selected",
+        "value": true,
+        "reason": "background source-message selection chrome must not satisfy destination_selected"
+      }
+    ],
+    "acceptable_actions": [
+      {"family": "SEARCH", "surface": "forward_picker", "text": "Tanmay"},
+      {"family": "type_query", "surface": "forward_picker", "text": "Tanmay"}
+    ],
+    "forbidden_actions": [
+      "invoke_forward",
+      "commit_forward",
+      "select_source_message",
+      "search_source_conversation"
+    ]
+  },
+  "annotated_response": {
+    "world_model": {
+      "frame": 13,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {
+          "id": "status_src",
+          "kind": "status",
+          "text": "1 Selected",
+          "owner_surface": "conversation",
+          "semantic_role": "source_message_selection",
+          "matches_goal": false
+        },
+        {
+          "id": "dest_search",
+          "kind": "search_input",
+          "text": "Search",
+          "point": [880, 198],
+          "owner_surface": "forward_picker",
+          "semantic_role": "search_input",
+          "matches_goal": false
+        },
+        {
+          "id": "row_papaji",
+          "kind": "contact_row",
+          "text": "Papaji",
+          "point": [760, 300],
+          "owner_surface": "forward_picker",
+          "selected": false,
+          "matches_goal": false
+        },
+        {
+          "id": "fwd",
+          "kind": "button",
+          "text": "Forward",
+          "point": [1250, 948],
+          "owner_surface": "conversation",
+          "enabled": false,
+          "matches_goal": false
+        }
+      ],
+      "layers": [
+        {
+          "role": "container",
+          "name": "Pallavi",
+          "state": "occluded",
+          "objects": [
+            {
+              "id": "status_src",
+              "kind": "status",
+              "text": "1 Selected",
+              "matches_goal": false
+            }
+          ]
+        },
+        {
+          "role": "destination",
+          "name": "Send to",
+          "state": "active",
+          "objects": [
+            {
+              "id": "dest_search",
+              "kind": "search_input",
+              "text": "Search",
+              "point": [880, 198],
+              "matches_goal": false
+            },
+            {
+              "id": "row_papaji",
+              "kind": "contact_row",
+              "text": "Papaji",
+              "point": [760, 300],
+              "matches_goal": false
+            }
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "source_message_selected_count",
+          "value": 1,
+          "confidence": 0.99,
+          "evidence": ["selection chrome on conversation toolbar"],
+          "owner_surface": "conversation",
+          "semantic_role": "source_message_selection",
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "destination_selected_count",
+          "value": 0,
+          "confidence": 0.98,
+          "evidence": [
+            "no recipient checkbox selected within forward_picker",
+            "no selected recipient entity in forward_picker"
+          ],
+          "owner_surface": "forward_picker",
+          "semantic_role": "destination_selection",
+          "rejected_evidence": [
+            {
+              "text": "1 Selected",
+              "reason": "belongs to source-message selection surface",
+              "owner_surface": "conversation"
+            }
+          ],
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "destination_selected",
+          "value": false,
+          "confidence": 0.98,
+          "evidence": ["picker recipient rows unselected"],
+          "owner_surface": "forward_picker",
+          "semantic_role": "destination_selection",
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "destination_search_visible",
+          "value": true,
+          "confidence": 0.99,
+          "evidence": ["AX TextField Search under send_to_dialog"],
+          "owner_surface": "forward_picker",
+          "confirmed_on_frame": 13
+        },
+        {
+          "predicate": "destination_visible",
+          "value": false,
+          "confidence": 0.9,
+          "evidence": ["Tanmay not in picker inventory"],
+          "owner_surface": "forward_picker",
+          "confirmed_on_frame": 13
+        }
+      ],
+      "progress": {
+        "phase": "choose_destination",
+        "objective": "search/select Tanmay in picker",
+        "notes": "foreground picker; background source selection irrelevant to destination"
+      },
+      "attempts": [],
+      "exhausted": []
+    },
+    "suggested_actions": [
+      {
+        "rank": 1,
+        "family": "type_query",
+        "text": "Tanmay",
+        "confidence": 0.97,
+        "why": "destination unresolved; picker search field grounded"
+      }
+    ],
+    "affordance_stance": "explore_needed",
+    "confidence": 0.92,
+    "scene_summary": "Send-to picker is foreground over Pallavi chat. Source message remains selected in the background. No recipient is selected in the picker; search the destination field for Tanmay."
+  },
+  "contaminated_response": {
+    "world_model": {
+      "frame": 13,
+      "surface": "forward_picker",
+      "open_conversation": "Pallavi",
+      "objects": [
+        {"id": "sel", "kind": "status", "text": "1 Selected", "matches_goal": false},
+        {
+          "id": "tanmay",
+          "kind": "contact_row",
+          "text": "Tanmay (Selected)",
+          "matches_goal": true,
+          "selected": true
+        },
+        {
+          "id": "fwd",
+          "kind": "button",
+          "text": "Forward",
+          "point": [1250, 948],
+          "matches_goal": true
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "destination_selected",
+          "value": true,
+          "confidence": 0.9,
+          "evidence": ["saw 1 Selected"],
+          "owner_surface": "conversation",
+          "semantic_role": "source_message_selection",
+          "confirmed_on_frame": 13
+        }
+      ],
+      "progress": {"phase": "choose_destination", "objective": "forward", "notes": ""},
+      "attempts": [],
+      "exhausted": [],
+      "layers": []
+    },
+    "suggested_actions": [
+      {
+        "rank": 1,
+        "family": "invoke_affordance",
+        "text": "Forward",
+        "confidence": 0.9,
+        "why": "1 Selected means Tanmay chosen"
+      }
+    ],
+    "affordance_stance": "act_clear",
+    "confidence": 0.88,
+    "scene_summary": "Tanmay is selected because the screen shows 1 Selected."
+  }
+}

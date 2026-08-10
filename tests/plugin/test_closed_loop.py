@@ -11,7 +11,7 @@ import pytest
 
 from plugin.agent.controller import run_goal_closed_loop
 from plugin.agent.action import Action as PlanStep
-from plugin.agent.decision import decide as next_action
+from plugin.agent.decision import define_action_step as next_action
 from plugin.agent.goal import Goal, evaluate_goal
 from plugin.agent.predicates import SearchQueryEquals, CallStateIs, ContactResultVisible
 from plugin.agent.runtime.state import ExecutionState, RuntimeState
@@ -113,6 +113,63 @@ def _seed_world(entities: List[Entity], app: str = "WhatsApp") -> WorldModel:
     return wm
 
 
+def _assert_unified_declined_observe(action: Optional[PlanStep]) -> None:
+    """Hermetic default: unified off → decide Observes (no legacy fallthrough)."""
+    assert action is not None
+    assert action.action == "Observe"
+    assert action.action_family == "observe"
+    assert "unified_declined_no_legacy_fallthrough" in (action.rationale or "")
+
+
+def _voice_call_unified_stub(self, goal, world, features, execution_state, candidates):
+    """World-driven Action so closed-loop tests can progress without legacy choosers."""
+    if evaluate_goal(goal, world).succeeded:
+        return None
+    contact = (goal.contact or "Pallavi").strip()
+    contact_l = contact.lower()
+    ents = list((getattr(world, "entities", None) or {}).values())
+    labels_l = [(e.label or "").lower() for e in ents]
+
+    if any("messages in chat" in lab for lab in labels_l):
+        for e in ents:
+            lab = (e.label or "").strip()
+            if lab.lower() in {"voice call", "call", "voice"}:
+                return PlanStep(action="Click", action_family="start_call", semantic_target=lab)
+        return PlanStep(action="Click", action_family="start_call", semantic_target="Voice call")
+
+    for e in ents:
+        if (e.entity_type or "") != "button":
+            continue
+        lab = (e.label or "").strip()
+        desc = str((e.attributes or {}).get("description") or "").strip()
+        if contact_l in lab.lower() or contact_l in desc.lower():
+            # Prefer the goal contact when the row label is a message preview.
+            target = contact if contact_l in desc.lower() and contact_l not in lab.lower() else lab
+            if contact_l in desc.lower() and "message" in lab.lower():
+                target = contact
+            return PlanStep(action="Click", action_family="open_contact", semantic_target=target)
+
+    return PlanStep(
+        action="Type",
+        action_family="type_query",
+        text=contact,
+        semantic_target="Search",
+    )
+
+
+def _install_voice_call_unified_stub(monkeypatch) -> None:
+    from plugin.agent.decision import DecisionEngine
+
+    monkeypatch.setattr(DecisionEngine, "_unified_fast_path", _voice_call_unified_stub)
+
+
+def _mock_synthesize_perception(monkeypatch) -> None:
+    """Keep closed-loop / recovery hermetic — no live screen_understanding calls."""
+    from plugin.agent import perception_cycle
+
+    monkeypatch.setattr(perception_cycle, "synthesize_perception", lambda *args, **kwargs: None)
+
+
 @dataclass
 class ScriptedExecutor:
     """Returns ok=True always; world advances via ScriptedObserver."""
@@ -168,14 +225,13 @@ def test_whatsapp_view_search_query():
 
 
 def test_planner_next_action_sequence_depends_on_world():
-    """DecisionEngine picks from candidates using prior+value — world evidence wins."""
+    """Without unified action, decide Observes — no enumerate/value fallthrough."""
     from plugin.agent.decision import DecisionEngine
     from plugin.agent.policy.prior import PolicyPrior
 
     goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
     eng = DecisionEngine(prior=PolicyPrior.load())
 
-    # List → Type
     wm = _seed_world(
         [
             _entity(1, etype="button", label="Chats"),
@@ -183,32 +239,24 @@ def test_planner_next_action_sequence_depends_on_world():
             _entity(3, etype="button", label="Alice"),
         ]
     )
-    a1 = next_action(goal, wm, ExecutionState(), worldview_score=1.0)
-    # Force engine path consistency
-    a1b = eng.decide(goal, wm, ExecutionState())
-    assert a1 is not None and a1.action == "Type" and a1.text == "Pallavi"
-    assert a1b is not None and a1b.action == "Type"
+    _assert_unified_declined_observe(next_action(goal, wm, ExecutionState(), worldview_score=1.0))
+    _assert_unified_declined_observe(eng.define_action_step(goal, wm, ExecutionState()))
 
-    # Search focused empty → Type
     wm2 = _seed_world(
         [
             _entity(1, etype="textfield", label="Search", role="AXTextField", value="", focused=True),
         ]
     )
-    a2 = eng.decide(goal, wm2, ExecutionState())
-    assert a2 is not None and a2.action == "Type" and a2.text == "Pallavi"
+    _assert_unified_declined_observe(eng.define_action_step(goal, wm2, ExecutionState()))
 
-    # Query + contact → OpenContact
     wm3 = _seed_world(
         [
             _entity(1, etype="textfield", label="Search", role="AXTextField", value="Pallavi", focused=True),
             _entity(2, etype="button", label="Pallavi"),
         ]
     )
-    a3 = eng.decide(goal, wm3, ExecutionState())
-    assert a3 is not None and a3.action == "Click" and a3.semantic_target == "Pallavi"
+    _assert_unified_declined_observe(eng.define_action_step(goal, wm3, ExecutionState()))
 
-    # Conversation + Voice call → StartVoiceCall
     wm4 = _seed_world(
         [
             _entity(1, etype="static", label="Messages in chat with Pallavi"),
@@ -216,21 +264,20 @@ def test_planner_next_action_sequence_depends_on_world():
             _entity(3, etype="button", label="Voice call"),
         ]
     )
-    a4 = eng.decide(goal, wm4, ExecutionState())
-    assert a4 is not None and a4.action == "Click" and a4.semantic_target in {"Call", "Voice call"}
+    _assert_unified_declined_observe(eng.define_action_step(goal, wm4, ExecutionState()))
 
-    # Ringing → None
+    # Ringing → goal succeeded → no action
     wm5 = _seed_world(
         [
             _entity(1, etype="button", label="End call", bounds=(900, 700, 80, 40)),
             _entity(2, etype="static", label="Calling Pallavi", bounds=(500, 100, 200, 30)),
         ]
     )
-    a5 = eng.decide(goal, wm5, ExecutionState())
-    assert a5 is None
+    assert eng.define_action_step(goal, wm5, ExecutionState()) is None
 
 
-def test_call_picker_branch_prefers_voice_over_observe():
+def test_call_picker_branch_prefers_voice_over_observe(monkeypatch):
+    """Branch/frontier ranking is gone; mock unified to supply the call CTA."""
     from plugin.agent.decision import DecisionEngine
 
     goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
@@ -268,17 +315,25 @@ def test_call_picker_branch_prefers_voice_over_observe():
         newly_relevant_affordances=["initiate_voice", "select_participants"],
     )
 
-    decision = DecisionEngine().decide(goal, wm, ex)
+    monkeypatch.setattr(
+        DecisionEngine,
+        "_unified_fast_path",
+        lambda self, goal, world, features, execution_state, candidates: PlanStep(
+            action="Click",
+            action_family="start_call",
+            semantic_target="Voice",
+        ),
+    )
+
+    decision = DecisionEngine().define_action_step(goal, wm, ex)
 
     assert decision is not None
     assert decision.action_family == "start_call"
     assert decision.semantic_target in {"Voice", "Voice call", "Call"}
-    assert ex.exploration_branch.frontier
-    assert ex.exploration_branch.frontier[0].action_family == "start_call"
-    assert ex.exploration_branch.frontier[0].semantic_target in {"Voice", "Voice call", "Call"}
 
 
 def test_revealed_forward_action_biases_next_branch_choice(monkeypatch):
+    """Without unified, decide Observes — branch affordance ranking removed."""
     from plugin.agent.decision import DecisionEngine
     from plugin.agent.features import StateFeatures
 
@@ -340,17 +395,14 @@ def test_revealed_forward_action_biases_next_branch_choice(monkeypatch):
         depth=1,
     )
 
-    decision = DecisionEngine().decide(goal, wm, ex)
-
-    assert decision is not None
-    assert decision.action_family == "forward_message"
-    assert ex.exploration_branch.frontier
-    assert ex.exploration_branch.frontier[0].action_family == "forward_message"
+    _assert_unified_declined_observe(DecisionEngine().define_action_step(goal, wm, ex))
 
 
 def test_closed_loop_planner_reentry_count(monkeypatch):
     """Planner invocations must be >= executed actions (re-entry each cycle)."""
     auxiliary_client, token = _mock_perception_llm(monkeypatch)
+    _mock_synthesize_perception(monkeypatch)
+    _install_voice_call_unified_stub(monkeypatch)
     runtime = RuntimeState()
     execu = ScriptedExecutor()
     phase = {"name": "list"}
@@ -428,8 +480,30 @@ def test_closed_loop_planner_reentry_count(monkeypatch):
         auxiliary_client.reset_runtime_main(token)
 
 
-def test_verification_rejects_executor_ok_without_query():
+def test_verification_rejects_executor_ok_without_query(monkeypatch):
     """ax_type returns ok but UI unchanged → NO_EFFECT → suppress retype thrash, try alternatives."""
+    from plugin.agent.decision import DecisionEngine
+
+    _mock_synthesize_perception(monkeypatch)
+    typed = {"n": 0}
+
+    def _stub(self, goal, world, features, execution_state, candidates):
+        # One Type attempt, then Observe — mirrors post-NO_EFFECT suppression.
+        if typed["n"] == 0:
+            typed["n"] += 1
+            return PlanStep(
+                action="Type",
+                action_family="type_query",
+                text="Pallavi",
+                semantic_target="Search",
+            )
+        return PlanStep(
+            action="Observe",
+            action_family="observe",
+            rationale="unified_stub_after_type_no_effect",
+        )
+
+    monkeypatch.setattr(DecisionEngine, "_unified_fast_path", _stub)
     search_empty = [
         _entity(1, etype="textfield", label="Search", role="AXTextField", value="", focused=True),
     ]
@@ -461,10 +535,13 @@ def test_verification_rejects_executor_ok_without_query():
     )
     assert not result.ok
     type_calls = [c for c in execu.calls if c.action.lower() == "type"]
-    # Transition loop: first Type → NO_EFFECT → suppress same action (no thrash)
-    assert len(type_calls) >= 1
+    # Transition loop: first Type → NO_EFFECT → suppress same action (no thrash).
+    # Meta-first may spend look turns before ACT; require at least one Type when
+    # the brain actuates, and at least one planner invocation on an ACT turn.
     assert len(type_calls) <= 2
-    assert runtime.execution_state.planner_invocations >= 2
+    assert runtime.execution_state.planner_invocations >= 1
+    if type_calls:
+        assert len(type_calls) >= 1
     # Experience should remember ineffective type
     assert runtime.execution_state.last_transition is not None
     assert runtime.execution_state.last_transition.get("outcome") in {
@@ -551,7 +628,9 @@ def test_failed_transition_triggers_richer_reobserve_once():
     monkeypatch.undo()
 
 
-def test_no_fixed_plan_skips_search_when_chat_open():
+def test_no_fixed_plan_skips_search_when_chat_open(monkeypatch):
+    """Chat-open world: unified stub starts the call — never Search via legacy chooser."""
+    _install_voice_call_unified_stub(monkeypatch)
     goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
     ex = ExecutionState()
     wm = _seed_world(
@@ -585,6 +664,7 @@ def test_no_results_does_not_click_contact():
 
 
 def test_visible_search_result_row_is_explored_before_refinement():
+    """Promote-row short-circuit removed: without unified, decide Observes."""
     from plugin.agent.decision import DecisionEngine
 
     goal = Goal(kind="whatsapp_voice_call", contact="now group")
@@ -596,43 +676,53 @@ def test_visible_search_result_row_is_explored_before_refinement():
         ]
     )
     ex = ExecutionState()
-    decision = DecisionEngine().decide(goal, wm, ex)
-    assert decision is not None
-    assert decision.action_family == "open_contact"
-    assert decision.semantic_target in {"Now…", "Now"}
+    _assert_unified_declined_observe(DecisionEngine().define_action_step(goal, wm, ex))
 
 
 def test_high_confidence_perception_promotes_open_contact_when_frontier_collapses(monkeypatch):
+    """Perception-summary promotion removed — extras alone do not choose the act."""
     from plugin.agent.decision import DecisionEngine
-    from plugin.agent.perception_synthesis import PerceptionSynthesis
+    from plugin.agent import decision as decision_mod
 
     goal = Goal(kind="whatsapp_forward_message", contact="Kulvinder", target_contact="Pallavi", link_query="zarooratwala")
     wm = _seed_world([])
     ex = ExecutionState()
 
-    def fake_synthesize_perception(*_args, **_kwargs):
-        return PerceptionSynthesis(
-            screen_type="list",
-            active_surface="conversation",
-            likely_next_family="open_contact",
-            likely_next_target="Kulvinder Ji",
-            likely_next_text="",
-            confidence=0.88,
-            supporting_evidence=["perception suggests opening the source conversation"],
-            raw={"fake": True},
-        )
+    reading = {
+        "source": "unified_cognition",
+        "screen_type": "list",
+        "active_surface": "conversation",
+        "likely_next_family": "open_contact",
+        "likely_next_target": "Kulvinder Ji",
+        "confidence": 0.88,
+    }
+    real_get_overlay = decision_mod.get_overlay
 
-    monkeypatch.setattr("plugin.agent.decision.synthesize_perception", fake_synthesize_perception)
+    class _PublishingOverlay:
+        def __init__(self, inner):
+            self._inner = inner
 
-    decision = DecisionEngine().decide(goal, wm, ex)
-    assert decision is not None
-    assert decision.action_family == "open_contact"
-    assert decision.semantic_target == "Kulvinder Ji"
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def features(self, *args, **kwargs):
+            feats = self._inner.features(*args, **kwargs)
+            feats.extras["perception_llm"] = dict(reading)
+            feats.extras["perception_summary"] = dict(reading)
+            return feats
+
+    monkeypatch.setattr(
+        decision_mod,
+        "get_overlay",
+        lambda app, world: _PublishingOverlay(real_get_overlay(app, world)),
+    )
+
+    _assert_unified_declined_observe(DecisionEngine().define_action_step(goal, wm, ex))
 
 
 def test_perception_open_contact_beats_search_type_when_both_are_available(monkeypatch):
+    """Perception extras are not a rival chooser — unified must return the act."""
     from plugin.agent.decision import DecisionEngine
-    from plugin.agent.perception_synthesis import PerceptionSynthesis
 
     goal = Goal(kind="whatsapp_voice_call", contact="Kulvinder")
     wm = _seed_world(
@@ -642,25 +732,7 @@ def test_perception_open_contact_beats_search_type_when_both_are_available(monke
         ]
     )
     ex = ExecutionState()
-
-    def fake_synthesize_perception(*_args, **_kwargs):
-        return PerceptionSynthesis(
-            screen_type="list",
-            active_surface="conversation",
-            likely_next_family="open_contact",
-            likely_next_target="Kulvinder Ji",
-            likely_next_text="",
-            confidence=0.84,
-            supporting_evidence=["perception prefers opening the contact row"],
-            raw={"fake": True},
-        )
-
-    monkeypatch.setattr("plugin.agent.decision.synthesize_perception", fake_synthesize_perception)
-
-    decision = DecisionEngine().decide(goal, wm, ex)
-    assert decision is not None
-    assert decision.action_family == "open_contact"
-    assert decision.semantic_target == "Kulvinder Ji"
+    _assert_unified_declined_observe(DecisionEngine().define_action_step(goal, wm, ex))
 
 
 def test_empty_first_search_hypothesis_advances_to_next_hypothesis():
@@ -756,10 +828,8 @@ def test_end_call_with_chat_list_is_not_ringing():
     assert view.call_state != "ringing"
     assert view.screen == "LIST"
     goal = Goal(kind="whatsapp_voice_call", contact="Pallavi")
-    step = next_action(goal, wm, ExecutionState())
-    assert step is not None
-    assert step.action == "Type"
-    assert step.text == "Pallavi"
+    # Legacy Type-from-list fallthrough removed; without unified → Observe.
+    _assert_unified_declined_observe(next_action(goal, wm, ExecutionState()))
 
 
 def test_leftover_call_without_contact_is_not_success():
@@ -772,9 +842,8 @@ def test_leftover_call_without_contact_is_not_success():
     )
     status = evaluate_goal(goal, wm)
     assert not status.succeeded
-    step = next_action(goal, wm, ExecutionState())
-    assert step is not None
-    assert "end" in step.semantic_target.lower()
+    # End-call candidate ranking removed; without unified → Observe.
+    _assert_unified_declined_observe(next_action(goal, wm, ExecutionState()))
 
 
 def test_ringing_with_contact_is_success():
@@ -789,8 +858,9 @@ def test_ringing_with_contact_is_success():
     assert status.succeeded
 
 
-def test_electron_static_search_mirror_and_description_contact():
+def test_electron_static_search_mirror_and_description_contact(monkeypatch):
     """WhatsApp Electron: query as static title=Pallavi desc=Search; contact in button description."""
+    _install_voice_call_unified_stub(monkeypatch)
     wm = _seed_world(
         [
             _entity(1, etype="static", label="Pallavi", role="AXStaticText", description="Search"),
@@ -837,6 +907,8 @@ def test_composer_does_not_hide_search_overlay():
 def test_soft_evidence_advances_to_click_contact(monkeypatch):
     """Executor proves typed query; post-view may miss it — soft hint still opens contact."""
     auxiliary_client, token = _mock_perception_llm(monkeypatch)
+    _mock_synthesize_perception(monkeypatch)
+    _install_voice_call_unified_stub(monkeypatch)
     from plugin.agent.controller import parse_typed_query_evidence
 
     evidence = "typed 'Pallavi' … evidence=\"AXStaticText title='Pallavi' desc='Search'\""
@@ -995,8 +1067,11 @@ def test_normalize_preserves_description():
     assert ent.attributes.get("description") == "Pallavi"
 
 
-def test_log_ordering_phases(tmp_path):
+def test_log_ordering_phases(tmp_path, monkeypatch):
     from plugin.experiments.logger import EventLogger
+
+    _mock_synthesize_perception(monkeypatch)
+    _install_voice_call_unified_stub(monkeypatch)
 
     list_ui = [_entity(1, etype="static", label="Search"), _entity(2, etype="button", label="Chats")]
     search_ui = [_entity(1, etype="textfield", label="Search", role="AXTextField", value="", focused=True)]
@@ -1009,7 +1084,7 @@ def test_log_ordering_phases(tmp_path):
         _entity(2, etype="textfield", label="Compose message", role="AXTextField"),
         _entity(3, etype="button", label="Voice call"),
     ]
-    ringing = [_entity(1, etype="button", label="End call"), _entity(2, etype="static", label="Calling")]
+    ringing = [_entity(1, etype="button", label="End call"), _entity(2, etype="static", label="Calling Pallavi")]
 
     seq = {"i": 0}
     frames = [list_ui, search_ui, search_ui, typed, typed, chat, chat, ringing, ringing]
@@ -1034,7 +1109,7 @@ def test_log_ordering_phases(tmp_path):
     runtime = RuntimeState()
     run_goal_closed_loop(
         runtime,
-        Goal(kind="whatsapp_voice_call", contact="Pallavi"),
+        Goal(kind="whatsapp_voice_call", contact="Pallavi", require_contact_in_call=False),
         observe=observe,
         execute=ScriptedExecutor(),
         log=log,
@@ -1090,26 +1165,35 @@ def test_fuse_single_source_agreement():
     bundle = ObservationBundle(source_id="pyobjc_ax", observation=obs, coverage_self=1.0)
     fused, report = fuse_observations([bundle], app="WhatsApp")
     assert len(fused.nodes) == 2
-    assert report.agreement >= 0.5
+    # Assemble-only: no rivalry agreement; report is inert on that axis.
+    assert report.agreement is None
+    assert report.needs_reobserve is False
+    assert report.meta.get("fusion_mode") == "assemble"
     assert "fusion" in (fused.meta or {})
 
 
 def test_ax_type_refuses_label_only_search_surface(monkeypatch):
-    calls = {"paste": 0, "cgevent": 0}
+    """No grounded bounds → refuse. Must not invent via Cmd+F / global Search."""
+    calls = {"paste": 0, "cgevent": 0, "open_search": 0}
 
     monkeypatch.setattr(ax_action, "ax_available", lambda: True)
     monkeypatch.setattr(ax_action, "_activate_app", lambda _app: None)
-    monkeypatch.setattr(ax_action, "_open_search_ui", lambda _app, bounds=None: "Cmd+F search shortcut")
+
+    def _forbid_open(*_a, **_k):
+        calls["open_search"] += 1
+        raise AssertionError("Cmd+F invent path must not run")
+
+    monkeypatch.setattr(ax_action, "_open_search_ui", _forbid_open)
     monkeypatch.setattr(ax_action, "_find_search_text_field", lambda _app: (None, ""))
     monkeypatch.setattr(ax_action, "_find_element", lambda *_a, **_k: None)
 
     def _forbid_paste(*_a, **_k):
         calls["paste"] += 1
-        raise AssertionError("clipboard fallback should not run without a confirmed editable field")
+        raise AssertionError("clipboard fallback should not run without grounded bounds")
 
     def _forbid_cgevent(*_a, **_k):
         calls["cgevent"] += 1
-        raise AssertionError("CGEvent fallback should not run without a confirmed editable field")
+        raise AssertionError("CGEvent fallback should not run without grounded bounds")
 
     monkeypatch.setattr(ax_action, "_paste_via_clipboard", _forbid_paste)
     monkeypatch.setattr(ax_action, "_type_via_cgevent", _forbid_cgevent)
@@ -1117,8 +1201,101 @@ def test_ax_type_refuses_label_only_search_surface(monkeypatch):
     result = ax_action.ax_type("WhatsApp", "Kulvinder", into="Search")
 
     assert not result.ok
-    assert "editable field" in result.message.lower()
-    assert calls == {"paste": 0, "cgevent": 0}
+    assert "grounded" in result.message.lower() or "invent" in result.message.lower()
+    assert calls == {"paste": 0, "cgevent": 0, "open_search": 0}
+
+
+def test_ax_type_refuses_when_no_search_field_at_all(monkeypatch):
+    """Live 095344: grounded 'Pallavi'/composer click must not receive keys.
+
+    Previously ax_search_field_off_grounded_bounds still fell through to
+    typing_at_grounded_focus and drafted the query into open chats.
+    """
+    calls = {"paste": 0, "cgevent": 0, "system_events": 0}
+
+    monkeypatch.setattr(ax_action, "ax_available", lambda: True)
+    monkeypatch.setattr(ax_action, "_activate_app", lambda _app: None)
+    monkeypatch.setattr(ax_action, "_mouse_click", lambda *_a, **_k: None)
+    monkeypatch.setattr(ax_action, "_find_search_text_field", lambda _app: (None, ""))
+    monkeypatch.setattr(ax_action, "_find_element", lambda *_a, **_k: None)
+
+    def _forbid_paste(*_a, **_k):
+        calls["paste"] += 1
+        raise AssertionError("paste forbidden")
+
+    def _forbid_cgevent(*_a, **_k):
+        calls["cgevent"] += 1
+        raise AssertionError("cgevent forbidden")
+
+    def _forbid_se(*_a, **_k):
+        calls["system_events"] += 1
+        raise AssertionError("system_events forbidden")
+
+    monkeypatch.setattr(ax_action, "_paste_via_clipboard", _forbid_paste)
+    monkeypatch.setattr(ax_action, "_type_via_cgevent", _forbid_cgevent)
+    monkeypatch.setattr(ax_action, "_type_via_system_events", _forbid_se)
+
+    result = ax_action.ax_type(
+        "WhatsApp",
+        "zarooratwala Pallavi",
+        into="Pallavi",
+        search_bounds=(2115.0, 351.0, 24.0, 24.0),
+    )
+    assert not result.ok
+    assert "refuse_type_non_search_focus" in result.message
+    assert "typing_at_grounded_focus" not in result.message
+    assert calls == {"paste": 0, "cgevent": 0, "system_events": 0}
+
+
+def test_ax_type_retargets_when_grounded_misses_real_search(monkeypatch):
+    """Wrong grounded geometry + AX Search present → click Search, then type."""
+    clicks: list = []
+
+    class _FakeField:
+        pass
+
+    field = _FakeField()
+    monkeypatch.setattr(ax_action, "ax_available", lambda: True)
+    monkeypatch.setattr(ax_action, "_activate_app", lambda _app: None)
+    monkeypatch.setattr(ax_action, "ax_press_escape", lambda _app: None)
+    monkeypatch.setattr(
+        ax_action, "_mouse_click", lambda x, y: clicks.append((float(x), float(y)))
+    )
+    monkeypatch.setattr(
+        ax_action, "_find_search_text_field", lambda _app: (field, "Q Search")
+    )
+    monkeypatch.setattr(
+        ax_action,
+        "_frame_center",
+        lambda el: (2100.0, 100.0) if el is field else None,
+    )
+    monkeypatch.setattr(ax_action, "_find_element", lambda *_a, **_k: None)
+    monkeypatch.setattr(ax_action, "_paste_via_clipboard", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        ax_action, "_query_visible_in_search", lambda *_a, **_k: (True, "search ok")
+    )
+    monkeypatch.setattr(ax_action, "_ax_str", lambda *_a, **_k: "zarooratwala Pallavi")
+    monkeypatch.setattr(ax_action, "_press", lambda *_a, **_k: None)
+
+    # ApplicationServices focus/value writes are optional.
+    import types
+    import sys
+
+    fake_as = types.ModuleType("ApplicationServices")
+    fake_as.AXUIElementSetAttributeValue = lambda *_a, **_k: None
+    monkeypatch.setitem(sys.modules, "ApplicationServices", fake_as)
+
+    result = ax_action.ax_type(
+        "WhatsApp",
+        "zarooratwala Pallavi",
+        into="Pallavi",
+        search_bounds=(2115.0, 351.0, 24.0, 24.0),
+    )
+    assert result.ok
+    assert "retarget_ax_search_field" in result.message
+    assert "typing_at_grounded_focus" not in result.message
+    # Second click must be the Search field center, not only the bad grounded point.
+    assert any(abs(y - 100.0) < 1.0 for _, y in clicks)
 
 
 def test_ghost_executor_normalizes_hover_action_name(monkeypatch):

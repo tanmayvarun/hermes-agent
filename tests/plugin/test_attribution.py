@@ -203,7 +203,7 @@ def test_controller_call_failure_does_not_mutate_reference_hypothesis(monkeypatc
     class _Eng:
         last_trace = None
 
-        def decide(self, goal, world, execution_state, **kwargs):
+        def define_action_step(self, goal, world, execution_state, **kwargs):
             from plugin.agent.decision import DecisionTrace
 
             cand = Action(

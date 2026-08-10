@@ -36,12 +36,15 @@ COST_RANK = {"low": 1, "medium": 2, "high": 3}
 # Capability families group verbs by what they are *for*, so retrieval can do
 # progressive disclosure ("N of M relevant") rather than dumping the catalog.
 CAPABILITY_FAMILIES: Dict[str, str] = {
+    "search": "search",
     "compose_search_query": "search",
     "locate_content": "search",
     "resolve_entity": "disambiguation",
     "open_entity": "navigation",
     "reveal_actions": "navigation",
-    "dismiss_transient": "navigation",
+    "dismiss_transient": "housekeeping",
+    "relieve_host_storage": "housekeeping",
+    "recover_blocked_app": "housekeeping",
     "select_content": "selection",
     "invoke_affordance": "action",
     "commit_irreversible": "action",
@@ -127,6 +130,13 @@ class CapabilityDescriptor:
 # Operational metadata for the built-in catalog verbs. Reliability seeds are
 # conservative priors; a live registry can update them from capability memory.
 _OPERATIONAL: Dict[str, Dict[str, object]] = {
+    "search": dict(
+        cost="medium", latency="medium", reliability=0.7,
+        preconditions=("task_evidence",), side_effects=("none",),
+        inputs=("referent", "task_evidence", "candidate_set"),
+        outputs=("chosen_entity", "search_result"),
+        kind="skill",
+    ),
     "compose_search_query": dict(
         cost="low", latency="low", reliability=0.85,
         preconditions=("task_evidence",), side_effects=("none",),
@@ -159,13 +169,26 @@ _OPERATIONAL: Dict[str, Dict[str, object]] = {
     ),
     "invoke_affordance": dict(
         cost="medium", latency="medium", reliability=0.65,
-        preconditions=("affordance_set",), side_effects=("navigation",),
+        # Soft reorder: object-scoped invoke also wants selection fact when present.
+        preconditions=("affordance_set", "selection"),
+        side_effects=("navigation",),
         inputs=("affordance_label",), outputs=("surface",),
     ),
     "dismiss_transient": dict(
         cost="low", latency="low", reliability=0.9,
         preconditions=("transient_chrome",), side_effects=("navigation",),
         inputs=(), outputs=("surface",),
+    ),
+    "relieve_host_storage": dict(
+        cost="medium", latency="medium", reliability=0.85,
+        preconditions=("host_resource_pressure",), side_effects=("none",),
+        inputs=("storage_evidence",), outputs=("free_space",),
+    ),
+    "recover_blocked_app": dict(
+        cost="medium", latency="medium", reliability=0.8,
+        preconditions=("transient_chrome",),
+        side_effects=("navigation",),
+        inputs=("exit_cta",), outputs=("surface", "app_foreground"),
     ),
     "commit_irreversible": dict(
         cost="high", latency="low", reliability=0.9,
@@ -289,7 +312,25 @@ class CapabilityRegistry:
         moves; anything else gets the reversible shortlist by default.
         """
         action = str(meta_action or "act").strip().lower()
-        if action in {"probe", "perceive", "verify", "think", "backtrack"}:
+        if action == "probe":
+            action = "explore"
+        if action == "search":
+            from plugin.agent.executive.meta_action import SEARCH_STAGE_CAPABILITIES
+
+            stages = self.retrieve(
+                facts=facts, substrate=substrate, reversible_only=True, limit=max(limit, 8)
+            )
+            return [d for d in stages if d.verb in SEARCH_STAGE_CAPABILITIES][: max(1, limit)]
+        if action == "explore":
+            from plugin.agent.executive.meta_action import EXPLORE_STAGE_CAPABILITIES
+
+            stages = self.retrieve(
+                facts=facts, substrate=substrate, reversible_only=True, limit=max(limit, 8)
+            )
+            return [d for d in stages if d.verb in EXPLORE_STAGE_CAPABILITIES][
+                : max(1, limit)
+            ]
+        if action in {"perceive", "think", "ask", "wait", "delegate"}:
             return self.retrieve(
                 facts=facts, substrate=substrate, reversible_only=True, limit=limit
             )
@@ -332,6 +373,12 @@ class CapabilityRegistry:
 
 
 _DEFAULT_REGISTRY: Optional[CapabilityRegistry] = None
+
+
+def reset_default_registry() -> None:
+    """Drop the cached registry so catalog edits are visible in-process."""
+    global _DEFAULT_REGISTRY
+    _DEFAULT_REGISTRY = None
 
 
 def default_registry() -> CapabilityRegistry:

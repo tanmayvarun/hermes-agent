@@ -93,7 +93,7 @@ def test_ladder_does_not_reperceive_a_settled_question():
 
 def test_ladder_asks_user_on_a_hard_block():
     choice = decision_ladder(MetaContext(hard_block=True))
-    assert choice.action == MetaAction.ASK_USER
+    assert choice.action == MetaAction.ASK
 
 
 def test_ladder_plans_a_new_branch_on_a_stale_branch():
@@ -105,4 +105,4 @@ def test_ladder_plans_a_new_branch_on_a_stale_branch():
     """
     suff = DecisionSufficiency(sufficient_to_act=False, observe_has_value=False)
     choice = decision_ladder(MetaContext(sufficiency=suff, branch_stale=True))
-    assert choice.action == MetaAction.INFORMATION_GATHERING
+    assert choice.action == MetaAction.THINK

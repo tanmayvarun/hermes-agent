@@ -44,8 +44,50 @@ python -m plugin.evals.run --closed-loop          # also read recent run logs
 python -m plugin.evals.run --json reports/now.json
 python -m plugin.evals.run --baseline reports/prev.json   # fail on drift
 python -m plugin.evals.harvest --frames <recording dir>   # refresh the corpus
+python -m plugin.evals.post_open_pipeline         # piecewise open→hunt (A/B/C/D)
+python -m plugin.evals.post_open_pipeline --live --model ollama-cloud/qwen3.5:397b
 pytest tests/plugin/test_evals.py                 # the eval's own tests
 ```
+
+## Piecewise post-open pipeline
+
+End-to-end stalls hide *which* layer lied. After `open_entity`, score each
+stage alone against the same trajectory (prior chat_list → post-open
+conversation):
+
+| Piece | Question |
+| ----- | -------- |
+| A Perception | Multimodal reading: `surface=conversation`, open contact, not search chrome |
+| B Critic | Accepts that Δworld; refuses search-field chrome as `open_conversation` |
+| C Brain | On accepted open source with content not visible → `locate_content` |
+| D AX trap | Synthetic: AX title `Q Search\|` must not become the open referent |
+
+Offline uses recorded replies; `--live` re-asks a real perceptor on the frozen
+screenshot + packet. WhatsApp zarooratwala frames are fixtures of a general
+open→hunt task, not special cases in the agent.
+
+## Module golden corpus
+
+Layered gold (eval-only, never training) lives under
+`plugin/evals/golden/corpus/v1/`:
+
+| Module | Gold asserts |
+| --- | --- |
+| perceive | surface, open conversation, no search-chrome open |
+| critic | accepted Δworld; refuse search-field chrome as open |
+| meta_action | next meta move; no hard VERIFY preempt |
+| brain | capability on accepted world (e.g. `locate_content` after open) |
+
+```bash
+python -m plugin.evals.golden.score
+python -m plugin.evals.golden.harvest_run --runs plugin/experiments/runs --limit 6
+python -m plugin.evals.run   # includes [golden_v1]
+```
+
+Discipline: `v1` is frozen; promote live failures into permanent cases; never
+set gold from the recorded model reply for the field under score. Harvest
+writes *candidates* only — humans promote into `corpus/vN`. See
+`plugin/evals/golden/README.md`.
 
 ## The frozen corpus
 
@@ -68,6 +110,46 @@ wearing a lab coat.
 
 **The operational discipline that matters most: every discovered failure
 becomes a permanent fixture.**
+
+## Semantic world-understanding harness
+
+Click-outcome evals miss the failure class of live 184742: the agent opened
+Send-to, then treated background source-selection chrome as
+`destination_selected`. That is **cross-surface semantic contamination**.
+
+The dedicated harness lives at `plugin/evals/perception_semantic/`:
+
+```bash
+python -m plugin.evals.perception_semantic --expand-metamorphic
+```
+
+Each golden freezes the **production input packet** (screenshot reference +
+compact AX with parentage + executive question + bindings + frontier), a
+**structured gold world** (surfaces, typed owned claims, affordances,
+acceptable/forbidden actions), and often a **contaminated reply** for the
+negative path. Scoring is layered (surface, ownership, predicates,
+cross-surface isolation, affordances, task actions, safety) — never one
+giant JSON equal/not-equal.
+
+Metamorphic family for the seed case: background selected-count 1→2→3 must
+keep `destination_selected=false`; renaming the destination; and the single
+causal positive — recipient checkbox selected → `destination_selected=true`.
+
+CI gate: `semantic_perception_zero_cross_surface_contamination`.
+Tag cases by **phenomenon** (`nested_surfaces`, `foreground_authority`, …)
+not only by app. Screenshots stay out of git under
+`plugin/experiments/fixtures/perceptor/`.
+
+Live failures enter the curriculum via:
+
+```bash
+python -m plugin.evals.perception_semantic.harvest_failure --from-run <run> --auto-fail
+# annotate eval_candidates/<id>/annotation.json
+python -m plugin.evals.perception_semantic.promote --candidate <id> --phenomenon cross_surface
+```
+
+Set `HERMES_PERCEPTION_EVAL_CANDIDATES_DIR` alongside
+`HERMES_PERCEPTOR_RECORD_DIR` so production packets freeze automatically.
 
 ## Ground truth that does not agree with itself
 

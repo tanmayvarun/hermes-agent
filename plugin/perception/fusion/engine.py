@@ -1,10 +1,16 @@
-"""Property-level evidence fusion — hypotheses → FusedFrame with beliefs."""
+"""Assemble multi-source observations for the multimodal perceptor.
+
+This layer enumerates modalities (AX, OCR, screenshot + capture transform).
+It does **not** reconcile competing accounts of the screen: no source scoring,
+no agreement thresholds, no LLM referee. Semantic fusion belongs to
+``unified_cognition``; temporal coherence (x + Δx) belongs to the world critic.
+"""
 
 from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from plugin.perception.evidence import Evidence, EvidenceRef, ObservationEvent
 from plugin.perception.hypothesis import EntityHypothesis, hypothesis_key, role_bucket
@@ -21,7 +27,7 @@ from plugin.perception.fusion.referee import (
 from plugin.worldmodel.belief import Belief, belief_from_evidence
 from plugin.worldmodel.entities.normalize import _ROLE_MAP, _ACTION_MAP, _clean_label
 
-# Source reliability priors for property fusion
+# Legacy prior table kept for unused rivalry helpers below; assembly ignores it.
 SOURCE_PRIOR = {
     "pyobjc_ax": 1.0,
     "macapptree": 0.75,
@@ -29,6 +35,17 @@ SOURCE_PRIOR = {
     "vision": 0.8,
     "execution": 1.05,
     "fixture": 0.95,
+}
+
+# Stable assembly order: accessibility before OCR/vision so chrome + content
+# concatenate predictably without implying preference.
+_SOURCE_ORDER = {
+    "pyobjc_ax": 0,
+    "macapptree": 1,
+    "screen2ax": 2,
+    "vision": 3,
+    "execution": 4,
+    "fixture": 5,
 }
 
 
@@ -94,6 +111,9 @@ class FusionReport:
             "node_counts": self.node_counts,
             "primary_source": self.primary_source,
             "needs_reobserve": self.needs_reobserve,
+            # Flattened so ingest/score gates see assemble vs rivalry without
+            # digging into meta.
+            "fusion_mode": self.meta.get("fusion_mode", ""),
             "meta": self.meta,
             # compat with old WorldViewScore readers
             "actionable_agreed": self.meta.get("actionable_agreed", 0),
@@ -103,7 +123,7 @@ class FusionReport:
 
 @dataclass
 class FusedFrame:
-    """One fused perception cycle — beliefs, not a raw tree."""
+    """One assembled perception cycle — enumerated inputs, not a rival reading."""
 
     timestamp: float
     app_name: str
@@ -112,6 +132,28 @@ class FusedFrame:
     report: FusionReport
     events: List[ObservationEvent] = field(default_factory=list)
     screenshot_path: Optional[str] = None
+    # Measurements of the capture itself (transform + OCR lines). Assembly
+    # concatenates contents; these keys must survive so click geometry and the
+    # perceptor's OCR enumeration stay available. See ``carry_forward``.
+    source_meta: Dict[str, Any] = field(default_factory=dict)
+
+    def carry_forward(self, bundles: Sequence["ObservationBundle"]) -> "FusedFrame":
+        """Adopt the per-frame measurements from the sources that took them.
+
+        Only the keys that describe the capture rather than its contents. The
+        first source to supply one wins, which is unambiguous in practice: the
+        transform comes from whoever grabbed the screenshot and the OCR read
+        from whoever ran the reader.
+        """
+        for bundle in bundles or []:
+            meta = getattr(getattr(bundle, "observation", None), "meta", None)
+            if not isinstance(meta, dict):
+                continue
+            for key in ("capture_frame", "ocr"):
+                value = meta.get(key)
+                if value and key not in self.source_meta:
+                    self.source_meta[key] = value
+        return self
 
     def mean_confidence(self) -> float:
         if not self.entities:
@@ -119,7 +161,7 @@ class FusedFrame:
         return sum(e.confidence for e in self.entities) / len(self.entities)
 
     def to_observation(self) -> Observation:
-        """Compat projection: beliefs → AxNode list for legacy ingest paths."""
+        """Compat projection: assembled entities → AxNode list for ingest."""
         nodes: List[AxNode] = []
         for fe in self.entities:
             exists = fe.beliefs.get("exists")
@@ -156,9 +198,8 @@ class FusedFrame:
                     raw_id=str((fe.raw_refs or {}).get("raw_id") or fe.key),
                 )
             )
-        degraded = self.report.needs_reobserve or (
-            self.report.agreement is not None and self.report.agreement < 0.4
-        )
+        # Assembly never marks rivalry failure; emptiness alone is degraded.
+        coverage = 1.0 if nodes else 0.0
         return Observation(
             timestamp=self.timestamp,
             app_name=self.app_name,
@@ -166,9 +207,13 @@ class FusedFrame:
             nodes=nodes,
             screenshot_path=self.screenshot_path,
             source="fused:" + "+".join(self.report.sources or ["none"]),
-            coverage=min(1.0, max(0.0, self.mean_confidence())),
-            degraded=degraded,
-            meta={"fusion": self.report.to_dict(), "fused_frame": True},
+            coverage=coverage,
+            degraded=not bool(nodes),
+            meta={
+                **dict(self.source_meta or {}),
+                "fusion": self.report.to_dict(),
+                "fused_frame": True,
+            },
         )
 
 
@@ -185,8 +230,123 @@ def _source_weight(source: str) -> float:
     return float(SOURCE_PRIOR.get(source, 0.7))
 
 
+def _source_sort_key(source_id: str) -> Tuple[int, str]:
+    sid = (source_id or "").lower()
+    return (_SOURCE_ORDER.get(sid, 50), sid)
+
+
+def _node_dedupe_key(node: AxNode) -> Tuple[Any, ...]:
+    bbox = node.bbox or (0.0, 0.0, 0.0, 0.0)
+    try:
+        rounded = tuple(round(float(v), 0) for v in tuple(bbox)[:4])
+    except (TypeError, ValueError):
+        rounded = (0.0, 0.0, 0.0, 0.0)
+    return (
+        str(node.role or "").lower(),
+        str(node.name or node.description or "").strip().lower()[:80],
+        rounded,
+    )
+
+
+def _entity_from_node(node: AxNode, *, source_id: str, index: int) -> FusedEntity:
+    """One source node → one entity. No cross-source blending."""
+    label = str(node.name or node.description or "").strip()
+    attrs = dict(node.attributes or {})
+    try:
+        conf = float(attrs.get("ocr_confidence") or attrs.get("belief_confidence") or 0.85)
+    except (TypeError, ValueError):
+        conf = 0.85
+    conf = max(0.05, min(0.99, conf))
+    key = f"{source_id}|{index}|{label[:40] or node.role or 'node'}"
+    beliefs: Dict[str, Belief] = {
+        "exists": Belief(value=True, confidence=conf),
+        "label": Belief(value=label, confidence=conf),
+        "visible": Belief(value=True, confidence=conf),
+    }
+    if node.value is not None:
+        beliefs["value"] = Belief(value=node.value, confidence=conf)
+    if attrs.get("focused") or attrs.get("AXFocused"):
+        beliefs["focused"] = Belief(value=True, confidence=conf)
+    if node.description:
+        beliefs["description"] = Belief(value=str(node.description), confidence=conf)
+    actions = list(attrs.get("actions") or []) if isinstance(attrs.get("actions"), list) else []
+    return FusedEntity(
+        key=key,
+        role=str(node.role or "AXUnknown"),
+        label=label,
+        bounds=tuple(node.bbox or (0.0, 0.0, 0.0, 0.0))[:4],  # type: ignore[arg-type]
+        actions=actions,
+        beliefs=beliefs,
+        confidence=conf,
+        sources=[source_id],
+        raw_refs={"raw_id": node.raw_id or key, "source": source_id},
+    )
+
+
+def _entity_from_hypothesis(hyp: EntityHypothesis, *, index: int) -> FusedEntity:
+    label = str(hyp.label or "").strip()
+    conf = max(0.05, min(0.99, float(hyp.confidence or 0.8)))
+    props = dict(hyp.properties or {})
+    beliefs: Dict[str, Belief] = {
+        "exists": Belief(value=True, confidence=conf),
+        "label": Belief(value=label, confidence=conf),
+        "visible": Belief(value=props.get("visible", True), confidence=conf),
+    }
+    for prop, val in props.items():
+        if prop in beliefs:
+            continue
+        beliefs[prop] = Belief(value=val, confidence=conf)
+    return FusedEntity(
+        key=str(hyp.key or f"{hyp.source}|{index}|{label[:40]}"),
+        role=str(hyp.role or "AXUnknown"),
+        label=label,
+        bounds=tuple(hyp.bounds or (0.0, 0.0, 0.0, 0.0))[:4],  # type: ignore[arg-type]
+        actions=list(hyp.actions or []),
+        beliefs=beliefs,
+        confidence=conf,
+        sources=[str(hyp.source or "unknown")],
+        raw_refs=dict(hyp.raw_refs or {}),
+    )
+
+
+def _assemble_report(
+    *,
+    sources: Sequence[str],
+    node_counts: Dict[str, int],
+    latencies_ms: Dict[str, float],
+    entity_count: int,
+    ignored_sources: Optional[Sequence[str]] = None,
+    healthy_source_count: Optional[int] = None,
+) -> FusionReport:
+    """Assembly has no rivalry verdict — agreement and reobserve stay inert."""
+    return FusionReport(
+        sources=list(sources),
+        agreement=None,
+        conflicts=[],
+        hypothesis_counts={sid: node_counts.get(sid, 0) for sid in sources},
+        latencies_ms=dict(latencies_ms),
+        node_counts=dict(node_counts),
+        primary_source="",
+        needs_reobserve=False,
+        meta={
+            "fusion_mode": "assemble",
+            "healthy_source_count": int(
+                healthy_source_count if healthy_source_count is not None else len(sources)
+            ),
+            "ignored_sources": list(ignored_sources or []),
+            # Compat leftovers from retired rivalry fusion — always 0 in assemble
+            # mode. Do not treat these as "clickable affordance" counts.
+            "actionable_agreed": 0,
+            "actionable_total": 0,
+            "actionable_semantics": "retired_assemble",
+            "entity_count": entity_count,
+            "conflict_count": 0,
+        },
+    )
+
+
 class FusionEngine:
-    """Fuse EntityHypothesis lists property-by-property."""
+    """Assemble multi-source observations; do not adjudicate between them."""
 
     def __init__(self) -> None:
         self.ax_interp = AxTreeInterpreter()
@@ -207,66 +367,76 @@ class FusionEngine:
         return True
 
     def fuse_bundles(self, bundles: List[ObservationBundle], *, app: str = "") -> FusedFrame:
+        """Concatenate source nodes and carry capture meta — no rivalry."""
         events = [ObservationEvent.from_bundle(b) for b in bundles]
-        hyps: List[EntityHypothesis] = []
-        hyp_counts: Dict[str, int] = {}
+        healthy_bundles = [b for b in bundles if self._bundle_is_healthy(b)]
+        # Prefer healthy sources; if every source is a stub, still try them all
+        # so a lone degraded read is not discarded.
+        active_bundles = healthy_bundles if healthy_bundles else list(bundles)
+        active_bundles = sorted(active_bundles, key=lambda b: _source_sort_key(b.source_id))
+
         latencies: Dict[str, float] = {}
         node_counts: Dict[str, int] = {}
-        healthy_bundles = [b for b in bundles if self._bundle_is_healthy(b)]
-        active_bundles = healthy_bundles if healthy_bundles else list(bundles)
-
+        entities: List[FusedEntity] = []
+        seen: set = set()
         for b in active_bundles:
             latencies[b.source_id] = b.latency_ms
-            node_counts[b.source_id] = len(b.observation.nodes or [])
-            sid = (b.source_id or "").lower()
-            if sid in {"screen2ax", "vision"} or "vision" in sid:
-                interpreted = self.vision_interp.interpret(b)
-            else:
-                interpreted = self.ax_interp.interpret(b)
-            hyp_counts[b.source_id] = len(interpreted)
-            hyps.extend(interpreted)
+            nodes = list(b.observation.nodes or [])
+            node_counts[b.source_id] = len(nodes)
+            for index, node in enumerate(nodes):
+                key = _node_dedupe_key(node)
+                if key in seen:
+                    continue
+                seen.add(key)
+                entities.append(_entity_from_node(node, source_id=b.source_id, index=index))
 
-        frame = self._fuse_hypotheses_core(
-            hyps,
-            app=app or next((b.observation.app_name for b in bundles if b.observation.app_name), ""),
-            window=next((b.observation.window_name for b in bundles if b.observation.window_name), ""),
-            screenshot=next((b.observation.screenshot_path for b in bundles if b.observation.screenshot_path), None),
-            sources=[b.source_id for b in active_bundles],
-            events=events,
-            latencies_ms=latencies,
-            node_counts=node_counts,
-            hypothesis_counts=hyp_counts,
-            healthy_source_count=len(healthy_bundles),
-            ignored_sources=[b.source_id for b in bundles if b not in active_bundles],
-        )
-        frame = self._refine_with_llm_referee(
-            frame,
-            bundles=bundles,
-            app=app or next((b.observation.app_name for b in bundles if b.observation.app_name), ""),
-            window=next((b.observation.window_name for b in bundles if b.observation.window_name), ""),
-            screenshot=next((b.observation.screenshot_path for b in bundles if b.observation.screenshot_path), None),
-            events=events,
-            latencies_ms=latencies,
-            node_counts=node_counts,
-            hypothesis_counts=hyp_counts,
-        )
-        # If property fusion collapses to an empty frame, preserve the richest
-        # live source instead of discarding the whole observation. This keeps
-        # the agent adaptive under partial-fusion failures.
-        if not frame.entities:
-            fallback = self._fallback_source_preserving_frame(
-                active_bundles,
-                app=app or next((b.observation.app_name for b in bundles if b.observation.app_name), ""),
-                window=next((b.observation.window_name for b in bundles if b.observation.window_name), ""),
-                screenshot=next((b.observation.screenshot_path for b in bundles if b.observation.screenshot_path), None),
-                events=events,
-                latencies_ms=latencies,
-                node_counts=node_counts,
-                hypothesis_counts=hyp_counts,
+        # If active sources somehow yielded nothing but another bundle had nodes,
+        # preserve the richest source rather than return an empty assembly.
+        if not entities:
+            richest = max(
+                bundles,
+                key=lambda b: len(b.observation.nodes or []),
+                default=None,
             )
-            if fallback is not None and fallback.entities:
-                return fallback
-        return frame
+            if richest is not None and (richest.observation.nodes or []):
+                for index, node in enumerate(richest.observation.nodes or []):
+                    entities.append(
+                        _entity_from_node(node, source_id=richest.source_id, index=index)
+                    )
+                if richest.source_id not in node_counts:
+                    node_counts[richest.source_id] = len(richest.observation.nodes or [])
+                if richest.source_id not in [b.source_id for b in active_bundles]:
+                    active_bundles = list(active_bundles) + [richest]
+
+        app_name = app or next(
+            (b.observation.app_name for b in bundles if b.observation.app_name), ""
+        )
+        window = next(
+            (b.observation.window_name for b in bundles if b.observation.window_name), ""
+        )
+        screenshot = next(
+            (b.observation.screenshot_path for b in bundles if b.observation.screenshot_path),
+            None,
+        )
+        sources = [b.source_id for b in active_bundles]
+        report = _assemble_report(
+            sources=sources,
+            node_counts=node_counts,
+            latencies_ms=latencies,
+            entity_count=len(entities),
+            ignored_sources=[b.source_id for b in bundles if b not in active_bundles],
+            healthy_source_count=len(healthy_bundles),
+        )
+        frame = FusedFrame(
+            timestamp=time.time(),
+            app_name=app_name,
+            window_name=window,
+            entities=entities,
+            report=report,
+            events=events,
+            screenshot_path=screenshot,
+        )
+        return frame.carry_forward(bundles)
 
     def fuse_hypotheses(
         self,
@@ -283,30 +453,33 @@ class FusionEngine:
         healthy_source_count: Optional[int] = None,
         ignored_sources: Optional[List[str]] = None,
     ) -> FusedFrame:
-        frame = self._fuse_hypotheses_core(
-            hyps,
-            app=app,
-            window=window,
-            screenshot=screenshot,
-            sources=sources,
-            events=events,
-            latencies_ms=latencies_ms,
-            node_counts=node_counts,
-            hypothesis_counts=hypothesis_counts,
-            healthy_source_count=len(sources or []),
-            ignored_sources=[],
+        """Pass through hypotheses one-for-one. No blending, no referee."""
+        _ = hypothesis_counts
+        entities = [_entity_from_hypothesis(h, index=i) for i, h in enumerate(hyps or [])]
+        srcs = list(sources or sorted({str(h.source or "") for h in (hyps or []) if h.source}))
+        counts = dict(node_counts or {})
+        if not counts:
+            for h in hyps or []:
+                sid = str(h.source or "unknown")
+                counts[sid] = counts.get(sid, 0) + 1
+        report = _assemble_report(
+            sources=srcs,
+            node_counts=counts,
+            latencies_ms=dict(latencies_ms or {}),
+            entity_count=len(entities),
+            ignored_sources=ignored_sources,
+            healthy_source_count=healthy_source_count
+            if healthy_source_count is not None
+            else len(srcs),
         )
-        return self._refine_with_llm_referee(
-            frame,
-            bundles=None,
-            app=app,
-            window=window,
-            screenshot=screenshot,
-            events=events,
-            latencies_ms=latencies_ms,
-            node_counts=node_counts,
-            hypothesis_counts=hypothesis_counts,
-            hyps=hyps,
+        return FusedFrame(
+            timestamp=time.time(),
+            app_name=app,
+            window_name=window,
+            entities=entities,
+            report=report,
+            events=list(events or []),
+            screenshot_path=screenshot,
         )
 
     def _fuse_hypotheses_core(
@@ -476,42 +649,19 @@ class FusionEngine:
         hypothesis_counts: Optional[Dict[str, int]] = None,
         hyps: Optional[List[EntityHypothesis]] = None,
     ) -> FusedFrame:
-        if not self._should_consult_llm_referee(frame, bundles=bundles, node_counts=node_counts):
-            return frame
-
-        payload = self._build_referee_payload(
-            frame,
-            bundles=bundles,
-            app=app,
-            window=window,
-            screenshot=screenshot,
-            latencies_ms=latencies_ms,
-            node_counts=node_counts,
-            hypothesis_counts=hypothesis_counts,
-            hyps=hyps,
+        # Rival fusion is retired: assembly never asks a referee to prefer a
+        # source or force reobserve. Helpers below remain until a cleanup PR.
+        _ = (
+            bundles,
+            app,
+            window,
+            screenshot,
+            events,
+            latencies_ms,
+            node_counts,
+            hypothesis_counts,
+            hyps,
         )
-        decision = self.referee.decide(payload)
-        self._annotate_referee(frame, decision, payload)
-
-        if decision.action == "prefer_source" and decision.preferred_source_id:
-            preferred_frame = self._frame_from_preferred_source(
-                preferred_source_id=decision.preferred_source_id,
-                bundles=bundles or [],
-                frame=frame,
-                app=app,
-                window=window,
-                screenshot=screenshot,
-                events=events,
-                latencies_ms=latencies_ms,
-                node_counts=node_counts,
-                hypothesis_counts=hypothesis_counts,
-            )
-            if preferred_frame is not None:
-                self._annotate_referee(preferred_frame, decision, payload)
-                return preferred_frame
-
-        if decision.should_reobserve:
-            frame.report.needs_reobserve = True
         return frame
 
     def _should_consult_llm_referee(
