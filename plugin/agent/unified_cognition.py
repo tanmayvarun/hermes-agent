@@ -4545,18 +4545,34 @@ def persist_world_document(execution_state: Any, proposal: Optional[UnifiedPropo
             execution_state=execution_state,
             app=app_hint,
         )
-        # Downgrade opaque matches_goal when source_query identity fails
-        # (live 214025: YouTube must not bind as zarooratwala).
+        # Downgrade opaque matches_goal when role constraints fail
+        # (query identity + originator; live 214025 / 171216).
         try:
             from plugin.agent.source_query_binding import scrub_matches_goal_flags
 
             goal = getattr(execution_state, "goal", None)
             link_q = str(getattr(goal, "link_query", "") or "").strip()
             contact = str(getattr(goal, "contact", "") or "").strip()
-            if link_q:
+            originator = str(
+                getattr(goal, "originator", "") or contact or ""
+            ).strip()
+            if link_q or originator:
                 accepted = scrub_matches_goal_flags(
-                    accepted, query=link_q, expected_container=contact
+                    accepted,
+                    query=link_q,
+                    expected_container=contact,
+                    expected_originator=originator,
                 )
+                # Keep vision entities aligned with the scrubbed document —
+                # otherwise materialize_vision_entities can re-stamp unscrubbed
+                # matches_goal from the raw proposal.
+                if isinstance(getattr(proposal, "raw", None), dict):
+                    proposal.raw["objects"] = list(accepted.get("objects") or [])
+                elif hasattr(proposal, "objects"):
+                    try:
+                        proposal.objects = list(accepted.get("objects") or [])
+                    except Exception:
+                        pass
         except Exception:
             pass
         execution_state.unified_world_document = accepted
@@ -4965,37 +4981,71 @@ def _blob_looks_like_url(blob: str) -> bool:
 
 
 def _goal_matched_object(world: WorldModel, *, prefer_url: bool = False) -> Any:
-    """The one object the model flagged as matching the goal, if it is unique.
+    """Unique vision object that is *binding-eligible*, not merely matches_goal.
 
-    ``matches_goal`` is the model's own verdict on task relevance, formed while
-    looking at the screen. It outranks label similarity, which cannot tell a
-    chat row from a search field containing the same characters — and reliably
-    prefers the wrong one, since the echo matches the query exactly while the
-    row carries extra words. Uniqueness is required: two claimed matches is the
-    ambiguity resolve_entity exists to settle, and guessing between them here
-    would just relocate the coin toss.
-
-    When ``prefer_url`` (link_query set), a lone non-URL ``matches_goal`` text
-    bubble is ignored so caption text cannot steal the forward target
-    (live 024851: "zarooratwala Pallavi 12:33 AM").
+    ``matches_goal`` is recall/task-relevance only. Authoritative act targeting
+    requires constraint-level eligibility (query + originator when known) from
+    ``goal_match.binding_eligible`` or a fresh ``evaluate_source_object_match``.
     """
     if world is None:
         return None
-    matched = [
-        entity
-        for entity in getattr(world, "entities", {}).values()
-        if getattr(entity, "visible", True)
-        and isinstance(getattr(entity, "attributes", None), dict)
-        and bool(entity.attributes.get("matches_goal"))
-        and str(entity.attributes.get("source") or "") == "vision"
-    ]
+    from plugin.agent.source_query_binding import evaluate_source_object_match
+
+    goal = getattr(world, "goal", None)
+    query = ""
+    expected_container = ""
+    expected_originator = ""
+    if goal is not None:
+        query = str(
+            getattr(goal, "link_query", None)
+            or getattr(goal, "source_query", None)
+            or ""
+        ).strip()
+        expected_container = str(
+            getattr(goal, "contact", None)
+            or getattr(goal, "source_conversation", None)
+            or ""
+        ).strip()
+        expected_originator = str(
+            getattr(goal, "originator", None) or expected_container or ""
+        ).strip()
+    open_c = str(getattr(world, "open_conversation", "") or "")
+
+    matched = []
+    for entity in getattr(world, "entities", {}).values():
+        if not getattr(entity, "visible", True):
+            continue
+        attrs = getattr(entity, "attributes", None)
+        if not isinstance(attrs, dict):
+            continue
+        if str(attrs.get("source") or "") != "vision":
+            continue
+        gm_raw = attrs.get("goal_match")
+        if isinstance(gm_raw, dict) and "binding_eligible" in gm_raw:
+            eligible = bool(gm_raw.get("binding_eligible"))
+        elif bool(attrs.get("matches_goal")) or query or expected_originator:
+            gm = evaluate_source_object_match(
+                text=_vision_blob(entity),
+                kind=str(getattr(entity, "kind", "") or attrs.get("kind") or ""),
+                query=query,
+                container_open=open_c,
+                expected_container=expected_container,
+                expected_originator=expected_originator,
+                sender=attrs.get("sender") or attrs.get("originator"),
+                perception_matches_goal=bool(attrs.get("matches_goal")),
+            )
+            eligible = bool(gm.binding_eligible)
+            attrs["goal_match"] = gm.to_dict()
+        else:
+            continue
+        if eligible:
+            matched.append(entity)
     if not matched:
         return None
     if prefer_url:
         url_matched = [e for e in matched if _blob_looks_like_url(_vision_blob(e))]
         if url_matched:
             return url_matched[0] if len(url_matched) == 1 else None
-        # Only plain-text matches_goal — do not auto-ground; locate/search instead.
         return None
     return matched[0] if len(matched) == 1 else None
 

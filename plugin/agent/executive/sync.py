@@ -919,8 +919,18 @@ def assess_executive_judgement(
             else True
         ),
         destination_search_needed=_destination_search_needed(execution_state),
+        grounding_reground_only=bool(
+            getattr(execution_state, "grounding_reground_only", False)
+        ),
         **_route_discovery_meta_kwargs(execution_state, referent_signals),
     )
+    # Grounding-local recovery: suppress SEARCH/EXPLORE pressure until reground.
+    if bool(getattr(meta_ctx, "grounding_reground_only", False)):
+        meta_ctx.destination_search_needed = False
+        meta_ctx.referent_search_needed = False
+        meta_ctx.route_discovery_owed = False
+        meta_ctx.intention_explore_active = False
+        meta_ctx.post_action_look_owed = True
     # Entity-resolution SEARCH owns the next epistemic move: do not let latent
     # route-discovery EXPLORE compete with picker type_query (live 203259).
     if bool(getattr(meta_ctx, "destination_search_needed", False)):

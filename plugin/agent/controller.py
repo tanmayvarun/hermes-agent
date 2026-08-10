@@ -381,6 +381,10 @@ def _clear_post_action_reperceive_if_fresh(
         state.post_action_reperceive_pending = False
         state.post_action_baseline_open = ""
         state.post_action_baseline_sig = ""
+        # Fresh look satisfied local grounding recovery.
+        if bool(getattr(state, "grounding_reground_only", False)):
+            state.grounding_reground_only = False
+            state.grounding_reground_target = ""
     except Exception:
         return False
     return True
@@ -2214,25 +2218,53 @@ def run_goal_closed_loop(
             status="warn" if no_progress_budget_exceeded else "ok",
         )
         if no_progress_budget_exceeded:
-            branch_hint = _invalidate_stale_frontier(
-                runtime,
-                reason="no_progress_watchdog",
-                fallback="observe",
-            )
-            replans = _note_no_progress_replan(runtime)
-            _log_cycle(
-                log,
-                iteration=iteration,
-                phase="no_progress_replan",
-                payload={
-                    "elapsed_since_progress_s": round(progress_elapsed, 3),
-                    "goal_no_progress_timeout_s": goal_no_progress_timeout_s,
-                    "branch_hint": branch_hint,
-                    "branch": runtime.execution_state.exploration_branch.to_dict(),
-                    "no_progress_replans": replans,
-                },
-                status="warn",
-            )
+            if bool(getattr(runtime.execution_state, "grounding_reground_only", False)):
+                # Typed grounding stale: preserve bindings; only re-look.
+                runtime.execution_state.must_executive_reperceive = True
+                runtime.execution_state.world_exploration_needed = False
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="grounding_reground_only",
+                    payload={
+                        "elapsed_since_progress_s": round(progress_elapsed, 3),
+                        "target": str(
+                            getattr(
+                                runtime.execution_state,
+                                "grounding_reground_target",
+                                "",
+                            )
+                            or ""
+                        ),
+                        "forbidden": [
+                            "no_progress_replan",
+                            "search_source_again",
+                            "invalidate_frontier",
+                        ],
+                        "recovery": "perceive_reground",
+                    },
+                    status="warn",
+                )
+            else:
+                branch_hint = _invalidate_stale_frontier(
+                    runtime,
+                    reason="no_progress_watchdog",
+                    fallback="observe",
+                )
+                replans = _note_no_progress_replan(runtime)
+                _log_cycle(
+                    log,
+                    iteration=iteration,
+                    phase="no_progress_replan",
+                    payload={
+                        "elapsed_since_progress_s": round(progress_elapsed, 3),
+                        "goal_no_progress_timeout_s": goal_no_progress_timeout_s,
+                        "branch_hint": branch_hint,
+                        "branch": runtime.execution_state.exploration_branch.to_dict(),
+                        "no_progress_replans": replans,
+                    },
+                    status="warn",
+                )
         runtime.execution_state.tick_search_query_hint()
 
         # Keeping the task app usable is the agent's job, not the user's. A call
@@ -4067,6 +4099,34 @@ def run_goal_closed_loop(
         # while it was thinking. The only correct response is to look again.
         if str(getattr(execution, "backend", "")) == STALE_PRECONDITION_BACKEND:
             aborts = _note_stale_abort(runtime)
+            msg = str(getattr(execution, "message", "") or "")
+            status = str(getattr(execution, "status", "") or "")
+            # Geometry/frame failure with intact semantic target → local reground.
+            grounding_local = any(
+                tok in msg.lower() or tok in status.lower()
+                for tok in (
+                    "outside task window",
+                    "off_task_window",
+                    "stale_coordinate_frame",
+                    "unknown_coordinate_frame",
+                    "grounding_uncertain",
+                    "inconclusive_grounding",
+                    "invalid_coordinate",
+                )
+            ) or status in {
+                "off_task_window",
+                "inconclusive_grounding",
+                "grounding_uncertain",
+            }
+            if grounding_local:
+                runtime.execution_state.grounding_reground_only = True
+                runtime.execution_state.grounding_reground_target = str(
+                    decision.semantic_target or decision.action or ""
+                )[:120]
+                runtime.execution_state.must_executive_reperceive = True
+                # Do not burn no-progress / frontier invalidate on a typed
+                # grounding failure — semantic binding stays.
+                runtime.execution_state.world_exploration_needed = False
             _log_cycle(
                 log,
                 iteration=iteration,
@@ -4078,6 +4138,10 @@ def run_goal_closed_loop(
                     "message": execution.message,
                     "consecutive_stale_aborts": aborts,
                     "budget": MAX_CONSECUTIVE_STALE_ABORTS,
+                    "grounding_reground_only": bool(
+                        getattr(runtime.execution_state, "grounding_reground_only", False)
+                    ),
+                    "recovery": "perceive_reground" if grounding_local else "relook",
                 },
                 status="warn",
             )
@@ -4091,6 +4155,7 @@ def run_goal_closed_loop(
             # better than one that commits wrongly, so let the next attempt through
             # and let the ordinary transition machinery judge a real outcome.
             runtime.execution_state.consecutive_stale_aborts = 0
+            runtime.execution_state.grounding_reground_only = False
             bypass_next_gate()
             _log_cycle(
                 log,

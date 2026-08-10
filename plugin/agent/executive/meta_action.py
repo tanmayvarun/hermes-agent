@@ -209,6 +209,8 @@ class MetaContext:
     intention_locally_exhausted: bool = False
     # Destination picker open; goal recipient not selected → SEARCH in picker.
     destination_search_needed: bool = False
+    # Semantic target valid; only coordinate grounding is stale → PERCEIVE only.
+    grounding_reground_only: bool = False
 
 
 @dataclass
@@ -284,6 +286,19 @@ def select_meta_action(ctx: MetaContext) -> MetaChoice:
 
     if ctx.hard_block:
         return MetaChoice(MetaAction.ASK, "hard block: no self-serve move resolves it", {"ask": 1.0})
+
+    # Typed grounding failure: keep semantic binding; reground geometry only.
+    # Must beat destination SEARCH / no-progress replan (live 171216 Forward).
+    if bool(getattr(ctx, "grounding_reground_only", False)):
+        return MetaChoice(
+            MetaAction.PERCEIVE,
+            "grounding stale — perceive(reground) only; preserve semantic binding",
+            {
+                "perceive": 1.0,
+                "grounding_reground_only": 1.0,
+                "forbid_search": 1.0,
+            },
+        )
 
     # Entity-resolution SEARCH beats unpaid look debt when the prior look
     # already answered "is the target visible / is search available?" — another

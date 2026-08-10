@@ -94,6 +94,21 @@ def _normalize_objects(raw: Any, frame: int) -> List[Dict[str, Any]]:
         elif entry.get("bounds") and not space:
             # Measured bounds (OCR/AX) are pointer/screen space by contract.
             entry["coordinate_space"] = "screen"
+        elif entry.get("point") and not space:
+            # Point-only OCR/AX menu verbs (Forward) are screen-absolute when
+            # the model/packet did not tag space — never leave them untagged
+            # for actor to assume image (live 171216 double-transform).
+            geo_src = str(item.get("geometry_source") or item.get("source") or "").strip().lower()
+            if geo_src.startswith("ax") or geo_src.startswith("ocr") or geo_src in {
+                "accessibility",
+                "screen",
+            }:
+                entry["coordinate_space"] = "screen"
+            else:
+                # Conservative: bounds-less vision points without provenance stay
+                # untagged; actor uses looks_like_image_point rather than defaulting
+                # to image solely because capture topology exists.
+                pass
         owner = _text(item.get("owner_surface") or item.get("surface"), 40)
         if owner:
             entry["owner_surface"] = owner

@@ -79,8 +79,10 @@ def test_container_title_vs_preview_content_via_typed_evidence():
 
 def test_whatsapp_adapter_splits_preview_before_core_sees_it():
     """Adapter may know rows; core only sees display_name vs preview_text."""
+    from plugin.agent.composition import compose_domain_adapters
     from plugin.agent.identity_evidence.whatsapp import WhatsAppUIEvidenceProvider
 
+    compose_domain_adapters()
     obs = WhatsAppUIEvidenceProvider().observe(
         {
             "label": "Pallavi - You: https://youtu.be/rHJdc-jkxys",
@@ -146,6 +148,7 @@ def test_source_object_requires_container_then_query():
         "kind": "message_with_link",
         "domain": "whatsapp",
         "container": "Pallavi",
+        "sender": "Pallavi",
     }
     before = assess_candidate_for_role(
         spec=_specs()["source_object"],
@@ -163,6 +166,86 @@ def test_source_object_requires_container_then_query():
         bindings={"source_container": {"resolved_label": "Pallavi"}},
     )
     assert after.binding_eligible is True
+
+
+def test_you_message_high_relevance_not_binding_eligible_as_from_pallavi():
+    """Container+content match with sender=You must not bind as from Pallavi."""
+    from plugin.agent.composition import compose_domain_adapters
+
+    compose_domain_adapters()
+    you_msg = {
+        "label": "You: https://www.zarooratwala.com/?x=1",
+        "text": "You: https://www.zarooratwala.com/?x=1",
+        "kind": "search_result_row",
+        "domain": "whatsapp",
+        "container": "Pallavi",
+    }
+    a = assess_candidate_for_role(
+        spec=_specs()["source_object"],
+        candidate=you_msg,
+        goal=_Goal(),
+        task_relevance=0.99,
+        bindings={"source_container": {"resolved_label": "Pallavi"}},
+    )
+    assert a.task_relevance == 0.99
+    assert a.binding_eligible is False
+    assert "same_originator" in a.missing_required
+
+    peer = {
+        "label": "Pallavi: https://www.zarooratwala.com/?x=1",
+        "text": "Pallavi: https://www.zarooratwala.com/?x=1",
+        "kind": "message_with_link",
+        "domain": "whatsapp",
+        "container": "Pallavi",
+        "sender": "Pallavi",
+    }
+    b = assess_candidate_for_role(
+        spec=_specs()["source_object"],
+        candidate=peer,
+        goal=_Goal(),
+        task_relevance=0.9,
+        bindings={"source_container": {"resolved_label": "Pallavi"}},
+    )
+    assert b.binding_eligible is True
+
+
+def test_i_sent_originator_reverses_eligibility():
+    class G:
+        contact = "Pallavi"
+        link_query = "zarooratwala"
+        target_contact = "Tanmay"
+        originator = "self"
+
+    you_msg = {
+        "label": "You: https://www.zarooratwala.com/x",
+        "text": "You: https://www.zarooratwala.com/x",
+        "kind": "message_with_link",
+        "domain": "whatsapp",
+        "container": "Pallavi",
+    }
+    peer = {
+        "label": "https://www.zarooratwala.com/x",
+        "text": "https://www.zarooratwala.com/x",
+        "kind": "message_with_link",
+        "domain": "whatsapp",
+        "container": "Pallavi",
+        "sender": "Pallavi",
+    }
+    bindings = {"source_container": {"resolved_label": "Pallavi"}}
+    assert assess_candidate_for_role(
+        spec=forward_role_specs(G())["source_object"],
+        candidate=you_msg,
+        goal=G(),
+        bindings=bindings,
+        task_relevance=0.9,
+    ).binding_eligible
+    assert not assess_candidate_for_role(
+        spec=forward_role_specs(G())["source_object"],
+        candidate=peer,
+        goal=G(),
+        bindings=bindings,
+        task_relevance=0.9,
+    ).binding_eligible
 
 
 def test_youtube_message_never_binds_source_object():
@@ -211,11 +294,13 @@ def test_cross_domain_email_thread_vs_latest_message():
         observation=thread,
         goal=G(),
     ).binding_eligible
-    # Content role needs message-shaped entity.
+    # Content role needs message-shaped entity + originator evidence.
     msg = EntityObservation(
         entity_kind="message",
         label="pricing",
-        identity_evidence=[],
+        identity_evidence=[
+            IdentityEvidence(kind="sender", value="Q3 Roadmap", identity_bearing=True)
+        ],
         content_evidence=[
             IdentityEvidence(kind="body", value="see zarooratwala pricing")
         ],

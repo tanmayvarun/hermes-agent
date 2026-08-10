@@ -32,9 +32,42 @@ def test_zarooratwala_domain_binds():
         query="zarooratwala",
         container_open="Pallavi",
         expected_container="Pallavi",
+        expected_originator="Pallavi",
+        sender="Pallavi",
     )
     assert gm.binding_eligible
     assert gm.semantic_query_match
+    assert gm.originator_match
+
+
+def test_you_prefix_not_binding_eligible_as_from_pallavi():
+    gm = evaluate_source_object_match(
+        text="You: https://www.zarooratwala.com/?ref=1",
+        kind="message_with_link",
+        query="zarooratwala",
+        container_open="Pallavi",
+        expected_container="Pallavi",
+        expected_originator="Pallavi",
+        perception_matches_goal=True,
+    )
+    assert gm.container_match
+    assert gm.semantic_query_match
+    assert not gm.originator_match
+    assert not gm.binding_eligible
+    assert any(c.name == "originator" and c.status == "mismatch" for c in gm.constraints)
+
+
+def test_i_sent_binds_you_prefix():
+    gm = evaluate_source_object_match(
+        text="You: https://www.zarooratwala.com/x",
+        kind="message_with_link",
+        query="zarooratwala",
+        container_open="Pallavi",
+        expected_container="Pallavi",
+        expected_originator="self",
+    )
+    assert gm.binding_eligible
+    assert gm.originator_match
 
 
 def test_scrub_clears_false_matches_goal():

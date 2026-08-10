@@ -46,6 +46,13 @@ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
                     referent_source="source_container",
                     required=True,
                 ),
+                # Container ≠ originator: "from Pallavi" requires sender/author,
+                # not merely residing inside Pallavi's conversation.
+                Constraint(
+                    relation="same_originator",
+                    referent_source="goal.originator",
+                    required=True,
+                ),
             ],
             evidence_threshold=0.85,
         ),

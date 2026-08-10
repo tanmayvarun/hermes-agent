@@ -203,6 +203,27 @@ class WhatsAppUIEvidenceProvider:
                             provenance="whatsapp_participants",
                         )
                     )
+
+        # Sender / originator — independent of conversation container.
+        sender_val = _infer_sender(
+            candidate,
+            label=label,
+            text=text,
+            preview=preview if not is_content_entity else (text or label),
+            entity_kind=entity_kind,
+            ambiguous_row=ambiguous_row,
+        )
+        if sender_val:
+            identity.append(
+                IdentityEvidence(
+                    kind="sender",
+                    value=sender_val,
+                    subject=eid,
+                    confidence=0.94 if sender_val == "self" else 0.88,
+                    provenance="whatsapp_sender",
+                    identity_bearing=True,
+                )
+            )
         for u in candidate.get("urls") or []:
             if u:
                 content.append(
@@ -246,6 +267,9 @@ class WhatsAppUIEvidenceProvider:
             if candidate.get(rk) not in (None, ""):
                 relations["container"] = candidate.get(rk)
                 break
+        if sender_val:
+            relations["sender"] = sender_val
+            relations["originator"] = sender_val
 
         return EntityObservation(
             entity_kind=entity_kind,
@@ -258,6 +282,55 @@ class WhatsAppUIEvidenceProvider:
             relations=relations,
             raw=candidate,
         )
+
+
+def _infer_sender(
+    candidate: Dict[str, Any],
+    *,
+    label: str,
+    text: str,
+    preview: str,
+    entity_kind: str,
+    ambiguous_row: bool,
+) -> str:
+    """Return ``self``, a contact name, or '' when authorship is unknown."""
+    import re
+
+    for key in ("sender", "originator", "author", "from"):
+        raw = candidate.get(key)
+        if raw in (None, ""):
+            continue
+        s = str(raw).strip()
+        sl = s.lower()
+        if sl in {"self", "me", "i", "you", "myself", "outgoing", "mine"}:
+            return "self"
+        return s
+
+    blob = " ".join(
+        x for x in (str(preview or ""), str(text or ""), str(label or "")) if x
+    ).strip()
+    if re.search(r"(?:^|[\s\-–—:])you\s*:", blob, flags=re.I):
+        return "self"
+    if candidate.get("outgoing") in (True, 1, "true", "yes"):
+        return "self"
+    if candidate.get("incoming") in (True, 1, "true", "yes"):
+        # Prefer structured peer name when present.
+        for key in ("peer", "contact", "from_contact", "display_name"):
+            peer = str(candidate.get(key) or "").strip()
+            if peer and peer.lower() not in {"you", "self", "me"}:
+                return peer
+    # Search rows: "Pallavi You: url" → self; "Pallavi: url" without You → Pallavi
+    # is container display, not necessarily sender — only trust explicit You:.
+    if ambiguous_row or entity_kind in {"message", "link", ""}:
+        m = re.match(
+            r"^([A-Z][\w .'-]{1,60}?)\s*:\s+\S",
+            (text or label or "").strip(),
+        )
+        if m:
+            name = m.group(1).strip()
+            if name.lower() not in {"you", "self", "me"}:
+                return name
+    return ""
 
 
 def _split_display_and_preview(label: str) -> tuple[str, str]:

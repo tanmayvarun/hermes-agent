@@ -33,6 +33,9 @@ class Goal:
     prompt: str = ""
     target_contact: str = ""  # e.g. forward destination
     link_query: str = ""  # e.g. link/text to find
+    # Message/file author/sender ("from Pallavi" / "I sent"). Distinct from
+    # container (conversation_with). Empty → fall back to contact for "from X".
+    originator: str = ""
     procedure_id: str = ""
     procedure_score: float = 0.0
     procedure_reasons: list[str] = field(default_factory=list)
@@ -43,6 +46,9 @@ class Goal:
             from plugin.agent.reference import interpret_reference
 
             self.reference = interpret_reference(self.contact)
+        if not str(self.originator or "").strip() and self.contact:
+            # "from <contact>" default; "I sent …" sets originator="self" explicitly.
+            self.originator = self.contact
         # Selection is eager so downstream consumers can treat the procedure as
         # an attached goal substrate rather than a late heuristic.
         try:
@@ -98,6 +104,15 @@ class Goal:
                 ),
                 prompt,
             )
+            # Directional originator: "I sent/shared" → self; "from X" → X.
+            self_origin = bool(
+                re.search(
+                    r"\b(?:i|me|my)\s+(?:sent|shared|forwarded)\b"
+                    r"|\b(?:the\s+)?(?:link|message|file|photo|document)\s+i\s+(?:sent|shared)\b",
+                    lowered,
+                )
+            )
+            originator = "self" if self_origin else (source or "")
             if "forward" in lowered or "share" in lowered or "send" in lowered:
                 return cls(
                     kind="whatsapp_forward_message",
@@ -106,6 +121,7 @@ class Goal:
                     contact=source,
                     target_contact=target,
                     link_query=link_query,
+                    originator=originator,
                 )
             if "find" in lowered:
                 return cls(
@@ -115,6 +131,7 @@ class Goal:
                     contact=source,
                     target_contact=target,
                     link_query=link_query,
+                    originator=originator,
                 )
 
         if "call" in lowered:

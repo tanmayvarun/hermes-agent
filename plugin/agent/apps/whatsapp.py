@@ -268,6 +268,89 @@ def _entity_supports_source_query(world: WorldModel, eid: int, query: str) -> bo
     return text_locates_source_query(_entity_query_blob(world, eid), query)
 
 
+def _entity_sender_for_binding(
+    world: WorldModel,
+    eid: int,
+    *,
+    peer: str = "",
+) -> str:
+    """Resolve message authorship for binding.
+
+    Explicit ``You:`` / sender attrs win. Otherwise, unlabeled bubbles in an
+    open peer conversation are treated as inbound from that peer (WhatsApp
+    timeline convention) — container membership alone never invents authorship
+    when the UI marks the message as outgoing.
+    """
+    from plugin.agent.source_query_binding import infer_message_originator
+
+    e = world.entities.get(int(eid))
+    if e is None:
+        return ""
+    attrs = e.attributes or {}
+    text = _entity_query_blob(world, eid)
+    explicit = infer_message_originator(
+        text,
+        sender=attrs.get("sender") or attrs.get("originator"),
+    )
+    if explicit:
+        return explicit
+    peer_n = str(peer or "").strip()
+    if peer_n:
+        return peer_n
+    return ""
+
+
+def _entity_binding_eligible(
+    world: WorldModel,
+    eid: int,
+    *,
+    query: str,
+    expected_container: str = "",
+    expected_originator: str = "",
+) -> bool:
+    """Overlay bind gate: query identity + originator (not opaque matches_goal).
+
+    AX timeline nodes are often ``static``; object-kind is enforced at RoleBinder
+    ACT time. Here we only refuse host-contradicting / wrong-author candidates.
+    """
+    from plugin.agent.source_query_binding import (
+        evaluate_source_object_match,
+        host_contradicts_query,
+        query_supported_by_text,
+    )
+
+    e = world.entities.get(int(eid))
+    if e is None:
+        return False
+    text = _entity_query_blob(world, eid)
+    if query:
+        if host_contradicts_query(text, query) and not query_supported_by_text(
+            text, query
+        ):
+            return False
+        if not query_supported_by_text(text, query):
+            return False
+    if not expected_originator:
+        return True
+    open_c = str(
+        getattr(world, "open_conversation", "")
+        or (getattr(world, "overlay_hints", None) or {}).get("open_conversation")
+        or ""
+    )
+    peer = expected_container or open_c
+    # Treat URL-bearing / query-bearing AX nodes as content for originator check.
+    gm = evaluate_source_object_match(
+        text=text,
+        kind="message_with_link" if _entity_blob_has_url(text.lower()) else "message",
+        query="",  # query already checked above (host may distract while text matches)
+        container_open=open_c,
+        expected_container="",  # container gated separately via on_source
+        expected_originator=expected_originator,
+        sender=_entity_sender_for_binding(world, eid, peer=peer),
+    )
+    return bool(gm.originator_match)
+
+
 def _rank_source_object_hits(
     hit_ids: Sequence[int],
     world: WorldModel,
@@ -574,10 +657,17 @@ def build_forward_task_state(
 
     # --- source_object (message/link matching query) ---
     obj_b = state.binding("source_object")
+    originator = str(
+        getattr(goal, "originator", None)
+        or getattr(goal, "contact", None)
+        or source
+        or ""
+    ).strip()
     obj_b.constraints = {
         "content_tokens": [query] if query else [],
         "types": ["link", "message"],
         "container_binding": "source_conversation",
+        "originator": originator,
     }
     hits = []
     timeline_hit_ids: List[int] = []
@@ -788,12 +878,27 @@ def build_forward_task_state(
             llm_ranked_ids = _sidebar_filtered_entity_ids(
                 llm_ranked_ids, world, ents, in_sidebar_fn=in_sidebar_band
             )
-            # Candidate recall may include any link; binding requires query proof.
-            if query:
+            # Candidate recall may include any link; binding requires full role
+            # constraints (query + originator). Relevance scores never write
+            # Binding.resolved_entity_id by themselves.
+            if query or originator:
                 llm_ranked_ids = [
                     eid
                     for eid in llm_ranked_ids
-                    if _entity_supports_source_query(world, eid, query)
+                    if _entity_binding_eligible(
+                        world,
+                        eid,
+                        query=query,
+                        expected_container=source if on_source else "",
+                        expected_originator=originator,
+                    )
+                    or (
+                        # Keep high-recall candidates that only fail originator
+                        # evidence when sender is unknown — still not bindable.
+                        _entity_supports_source_query(world, eid, query)
+                        if query
+                        else True
+                    )
                 ]
             for eid in reversed(llm_ranked_ids[:6]):
                 if eid not in hit_ids:
@@ -906,25 +1011,39 @@ def build_forward_task_state(
         obj_b.status = "confirmed"
         obj_b.confidence = max(obj_b.confidence, 0.9 if selected_ok else 0.75)
 
-    # Hard binding validator: provisional/confirmed source_object must support
-    # source_query. Candidate relevance (any URL in Pallavi) is not identity.
-    if query and obj_b.resolved_entity_id is not None:
-        if not _entity_supports_source_query(world, int(obj_b.resolved_entity_id), query):
+    # Hard binding validator: RoleBinder owns resolved identity. Query match
+    # and opaque conversation_message_relevance scores are candidate signals
+    # only — originator + query must both clear before resolved_entity_id sticks.
+    # Skip when the resolved entity is temporarily occluded (latent selection).
+    if obj_b.resolved_entity_id is not None and (query or originator):
+        resolved_eid = int(obj_b.resolved_entity_id)
+        entity_present = resolved_eid in world.entities
+        if entity_present and not _entity_binding_eligible(
+            world,
+            resolved_eid,
+            query=query,
+            expected_container=source if on_source else "",
+            expected_originator=originator,
+        ):
             obj_b.evidence = list(obj_b.evidence or []) + [
-                f"binding_rejected: entity_id={obj_b.resolved_entity_id} lacks {query!r}"
+                f"binding_rejected: entity_id={obj_b.resolved_entity_id} "
+                f"fails role constraints query={query!r} originator={originator!r}"
             ]
             obj_b.resolved_entity_id = None
-            obj_b.status = "unresolved"
-            obj_b.confidence = 0.0
+            if obj_b.status in {"confirmed", "provisional"}:
+                obj_b.status = "ambiguous" if (obj_b.candidate_entity_ids or hit_ids) else "unresolved"
+            obj_b.confidence = min(float(obj_b.confidence or 0.0), 0.45)
             p_tmp = state.predicates
             p_tmp.source_object_selected = False
-            # Keep only query-eligible candidates visible to downstream.
-            obj_b.candidate_entity_ids = [
-                eid
-                for eid in (obj_b.candidate_entity_ids or [])
-                if _entity_supports_source_query(world, int(eid), query)
-            ]
-            hit_ids = list(obj_b.candidate_entity_ids)
+            # Candidates may still be query-relevant; eligibility filters binds.
+            if query:
+                obj_b.candidate_entity_ids = [
+                    eid
+                    for eid in (obj_b.candidate_entity_ids or [])
+                    if int(eid) in world.entities
+                    and _entity_supports_source_query(world, int(eid), query)
+                ]
+                hit_ids = list(obj_b.candidate_entity_ids)
 
     # --- destination ---
     dest_b = state.binding("destination")

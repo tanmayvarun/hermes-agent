@@ -1,9 +1,12 @@
 """High-precision source-object binding for link/query goals.
 
 Candidate generation may be high-recall (any URL in Pallavi). Binding must be
-high-precision: a YouTube URL must never satisfy ``source_query=zarooratwala``.
+high-precision: a YouTube URL must never satisfy ``source_query=zarooratwala``,
+and an outgoing ``You:`` message must never satisfy ``originator=Pallavi``.
 
 ``matches_goal`` from perception is treated as a *candidate signal*, not identity.
+Authoritative binding uses constraint-level evidence (``GoalMatch`` /
+``ConstraintMatch``) and ``binding_eligible``.
 """
 
 from __future__ import annotations
@@ -14,6 +17,10 @@ from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import urlparse
 
 _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+|www\.[^\s<>\"')\]]+", re.I)
+_YOU_SENDER_RE = re.compile(
+    r"(?:^|[\s\-–—:])you\s*:",
+    re.I,
+)
 
 # Hosts that are never the brand/domain of a grocery/link query like zarooratwala.
 _DISTRACTOR_HOSTS = frozenset(
@@ -35,16 +42,42 @@ _DISTRACTOR_HOSTS = frozenset(
     }
 )
 
+_SELF_ORIGINATORS = frozenset({"self", "me", "i", "you", "myself"})
+
+
+@dataclass
+class ConstraintMatch:
+    """One required/optional role constraint vs a candidate."""
+
+    name: str
+    required: bool = True
+    status: str = "unknown"  # match | mismatch | missing | unknown
+    evidence: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "required": self.required,
+            "status": self.status,
+            "evidence": self.evidence[:160],
+        }
+
 
 @dataclass
 class GoalMatch:
-    """Per-constraint match evidence for a candidate vs the forward goal."""
+    """Per-constraint match evidence for a candidate vs the forward goal.
+
+    ``task_relevance`` / perception recall may be high while ``binding_eligible``
+    stays false (e.g. content+container match, originator mismatch).
+    """
 
     container_match: bool = False
     object_type_match: bool = False
     semantic_query_match: bool = False
+    originator_match: bool = False
     identity_match: bool = False
     binding_eligible: bool = False
+    constraints: List[ConstraintMatch] = field(default_factory=list)
     evidence: List[str] = field(default_factory=list)
     contradictions: List[str] = field(default_factory=list)
     confidence: float = 0.0
@@ -54,8 +87,10 @@ class GoalMatch:
             "container_match": self.container_match,
             "object_type_match": self.object_type_match,
             "semantic_query_match": self.semantic_query_match,
+            "originator_match": self.originator_match,
             "identity_match": self.identity_match,
             "binding_eligible": self.binding_eligible,
+            "constraints": [c.to_dict() for c in self.constraints[:12]],
             "evidence": list(self.evidence)[:8],
             "contradictions": list(self.contradictions)[:8],
             "confidence": round(float(self.confidence), 3),
@@ -134,6 +169,49 @@ def host_contradicts_query(text: str, query: str) -> bool:
     return False
 
 
+def infer_message_originator(
+    text: str,
+    *,
+    sender: Any = None,
+    kind: str = "",
+) -> str:
+    """Best-effort sender label: ``self``, a contact name, or empty if unknown."""
+    if sender not in (None, ""):
+        s = _norm(sender)
+        if s in _SELF_ORIGINATORS or s in {"outgoing", "mine"}:
+            return "self"
+        return str(sender).strip()
+    blob = str(text or "")
+    if _YOU_SENDER_RE.search(blob):
+        return "self"
+    # Explicit "Name: …" prefix (inbound attributed search rows).
+    m = re.match(
+        r"^([A-Z][\w .'-]{1,60}?)\s*:\s+\S",
+        blob.strip(),
+    )
+    if m:
+        name = m.group(1).strip()
+        if _norm(name) not in _SELF_ORIGINATORS:
+            return name
+    return ""
+
+
+def originator_matches(observed: str, expected: str) -> bool:
+    want = _norm(expected)
+    got = _norm(observed)
+    if not want:
+        return True
+    if not got:
+        return False
+    want_self = want in _SELF_ORIGINATORS
+    got_self = got in _SELF_ORIGINATORS
+    if want_self:
+        return got_self
+    if got_self:
+        return False
+    return want == got or want in got or got in want
+
+
 def evaluate_source_object_match(
     *,
     text: str,
@@ -141,6 +219,8 @@ def evaluate_source_object_match(
     query: str = "",
     container_open: str = "",
     expected_container: str = "",
+    expected_originator: str = "",
+    sender: Any = None,
     perception_matches_goal: bool = False,
 ) -> GoalMatch:
     """High-precision eligibility for binding ``source_object``."""
@@ -148,16 +228,35 @@ def evaluate_source_object_match(
     blob = str(text or "")
     kind_l = _norm(kind)
     q = _norm(query)
+    want_origin = str(expected_originator or "").strip()
 
     # Container
     if expected_container:
         open_n = _norm(container_open)
         want = _norm(expected_container)
         gm.container_match = bool(want and open_n and (want in open_n or open_n in want))
+        gm.constraints.append(
+            ConstraintMatch(
+                name="container",
+                required=True,
+                status="match" if gm.container_match else "mismatch",
+                evidence=f"open={container_open!r} want={expected_container!r}",
+            )
+        )
         if gm.container_match:
             gm.evidence.append(f"container={container_open}")
         else:
             gm.contradictions.append("container_unmatched")
+    else:
+        gm.container_match = True
+        gm.constraints.append(
+            ConstraintMatch(
+                name="container",
+                required=False,
+                status="unknown",
+                evidence="no expected_container",
+            )
+        )
 
     # Object type: message / link / chat content (not bare chat_row preview alone
     # unless it carries the query).
@@ -171,6 +270,14 @@ def evaluate_source_object_match(
         "message_cluster",
     }
     gm.object_type_match = kind_l in content_kinds or bool(extract_urls(blob))
+    gm.constraints.append(
+        ConstraintMatch(
+            name="object_type",
+            required=True,
+            status="match" if gm.object_type_match else "mismatch",
+            evidence=f"kind={kind_l or 'url'}",
+        )
+    )
     if gm.object_type_match:
         gm.evidence.append(f"kind={kind_l or 'url'}")
     else:
@@ -179,33 +286,112 @@ def evaluate_source_object_match(
     # Semantic query
     if not q:
         gm.semantic_query_match = True  # no query constraint
+        gm.constraints.append(
+            ConstraintMatch(
+                name="content",
+                required=False,
+                status="match",
+                evidence="no query constraint",
+            )
+        )
     else:
         gm.semantic_query_match = query_supported_by_text(blob, query)
         if gm.semantic_query_match:
             gm.evidence.append(f"query_supported:{query}")
         else:
             gm.contradictions.append(f"query_absent:{query}")
+        gm.constraints.append(
+            ConstraintMatch(
+                name="content",
+                required=True,
+                status="match" if gm.semantic_query_match else "mismatch",
+                evidence=f"query={query!r}",
+            )
+        )
 
     if q and host_contradicts_query(blob, query):
         gm.semantic_query_match = False
         gm.contradictions.append("url_host_contradicts_query")
+        for c in gm.constraints:
+            if c.name == "content":
+                c.status = "mismatch"
+                c.evidence = "url_host_contradicts_query"
 
-    # Identity: query support + content object (+ container when known)
+    # Originator / sender (container membership is not authorship)
+    observed_origin = infer_message_originator(blob, sender=sender, kind=kind)
+    if want_origin:
+        gm.originator_match = originator_matches(observed_origin, want_origin)
+        if not observed_origin:
+            gm.originator_match = False
+            gm.constraints.append(
+                ConstraintMatch(
+                    name="originator",
+                    required=True,
+                    status="missing",
+                    evidence=f"want={want_origin!r}; no sender evidence",
+                )
+            )
+            gm.contradictions.append("originator_missing")
+        elif gm.originator_match:
+            gm.constraints.append(
+                ConstraintMatch(
+                    name="originator",
+                    required=True,
+                    status="match",
+                    evidence=f"sender={observed_origin!r}",
+                )
+            )
+            gm.evidence.append(f"originator={observed_origin}")
+        else:
+            gm.constraints.append(
+                ConstraintMatch(
+                    name="originator",
+                    required=True,
+                    status="mismatch",
+                    evidence=f"UI sender={observed_origin!r} want={want_origin!r}",
+                )
+            )
+            gm.contradictions.append(
+                f"originator_mismatch:{observed_origin!r}!={want_origin!r}"
+            )
+    else:
+        gm.originator_match = True
+        gm.constraints.append(
+            ConstraintMatch(
+                name="originator",
+                required=False,
+                status="unknown",
+                evidence="no expected_originator",
+            )
+        )
+
+    # Identity: query + content object + container (when known) + originator
     gm.identity_match = bool(
         gm.semantic_query_match
         and gm.object_type_match
         and (gm.container_match or not expected_container)
+        and gm.originator_match
     )
 
-    # Perception bool is recall only — cannot override query contradiction.
+    # Perception bool is recall only — cannot override query/originator fail.
     if perception_matches_goal and gm.semantic_query_match:
-        gm.evidence.append("perception_matches_goal")
+        gm.evidence.append("perception_matches_goal_recall_only")
     elif perception_matches_goal and not gm.semantic_query_match:
         gm.contradictions.append("perception_matches_goal_ignored_query_fail")
+    if perception_matches_goal and want_origin and not gm.originator_match:
+        gm.contradictions.append("perception_matches_goal_ignored_originator_fail")
 
     gm.binding_eligible = bool(gm.identity_match)
     if gm.binding_eligible:
         gm.confidence = 0.9 if gm.container_match else 0.75
+    elif (
+        gm.object_type_match
+        and gm.container_match
+        and gm.semantic_query_match
+        and want_origin
+        and not gm.originator_match
+    ):
+        gm.confidence = 0.35  # high relevance, wrong author
     elif gm.object_type_match and gm.container_match and not gm.semantic_query_match:
         gm.confidence = 0.15  # distractor link in right chat
     else:
@@ -218,10 +404,11 @@ def scrub_matches_goal_flags(
     *,
     query: str,
     expected_container: str = "",
+    expected_originator: str = "",
 ) -> Dict[str, Any]:
-    """Downgrade opaque matches_goal when query evidence is absent/contradicted."""
+    """Downgrade opaque matches_goal when query/originator evidence fails."""
     doc = dict(document) if isinstance(document, dict) else {}
-    if not _norm(query):
+    if not _norm(query) and not _norm(expected_originator):
         return doc
     objects = [dict(o) for o in (doc.get("objects") or []) if isinstance(o, dict)]
     open_c = str(doc.get("open_conversation") or "")
@@ -231,18 +418,21 @@ def scrub_matches_goal_flags(
             continue
         text = str(obj.get("text") or obj.get("label") or "")
         kind = str(obj.get("kind") or "")
+        sender = obj.get("sender") or obj.get("originator")
         gm = evaluate_source_object_match(
             text=text,
             kind=kind,
             query=query,
             container_open=open_c,
             expected_container=expected_container,
+            expected_originator=expected_originator,
+            sender=sender,
             perception_matches_goal=True,
         )
         obj["goal_match"] = gm.to_dict()
         if not gm.binding_eligible:
             obj["matches_goal"] = False
-            obj["matches_goal_rejected"] = "source_query_not_supported"
+            obj["matches_goal_rejected"] = "role_constraints_unsatisfied"
             changed = True
     if changed or objects:
         doc["objects"] = objects

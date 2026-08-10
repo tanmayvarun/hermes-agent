@@ -1082,12 +1082,19 @@ def search_continue_capability(
             label = str(top.get("label") or top.get("text") or "")
             # Clear score margin ⇒ treat as ranked choice for actor click.
             scores = [float(r.get("_search_score") or 0) for r in filtered[:3]]
-            top_goal = bool(top.get("matches_goal"))
+            # matches_goal is recall-only — never sufficient for search completion.
+            # Complete only when score margin is decisive OR a unique candidate
+            # already cleared role-constraint eligibility (binding_eligible).
+            top_eligible = bool(
+                (top.get("goal_match") or {}).get("binding_eligible")
+                if isinstance(top.get("goal_match"), dict)
+                else False
+            )
             clear_winner = (
                 len(filtered) == 1
                 or (len(scores) >= 2 and scores[0] >= scores[1] + 2.0)
-                or (len(scores) >= 2 and top_goal and scores[0] > scores[1])
-                or (len(scores) == 1 and scores[0] > 0)
+                or (len(scores) >= 2 and top_eligible and scores[0] > scores[1])
+                or (len(scores) == 1 and scores[0] > 0 and top_eligible)
             )
             if clear_winner and label:
                 holder = _episode_holder(execution_state)

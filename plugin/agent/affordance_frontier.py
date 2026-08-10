@@ -520,17 +520,23 @@ def observed_from_objects(
         point = None
         if isinstance(raw_point, (list, tuple)) and len(raw_point) >= 2:
             try:
-                # Window-relative model coordinates -> screen points: the origin
-                # is as load-bearing as the scale (see _to_screen_point).
-                point = (
-                    int(float(point_origin[0]) + float(raw_point[0]) * float(point_scale)),
-                    int(float(point_origin[1]) + float(raw_point[1]) * float(point_scale)),
-                )
+                space = str(item.get("coordinate_space") or "").strip().lower()
+                rx, ry = float(raw_point[0]), float(raw_point[1])
+                # Screen-tagged (or OCR/AX) geometry must not receive origin+scale
+                # again — that is the live 171216 Forward double-transform.
+                if space == "screen":
+                    point = (int(rx), int(ry))
+                else:
+                    point = (
+                        int(float(point_origin[0]) + rx * float(point_scale)),
+                        int(float(point_origin[1]) + ry * float(point_scale)),
+                    )
             except (TypeError, ValueError):
                 point = None
         actuators = _actuators(None, point, ())
         if not actuators:
             continue
+        # matches_goal is recall-only; do not let it dominate affordance rank.
         found.append(
             Affordance(
                 id=f"obj_{index}_{family}",
@@ -538,7 +544,7 @@ def observed_from_objects(
                 status=STATUS_OBSERVED,
                 target_label=text,
                 actuators=actuators,
-                confidence=0.75 if item.get("matches_goal") else 0.6,
+                confidence=0.65 if item.get("matches_goal") else 0.6,
                 evidence=[Evidence(SOURCE_VISION_OBJECT, f"kind={kind}")],
                 expected_outcomes=[
                     PredictedOutcome(

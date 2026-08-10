@@ -963,24 +963,21 @@ def brief_from_brain_choice(
             label = str(obj.get("text") or obj.get("label") or "").strip()
         target_kind = str(obj.get("kind") or "").strip().lower() or target_kind
         obj_space = str(obj.get("coordinate_space") or "").strip().lower()
-        # TaskSurface convention: untagged inventory points are image-local when
-        # capture topology is present (positive evidence — not naked→screen).
-        if not obj_space and task_surface is not None:
-            origin = getattr(task_surface, "capture_origin", None) or (0.0, 0.0)
-            try:
-                ox, oy = float(origin[0]), float(origin[1])
-            except Exception:
-                ox, oy = 0.0, 0.0
-            has_capture = (
-                getattr(task_surface, "frame_graph", None) is not None
-                or ox != 0.0
-                or oy != 0.0
-                or float(getattr(task_surface, "capture_scale", 1.0) or 1.0) != 1.0
-                or float(getattr(task_surface, "point_scale", 1.0) or 1.0) != 1.0
-            )
-            if has_capture:
-                obj_space = "image"
         obj_point = _as_point(obj.get("point"))
+        # Untagged inventory: only assume image-local when the point *looks*
+        # image-relative. Screen/OCR/AX points that already sit inside the task
+        # window must stay screen — re-tagging them as image double-transforms
+        # (live 171216: Forward ~[1380,217] → 2751 via capture_origin+scale).
+        if not obj_space and task_surface is not None and obj_point is not None:
+            try:
+                from plugin.perception.display_topology import looks_like_image_point
+
+                if looks_like_image_point(obj_point, task_surface):
+                    obj_space = "image"
+                else:
+                    obj_space = "screen"
+            except Exception:
+                obj_space = ""
         obj_bounds = _as_bounds(obj.get("bounds")) or bounds
     elif (
         is_high_cost(cap)
@@ -1009,19 +1006,18 @@ def brief_from_brain_choice(
             if not label:
                 label = str(obj.get("text") or obj.get("label") or "").strip()
             obj_space = str(obj.get("coordinate_space") or "").strip().lower()
-            if not obj_space and task_surface is not None:
-                origin = getattr(task_surface, "capture_origin", None) or (0.0, 0.0)
-                try:
-                    ox, oy = float(origin[0]), float(origin[1])
-                except Exception:
-                    ox, oy = 0.0, 0.0
-                if (
-                    getattr(task_surface, "frame_graph", None) is not None
-                    or ox != 0.0
-                    or oy != 0.0
-                ):
-                    obj_space = "image"
             obj_point = _as_point(obj.get("point"))
+            if not obj_space and task_surface is not None and obj_point is not None:
+                try:
+                    from plugin.perception.display_topology import looks_like_image_point
+
+                    obj_space = (
+                        "image"
+                        if looks_like_image_point(obj_point, task_surface)
+                        else "screen"
+                    )
+                except Exception:
+                    obj_space = ""
             obj_bounds = _as_bounds(obj.get("bounds")) or bounds
         elif hit_forbidden:
             # Nearby inventory row under the CTA (Search sits ~80px above the
@@ -1068,9 +1064,17 @@ def brief_from_brain_choice(
         obj_space=obj_space,
         task_surface=task_surface,
     )
+    # Prefer an explicit screen brain/OCR space when native points already agree.
+    # Never let an untagged-or-mis-tagged inventory "image" label force a second
+    # image→screen transform onto geometry that is already screen-absolute.
     winner_space = brain_space
     if point is not None and obj_point is not None and _points_agree(point, obj_point):
-        winner_space = obj_space or brain_space
+        if (brain_space or "").lower() == "screen":
+            winner_space = "screen"
+        elif (obj_space or "").lower() == "screen":
+            winner_space = "screen"
+        else:
+            winner_space = obj_space or brain_space
     elif point is not None and brain_point is not None and _points_agree(point, brain_point):
         winner_space = brain_space or "screen"
     elif obj_space:

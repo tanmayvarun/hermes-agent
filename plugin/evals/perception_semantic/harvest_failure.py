@@ -134,7 +134,11 @@ def _executive_context(packet: Dict[str, Any], *, step: Any = None) -> Dict[str,
         or wm.get("surface")
         or "",
         "known_bindings": {
-            "source_object": goal.get("source_query") or goal.get("source_conversation"),
+            "source_container": goal.get("source_conversation") or goal.get("contact"),
+            "source_object": goal.get("source_query"),
+            "originator": goal.get("originator")
+            or goal.get("source_conversation")
+            or goal.get("contact"),
             "destination": goal.get("destination"),
             "open_conversation": wm.get("open_conversation"),
         },

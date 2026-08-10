@@ -209,6 +209,10 @@ class ExecutionState:
     # playing video) would otherwise abort forever, and an agent that never
     # commits is no better than one that commits wrongly. Reset on any commit.
     consecutive_stale_aborts: int = 0
+    # Semantic target still valid; only geometry/frame is stale. Next meta must
+    # PERCEIVE(reground) — do not treat as generic no_progress_replan / SEARCH.
+    grounding_reground_only: bool = False
+    grounding_reground_target: str = ""
     # Times the agent took the foreground back from another app mid-task. Purely
     # diagnostic — the reclaim itself is unconditional and uncapped, because the
     # interruptions it answers (a call, a notification) recur by nature.

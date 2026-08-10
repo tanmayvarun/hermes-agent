@@ -265,6 +265,9 @@ def goal_path(goal: Any, path: str) -> Any:
         "source_conversation": ("contact", "source_conversation", "source_contact"),
         "source_query": ("link_query", "source_query", "content_query", "query"),
         "source_referent": ("contact", "source_conversation", "source_contact"),
+        # Author/sender/creator — falls back to contact when goal.originator unset.
+        "originator": ("originator", "contact", "source_conversation", "source_contact"),
+        "sender": ("originator", "contact", "source_conversation", "source_contact"),
         "destination": ("target_contact", "destination"),
         "target_contact": ("target_contact", "destination"),
         "app": ("app",),
@@ -384,6 +387,22 @@ class PassthroughEvidenceProvider:
                             provenance="passthrough",
                         )
                     )
+        for key, ev_kind in (
+            ("sender", "sender"),
+            ("originator", "originator"),
+            ("author", "author"),
+            ("creator", "creator"),
+        ):
+            if candidate.get(key) not in (None, ""):
+                identity.append(
+                    IdentityEvidence(
+                        kind=ev_kind,
+                        value=candidate.get(key),
+                        subject=eid,
+                        provenance="passthrough",
+                        identity_bearing=True,
+                    )
+                )
         # Coarse fallback: single display label is identity-bearing only when
         # no richer split was provided. Body/text/url stay content.
         if not identity and label:
@@ -437,6 +456,28 @@ class PassthroughEvidenceProvider:
         for rk in ("container", "container_id", "parent", "thread"):
             if candidate.get(rk) not in (None, ""):
                 relations[rk if rk != "container_id" else "container"] = candidate.get(rk)
+        for rk in ("sender", "originator", "author"):
+            if candidate.get(rk) not in (None, ""):
+                relations[rk] = candidate.get(rk)
+                relations.setdefault("sender", candidate.get(rk))
+                relations.setdefault("originator", candidate.get(rk))
+                break
+        # Infer self-originator from explicit You: prefixes when no sender field.
+        if "sender" not in relations and label:
+            import re
+
+            if re.search(r"(?:^|[\s\-–—:])you\s*:", label, flags=re.I):
+                relations["sender"] = "self"
+                relations["originator"] = "self"
+                identity.append(
+                    IdentityEvidence(
+                        kind="sender",
+                        value="self",
+                        subject=eid,
+                        provenance="passthrough_you_prefix",
+                        identity_bearing=True,
+                    )
+                )
         return EntityObservation(
             entity_kind=kind,
             entity_id=eid,
@@ -643,6 +684,64 @@ class IdentityResolver:
         )
         return False, supporting, contradicting
 
+    def same_originator(
+        self, observation: EntityObservation, referent: Any
+    ) -> tuple[bool, List[EvidenceNote], List[EvidenceNote]]:
+        """Sender/author/creator match — independent of container membership.
+
+        Referent ``self`` / ``me`` / ``you`` matches UI-marked outgoing messages.
+        """
+        ref = str(referent or "").strip()
+        supporting: List[EvidenceNote] = []
+        contradicting: List[EvidenceNote] = []
+        if not ref:
+            return False, supporting, [EvidenceNote("referent", detail="empty")]
+
+        want_self = _norm(ref) in {"self", "me", "i", "you", "myself"}
+        senders = [
+            e
+            for e in observation.identity_evidence
+            if e.kind in {"sender", "author", "creator", "originator"}
+            and e.identity_bearing
+        ]
+        # relations.sender is also authoritative when adapters stamp it.
+        rel_sender = observation.relations.get("sender") or observation.relations.get(
+            "originator"
+        )
+        if rel_sender not in (None, ""):
+            senders.append(
+                IdentityEvidence(
+                    kind="sender",
+                    value=rel_sender,
+                    identity_bearing=True,
+                    provenance="relation",
+                )
+            )
+        if not senders:
+            contradicting.append(
+                EvidenceNote("originator", detail="missing_sender_evidence")
+            )
+            return False, supporting, contradicting
+
+        for ev in senders:
+            val = _norm(ev.value)
+            is_self = val in {"self", "me", "i", "you", "myself"}
+            if want_self and is_self:
+                supporting.append(EvidenceNote(ev.kind, ev.value, "same_originator_self"))
+                return True, supporting, contradicting
+            if not want_self and not is_self and self._values_same_identity(ev.value, ref):
+                supporting.append(EvidenceNote(ev.kind, ev.value, "same_originator"))
+                return True, supporting, contradicting
+
+        contradicting.append(
+            EvidenceNote(
+                "originator",
+                [e.value for e in senders[:4]],
+                f"!= {ref}",
+            )
+        )
+        return False, supporting, contradicting
+
     @staticmethod
     def _values_same_identity(value: Any, referent: Any) -> bool:
         """Generic identity equality — not substring-of-content.
@@ -778,6 +877,26 @@ def assess_observation_for_role(
             if referent in (None, ""):
                 continue
             ok, sup, contra = resolver.same_content_referent(observation, referent)
+            assessment.supporting.extend(sup)
+            assessment.contradicting.extend(contra)
+            if ok:
+                identity_hits += 1
+            elif cons.required:
+                required_ok = False
+                assessment.missing_required.append(cons.relation)
+            continue
+
+        if cons.relation == "same_originator":
+            identity_needed += 1
+            referent = goal_path(goal, cons.referent_source)
+            if referent in (None, "") and cons.value is not None:
+                referent = cons.value
+            if referent in (None, ""):
+                if cons.required:
+                    assessment.missing_required.append("originator_referent")
+                    required_ok = False
+                continue
+            ok, sup, contra = resolver.same_originator(observation, referent)
             assessment.supporting.extend(sup)
             assessment.contradicting.extend(contra)
             if ok:
@@ -973,6 +1092,7 @@ class RoleBinder:
                     else observe_entity(dict(candidate or {}))
                 )
                 query = goal_path(goal, "goal.source_query")
+                originator = goal_path(goal, "goal.originator")
                 kind = _norm(obs.entity_kind)
                 content_kinds = {
                     "message",
@@ -983,8 +1103,13 @@ class RoleBinder:
                 }
                 if query:
                     ok_c, _, _ = self.resolver.same_content_referent(obs, query)
-                    if ok_c and (
-                        role == "source_object" or kind in content_kinds
+                    ok_o = True
+                    if originator not in (None, ""):
+                        ok_o, _, _ = self.resolver.same_originator(obs, originator)
+                    if (
+                        ok_c
+                        and ok_o
+                        and (role == "source_object" or kind in content_kinds)
                     ):
                         return True, "provisional_relational_open", proposal
             return False, "identity_contract_unsatisfied", proposal
