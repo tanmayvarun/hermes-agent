@@ -262,7 +262,11 @@ def content_target_fits_referents(
     object_blob: str = "",
     goal_referents: Optional[Sequence[str]] = None,
 ) -> bool:
-    """True when referents are empty, or the target blob overlaps them."""
+    """Candidate-recall only — NOT authoritative targeting.
+
+    Loose token overlap may propose candidates. Authoritative act targeting
+    must go through RoleBinding / IdentityResolver.
+    """
     tokens = [str(t).strip() for t in (goal_referents or []) if str(t).strip()]
     if not tokens:
         return True
@@ -274,7 +278,10 @@ def pick_unique_referent_content(
     document: Optional[Dict[str, Any]],
     goal_referents: Optional[Sequence[str]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Unique content object whose text/label overlaps goal referents, if any."""
+    """Candidate recall: unique content object overlapping referents, if any.
+
+    Must not be used as sole authority for ACT — bind via RoleBinding.
+    """
     tokens = [str(t).strip() for t in (goal_referents or []) if str(t).strip()]
     if not tokens:
         return None

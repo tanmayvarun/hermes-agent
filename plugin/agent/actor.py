@@ -436,54 +436,134 @@ def _normalize_to_screen(
     coordinate_space: str,
     surface: Any,
     frame_id: str = "",
+    graph: Any = None,
 ) -> Tuple[
     Optional[Tuple[float, float]],
     Optional[Tuple[float, float, float, float]],
     Dict[str, Any],
 ]:
-    """Map image-space geometry onto global desktop points via CoordinateFrame.
+    """Map image-space geometry onto global desktop points via FrameGraph.
 
-    Tagged ``coordinate_space=screen`` passes through unchanged (no double
-    transform). Returns ``(point, bounds, geometry_audit)``.
+    Authoritative path: Grounding + FrameGraph.transform only.
+    Tagged ``coordinate_space=screen`` passes through unchanged.
+    Missing/stale frames fail closed (``grounding_uncertain`` audit) — never
+    ``looks_like_image_point`` / legacy heuristic conversion on act path.
     """
-    audit: Dict[str, Any] = {}
-    try:
-        from plugin.perception.coordinate_frame import ensure_screen_space
+    from plugin.perception.coordinate_frame import (
+        FrameGraph,
+        GroundingUncertain,
+        StaleCoordinateFrame,
+        UnknownCoordinateFrame,
+        ensure_screen_space,
+    )
 
+    from plugin.perception.coordinate_frame import frame_graph_from_task_surface
+
+    audit: Dict[str, Any] = {}
+    active_graph = graph
+    if active_graph is None and surface is not None:
+        raw = None
+        if isinstance(surface, dict):
+            raw = surface.get("frame_graph")
+        else:
+            raw = getattr(surface, "frame_graph", None)
+        if isinstance(raw, FrameGraph):
+            active_graph = raw
+        elif isinstance(raw, dict):
+            active_graph = FrameGraph.from_dict(raw)
+
+    from plugin.perception.coordinate_frame import build_frame_graph
+
+    # ONE ingestion adapter: TaskSurface / identity capture → FrameGraph, then
+    # ONLY transform(). Never looks_like_image_point / to_screen_point.
+    adapter_used = False
+    if active_graph is None and surface is not None:
+        try:
+            active_graph = frame_graph_from_task_surface(surface)
+            adapter_used = True
+        except Exception:
+            active_graph = None
+
+    space = str(coordinate_space or "").strip().lower()
+    # TaskSurface adapter convention: untagged points are image-space.
+    if adapter_used and not space and not frame_id:
+        space = "image"
+    # Legacy ingestion: naked points with no topology were historically
+    # screen-absolute in goldens/inventory. Annotate once as screen — never
+    # invent image→screen via looks_like_image_point.
+    elif (
+        active_graph is None
+        and not space
+        and not frame_id
+        and (point is not None or bounds is not None)
+    ):
+        space = "screen"
+    # Perceptor tagged image but capture was never stamped (tests / AX-only):
+    # identity FrameGraph (origin 0, scale 1) — not a heuristic "looks like".
+    elif active_graph is None and space == "image" and not frame_id:
+        active_graph = build_frame_graph(
+            image_size=(0.0, 0.0),
+            window_origin_in_screen=(0.0, 0.0),
+            image_origin_in_window=(0.0, 0.0),
+            point_scale=1.0,
+            capture_scale=1.0,
+            capture_id="legacy_identity",
+        )
+        adapter_used = True
+
+    # Window/image with unresolved frame_id and no graph → fail closed.
+    if active_graph is None and space not in {"", "screen"}:
+        return None, None, {
+            "grounding_uncertain": True,
+            "attempt_validity": "inconclusive_grounding",
+            "error": "no FrameGraph for non-screen geometry",
+            "error_code": "grounding_uncertain",
+            "source_frame_id": frame_id or "",
+            "source_space": space,
+            "legacy_heuristic_refused": True,
+        }
+    if active_graph is None and space not in {"screen"}:
+        return None, None, {
+            "grounding_uncertain": True,
+            "attempt_validity": "inconclusive_grounding",
+            "error": "no FrameGraph and no TaskSurface topology to adapt",
+            "error_code": "grounding_uncertain",
+            "source_frame_id": frame_id or "",
+            "source_space": space,
+            "legacy_heuristic_refused": True,
+        }
+
+    try:
         pt, bd, audit = ensure_screen_space(
             point,
             bounds,
-            coordinate_space=coordinate_space,
+            coordinate_space=space,
             frame_id=frame_id,
-            surface=surface,
+            graph=active_graph,
+            surface=None,
+            fail_closed=True,
         )
+        if adapter_used:
+            audit = dict(audit or {})
+            audit["task_surface_frame_adapter"] = True
         return pt, bd, audit
-    except Exception:
-        # Fallback to legacy TaskSurface path.
-        if surface is None:
-            return point, bounds, audit
-        try:
-            from plugin.perception.display_topology import (
-                to_screen_bounds,
-                to_screen_point,
-            )
-
-            space = str(coordinate_space or "").strip().lower()
-            if space == "screen":
-                return point, bounds, {
-                    "double_transform_refused": True,
-                    "source_space": "screen",
-                    "global_desktop_point": list(point) if point else None,
-                }
-            pt = to_screen_point(point, surface, coordinate_space=space) if point else None
-            bd = (
-                to_screen_bounds(bounds, surface, coordinate_space=space)
-                if bounds is not None
-                else None
-            )
-            return pt, bd, {"geometry_source": space or "legacy"}
-        except Exception:
-            return point, bounds, audit
+    except (UnknownCoordinateFrame, StaleCoordinateFrame, GroundingUncertain) as exc:
+        return None, None, {
+            "grounding_uncertain": True,
+            "attempt_validity": "inconclusive_grounding",
+            "error": str(exc),
+            "error_code": getattr(exc, "code", "grounding_uncertain"),
+            "source_frame_id": frame_id or "",
+            "source_space": coordinate_space or "",
+            "legacy_heuristic_refused": True,
+        }
+    except Exception as exc:
+        return None, None, {
+            "grounding_uncertain": True,
+            "attempt_validity": "inconclusive_grounding",
+            "error": str(exc),
+            "legacy_heuristic_refused": True,
+        }
 
 
 def _reconcile_click_geometry(
@@ -506,7 +586,7 @@ def _reconcile_click_geometry(
       task window and the inventory point is still image-local (014321).
     - Never let *bounds center* override a good point (AX label fragment 011539).
     """
-    from plugin.perception.display_topology import looks_like_image_point, point_in_bounds
+    from plugin.perception.display_topology import point_in_bounds
 
     cap = str(capability or "").strip().lower().replace("-", "_")
     b_space = str(brain_space or "").strip().lower()
@@ -517,14 +597,9 @@ def _reconcile_click_geometry(
             return False
         return point_in_bounds(pt, getattr(task_surface, "window_bounds", None), pad=48.0)
 
-    def _is_image(pt: Optional[Tuple[float, float]], space: str) -> bool:
-        if space == "image":
-            return True
-        if space == "screen":
-            return False
-        if pt is None or task_surface is None:
-            return False
-        return looks_like_image_point(pt, task_surface)
+    def _is_image(_pt: Optional[Tuple[float, float]], space: str) -> bool:
+        # Authoritative: only explicit coordinate_space tags — never heuristic.
+        return space == "image"
 
     if brain_point is not None and obj_point is not None and not _points_agree(
         brain_point, obj_point
@@ -925,14 +1000,35 @@ def brief_from_brain_choice(
         winner_space = brain_space or "screen"
     elif obj_space:
         winner_space = obj_space
+    frame_id = str(
+        action.get("coordinate_frame_id")
+        or action.get("frame_id")
+        or (obj or {}).get("coordinate_frame_id")
+        or (obj or {}).get("frame_id")
+        or ""
+    )
+    stamped_graph = None
+    if isinstance(doc, dict):
+        stamped_graph = doc.get("frame_graph")
+    if stamped_graph is None and task_surface is not None:
+        stamped_graph = getattr(task_surface, "frame_graph", None)
     point, bounds, geometry_audit = _normalize_to_screen(
-        point, bounds, coordinate_space=winner_space, surface=task_surface
+        point,
+        bounds,
+        coordinate_space=winner_space,
+        surface=task_surface,
+        frame_id=frame_id,
+        graph=stamped_graph,
     )
     geometry_audit = dict(geometry_audit or {})
     geometry_audit.setdefault(
         "geometry_source",
         str(action.get("geometry_source") or winner_space or ""),
     )
+    if geometry_audit.get("grounding_uncertain"):
+        # Fail closed: do not emit a clickable brief with invented coordinates.
+        point = None
+        bounds = None
 
     role = str(action.get("field_role") or "").strip().lower()
     if not role or role == "none":

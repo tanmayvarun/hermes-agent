@@ -86,27 +86,37 @@ class WhatsAppUIEvidenceProvider:
             or ""
         ).strip()
 
-        # Map UI kinds → abstract entity kinds for the generic binder.
-        if raw_kind in {
-            "chat_row",
-            "conversation_row",
-            "chat",
-            "search_result_row",
-            "picker_row",
-            "conversation",
-        }:
+        # UI node type ≠ domain entity type. Ambiguous widgets keep candidates.
+        ui_role = raw_kind
+        candidate_kinds: set[str] = set()
+        entity_kind = ""
+        if raw_kind in {"chat_row", "conversation_row", "chat", "conversation"}:
             entity_kind = "conversation"
+            candidate_kinds.add("conversation")
+        elif raw_kind in {"search_result_row", "picker_row"}:
+            # May be message / link / contact / conversation — do not flatten.
+            candidate_kinds.update(
+                {"message", "conversation", "link", "contact"}
+            )
+            ui_role = raw_kind
+            entity_kind = ""  # unresolved
         elif raw_kind in {"message", "message_bubble", "message_with_link"}:
             entity_kind = "message" if "link" not in raw_kind else "link"
+            candidate_kinds.add(entity_kind)
         elif raw_kind == "link":
             entity_kind = "link"
+            candidate_kinds.add("link")
         else:
-            entity_kind = raw_kind or "conversation"
+            entity_kind = raw_kind
+            if raw_kind:
+                candidate_kinds.add(raw_kind)
 
         identity: List[IdentityEvidence] = []
         content: List[IdentityEvidence] = []
         text = str(candidate.get("text") or "")
         is_content_entity = entity_kind in {"message", "link", "content_item"}
+        # Ambiguous search/picker rows: treat as content-bearing until resolved.
+        ambiguous_row = raw_kind in {"search_result_row", "picker_row"}
 
         if is_content_entity:
             # Message/link bodies are content evidence — never conversation identity.
@@ -124,14 +134,39 @@ class WhatsAppUIEvidenceProvider:
             display_name, preview = "", ""
         else:
             display_name, preview = _split_display_and_preview(label)
-            if display_name:
+            # Structured ownership (header/AX name) → high conf; flattened
+            # string-split fallback → low conf (architect review §8).
+            structured = bool(
+                candidate.get("display_name")
+                or candidate.get("ax_title")
+                or candidate.get("header_title")
+            )
+            if candidate.get("display_name"):
+                display_name = str(candidate.get("display_name")).strip() or display_name
+            if display_name and not ambiguous_row:
+                # Structured title → high conf. Flattened chat_row split is a
+                # fallback (≤0.75) — never pretend it is AX/header ownership.
                 identity.append(
                     IdentityEvidence(
                         kind="display_name",
                         value=display_name,
                         subject=eid,
-                        confidence=0.96,
-                        provenance="whatsapp_ax+vision",
+                        confidence=0.96 if structured else 0.72,
+                        provenance=(
+                            "whatsapp_structured_title"
+                            if structured
+                            else "whatsapp_flattened_label_fallback"
+                        ),
+                    )
+                )
+            if ambiguous_row and (preview or text or label):
+                content.append(
+                    IdentityEvidence(
+                        kind="content_text",
+                        value=preview or text or label,
+                        subject=eid,
+                        identity_bearing=False,
+                        provenance="whatsapp_ambiguous_row",
                     )
                 )
             if preview:
@@ -216,6 +251,8 @@ class WhatsAppUIEvidenceProvider:
             entity_kind=entity_kind,
             entity_id=eid,
             label=display_name or label,
+            ui_role=ui_role,
+            candidate_entity_kinds=candidate_kinds,
             identity_evidence=identity,
             content_evidence=content,
             relations=relations,
@@ -224,36 +261,29 @@ class WhatsAppUIEvidenceProvider:
 
 
 def _split_display_and_preview(label: str) -> tuple[str, str]:
-    """Domain rule: preview/content must not redefine conversation identity.
+    """Low-confidence fallback when structured display_name is absent.
 
-    Uses the messaging-UI contact-head extractor when available; otherwise a
-    conservative dash/URL cut. This logic stays in the adapter.
+    Conservative dash/URL cut only — no imports from capability modules.
     """
+    import re
+
     text = " ".join(str(label or "").strip().split())
     if not text:
         return "", ""
-    try:
-        from plugin.agent.capabilities.resolve_entity import _row_contact_name
-
-        head = _row_contact_name(text)
-    except Exception:
-        head = text
-        for sep in (" - ", " – ", " — "):
-            if sep in text:
-                head = text.split(sep, 1)[0].strip()
-                break
-        else:
-            import re
-
-            m = re.search(r"https?://", text, flags=re.I)
-            if m and m.start() > 0:
-                head = text[: m.start()].strip().rstrip(":").strip()
+    head = text
+    for sep in (" - ", " – ", " — "):
+        if sep in text:
+            head = text.split(sep, 1)[0].strip()
+            break
+    else:
+        m = re.search(r"https?://", text, flags=re.I)
+        if m and m.start() > 0:
+            head = text[: m.start()].strip().rstrip(":").strip()
     head = head or text
     preview = ""
     if head and text.lower().startswith(head.lower()) and len(text) > len(head):
         preview = text[len(head) :].lstrip(" -–—:").strip()
     elif head != text:
-        # Extractor shortened; remainder is preview-ish.
         preview = text[len(head) :].strip() if text.startswith(head) else text
     return head, preview
 
@@ -291,5 +321,5 @@ def ensure_whatsapp_provider_registered() -> None:
     _REGISTERED = True
 
 
-# Auto-register on import so WhatsApp runs pick up the adapter.
-ensure_whatsapp_provider_registered()
+# Do NOT auto-register on import — composition root owns registration
+# (plugin.agent.composition.compose_domain_adapters).

@@ -519,11 +519,14 @@ def escalate_failed_reveal(
     try:
         from plugin.agent.executive.intention_frame import (
             AttemptRecord,
+            AttemptValidity,
             FailureClass,
             MethodOutcome,
+            MethodStatus,
             active_intention_frame,
             apply_derived_status,
             mark_method_attempted,
+            record_method_status,
         )
 
         iframe = active_intention_frame(execution_state)
@@ -534,6 +537,13 @@ def escalate_failed_reveal(
                 "select_content": "select_then_toolbar",
             }.get(gesture, "reveal_context_click")
             mark_method_attempted(iframe, failed_mid)
+            # Valid motor+obs miss → method ineffective (ledger alone does not block).
+            record_method_status(
+                iframe,
+                failed_mid,
+                MethodStatus.INEFFECTIVE.value,
+                world_signature=str(getattr(iframe.intention, "scope", "") or ""),
+            )
             iframe.attempts.append(
                 AttemptRecord(
                     method_id=failed_mid,
@@ -541,6 +551,8 @@ def escalate_failed_reveal(
                     observation_quality=0.9,
                     method_outcome=MethodOutcome.EFFECT_ABSENT.value,
                     failure_class=FailureClass.METHOD_INEFFECTIVE.value,
+                    attempt_validity=AttemptValidity.VALID.value,
+                    method_status=MethodStatus.INEFFECTIVE.value,
                     evidence_refs=[
                         "expected message action surface absent after settle"
                     ],

@@ -266,24 +266,102 @@ class AttemptRecord:
 
 
 @dataclass
+class BindingRef:
+    """Typed reference to a role binding (not a free string)."""
+
+    role: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"role": self.role}
+
+
+@dataclass
+class ScopeRef:
+    """Typed world-scope reference for intentions / methods."""
+
+    kind: str = ""  # surface | app | binding | world_signature
+    value: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"kind": self.kind, "value": self.value}
+
+
+@dataclass
+class Predicate:
+    """Structured success / precondition predicate (prefer over raw strings)."""
+
+    subject: str = ""  # BindingRef.role or literal
+    relation: str = ""
+    object: str = ""
+    value: Any = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "subject": self.subject,
+            "relation": self.relation,
+            "object": self.object,
+            "value": self.value,
+        }
+
+    def as_legacy_string(self) -> str:
+        if self.relation and self.object:
+            return f"{self.subject}.{self.relation}:{self.object}".strip(".")
+        return self.relation or self.subject
+
+
+@dataclass
 class MethodFrontier:
+    """Decision state for methods. ``attempted`` is a ledger, not a blocker.
+
+    Eligibility derives from ``method_status`` (and explicit ineligible /
+    invalidated / superseded sets). An inconclusive-grounding attempt leaves
+    status UNTRIED → method stays eligible.
+    """
+
     known_untried: List[str] = field(default_factory=list)
-    attempted: List[str] = field(default_factory=list)
+    attempted: List[str] = field(default_factory=list)  # ledger only
     currently_ineligible: List[str] = field(default_factory=list)
     invalidated: List[str] = field(default_factory=list)
     newly_discovered: List[str] = field(default_factory=list)
     superseded: List[str] = field(default_factory=list)
+    # method_id → MethodStatus value (decision state)
+    method_status: Dict[str, str] = field(default_factory=dict)
+    # method_id → world signature under which INEFFECTIVE was recorded
+    ineffective_in_world_signature: Dict[str, str] = field(default_factory=dict)
     # method_id → MethodSpec
     catalog: Dict[str, MethodSpec] = field(default_factory=dict)
 
-    def eligible_methods(self) -> List[str]:
-        blocked = set(self.attempted) | set(self.currently_ineligible)
+    def status_of(self, method_id: str) -> str:
+        return str(
+            self.method_status.get(method_id) or MethodStatus.UNTRIED.value
+        )
+
+    def eligible_methods(self, *, world_signature: str = "") -> List[str]:
+        blocked = set(self.currently_ineligible)
         blocked |= set(self.invalidated) | set(self.superseded)
         out: List[str] = []
-        for mid in list(self.newly_discovered) + list(self.known_untried):
+        pool = list(self.newly_discovered) + list(self.known_untried)
+        # Also consider catalog methods still UNTRIED after inconclusive attempts.
+        for mid in list(self.catalog.keys()):
+            if mid not in pool:
+                pool.append(mid)
+        for mid in pool:
             if mid in blocked or mid in out:
                 continue
             if mid not in self.catalog:
+                continue
+            st = self.status_of(mid)
+            if st in {
+                MethodStatus.INEFFECTIVE.value,
+                MethodStatus.INVALID.value,
+                MethodStatus.SUPERSEDED.value,
+                MethodStatus.SUCCEEDED.value,
+            }:
+                # INEFFECTIVE may clear when world signature changes.
+                if st == MethodStatus.INEFFECTIVE.value and world_signature:
+                    prior = str(self.ineffective_in_world_signature.get(mid) or "")
+                    if prior and prior != world_signature:
+                        out.append(mid)
                 continue
             out.append(mid)
         return out
@@ -296,6 +374,8 @@ class MethodFrontier:
             "invalidated": list(self.invalidated),
             "newly_discovered": list(self.newly_discovered),
             "superseded": list(self.superseded),
+            "method_status": dict(self.method_status),
+            "ineffective_in_world_signature": dict(self.ineffective_in_world_signature),
             "catalog": {k: v.to_dict() for k, v in self.catalog.items()},
             "eligible": self.eligible_methods(),
         }
@@ -406,6 +486,37 @@ def close_attempt(
     return attempt
 
 
+def close_attempt_on_frame(
+    frame: IntentionFrame,
+    attempt: AttemptRecord,
+    *,
+    execution_status: str = "",
+    method_outcome: str = "",
+    failure_class: Optional[str] = None,
+    world_after: str = "",
+    motor_point: Optional[Sequence[float]] = None,
+    attempt_validity: Optional[str] = None,
+    world_signature: str = "",
+) -> AttemptRecord:
+    """Close attempt and sync MethodFrontier decision status (not just ledger)."""
+    closed = close_attempt(
+        attempt,
+        execution_status=execution_status,
+        method_outcome=method_outcome,
+        failure_class=failure_class,
+        world_after=world_after,
+        motor_point=motor_point,
+        attempt_validity=attempt_validity,
+    )
+    record_method_status(
+        frame,
+        closed.method_id,
+        closed.method_status,
+        world_signature=world_signature or str(closed.world_before or ""),
+    )
+    return closed
+
+
 def score_method(
     spec: MethodSpec,
     policy: ScoringPolicy,
@@ -462,11 +573,19 @@ def rank_eligible(
 
 
 def actionable_prerequisites(frame: IntentionFrame) -> List[str]:
-    """Preconditions named on untried/ineligible methods that can be satisfied."""
+    """Preconditions on methods that are still decision-eligible (or waiting)."""
     out: List[str] = []
-    for mid in list(frame.method_frontier.currently_ineligible) + list(
-        frame.method_frontier.known_untried
-    ):
+    pool = set(frame.method_frontier.eligible_methods())
+    pool |= set(frame.method_frontier.currently_ineligible)
+    for mid in pool:
+        st = frame.method_frontier.status_of(mid)
+        if st in {
+            MethodStatus.INEFFECTIVE.value,
+            MethodStatus.INVALID.value,
+            MethodStatus.SUPERSEDED.value,
+            MethodStatus.SUCCEEDED.value,
+        }:
+            continue
         spec = frame.method_frontier.catalog.get(mid)
         if spec is None:
             continue
@@ -830,15 +949,36 @@ def classify_method_outcome(
 
 
 def mark_method_attempted(frame: IntentionFrame, method_id: str) -> None:
+    """Record an attempt in the ledger. Does not change eligibility by itself."""
     mid = str(method_id or "").strip()
     if not mid:
         return
     fr = frame.method_frontier
     if mid not in fr.attempted:
         fr.attempted.append(mid)
-    fr.known_untried = [x for x in fr.known_untried if x != mid]
-    fr.newly_discovered = [x for x in fr.newly_discovered if x != mid]
+    # Keep known_untried / newly_discovered so inconclusive attempts stay eligible.
+    # Status updates happen in ``record_method_status`` / ``close_attempt``.
     frame.methods_tried_count = len(fr.attempted)
+
+
+def record_method_status(
+    frame: IntentionFrame,
+    method_id: str,
+    status: str,
+    *,
+    world_signature: str = "",
+) -> None:
+    """Update decision-state MethodStatus (orthogonal to attempt ledger)."""
+    mid = str(method_id or "").strip()
+    if not mid:
+        return
+    fr = frame.method_frontier
+    fr.method_status[mid] = str(status or MethodStatus.UNTRIED.value)
+    if status == MethodStatus.INEFFECTIVE.value and world_signature:
+        fr.ineffective_in_world_signature[mid] = world_signature
+    if status == MethodStatus.UNTRIED.value:
+        if mid not in fr.known_untried and mid not in fr.newly_discovered:
+            fr.known_untried.append(mid)
 
 
 def recommend_recovery(

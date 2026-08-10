@@ -463,6 +463,40 @@ def attach_screenshot_to_observation(
         # to screen points before the result can be clicked, and re-deriving it
         # later would race the window being moved or resized in between.
         obs.meta[CAPTURE_FRAME_KEY] = frame.as_dict()
+        # Stamp authoritative FrameGraph at capture time (Capture ≠ Window).
+        try:
+            from plugin.perception.coordinate_frame import (
+                FRAME_GRAPH_KEY,
+                frame_graph_from_capture_artifact,
+                new_capture_id,
+            )
+
+            cid = new_capture_id()
+            # Full-window screencapture: image origin in window is (0,0);
+            # window origin in screen is CaptureFrame.origin_*.
+            img_w = float(getattr(frame, "image_width", 0) or 0)
+            img_h = float(getattr(frame, "image_height", 0) or 0)
+            if img_w <= 0 or img_h <= 0:
+                try:
+                    from PIL import Image
+
+                    with Image.open(screenshot_path) as im:
+                        img_w, img_h = float(im.size[0]), float(im.size[1])
+                except Exception:
+                    pass
+            graph = frame_graph_from_capture_artifact(
+                capture_id=cid,
+                image_size=(img_w, img_h),
+                window_origin_in_screen=(frame.origin_x, frame.origin_y),
+                image_origin_in_window=(0.0, 0.0),
+                capture_scale=float(frame.scale or 1.0),
+                point_scale=(1.0 / float(frame.scale)) if float(frame.scale or 0) > 0 else 1.0,
+                backing_scale=float(frame.scale or 1.0),
+            )
+            obs.meta[FRAME_GRAPH_KEY] = graph.to_dict()
+            obs.meta["capture_id"] = cid
+        except Exception as exc:
+            obs.meta["frame_graph_error"] = str(exc)[:160]
         if screenshot_error:
             obs.meta["screenshot_error"] = screenshot_error
         return obs, screenshot_error

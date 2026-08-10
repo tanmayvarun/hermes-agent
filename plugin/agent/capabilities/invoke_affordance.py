@@ -78,12 +78,13 @@ def invoke_affordance(
             evidence={"refused": name, "reason": "irreversible"},
         )
 
-    # Typed actuators: keyboard chords must never become named_click.
-    from plugin.agent.capabilities.typed_actuators import (
+    # Legacy free-text chords → typed KeyboardChord (migration adapter only).
+    # Production should emit capability_id=keyboard_chord with args.keys.
+    from plugin.agent.capabilities.legacy_action_adapter import (
         looks_like_keyboard_chord,
         parse_keyboard_chord,
-        realize_keyboard_chord,
     )
+    from plugin.agent.capabilities.typed_actuators import realize_keyboard_chord
 
     if looks_like_keyboard_chord(name):
         chord = parse_keyboard_chord(name, provenance="model_prior")

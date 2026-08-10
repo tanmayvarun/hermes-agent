@@ -44,11 +44,17 @@ class IdentityEvidence:
 
 @dataclass
 class EntityObservation:
-    """Environment-neutral view of a candidate entity."""
+    """Environment-neutral view of a candidate entity.
+
+    ``entity_kind`` is a resolved domain kind when known. Ambiguous UI widgets
+    leave it empty and populate ``candidate_entity_kinds`` + ``ui_role`` instead.
+    """
 
     entity_kind: str = ""
     entity_id: str = ""
     label: str = ""
+    ui_role: str = ""  # presentation widget — not a domain entity type
+    candidate_entity_kinds: Set[str] = field(default_factory=set)
     identity_evidence: List[IdentityEvidence] = field(default_factory=list)
     content_evidence: List[IdentityEvidence] = field(default_factory=list)
     relations: Dict[str, Any] = field(default_factory=dict)  # e.g. container → id/label
@@ -59,10 +65,19 @@ class EntityObservation:
             "entity_kind": self.entity_kind,
             "entity_id": self.entity_id,
             "label": self.label,
+            "ui_role": self.ui_role,
+            "candidate_entity_kinds": sorted(self.candidate_entity_kinds),
             "identity_evidence": [e.to_dict() for e in self.identity_evidence[:12]],
             "content_evidence": [e.to_dict() for e in self.content_evidence[:12]],
             "relations": dict(self.relations or {}),
         }
+
+
+def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
+    """Deprecated shim — import from procedures.forward_message instead."""
+    from plugin.agent.procedures.forward_message import forward_role_specs as _specs
+
+    return _specs(goal)
 
 
 @dataclass
@@ -472,19 +487,15 @@ def _observation_from_typed_dict(candidate: Dict[str, Any]) -> EntityObservation
 
 
 def observe_entity(candidate: Dict[str, Any]) -> EntityObservation:
-    """Run registered domain providers; fall back to passthrough."""
+    """Run registered domain providers; fall back to passthrough.
+
+    Providers are registered by the composition root
+    (``plugin.agent.composition``). Core never imports domain adapters.
+    """
     if isinstance(candidate, EntityObservation):
         return candidate
     if not isinstance(candidate, dict):
         return EntityObservation(label=str(candidate or ""))
-    # Lazy-load domain adapters (they register themselves; core stays free of
-    # app imports at module load).
-    try:
-        from plugin.agent.identity_evidence import ensure_whatsapp_provider_registered
-
-        ensure_whatsapp_provider_registered()
-    except Exception:
-        pass
     for provider in _PROVIDERS:
         try:
             if provider.can_handle(candidate):
@@ -656,65 +667,8 @@ def identity_resolver() -> IdentityResolver:
 
 
 # ---------------------------------------------------------------------------
-# Role policies (goal-driven; entity kinds are abstract)
-# ---------------------------------------------------------------------------
-
-
-def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
-    """Typed roles for a forward-style goal. Values come from the goal object."""
-    return {
-        "source_container": RoleBindingSpec(
-            role="source_container",
-            expected_entity_kinds={"conversation", "thread", "container", "contact"},
-            identity_constraints=[
-                Constraint(
-                    relation="same_identity",
-                    referent_source="goal.source_contact",
-                    required=True,
-                )
-            ],
-            evidence_threshold=0.85,
-        ),
-        "source_object": RoleBindingSpec(
-            role="source_object",
-            expected_entity_kinds={
-                "message",
-                "content_item",
-                "link",
-                "attachment",
-                "document",
-            },
-            identity_constraints=[
-                Constraint(
-                    relation="same_content_referent",
-                    referent_source="goal.source_query",
-                    required=True,
-                ),
-                Constraint(
-                    relation="equals_binding",
-                    referent_source="source_container",
-                    required=True,
-                ),
-            ],
-            evidence_threshold=0.85,
-        ),
-        "destination": RoleBindingSpec(
-            role="destination",
-            expected_entity_kinds={"conversation", "thread", "container", "contact"},
-            identity_constraints=[
-                Constraint(
-                    relation="same_identity",
-                    referent_source="goal.destination",
-                    required=True,
-                )
-            ],
-            evidence_threshold=0.85,
-        ),
-    }
-
-
-# ---------------------------------------------------------------------------
 # Role binder (owns semantic binding validity)
+# Procedure-specific RoleBindingSpec maps live under plugin.agent.procedures.
 # ---------------------------------------------------------------------------
 
 
@@ -730,11 +684,26 @@ def assess_observation_for_role(
     resolver = resolver or identity_resolver()
     assessment = CandidateAssessment(task_relevance=float(task_relevance or 0.0))
     et = _norm(observation.entity_kind)
+    candidates = {_norm(x) for x in (observation.candidate_entity_kinds or set())}
+    known = {_norm(x) for x in (spec.expected_entity_kinds or set())}
+    container_kinds = {
+        "conversation",
+        "thread",
+        "container",
+        "contact",
+        "folder",
+        "tab",
+        "event",
+    }
+    content_kinds = {
+        "message",
+        "content_item",
+        "link",
+        "attachment",
+        "document",
+        "file",
+    }
     if spec.expected_entity_kinds and et:
-        known = {_norm(x) for x in spec.expected_entity_kinds}
-        # Abstract family checks — containers vs content items.
-        container_kinds = {"conversation", "thread", "container", "contact", "folder", "tab", "event"}
-        content_kinds = {"message", "content_item", "link", "attachment", "document", "file"}
         if spec.role == "source_object" and et in container_kinds and et not in known:
             assessment.contradicting.append(
                 EvidenceNote("entity_kind", et, "invalid_for_source_object")
@@ -745,6 +714,17 @@ def assess_observation_for_role(
                 EvidenceNote("entity_kind", et, "invalid_for_container_role")
             )
             assessment.missing_required.append("entity_kind")
+    elif spec.expected_entity_kinds and not et and candidates:
+        # Ambiguous UI widget: allow if candidate set intersects expected kinds.
+        if not (candidates & known):
+            assessment.missing_required.append("entity_kind")
+            assessment.contradicting.append(
+                EvidenceNote(
+                    "entity_kind",
+                    sorted(candidates),
+                    "candidate_kinds_miss_role",
+                )
+            )
 
     required_ok = "entity_kind" not in assessment.missing_required
     identity_hits = 0
@@ -921,7 +901,10 @@ class RoleBinder:
         task_relevance: float = 0.0,
         specs: Optional[Dict[str, RoleBindingSpec]] = None,
     ) -> BindingProposal:
-        specs = specs or forward_role_specs(goal)
+        if specs is None:
+            from plugin.agent.procedures.forward_message import role_specs_for_goal
+
+            specs = role_specs_for_goal(goal)
         spec = specs.get(role) or RoleBindingSpec(role=role)
         return propose_binding(
             spec=spec,
@@ -1007,17 +990,12 @@ class RoleBinder:
 
 
 def role_for_action_family(family: str, *, phase: str = "") -> str:
-    fam = _norm(family).replace("-", "_")
-    ph = _norm(phase).replace("-", "_")
-    if fam in {"open_entity", "open_contact", "resolve_entity"}:
-        if ph in {"choose_destination", "pick_dest", "invoke_forward"}:
-            return "destination"
-        return "source_container"
-    if fam in {"select_content", "reveal_actions", "locate_content"}:
-        return "source_object"
-    if fam in {"type_query", "compose_search_query"}:
-        return ""
-    return ""
+    """Compatibility shim — prefer procedures.forward_message.role_for_action_family."""
+    from plugin.agent.procedures.forward_message import (
+        role_for_action_family as _proc_role,
+    )
+
+    return _proc_role(family, phase=phase)
 
 
 def verify_bound_identity(
@@ -1028,7 +1006,9 @@ def verify_bound_identity(
     bindings: Optional[Dict[str, Any]] = None,
 ) -> tuple[bool, BindingProposal]:
     """Post-action continuity: world evidence must still support the role."""
-    specs = forward_role_specs(goal)
+    from plugin.agent.procedures.forward_message import role_specs_for_goal
+
+    specs = role_specs_for_goal(goal)
     spec = specs.get(role) or RoleBindingSpec(role=role)
     proposal = propose_binding(
         spec=spec,

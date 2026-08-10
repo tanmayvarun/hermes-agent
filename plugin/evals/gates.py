@@ -837,8 +837,10 @@ def _failed_reveal_episode_frees_meta_from_explore() -> Tuple[bool, str]:
     from plugin.agent.affordance_frontier import AffordanceFrontier, finalize_reveal_handoff
     from plugin.agent.capabilities.reveal_actions import note_reveal_probe_handoff
     from plugin.agent.executive.intention_frame import (
+        MethodStatus,
         active_intention_frame,
         mark_method_attempted,
+        record_method_status,
     )
     from plugin.agent.executive.meta_action import MetaAction, MetaContext, select_meta_action
     from plugin.agent.executive.meta_consultation import sanitize_meta_choice
@@ -862,9 +864,10 @@ def _failed_reveal_episode_frees_meta_from_explore() -> Tuple[bool, str]:
     surviving_id = iframe.intention.id
     if not surviving_id:
         return False, "intention id missing"
-    # Exhaust remaining methods → derived LOCAL_ROUTE_EXHAUSTED.
+    # Exhaust remaining methods via decision status (ledger alone is not a blocker).
     for mid in list(iframe.method_frontier.eligible_methods()):
         mark_method_attempted(iframe, mid)
+        record_method_status(iframe, mid, MethodStatus.INEFFECTIVE.value)
     state.reveal_handoff = {
         "surface": "context_menu",
         "ttl": 1,
@@ -2531,6 +2534,7 @@ def _typed_role_binding_identity_gates() -> Tuple[bool, str]:
     )
     from plugin.agent.executive.meta_action import MetaAction, MetaContext
     from plugin.agent.executive.meta_consultation import sanitize_meta_choice
+    from plugin.agent.composition import compose_domain_adapters
     from plugin.agent.role_binding import (
         BindingRecord,
         EntityObservation,
@@ -2543,6 +2547,7 @@ def _typed_role_binding_identity_gates() -> Tuple[bool, str]:
     )
     import plugin.agent.role_binding as rb_mod
 
+    compose_domain_adapters()
     src = inspect.getsource(rb_mod)
     for banned in (
         "_row_contact_name",
@@ -2724,16 +2729,25 @@ def _coordinate_frame_roundtrip_and_typed_actuators() -> Tuple[bool, str]:
         AttemptValidity,
         MethodOutcome,
         MethodStatus,
+        MethodFrontier,
+        MethodSpec,
         begin_attempt,
         close_attempt,
+        mark_method_attempted,
+        record_method_status,
     )
     from plugin.agent.failure_layers import filter_capability_failure_beliefs
     from plugin.perception.coordinate_frame import (
+        GroundingUncertain,
+        UnknownCoordinateFrame,
+        build_frame_graph,
         ensure_screen_space,
         roundtrip_error_px,
     )
-    from plugin.perception.coverage_quality import compute_coverage_quality
-    from plugin.perception.display_topology import TaskSurface
+    from plugin.perception.coverage_quality import (
+        ActSufficiency,
+        compute_coverage_quality,
+    )
     from plugin.worldmodel.scene.focus import _surface_state_from_view
 
     for pt, size, origin, pscale, cscale in (
@@ -2752,19 +2766,34 @@ def _coordinate_frame_roundtrip_and_typed_actuators() -> Tuple[bool, str]:
         if err >= 3.0:
             return False, f"roundtrip err={err} for {pt}"
 
+    # Capture ≠ window: ROI image_origin distinct from window origin.
+    g = build_frame_graph(
+        image_size=(400.0, 300.0),
+        window_origin_in_screen=(100.0, 50.0),
+        image_origin_in_window=(40.0, 20.0),
+        point_scale=1.0,
+        capture_id="c_gate",
+    )
+    img = g.get(g.image_frame_id)
+    if img is None or img.image_origin_in_window != (40.0, 20.0):
+        return False, "image_origin_in_window must be distinct from window origin"
+    if img.window_origin_in_screen != (100.0, 50.0):
+        return False, "window_origin_in_screen collapsed into image origin"
+
     pt, _, audit = ensure_screen_space(
         (450.0, 230.0),
         None,
         coordinate_space="screen",
-        surface=TaskSurface(
-            app="WhatsApp",
-            capture_origin=(774.0, 25.0),
-            point_scale=1.43,
-            capture_scale=2.0,
-        ),
+        graph=g,
     )
     if pt != (450.0, 230.0) or not audit.get("double_transform_refused"):
         return False, "screen-tagged point must refuse double-transform"
+
+    try:
+        ensure_screen_space((1.0, 2.0), None, coordinate_space="", fail_closed=True)
+        return False, "missing frame must fail closed"
+    except (GroundingUncertain, UnknownCoordinateFrame):
+        pass
 
     q = compute_coverage_quality(
         nodes=[{"role": "AXApplication"}, {"role": "AXWindow"}, {"role": "unknown"}],
@@ -2772,6 +2801,22 @@ def _coordinate_frame_roundtrip_and_typed_actuators() -> Tuple[bool, str]:
     )
     if q.task_coverage >= 0.5 or not q.chrome_only:
         return False, f"chrome-only AX must not look task-covered: {q.to_dict()}"
+    if ActSufficiency().satisfied(q):
+        return False, "ActSufficiency must reject chrome-only"
+
+    # AXGroup with labeled child is not chrome.
+    q2 = compute_coverage_quality(
+        nodes=[
+            {
+                "role": "AXGroup",
+                "children": [{"role": "AXStaticText", "label": "Hello"}],
+            }
+        ],
+        has_screenshot=True,
+        semantic_object_count=1,
+    )
+    if q2.chrome_only:
+        return False, "AXGroup with content must not be chrome_only"
 
     st = _surface_state_from_view(
         {
@@ -2806,6 +2851,25 @@ def _coordinate_frame_roundtrip_and_typed_actuators() -> Tuple[bool, str]:
     if att.may_mark_method_ineffective() or att.method_status != MethodStatus.UNTRIED.value:
         return False, "inconclusive grounding must not exhaust method"
 
+    # Attempt ledger ≠ eligibility: inconclusive leave method eligible.
+    from plugin.agent.executive.intention_frame import Intention, IntentionFrame
+
+    frame = IntentionFrame(
+        intention=Intention(id="i_gate", objective="x", success_predicate="x")
+    )
+    frame.method_frontier = MethodFrontier(
+        known_untried=["reveal_context_click"],
+        catalog={
+            "reveal_context_click": MethodSpec(
+                id="reveal_context_click", capability="reveal_actions"
+            )
+        },
+    )
+    mark_method_attempted(frame, "reveal_context_click")
+    record_method_status(frame, "reveal_context_click", MethodStatus.UNTRIED.value)
+    if "reveal_context_click" not in frame.method_frontier.eligible_methods():
+        return False, "inconclusive attempt must leave method eligible"
+
     class ES:
         attempt_validity = "inconclusive_grounding"
 
@@ -2818,6 +2882,124 @@ def _coordinate_frame_roundtrip_and_typed_actuators() -> Tuple[bool, str]:
         return False, "must strip mouse_interaction_blocked under uncertain grounding"
 
     return True, "coordinate_frame_roundtrip_and_typed_actuators"
+
+
+def _core_generalization_gate() -> Tuple[bool, str]:
+    """Generic executive/binder/grounder must not import domain workflows."""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "agent"
+    forbidden_imports = {
+        "whatsapp",
+        "gmail",
+        "finder",
+        "pallavi",
+        "zarooratwala",
+    }
+    # Modules that must stay domain-free.
+    core_files = [
+        root / "role_binding.py",
+        root / "executive" / "intention_frame.py",
+        root / "failure_layers.py",
+        Path(__file__).resolve().parents[1] / "perception" / "coordinate_frame.py",
+    ]
+    bad: List[str] = []
+    for path in core_files:
+        if not path.is_file():
+            continue
+        src = path.read_text(encoding="utf-8")
+        low = src.lower()
+        for token in forbidden_imports:
+            if token == "whatsapp" and path.name == "role_binding.py":
+                # role_binding must not import whatsapp at all.
+                if "identity_evidence.whatsapp" in low or "ensure_whatsapp" in low:
+                    bad.append(f"{path.name}:whatsapp_import")
+                continue
+            if token in low and path.name in {
+                "role_binding.py",
+                "intention_frame.py",
+                "failure_layers.py",
+                "coordinate_frame.py",
+            }:
+                # Allow comments mentioning examples only if not import lines.
+                try:
+                    tree = ast.parse(src)
+                except SyntaxError:
+                    bad.append(f"{path.name}:parse")
+                    continue
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.Import, ast.ImportFrom)):
+                        mod = ""
+                        if isinstance(node, ast.ImportFrom):
+                            mod = str(node.module or "")
+                        else:
+                            mod = ",".join(a.name for a in node.names)
+                        if token in mod.lower():
+                            bad.append(f"{path.name}:import:{token}")
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                        continue
+    if bad:
+        return False, f"core_generalization violations: {bad[:8]}"
+    return True, "core_generalization_gate"
+
+
+def _typed_action_and_untyped_geometry_gate() -> Tuple[bool, str]:
+    """Production act path refuses free-text chords as clicks and untyped XY."""
+    from plugin.agent.actor import _normalize_to_screen
+    from plugin.agent.capabilities.invoke_affordance import invoke_affordance
+    from plugin.agent.capabilities.typed_actuators import KeyboardChord
+    from plugin.perception.coordinate_frame import build_frame_graph
+
+    class _RT:
+        def activate(self, app):
+            pass
+
+        def click(self, app, label, *, bounds=None):
+            raise AssertionError("must not click")
+
+    out = invoke_affordance("App", "press_cmd_shift_f", _RT())
+    if out.realization == "named_click" or out.ok:
+        return False, "free-text chord must not become click"
+
+    # Typed chord schema exists.
+    chord = KeyboardChord(keys=("command", "shift", "f"), provenance="observed")
+    if "keyboard_chord" not in chord.to_dict().get("kind", ""):
+        return False, "KeyboardChord schema missing"
+
+    # Stale/unknown frame_id must fail closed (no space/screen guess).
+    graph_tmp = build_frame_graph(
+        image_size=(100.0, 100.0),
+        window_origin_in_screen=(5.0, 5.0),
+        capture_id="c_stale",
+    )
+    pt, bd, audit = _normalize_to_screen(
+        (10.0, 20.0),
+        None,
+        coordinate_space="image",
+        surface=None,
+        frame_id="capture:other/image",
+        graph=graph_tmp,
+    )
+    if pt is not None or not audit.get("grounding_uncertain"):
+        return False, f"stale frame_id must fail closed: pt={pt} audit={audit}"
+
+    graph = build_frame_graph(
+        image_size=(100.0, 100.0),
+        window_origin_in_screen=(0.0, 0.0),
+        capture_id="c_typed",
+    )
+    pt2, _, audit2 = _normalize_to_screen(
+        (10.0, 20.0),
+        None,
+        coordinate_space="image",
+        surface=None,
+        frame_id=graph.image_frame_id,
+        graph=graph,
+    )
+    if pt2 is None or audit2.get("grounding_uncertain"):
+        return False, f"grounded image point must transform: {pt2} {audit2}"
+    return True, "typed_action_and_untyped_geometry_gate"
 
 
 def _search_evidence_owns_surface_and_resolve_recovery() -> Tuple[bool, str]:
@@ -4446,6 +4628,16 @@ GATES: Tuple[Gate, ...] = (
         "coordinate_frame_roundtrip_and_typed_actuators",
         "Do coordinate frames, coverage split, typed chords, and attempt validity hold (143550 grounding chain)?",
         _coordinate_frame_roundtrip_and_typed_actuators,
+    ),
+    Gate(
+        "core_generalization_gate",
+        "Do generic binder/grounder/executive modules import WhatsApp/Gmail/Finder or task-specific names?",
+        _core_generalization_gate,
+    ),
+    Gate(
+        "typed_action_and_untyped_geometry_gate",
+        "Can a production act click without CapabilityRef/Grounding, or free-text chords become clicks?",
+        _typed_action_and_untyped_geometry_gate,
     ),
     Gate(
         "wrong_selection_reverts_not_forwards",

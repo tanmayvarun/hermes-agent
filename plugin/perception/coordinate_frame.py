@@ -3,6 +3,16 @@
 Every geometric object carries a ``Grounding`` with a ``coordinate_frame_id``.
 Conversions go only through ``transform()``. Motor landing updates attempt
 evidence — it never rewrites object grounding.
+
+Invariants
+----------
+* CaptureFrame ≠ WindowFrame. Image origin in window and window origin in
+  screen are distinct; never equate ``capture_origin`` with window origin
+  for ROI / cropped / resized captures.
+* Frame graphs are stamped at capture time with stable IDs bound to a
+  ``capture_id``. A grounding must not outlive its frame graph.
+* Missing / stale frame IDs fail closed on the actuation path
+  (``UnknownCoordinateFrame`` / ``StaleCoordinateFrame``).
 """
 
 from __future__ import annotations
@@ -14,6 +24,32 @@ import uuid
 Point = Tuple[float, float]
 Bounds = Tuple[float, float, float, float]
 Geometry = Union[Point, Bounds]
+
+FRAME_GRAPH_KEY = "frame_graph"
+CAPTURE_ID_KEY = "capture_id"
+
+
+class CoordinateFrameError(Exception):
+    """Base for fail-closed geometry errors on the actuation path."""
+
+    code: str = "coordinate_frame_error"
+
+    def __init__(self, message: str = "", *, code: str = "") -> None:
+        super().__init__(message or self.code)
+        if code:
+            self.code = code
+
+
+class UnknownCoordinateFrame(CoordinateFrameError):
+    code = "unknown_coordinate_frame"
+
+
+class StaleCoordinateFrame(CoordinateFrameError):
+    code = "stale_coordinate_frame"
+
+
+class GroundingUncertain(CoordinateFrameError):
+    code = "grounding_uncertain"
 
 
 @dataclass(frozen=True)
@@ -30,6 +66,7 @@ class CoordinateFrame:
     scale_y: float = 1.0
     backing_scale: float = 1.0
     parent_frame_id: str = ""
+    capture_id: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -43,19 +80,24 @@ class CoordinateFrame:
     @classmethod
     def from_dict(cls, raw: Any) -> "CoordinateFrame":
         if not isinstance(raw, dict):
-            return screen_identity_frame()
+            raise UnknownCoordinateFrame("CoordinateFrame.from_dict requires a dict")
         crop = raw.get("crop_rect_in_parent")
         crop_t: Optional[Bounds] = None
         if isinstance(crop, (list, tuple)) and len(crop) >= 4:
             crop_t = (float(crop[0]), float(crop[1]), float(crop[2]), float(crop[3]))
+
         def _xy(key: str, default: Tuple[float, float] = (0.0, 0.0)) -> Tuple[float, float]:
             v = raw.get(key) or default
             try:
                 return (float(v[0]), float(v[1]))
             except Exception:
                 return default
+
+        fid = str(raw.get("frame_id") or "").strip()
+        if not fid:
+            raise UnknownCoordinateFrame("CoordinateFrame missing frame_id")
         return cls(
-            frame_id=str(raw.get("frame_id") or new_frame_id(str(raw.get("space") or "screen"))),
+            frame_id=fid,
             space=str(raw.get("space") or "screen").strip().lower(),
             image_size=_xy("image_size"),
             image_origin_in_window=_xy("image_origin_in_window"),
@@ -65,6 +107,7 @@ class CoordinateFrame:
             scale_y=float(raw.get("scale_y") or raw.get("scale_x") or 1.0) or 1.0,
             backing_scale=float(raw.get("backing_scale") or 1.0) or 1.0,
             parent_frame_id=str(raw.get("parent_frame_id") or ""),
+            capture_id=str(raw.get("capture_id") or ""),
         )
 
 
@@ -77,6 +120,7 @@ class Grounding:
     bbox: Optional[Bounds] = None
     provenance: str = ""
     confidence: float = 0.0
+    capture_id: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -85,10 +129,12 @@ class Grounding:
             "bbox": list(self.bbox) if self.bbox else None,
             "provenance": self.provenance,
             "confidence": round(float(self.confidence), 3),
+            "capture_id": self.capture_id,
         }
 
     @classmethod
     def from_dict(cls, raw: Any) -> Optional["Grounding"]:
+        """Parse grounding. Missing frame_id → None (fail closed at act time)."""
         if not isinstance(raw, dict):
             return None
         pt = raw.get("point")
@@ -99,15 +145,19 @@ class Grounding:
             point = (float(pt[0]), float(pt[1]))
         if isinstance(bb, (list, tuple)) and len(bb) >= 4:
             bbox = (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
-        fid = str(raw.get("coordinate_frame_id") or raw.get("frame_id") or "")
-        if not fid and not point and not bbox:
+        fid = str(raw.get("coordinate_frame_id") or raw.get("frame_id") or "").strip()
+        if not fid:
+            # Never invent "screen" — actionable geometry requires a frame id.
+            return None
+        if not point and not bbox:
             return None
         return cls(
-            coordinate_frame_id=fid or "screen",
+            coordinate_frame_id=fid,
             point=point,
             bbox=bbox,
             provenance=str(raw.get("provenance") or ""),
             confidence=float(raw.get("confidence") or 0.0),
+            capture_id=str(raw.get("capture_id") or ""),
         )
 
 
@@ -119,6 +169,7 @@ class FrameGraph:
     image_frame_id: str = ""
     window_frame_id: str = ""
     screen_frame_id: str = ""
+    capture_id: str = ""
 
     def get(self, frame_id: str) -> Optional[CoordinateFrame]:
         return self.frames.get(frame_id)
@@ -136,31 +187,69 @@ class FrameGraph:
             "image_frame_id": self.image_frame_id,
             "window_frame_id": self.window_frame_id,
             "screen_frame_id": self.screen_frame_id,
+            "capture_id": self.capture_id,
         }
 
+    @classmethod
+    def from_dict(cls, raw: Any) -> Optional["FrameGraph"]:
+        if not isinstance(raw, dict) or not raw.get("frames"):
+            return None
+        frames: Dict[str, CoordinateFrame] = {}
+        for k, v in (raw.get("frames") or {}).items():
+            try:
+                frames[str(k)] = CoordinateFrame.from_dict(v)
+            except CoordinateFrameError:
+                continue
+        if not frames:
+            return None
+        return cls(
+            frames=frames,
+            image_frame_id=str(raw.get("image_frame_id") or ""),
+            window_frame_id=str(raw.get("window_frame_id") or ""),
+            screen_frame_id=str(raw.get("screen_frame_id") or ""),
+            capture_id=str(raw.get("capture_id") or ""),
+        )
 
-def new_frame_id(space: str = "frame") -> str:
-    return f"{space}_{uuid.uuid4().hex[:8]}"
+
+def new_capture_id() -> str:
+    return f"c_{uuid.uuid4().hex[:10]}"
 
 
-def screen_identity_frame() -> CoordinateFrame:
-    return CoordinateFrame(frame_id="screen_identity", space="screen")
+def new_frame_id(space: str = "frame", *, capture_id: str = "") -> str:
+    """Stable-within-capture frame id: ``capture:<id>/<space>`` when possible."""
+    cid = str(capture_id or "").strip()
+    sp = str(space or "frame").strip().lower() or "frame"
+    if cid:
+        return f"capture:{cid}/{sp}"
+    return f"{sp}_{uuid.uuid4().hex[:8]}"
+
+
+def screen_identity_frame(*, capture_id: str = "") -> CoordinateFrame:
+    fid = "desktop:current" if not capture_id else f"capture:{capture_id}/screen"
+    return CoordinateFrame(
+        frame_id=fid,
+        space="screen",
+        capture_id=capture_id,
+    )
 
 
 def build_frame_graph(
     *,
     image_size: Sequence[float] = (0.0, 0.0),
     window_origin_in_screen: Sequence[float] = (0.0, 0.0),
+    image_origin_in_window: Sequence[float] = (0.0, 0.0),
     capture_scale: float = 1.0,
     point_scale: float = 1.0,
     backing_scale: float = 1.0,
     crop_rect_in_parent: Optional[Sequence[float]] = None,
-    image_origin_in_window: Sequence[float] = (0.0, 0.0),
+    capture_id: str = "",
 ) -> FrameGraph:
-    """Build image/window/screen frames from capture topology.
+    """Build image/window/screen frames. Capture ≠ window ≠ screen.
 
-    ``point_scale`` is the VLM image→screen multiplier already used by TaskSurface
-    (folds capture DPI + downscale). ``capture_scale`` is px/point from CaptureFrame.
+    ``window_origin_in_screen`` — task window top-left in global desktop points.
+    ``image_origin_in_window`` — where the captured image's (0,0) sits inside
+    the window (0,0 for full-window capture; nonzero for ROI / crop).
+    ``crop_rect_in_parent`` — optional crop in the parent (window) space.
     """
     try:
         iw, ih = float(image_size[0]), float(image_size[1])
@@ -187,23 +276,29 @@ def build_frame_graph(
             float(crop_rect_in_parent[2]),
             float(crop_rect_in_parent[3]),
         )
+        # Crop implies image origin in window unless explicitly set.
+        if iox == 0.0 and ioy == 0.0:
+            iox, ioy = crop[0], crop[1]
+    cid = str(capture_id or new_capture_id())
     screen = CoordinateFrame(
-        frame_id=new_frame_id("screen"),
+        frame_id=new_frame_id("screen", capture_id=cid),
         space="screen",
         window_origin_in_screen=(wox, woy),
         backing_scale=float(backing_scale or 1.0),
+        capture_id=cid,
     )
     window = CoordinateFrame(
-        frame_id=new_frame_id("window"),
+        frame_id=new_frame_id("window", capture_id=cid),
         space="window",
         window_origin_in_screen=(wox, woy),
         scale_x=1.0,
         scale_y=1.0,
         backing_scale=float(backing_scale or 1.0),
         parent_frame_id=screen.frame_id,
+        capture_id=cid,
     )
     image = CoordinateFrame(
-        frame_id=new_frame_id("image"),
+        frame_id=new_frame_id("image", capture_id=cid),
         space="image",
         image_size=(iw, ih),
         image_origin_in_window=(iox, ioy),
@@ -213,6 +308,7 @@ def build_frame_graph(
         scale_y=sy,
         backing_scale=float(backing_scale or cs or 1.0),
         parent_frame_id=window.frame_id,
+        capture_id=cid,
     )
     return FrameGraph(
         frames={
@@ -223,6 +319,34 @@ def build_frame_graph(
         image_frame_id=image.frame_id,
         window_frame_id=window.frame_id,
         screen_frame_id=screen.frame_id,
+        capture_id=cid,
+    )
+
+
+def frame_graph_from_capture_artifact(
+    *,
+    capture_id: str = "",
+    image_size: Sequence[float] = (0.0, 0.0),
+    window_origin_in_screen: Sequence[float] = (0.0, 0.0),
+    image_origin_in_window: Sequence[float] = (0.0, 0.0),
+    capture_scale: float = 1.0,
+    point_scale: float = 1.0,
+    backing_scale: float = 1.0,
+    crop_rect_in_parent: Optional[Sequence[float]] = None,
+) -> FrameGraph:
+    """Authoritative builder for capture-time stamping.
+
+    Producers must pass window origin and image-in-window origin separately.
+    """
+    return build_frame_graph(
+        image_size=image_size,
+        window_origin_in_screen=window_origin_in_screen,
+        image_origin_in_window=image_origin_in_window,
+        capture_scale=capture_scale,
+        point_scale=point_scale,
+        backing_scale=backing_scale,
+        crop_rect_in_parent=crop_rect_in_parent,
+        capture_id=capture_id or new_capture_id(),
     )
 
 
@@ -231,32 +355,67 @@ def frame_graph_from_task_surface(
     *,
     image_size: Sequence[float] = (0.0, 0.0),
 ) -> FrameGraph:
-    """Adapt TaskSurface / capture dict into a FrameGraph."""
+    """Legacy adapter: TaskSurface → FrameGraph.
+
+    Prefer a stamped ``frame_graph`` on the surface/document. When reconstructing,
+    treat ``capture_origin`` as *window* origin only when no explicit window
+    origin or image-in-window origin is present (full-window uncropped case).
+    ROI captures must supply ``image_origin_in_window`` / ``crop_rect``.
+    """
     if surface is None:
         return build_frame_graph(image_size=image_size)
+
+    # Prefer already-stamped graph.
     if isinstance(surface, dict):
-        origin = surface.get("capture_origin") or (0.0, 0.0)
+        stamped = FrameGraph.from_dict(surface.get("frame_graph"))
+        if stamped is not None:
+            return stamped
+        window_origin = (
+            surface.get("window_origin_in_screen")
+            or surface.get("window_origin")
+            or surface.get("capture_origin")
+            or (0.0, 0.0)
+        )
+        image_origin = surface.get("image_origin_in_window") or (0.0, 0.0)
+        crop = surface.get("crop_rect_in_parent") or surface.get("crop_rect")
         return build_frame_graph(
-            image_size=image_size,
-            window_origin_in_screen=origin,
+            image_size=image_size or surface.get("image_size") or (0.0, 0.0),
+            window_origin_in_screen=window_origin,
+            image_origin_in_window=image_origin,
             capture_scale=float(surface.get("capture_scale") or 1.0),
             point_scale=float(surface.get("point_scale") or 1.0),
-            backing_scale=float(surface.get("capture_scale") or 1.0),
+            backing_scale=float(surface.get("backing_scale") or surface.get("capture_scale") or 1.0),
+            crop_rect_in_parent=crop,
+            capture_id=str(surface.get("capture_id") or ""),
         )
-    origin = getattr(surface, "capture_origin", (0.0, 0.0))
+
+    stamped_obj = getattr(surface, "frame_graph", None)
+    if isinstance(stamped_obj, FrameGraph):
+        return stamped_obj
+    if isinstance(stamped_obj, dict):
+        g = FrameGraph.from_dict(stamped_obj)
+        if g is not None:
+            return g
+
+    window_origin = getattr(surface, "window_origin_in_screen", None) or getattr(
+        surface, "capture_origin", (0.0, 0.0)
+    )
+    image_origin = getattr(surface, "image_origin_in_window", (0.0, 0.0))
+    crop = getattr(surface, "crop_rect_in_parent", None)
     return build_frame_graph(
         image_size=image_size,
-        window_origin_in_screen=origin,
+        window_origin_in_screen=window_origin,
+        image_origin_in_window=image_origin,
         capture_scale=float(getattr(surface, "capture_scale", 1.0) or 1.0),
         point_scale=float(getattr(surface, "point_scale", 1.0) or 1.0),
-        backing_scale=float(getattr(surface, "capture_scale", 1.0) or 1.0),
+        backing_scale=float(
+            getattr(surface, "backing_scale", None)
+            or getattr(surface, "capture_scale", 1.0)
+            or 1.0
+        ),
+        crop_rect_in_parent=crop,
+        capture_id=str(getattr(surface, "capture_id", "") or ""),
     )
-
-
-def _as_point(g: Geometry) -> Point:
-    if len(g) >= 4:
-        return (float(g[0]), float(g[1]))
-    return (float(g[0]), float(g[1]))
 
 
 def _to_screen(geom: Geometry, frame: CoordinateFrame) -> Geometry:
@@ -268,7 +427,8 @@ def _to_screen(geom: Geometry, frame: CoordinateFrame) -> Geometry:
     iox, ioy = frame.image_origin_in_window
     sx = frame.scale_x if frame.scale_x > 0 else 1.0
     sy = frame.scale_y if frame.scale_y > 0 else 1.0
-    if frame.crop_rect_in_parent is not None:
+    if frame.crop_rect_in_parent is not None and (iox, ioy) == (0.0, 0.0):
+        # Prefer explicit image_origin; crop only adds when origin unset.
         iox += float(frame.crop_rect_in_parent[0])
         ioy += float(frame.crop_rect_in_parent[1])
     if len(geom) >= 4:
@@ -295,7 +455,7 @@ def _from_screen(geom: Geometry, frame: CoordinateFrame) -> Geometry:
     iox, ioy = frame.image_origin_in_window
     sx = frame.scale_x if frame.scale_x > 0 else 1.0
     sy = frame.scale_y if frame.scale_y > 0 else 1.0
-    if frame.crop_rect_in_parent is not None:
+    if frame.crop_rect_in_parent is not None and (iox, ioy) == (0.0, 0.0):
         iox += float(frame.crop_rect_in_parent[0])
         ioy += float(frame.crop_rect_in_parent[1])
     if len(geom) >= 4:
@@ -332,16 +492,46 @@ def resolve_frame(
     *,
     frame_id: str = "",
     space: str = "",
+    fail_closed: bool = True,
 ) -> CoordinateFrame:
-    if graph is not None:
-        if frame_id and graph.get(frame_id):
-            return graph.get(frame_id)  # type: ignore[return-value]
+    """Resolve a frame. Actuation paths must use ``fail_closed=True`` (default)."""
+    fid = str(frame_id or "").strip()
+    if graph is not None and fid:
+        found = graph.get(fid)
+        if found is not None:
+            return found
+        # Same capture, different space alias (capture:c42/image vs space).
         if space:
-            found = graph.by_space(space)
-            if found is not None:
-                return found
-        if graph.screen_frame_id and graph.get(graph.screen_frame_id):
-            return graph.get(graph.screen_frame_id)  # type: ignore[return-value]
+            by_sp = graph.by_space(space)
+            if by_sp is not None and (
+                not by_sp.capture_id
+                or not graph.capture_id
+                or by_sp.capture_id == graph.capture_id
+            ):
+                # Requested id missing but space exists on this capture — stale id.
+                raise StaleCoordinateFrame(
+                    f"frame_id={fid!r} missing; space={space!r} present on capture "
+                    f"{graph.capture_id!r} — re-ground"
+                )
+        raise StaleCoordinateFrame(
+            f"frame_id={fid!r} not in active FrameGraph capture={graph.capture_id!r}"
+        )
+
+    if graph is not None and space:
+        found = graph.by_space(space)
+        if found is not None:
+            return found
+
+    if fail_closed:
+        if fid:
+            raise UnknownCoordinateFrame(f"unknown frame_id={fid!r}")
+        if space:
+            raise UnknownCoordinateFrame(
+                f"no FrameGraph for space={space!r}; stamp at capture time"
+            )
+        raise UnknownCoordinateFrame("missing frame_id and FrameGraph")
+
+    # Ingestion-boundary legacy only.
     space_n = str(space or "screen").strip().lower()
     if space_n == "image":
         return CoordinateFrame(frame_id="loose_image", space="image")
@@ -354,30 +544,42 @@ def ensure_screen_space(
     point: Optional[Sequence[float]],
     bounds: Optional[Sequence[float]],
     *,
-    coordinate_space: str,
+    coordinate_space: str = "",
     frame_id: str = "",
     graph: Optional[FrameGraph] = None,
     surface: Any = None,
+    fail_closed: bool = True,
 ) -> Tuple[Optional[Point], Optional[Bounds], Dict[str, Any]]:
     """Normalize to screen; refuse double-transform when already screen-tagged.
 
-    Returns (point, bounds, audit_dict).
+    Actuation: require ``frame_id`` or a stamped graph + known space. Unknown
+    provenance raises ``GroundingUncertain`` / ``UnknownCoordinateFrame``.
     """
     space = str(coordinate_space or "").strip().lower()
+    fid = str(frame_id or "").strip()
+
     if graph is None and surface is not None:
-        graph = frame_graph_from_task_surface(surface)
-    src = resolve_frame(graph, frame_id=frame_id, space=space or "image")
-    screen = resolve_frame(graph, space="screen")
-    audit: Dict[str, Any] = {
-        "source_frame_id": src.frame_id,
-        "source_space": src.space or space or "unknown",
-        "screen_frame_id": screen.frame_id,
-        "double_transform_refused": False,
-        "geometry_source": space or src.space or "unknown",
-    }
-    # Hard ban: tagged screen must pass through unchanged.
-    if space == "screen":
-        audit["double_transform_refused"] = True
+        # Prefer stamped graph on surface/document.
+        if isinstance(surface, dict) and surface.get("frame_graph"):
+            graph = FrameGraph.from_dict(surface.get("frame_graph"))
+        else:
+            stamped = getattr(surface, "frame_graph", None)
+            if isinstance(stamped, FrameGraph):
+                graph = stamped
+            elif isinstance(stamped, dict):
+                graph = FrameGraph.from_dict(stamped)
+            elif not fail_closed:
+                graph = frame_graph_from_task_surface(surface)
+
+    # Hard ban: tagged screen with no conflicting frame passes through.
+    if space == "screen" and (not fid or (graph and graph.get(fid) and graph.get(fid).space == "screen")):
+        audit: Dict[str, Any] = {
+            "source_frame_id": fid or (graph.screen_frame_id if graph else "screen"),
+            "source_space": "screen",
+            "screen_frame_id": graph.screen_frame_id if graph else "desktop:current",
+            "double_transform_refused": True,
+            "geometry_source": "screen",
+        }
         pt = (float(point[0]), float(point[1])) if point and len(point) >= 2 else None
         bd = (
             (float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3]))
@@ -388,6 +590,36 @@ def ensure_screen_space(
         audit["global_desktop_point"] = list(pt) if pt else None
         return pt, bd, audit
 
+    if fail_closed and graph is None:
+        raise GroundingUncertain(
+            "no FrameGraph on actuation path — stamp at capture; do not invent frames"
+        )
+    if fail_closed and not fid and space not in {"image", "window", "screen"}:
+        raise GroundingUncertain(
+            "actionable geometry missing coordinate_frame_id and coordinate_space"
+        )
+
+    src = resolve_frame(
+        graph,
+        frame_id=fid,
+        space=space or ("image" if not fail_closed else ""),
+        fail_closed=fail_closed,
+    )
+    screen = resolve_frame(
+        graph,
+        frame_id=(graph.screen_frame_id if graph else ""),
+        space="screen",
+        fail_closed=fail_closed,
+    )
+    audit = {
+        "source_frame_id": src.frame_id,
+        "source_space": src.space or space or "unknown",
+        "screen_frame_id": screen.frame_id,
+        "capture_id": (graph.capture_id if graph else src.capture_id),
+        "double_transform_refused": False,
+        "geometry_source": space or src.space or "unknown",
+    }
+
     pt_out: Optional[Point] = None
     bd_out: Optional[Bounds] = None
     if point is not None and len(point) >= 2:
@@ -395,10 +627,12 @@ def ensure_screen_space(
         pt_out = (float(g[0]), float(g[1]))
         audit["source_point"] = [float(point[0]), float(point[1])]
         audit["global_desktop_point"] = list(pt_out)
-        # Window-local for the audit chain.
-        win = resolve_frame(graph, space="window")
-        wpt = transform(pt_out, screen, win)
-        audit["window_frame_point"] = [float(wpt[0]), float(wpt[1])]
+        if graph is not None:
+            win = resolve_frame(
+                graph, frame_id=graph.window_frame_id, space="window", fail_closed=False
+            )
+            wpt = transform(pt_out, screen, win)
+            audit["window_frame_point"] = [float(wpt[0]), float(wpt[1])]
     if bounds is not None and len(bounds) >= 4:
         g = transform(
             (float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3])),
@@ -443,11 +677,6 @@ def build_geometry_audit(
     return audit
 
 
-# ---------------------------------------------------------------------------
-# Round-trip helpers for goldens
-# ---------------------------------------------------------------------------
-
-
 def roundtrip_error_px(
     point_image: Point,
     *,
@@ -455,11 +684,13 @@ def roundtrip_error_px(
     window_origin: Sequence[float],
     point_scale: float,
     capture_scale: float = 1.0,
+    image_origin_in_window: Sequence[float] = (0.0, 0.0),
 ) -> float:
     """Image → screen → image error in image pixels (should be ~0)."""
     graph = build_frame_graph(
         image_size=image_size,
         window_origin_in_screen=window_origin,
+        image_origin_in_window=image_origin_in_window,
         point_scale=point_scale,
         capture_scale=capture_scale,
     )

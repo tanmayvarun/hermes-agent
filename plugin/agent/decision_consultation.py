@@ -1084,6 +1084,13 @@ def _affordance_label(target: str) -> str:
 
 def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> DecisionOutcome:
     """Keep only choices the catalog, navigation and safety gates allow."""
+    # Composition root (not role_binding): ensure domain evidence providers exist.
+    try:
+        from plugin.agent.composition import compose_domain_adapters
+
+        compose_domain_adapters()
+    except Exception:
+        pass
     if not isinstance(payload, dict):
         return DecisionOutcome(ok=False, why="non-dict decision payload")
     # Motor aliases (right_click) → catalog verbs before the choosable gate.

@@ -1,6 +1,8 @@
 """Split epistemic coverage — transport health ≠ task knowledge.
 
-AX shell-only (App + Window + unknown) must never report task coverage 1.0.
+AX shell-only (App + Window + unknown) must never report task completeness.
+Consumers declare ActSufficiency / ExploreSufficiency — do not collapse to one
+global scalar for act-clear decisions.
 """
 
 from __future__ import annotations
@@ -8,8 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Set
 
-# Roles that are chrome / shell, not task content.
-_CHROME_ROLES: Set[str] = {
+# Roles that are always chrome / shell (never task content by themselves).
+_ALWAYS_CHROME_ROLES: Set[str] = {
     "axapplication",
     "application",
     "axwindow",
@@ -21,7 +23,6 @@ _CHROME_ROLES: Set[str] = {
     "axmenuitem",
     "unknown",
     "axunknown",
-    "axgroup",  # often empty shell grouping
 }
 
 
@@ -53,10 +54,52 @@ class CoverageQuality:
 
     @property
     def task_coverage(self) -> float:
-        """Conservative scalar for gates that still want one number."""
-        return min(
-            self.structural_coverage,
-            max(self.semantic_coverage, self.actionable_coverage),
+        """Legacy scalar — prefer ActSufficiency / ExploreSufficiency.
+
+        Does NOT hard-bottleneck on structural AX when vision/semantics compensate.
+        """
+        if self.chrome_only and self.semantic_coverage < 0.2:
+            return min(0.15, self.structural_coverage)
+        # Vision-compensated: max of structural and semantic/actionable/grounding.
+        visual = max(
+            self.semantic_coverage,
+            self.actionable_coverage,
+            self.grounding_coverage,
+            self.task_relevant_coverage,
+        )
+        return max(min(self.structural_coverage, visual), visual * 0.85)
+
+
+@dataclass(frozen=True)
+class ActSufficiency:
+    """Evidence required before committing a motor act."""
+
+    semantic_min: float = 0.8
+    grounding_min: float = 0.9
+    task_relevant_min: float = 0.8
+    actionable_min: float = 0.0
+
+    def satisfied(self, q: CoverageQuality) -> bool:
+        return (
+            q.semantic_coverage >= self.semantic_min
+            and q.grounding_coverage >= self.grounding_min
+            and q.task_relevant_coverage >= self.task_relevant_min
+            and q.actionable_coverage >= self.actionable_min
+            and not (q.chrome_only and q.semantic_coverage < 0.3)
+        )
+
+
+@dataclass(frozen=True)
+class ExploreSufficiency:
+    """Looser evidence bar for exploration / observe-valued moves."""
+
+    semantic_min: float = 0.5
+    structural_min: float = 0.3
+
+    def satisfied(self, q: CoverageQuality) -> bool:
+        return (
+            q.semantic_coverage >= self.semantic_min
+            or q.structural_coverage >= self.structural_min
         )
 
 
@@ -68,8 +111,46 @@ def _role(node: Any) -> str:
     return str(getattr(node, "role", "") or "").strip().lower().replace(" ", "")
 
 
+def _children(node: Any) -> Sequence[Any]:
+    if isinstance(node, dict):
+        return node.get("children") or node.get("nodes") or []
+    return getattr(node, "children", None) or []
+
+
+def _labelish(node: Any) -> str:
+    if isinstance(node, dict):
+        return str(
+            node.get("label")
+            or node.get("title")
+            or node.get("value")
+            or node.get("text")
+            or ""
+        ).strip()
+    return str(
+        getattr(node, "label", "")
+        or getattr(node, "title", "")
+        or getattr(node, "value", "")
+        or ""
+    ).strip()
+
+
 def _is_chrome(node: Any) -> bool:
-    return _role(node) in _CHROME_ROLES
+    """Chrome by role + emptiness. AXGroup with content descendants is NOT chrome."""
+    role = _role(node)
+    if role in _ALWAYS_CHROME_ROLES:
+        return True
+    if role in {"axgroup", "group"}:
+        kids = list(_children(node))
+        if kids:
+            # Group with any non-chrome descendant → task structure.
+            if any(not _is_chrome(k) for k in kids):
+                return False
+            if any(_labelish(k) for k in kids):
+                return False
+        if _labelish(node):
+            return False
+        return True  # nameless empty group ≈ chrome-ish
+    return False
 
 
 def compute_coverage_quality(
@@ -92,7 +173,6 @@ def compute_coverage_quality(
     if node_list:
         transport = max(transport, 0.8)
 
-    # Structural: non-chrome AX depth. Shell-only ⇒ ~0.
     if chrome_only:
         structural = 0.05
     elif content >= 8:
@@ -104,14 +184,13 @@ def compute_coverage_quality(
     else:
         structural = 0.0
 
-    # Semantic: OCR / VLM objects.
     sem_score = 0.0
     if semantic_object_count > 0:
         sem_score = min(1.0, 0.35 + 0.1 * semantic_object_count)
     if ocr_text_count > 0:
         sem_score = max(sem_score, min(1.0, 0.3 + 0.05 * min(ocr_text_count, 14)))
     if has_screenshot and sem_score == 0.0:
-        sem_score = 0.15  # pixels present but unread
+        sem_score = 0.15
 
     task_n = max(int(task_object_count), int(semantic_object_count), content)
     task_rel = 0.0
@@ -172,7 +251,6 @@ def estimate_task_coverage(
         has_screenshot=has_shot,
         ax_transport_ok=True,
     )
-    # Legacy visual denominator still lowers structural when provided.
     if visual_node_estimate and visual_node_estimate > 0:
         accessible = q.content_node_count
         ratio = min(1.0, accessible / float(visual_node_estimate))

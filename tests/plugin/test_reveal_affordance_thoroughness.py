@@ -152,11 +152,12 @@ def test_finalize_reveal_handoff_marks_failed_after_ttl():
     assert state.reveal_handoff.get("incomplete_reveal") is False
 
     # Exhaust all methods → derived terminal failed_reveal.
+    from plugin.agent.executive.intention_frame import MethodStatus, record_method_status
+
     frame = seed_reveal_explore_frame()
-    for mid in list(frame.method_frontier.eligible_methods()) + list(
-        frame.method_frontier.known_untried
-    ):
+    for mid in list(frame.method_frontier.catalog.keys()):
         mark_method_attempted(frame, mid)
+        record_method_status(frame, mid, MethodStatus.INEFFECTIVE.value)
     push_intention_frame(state, frame)
     state.reveal_handoff = {
         "surface": "context_menu",

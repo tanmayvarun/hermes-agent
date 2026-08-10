@@ -1961,6 +1961,14 @@ def run_goal_closed_loop(
     Surprise / low worldview / dead motors set signals for meta — they do not
     force a look ahead of the brain's choice.
     """
+    # Composition root: register domain evidence providers outside generic core.
+    try:
+        from plugin.agent.composition import compose_domain_adapters
+
+        compose_domain_adapters()
+    except Exception:
+        pass
+
     # Live goal processes (HERMES_LIVE_GOAL=1) must have passed package evals
     # before the closed loop starts — same role as server boot before API calls.
     try:
