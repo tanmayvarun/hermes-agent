@@ -119,21 +119,26 @@ TASK_PROFILES: dict[str, TaskModelProfile] = {
     ),
     "screen_understanding": TaskModelProfile(
         name="screen_understanding",
-        min_params_b=100.0,
-        prefer_size="larger",
+        # Fast path prefers small local VLMs; escalate chain keeps cloud 397B.
+        min_params_b=0.5,
+        prefer_size="smaller",
         require_tool_call=True,
-        prefer_reasoning=True,
+        prefer_reasoning=False,
         prefer_structured_output=True,
         prefer_vision=True,
-        prefer_local=False,
-        # Every model here MUST be included-plan. A single extra-usage model that
-        # 402s ("extra usage balance empty") marks the whole ollama-cloud provider
-        # unhealthy for 600s, poisoning the working vision model on every later
-        # cycle. kimi-k3 is extra-usage-only AND text-only (rejects images), so it
-        # was pure downside in the vision chain — dropped. qwen3.5 is the proven
-        # included-plan vision model; gemma4 is an included-plan safety net (worst
-        # case a 500, which does not poison the provider like a 402 does).
-        preferred_models=("qwen3.5:cloud", "gemma4:cloud"),
+        prefer_local=True,
+        # Order: small/fast first, large escalate last. Pin winner via
+        # HERMES_PERCEPTION_FAST_MODEL (prepended in _perception_task_targets).
+        # Cloud 397B remains for low-confidence escalation only.
+        preferred_models=(
+            "qwen3.5:4b",
+            "qwen3.5:9b",
+            "qwen3-vl:4b",
+            "qwen3-vl:8b",
+            "minicpm-v",
+            "qwen3.5:cloud",
+            "gemma4:cloud",
+        ),
     ),
 }
 

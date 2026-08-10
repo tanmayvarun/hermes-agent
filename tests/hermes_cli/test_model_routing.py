@@ -138,7 +138,8 @@ def test_perception_prefers_structured_small_models():
     assert ("openrouter", "openai/gpt-oss-120b") not in ids[:1]
 
 
-def test_screen_understanding_prefers_ollama_cloud_perceptor_chain():
+def test_screen_understanding_prefers_curated_vision_chain():
+    """Preferred vision models lead; kimi-k3 (text/extra-usage) stays out of top."""
     rows = [
         {
             "slug": "ollama-cloud",
@@ -172,11 +173,9 @@ def test_screen_understanding_prefers_ollama_cloud_perceptor_chain():
         ranked = rank_task_models("screen_understanding", rows=rows)
 
     ids = [(c.provider, c.model) for c in ranked]
-    assert ids[:3] == [
-        ("ollama-cloud", "qwen3.5:cloud"),
-        ("ollama-cloud", "kimi-k3:cloud"),
-        ("ollama-cloud", "gemma4:cloud"),
-    ]
+    assert ids[0] == ("ollama-cloud", "qwen3.5:cloud")
+    assert ("ollama-cloud", "gemma4:cloud") in ids[:3]
+    assert ("ollama-cloud", "kimi-k3:cloud") not in ids[:2]
     assert ("openrouter", "openai/gpt-oss-120b") not in ids[:3]
 
 
