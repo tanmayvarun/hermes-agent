@@ -5,8 +5,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from plugin.agent.actor import _normalize_to_screen
+from plugin.agent.affordance_frontier import (
+    Affordance,
+    AffordanceFrontier,
+    STATUS_OBSERVED,
+    observed_from_objects,
+    publish_grounded_affordance_set,
+)
 from plugin.agent.apps.whatsapp import _entity_binding_eligible
 from plugin.agent.capabilities.search_episode import (
+    exclude_role_rejected_candidates,
     search_continue_capability,
     search_episode_of,
 )
@@ -244,7 +252,9 @@ def test_rejected_role_candidate_is_not_immediately_reselected():
     assert "you:" not in str(tgt or "").lower()
     ep = search_episode_of(state) or {}
     assert "you_msg" in (ep.get("role_rejected_ids") or [])
-    assert ep.get("role_resolved") is False or ep.get("status") == "failed"
+    assert ep.get("status") == "exhausted"
+    assert ep.get("role_resolved") is False
+    assert "originator mismatch" in (ep.get("role_rejected_reasons") or [])
     # Second call must not re-pick the same rejected candidate.
     brief2 = DecisionBrief(
         goal=brief.goal,
@@ -293,8 +303,13 @@ def test_public_values_same_identity_api():
     assert not IdentityResolver.values_same_identity("Alice", "Alice Extra")
 
 
-def test_resolved_entity_id_writers_are_allowlisted():
-    """Static gate: only known modules may assign resolved_entity_id."""
+def test_no_new_resolved_entity_id_writers_are_introduced():
+    """Migration guard — not proof that RoleBinder is sole committer.
+
+    Debt: sole RoleBinder.commit authority is not yet enforced. The allowlist
+    documents known writers (role_binding, whatsapp, controller, transfer_task,
+    task_binding) and blocks *new* assignment sites until they migrate.
+    """
     writers = set()
     for path in _AGENT_ROOT.rglob("*.py"):
         rel = path.relative_to(_AGENT_ROOT).as_posix()
@@ -319,6 +334,109 @@ def test_resolved_entity_id_writers_are_allowlisted():
                     writers.add(rel)
                     break
     unexpected = sorted(writers - _RESOLVED_ENTITY_WRITERS)
-    missing_expected = sorted(_RESOLVED_ENTITY_WRITERS & writers)  # noqa: F841
     assert not unexpected, f"new resolved_entity_id writers: {unexpected}"
     assert writers & _RESOLVED_ENTITY_WRITERS, "allowlist matched no writers"
+
+
+def test_unknown_geometry_source_stays_ungrounded():
+    doc = normalize_document(
+        {
+            "surface": "context_menu",
+            "objects": [
+                {
+                    "text": "Forward",
+                    "bounds": [100, 200, 80, 24],
+                    "point": [140, 212],
+                    # unknown / missing producer — must stay untagged
+                }
+            ],
+        },
+        frame=1,
+    )
+    obj = doc["objects"][0]
+    assert "coordinate_space" not in obj or not obj.get("coordinate_space")
+    # End-to-end: cannot enter an executable affordance set.
+    affs = observed_from_objects([obj], goal_kind="forward_message")
+    frontier = AffordanceFrontier(observed_actions=affs)
+    state = SimpleNamespace(unified_world_document=doc, last_grounded_affordance_set=[])
+    published = publish_grounded_affordance_set(state, frontier)
+    assert published == []
+
+
+def test_grounded_affordance_publisher_does_not_invent_space():
+    state = SimpleNamespace(
+        unified_world_document={"surface": "context_menu", "capture_id": "c1"},
+        last_grounded_affordance_set=[],
+        task_surface={"capture_id": "c1"},
+    )
+    bare = Affordance(
+        id="bare",
+        family="invoke_affordance",
+        status=STATUS_OBSERVED,
+        target_label="Forward",
+        actuators=[{"type": "coordinate_click", "point": [100, 200]}],
+        # intentionally no coordinate_space
+    )
+    stamped = Affordance(
+        id="ax",
+        family="invoke_affordance",
+        status=STATUS_OBSERVED,
+        target_label="Reply",
+        actuators=[{"type": "coordinate_click", "point": [100, 240]}],
+        coordinate_space="screen",
+        geometry_source="ax_action",
+        owner_surface="context_menu",
+    )
+    frontier = AffordanceFrontier(observed_actions=[bare, stamped])
+    published = publish_grounded_affordance_set(state, frontier)
+    labels = {r.get("target_label") for r in published}
+    assert "Forward" not in labels
+    assert "Reply" in labels
+    assert all(r.get("coordinate_space") in {"screen", "image"} for r in published)
+
+
+def test_similar_label_rejected_candidate_does_not_exclude_distinct_candidate():
+    ep = {
+        "role_rejected_ids": [],
+        "role_rejected_labels": ["You: https://foo.com/item/123"],
+        "role_rejected_reasons": ["originator mismatch"],
+    }
+    rows = [
+        {"id": "a", "label": "You: https://foo.com/item/123"},
+        {"id": "b", "label": "You: https://foo.com/item/1234"},
+    ]
+    kept = exclude_role_rejected_candidates(rows, ep)
+    labels = [r["label"] for r in kept]
+    assert "You: https://foo.com/item/123" not in labels
+    assert "You: https://foo.com/item/1234" in labels
+
+
+def test_ownerless_target_does_not_satisfy_reground():
+    graph = build_frame_graph(
+        image_size=(1581.0, 979.0),
+        window_origin_in_screen=(110.0, 25.0),
+        point_scale=1.0,
+        capture_scale=1.0,
+        capture_id="capture_now",
+    )
+    state = SimpleNamespace(
+        grounding_reground_target="Forward",
+        unified_world_document={
+            "surface": "context_menu",
+            "capture_id": "capture_now",
+            "frame_graph": graph.to_dict(),
+            "objects": [
+                {
+                    "text": "Forward",
+                    "point": [1380, 217],
+                    "coordinate_space": "screen",
+                    "capture_id": "capture_now",
+                    # no owner_surface — repair must fail closed
+                    "geometry_source": "ocr",
+                }
+            ],
+        },
+        last_grounded_affordance_set=[],
+        task_surface={"capture_id": "capture_now", "frame_graph": graph.to_dict()},
+    )
+    assert _grounding_repair_satisfied(state) is False

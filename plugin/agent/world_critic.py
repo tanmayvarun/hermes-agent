@@ -1154,6 +1154,15 @@ def _grounded_from_objects(
         target: Dict[str, Any] = {"point": list(point)}
         if obj.get("id") is not None:
             target["entity_id"] = obj.get("id")
+        space = str(obj.get("coordinate_space") or "").strip().lower()
+        if space in {"screen", "image"}:
+            target["coordinate_space"] = space
+        geo = str(obj.get("geometry_source") or obj.get("source") or "").strip()
+        if geo:
+            target["geometry_source"] = geo[:40]
+        owner = str(obj.get("owner_surface") or obj.get("surface") or "").strip()
+        if owner:
+            target["owner_surface"] = owner[:40]
         out.append(
             SimpleNamespace(
                 label=label,

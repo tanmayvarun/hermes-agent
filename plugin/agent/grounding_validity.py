@@ -20,10 +20,11 @@ _MENU_SURFACES = frozenset(
 )
 
 
-def _label_hit(text: str, target: str) -> bool:
+def _label_exact(text: str, target: str) -> bool:
+    """Repair target identity: exact normalized label only (no containment)."""
     t = str(text or "").strip().lower()
     want = str(target or "").strip().lower()
-    return bool(t) and bool(want) and (want in t or t in want)
+    return bool(t) and bool(want) and t == want
 
 
 def resolve_active_frame_graph(state: Any) -> Tuple[Any, Any, str]:
@@ -131,13 +132,19 @@ def belongs_to_active_surface(
     item: Dict[str, Any],
     *,
     active_surface: str,
+    require_owner: bool = False,
 ) -> bool:
-    """True when the target is still applicable on the current surface/layer."""
+    """True when the target is still applicable on the current surface/layer.
+
+    Repair completion passes ``require_owner=True``: missing owner_surface fails
+    closed. Discovery may keep the permissive path (require_owner=False).
+    """
     owner = str(item.get("owner_surface") or item.get("surface") or "").strip().lower()
     active = str(active_surface or "").strip().lower()
     if not owner:
-        # Untagged owner: allow only when active surface is a menu overlay
-        # (typical Forward CTA) or when we have no surface info at all.
+        if require_owner:
+            return False
+        # Discovery-only fallback: untagged owner on menu/conversation.
         return (not active) or active in _MENU_SURFACES or active == "conversation"
     if not active:
         return True
@@ -203,9 +210,11 @@ def grounding_repair_satisfied(state: Any) -> bool:
     for obj in doc.get("objects") or []:
         if not isinstance(obj, dict):
             continue
-        if not _label_hit(str(obj.get("text") or obj.get("label") or ""), target):
+        if not _label_exact(str(obj.get("text") or obj.get("label") or ""), target):
             continue
-        if not belongs_to_active_surface(obj, active_surface=active_surface):
+        if not belongs_to_active_surface(
+            obj, active_surface=active_surface, require_owner=True
+        ):
             continue
         if grounding_is_executable(
             obj,
@@ -218,13 +227,15 @@ def grounding_repair_satisfied(state: Any) -> bool:
     for aff in getattr(state, "last_grounded_affordance_set", None) or []:
         if not isinstance(aff, dict):
             continue
-        if not _label_hit(
+        if not _label_exact(
             str(aff.get("target_label") or aff.get("label") or ""), target
         ):
             continue
         if not (aff.get("actuators") or []):
             continue
-        if not belongs_to_active_surface(aff, active_surface=active_surface):
+        if not belongs_to_active_surface(
+            aff, active_surface=active_surface, require_owner=True
+        ):
             continue
         # Affordance-only path requires stamped capture + executable geometry.
         if grounding_is_executable(

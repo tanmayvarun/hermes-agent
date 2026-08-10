@@ -23,8 +23,25 @@ _AX = [
 ]
 
 _OBJECTS = [
-    {"id": "m1", "kind": "message", "text": "zarooratwala.com/fresh", "point": [980, 510], "matches_goal": True},
-    {"id": "r1", "kind": "row", "text": "Pallavi", "point": [200, 300]},
+    {
+        "id": "m1",
+        "kind": "message",
+        "text": "zarooratwala.com/fresh",
+        "point": [980, 510],
+        "matches_goal": True,
+        "coordinate_space": "screen",
+        "geometry_source": "ocr",
+        "owner_surface": "conversation",
+    },
+    {
+        "id": "r1",
+        "kind": "row",
+        "text": "Pallavi",
+        "point": [200, 300],
+        "coordinate_space": "screen",
+        "geometry_source": "ocr",
+        "owner_surface": "conversation",
+    },
 ]
 
 

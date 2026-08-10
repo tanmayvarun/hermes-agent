@@ -104,8 +104,22 @@ def test_reconcile_promotes_under_handoff_when_surface_stays_conversation():
         document={
             "surface": "conversation",
             "objects": [
-                {"text": "Forward", "kind": "menu_item", "point": [100, 200]},
-                {"text": "Reply", "kind": "menu_item", "point": [100, 230]},
+                {
+                    "text": "Forward",
+                    "kind": "menu_item",
+                    "point": [100, 200],
+                    "coordinate_space": "screen",
+                    "geometry_source": "ocr",
+                    "owner_surface": "context_menu",
+                },
+                {
+                    "text": "Reply",
+                    "kind": "menu_item",
+                    "point": [100, 230],
+                    "coordinate_space": "screen",
+                    "geometry_source": "ocr",
+                    "owner_surface": "context_menu",
+                },
             ],
         },
         execution_state=state,
@@ -296,6 +310,9 @@ def test_publish_affordance_set_parity_with_actuators():
                 status=STATUS_OBSERVED,
                 target_label="Forward",
                 actuators=[{"type": "coordinate_click", "point": [1, 2], "confidence": 0.9}],
+                coordinate_space="screen",
+                geometry_source="ocr",
+                owner_surface="context_menu",
             )
         ],
     )

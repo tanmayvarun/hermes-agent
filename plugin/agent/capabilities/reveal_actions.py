@@ -214,12 +214,24 @@ def visible_actions_from_context(context: Optional[Dict[str, Any]]) -> List[Acti
                 continue
             seen.add(key)
             point = _point_of(obj)
+            target: Dict[str, Any] = {}
+            if point:
+                target["point"] = point
+            space = str(obj.get("coordinate_space") or "").strip().lower()
+            if space in {"screen", "image"}:
+                target["coordinate_space"] = space
+            geo = str(obj.get("geometry_source") or obj.get("source") or "").strip()
+            if geo:
+                target["geometry_source"] = geo[:40]
+            owner = str(obj.get("owner_surface") or obj.get("surface") or "").strip()
+            if owner:
+                target["owner_surface"] = owner[:40]
             out.append(
                 Action(
                     label=label,
                     invocation="menu_path",
                     visibility="visible",
-                    target={"point": point} if point else {},
+                    target=target,
                     reversible=not is_irreversible_affordance(label),
                     confidence=0.85 if point else 0.5,
                 )

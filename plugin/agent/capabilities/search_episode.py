@@ -206,7 +206,11 @@ def search_result_from_episode(
         base.unexplored_scopes = _unexplored_scopes(ep) or base.unexplored_scopes
         base.status = str(ep.get("status") or base.status)
         base.fail_reason = str(ep.get("fail_reason") or base.fail_reason)
-        base.exhausted = bool(exhausted or base.exhausted or str(ep.get("status")) == "failed")
+        base.exhausted = bool(
+            exhausted
+            or base.exhausted
+            or str(ep.get("status")) in {"failed", "exhausted"}
+        )
         return base
     status = str(ep.get("status") or "")
     chosen_label = str(ep.get("chosen_label") or "").strip()
@@ -218,14 +222,14 @@ def search_result_from_episode(
         confidence = 0.9
     elif status == "ranking" and int(ep.get("candidate_count") or 0) > 0:
         confidence = 0.5
-    elif status == "failed":
+    elif status in {"failed", "exhausted"}:
         confidence = 0.0
     return SearchResult(
         candidates=[],
         chosen=chosen,
         coverage=_coverage_dict(ep),
         confidence=confidence,
-        exhausted=bool(exhausted or status == "failed"),
+        exhausted=bool(exhausted or status in {"failed", "exhausted"}),
         unexplored_scopes=_unexplored_scopes(ep),
         fail_reason=str(ep.get("fail_reason") or ""),
         status=status,
@@ -464,16 +468,26 @@ def advance_search_with_candidates(
     if just_rejected_unique:
         ep["retrieval_complete"] = True
         ep["role_resolved"] = False
-        ep["role_unresolved_reason"] = "required identity constraint failed"
-        # Unique role-ineligible hit exhausted this frontier.
-        ep["status"] = "failed"
-        ep["fail_reason"] = "required identity constraint failed"
-        status = "failed"
+        ep["role_unresolved_reason"] = "originator mismatch"
+        reasons = [
+            str(x).strip()
+            for x in list(ep.get("role_rejected_reasons") or [])
+            if str(x).strip()
+        ][:24]
+        if "originator mismatch" not in reasons:
+            reasons.append("originator mismatch")
+        ep["role_rejected_reasons"] = reasons
+        # Frontier produced a hit but no role-valid candidate — not a mechanism failure.
+        ep["status"] = "exhausted"
+        ep["fail_reason"] = "originator mismatch"
+        status = "exhausted"
     if status == "failed" and rows and not filtered:
         ep["fail_reason"] = "no_candidate_fits_referent"
     elif status == "failed" and not rows:
         ep["fail_reason"] = "empty_candidate_set"
-    stamp_search_contract(ep, exhausted=status == "failed")
+    stamp_search_contract(
+        ep, exhausted=status in {"failed", "exhausted"}
+    )
     # Surface candidate summaries on the result for meta consumers.
     if isinstance(ep.get("result"), dict):
         ep["result"]["candidates"] = [
@@ -537,12 +551,22 @@ def note_retrieval_complete(
         for x in list(ep.get("role_rejected_labels") or [])
         if str(x).strip()
     ][:24]
+    rejected_reasons = [
+        str(x).strip()
+        for x in list(ep.get("role_rejected_reasons") or [])
+        if str(x).strip()
+    ][:24]
+    reason = str(role_unresolved_reason or "required identity constraint failed").strip()[
+        :160
+    ]
     if not role_resolved:
         if chosen_id is not None and chosen_id not in rejected_ids:
             rejected_ids.append(chosen_id)
         lab = str(chosen_label or "").strip()
         if lab and lab not in rejected_labels:
             rejected_labels.append(lab)
+        if reason and reason not in rejected_reasons:
+            rejected_reasons.append(reason)
     ep = {
         **ep,
         "retrieval_complete": True,
@@ -554,10 +578,11 @@ def note_retrieval_complete(
         "candidate_count": int(
             candidate_count or ep.get("candidate_count") or (1 if chosen_id is not None else 0)
         ),
-        "role_unresolved_reason": str(role_unresolved_reason or "")[:160],
+        "role_unresolved_reason": reason if not role_resolved else "",
         "fail_reason": "",
         "role_rejected_ids": rejected_ids,
         "role_rejected_labels": rejected_labels,
+        "role_rejected_reasons": rejected_reasons,
     }
     if role_resolved:
         ep["status"] = "complete"
@@ -630,6 +655,57 @@ def fail_search_episode(
             delta=0.0,
             empty=True,
             reason=str(reason or "empty_candidate_set")[:80],
+        )
+        execution_state.search_retreat_owed = True
+    except Exception:
+        pass
+    return ep
+
+
+def exhaust_search_episode(
+    execution_state: Any,
+    *,
+    reason: str = "originator mismatch",
+) -> Dict[str, Any]:
+    """Frontier exhausted: retrieval found hits but none are role-valid.
+
+    Distinct from ``failed`` (mechanism / empty find). Executive should broaden
+    or change search strategy, not treat this as a capability crash.
+    """
+    if execution_state is None:
+        return {}
+    ep = search_episode_of(execution_state) or {}
+    explored = _explored_scopes_of(ep)
+    scope = _space_to_scope(str(ep.get("space") or "ui_filter"))
+    if scope and scope not in explored:
+        explored = explored + [scope]
+    reason_s = str(reason or "originator mismatch")[:160]
+    reasons = [
+        str(x).strip()
+        for x in list(ep.get("role_rejected_reasons") or [])
+        if str(x).strip()
+    ][:24]
+    if reason_s and reason_s not in reasons:
+        reasons.append(reason_s)
+    ep = {
+        **ep,
+        "status": "exhausted",
+        "fail_reason": reason_s[:120],
+        "retrieval_complete": True,
+        "role_resolved": False,
+        "role_unresolved_reason": reason_s,
+        "role_rejected_reasons": reasons,
+        "candidate_count": int(ep.get("candidate_count") or 0),
+        "explored_scopes": explored,
+    }
+    stamp_search_contract(ep, exhausted=True)
+    try:
+        execution_state.search_episode = ep
+        note_search_progress(
+            execution_state,
+            delta=0.0,
+            empty=False,
+            reason=reason_s[:80],
         )
         execution_state.search_retreat_owed = True
     except Exception:
@@ -795,6 +871,7 @@ def _is_role_rejected(
     rejected_ids: Sequence[Any],
     rejected_labels: Sequence[str],
 ) -> bool:
+    """Stable id first; else exact normalized label. No substring containment."""
     rid = row.get("id")
     if rid is not None and rid in set(rejected_ids or []):
         return True
@@ -804,7 +881,7 @@ def _is_role_rejected(
     low = _norm(label)
     for rej in rejected_labels or []:
         rj = _norm(rej)
-        if rj and (rj == low or rj in low or low in rj):
+        if rj and rj == low:
             return True
     return False
 
@@ -1051,7 +1128,7 @@ def ensure_search_episode_from_brief(
     # Do not re-rank over a finished episode (unique fit / resolve already chose).
     # While retreat is owed after a failed find, keep the dead episode — do not
     # silently re-arm ranking from leftover rows (live 212533 loop).
-    if str(ep.get("status") or "") in {"complete", "failed"}:
+    if str(ep.get("status") or "") in {"complete", "failed", "exhausted"}:
         return ep
     if (
         execution_state is not None
@@ -1109,7 +1186,7 @@ def commit_allowed_for_target(
                     False,
                     f"commit_target_mismatches_search_choice:{ep.get('chosen_label')}",
                 )
-    if status == "failed":
+    if status in {"failed", "exhausted"}:
         return False, str(ep.get("fail_reason") or "search_failed")
     return True, ""
 
@@ -1161,6 +1238,12 @@ def search_continue_capability(
         return "", "", ""
     status = str(ep.get("status") or "")
     allowed = set(getattr(brief, "capabilities", None) or [])
+    if status == "exhausted":
+        return (
+            "",
+            "",
+            "search frontier exhausted — broaden or change strategy",
+        )
     if status == "complete" and ep.get("chosen_label"):
         if meta == "search":
             # Ranking done — do not re-resolve or open under SEARCH; next meta ACT.
@@ -1187,11 +1270,11 @@ def search_continue_capability(
         ):
             # Hard identity rejects exhausted the frontier — do not reselect.
             holder = _episode_holder(execution_state)
-            fail_search_episode(
+            exhaust_search_episode(
                 holder,
                 reason=str(
                     ep.get("role_unresolved_reason")
-                    or "role_rejected_no_remaining_candidates"
+                    or "originator mismatch"
                 ),
             )
             try:
@@ -1201,7 +1284,7 @@ def search_continue_capability(
             return (
                 "",
                 "",
-                "role-rejected candidates exhausted — broaden search or fail",
+                "role-rejected candidates exhausted — broaden search strategy",
             )
         unique = unique_fitting_candidate(
             filtered,
@@ -1248,7 +1331,7 @@ def search_continue_capability(
                     chosen_label=label,
                     chosen_id=unique.get("id"),
                     role_resolved=False,
-                    role_unresolved_reason="required identity constraint failed",
+                    role_unresolved_reason="originator mismatch",
                     candidate_count=1,
                 )
                 try:
@@ -1256,10 +1339,7 @@ def search_continue_capability(
                 except Exception:
                     pass
                 # Hard reject recorded — do not immediately reselect same candidate.
-                fail_search_episode(
-                    holder,
-                    reason="required identity constraint failed",
-                )
+                exhaust_search_episode(holder, reason="originator mismatch")
                 try:
                     brief.search_episode = search_episode_of(holder)
                 except Exception:
@@ -1319,7 +1399,7 @@ def search_continue_capability(
                     chosen_id=top.get("id"),
                     scores=scores,
                     role_resolved=False,
-                    role_unresolved_reason="required identity constraint failed",
+                    role_unresolved_reason="originator mismatch",
                     candidate_count=len(filtered),
                 )
                 try:
@@ -1330,10 +1410,7 @@ def search_continue_capability(
                 # Course-correct: drop the reject and pick another candidate.
                 remaining = exclude_role_rejected_candidates(filtered, ep)
                 if not remaining:
-                    fail_search_episode(
-                        holder,
-                        reason="required identity constraint failed",
-                    )
+                    exhaust_search_episode(holder, reason="originator mismatch")
                     try:
                         brief.search_episode = search_episode_of(holder)
                     except Exception:

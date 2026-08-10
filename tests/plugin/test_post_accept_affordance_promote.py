@@ -35,9 +35,32 @@ def test_promote_frontier_after_accept_grounds_forward_from_accepted_doc():
         "surface": "conversation",
         "open_conversation": "Pallavi",
         "objects": [
-            {"text": "zarooratwala", "kind": "outgoing_message", "point": [100, 100]},
-            {"text": "Forward", "kind": "menu_item", "is_menu_item": True, "point": [200, 280]},
-            {"text": "Reply", "kind": "menu_item", "is_menu_item": True, "point": [200, 240]},
+            {
+                "text": "zarooratwala",
+                "kind": "outgoing_message",
+                "point": [100, 100],
+                "coordinate_space": "screen",
+                "geometry_source": "ocr",
+                "owner_surface": "conversation",
+            },
+            {
+                "text": "Forward",
+                "kind": "menu_item",
+                "is_menu_item": True,
+                "point": [200, 280],
+                "coordinate_space": "screen",
+                "geometry_source": "ocr",
+                "owner_surface": "context_menu",
+            },
+            {
+                "text": "Reply",
+                "kind": "menu_item",
+                "is_menu_item": True,
+                "point": [200, 240],
+                "coordinate_space": "screen",
+                "geometry_source": "ocr",
+                "owner_surface": "context_menu",
+            },
         ],
         "layers": [
             {
@@ -49,6 +72,9 @@ def test_promote_frontier_after_accept_grounds_forward_from_accepted_doc():
                         "text": "zarooratwala",
                         "kind": "outgoing_message",
                         "point": [100, 100],
+                        "coordinate_space": "screen",
+                        "geometry_source": "ocr",
+                        "owner_surface": "conversation",
                     }
                 ],
             },
@@ -61,6 +87,9 @@ def test_promote_frontier_after_accept_grounds_forward_from_accepted_doc():
                         "text": "Forward",
                         "kind": "menu_item",
                         "point": [200, 280],
+                        "coordinate_space": "screen",
+                        "geometry_source": "ocr",
+                        "owner_surface": "context_menu",
                     }
                 ],
             },

@@ -130,6 +130,10 @@ class Affordance:
     may_reveal: List[LatentAffordance] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
     expected_information_gain: float = 0.0
+    # Producer-stamped geometry provenance — never invented by the publisher.
+    coordinate_space: str = ""
+    geometry_source: str = ""
+    owner_surface: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -162,6 +166,13 @@ class Affordance:
             )
         if self.evidence:
             out["evidence"] = [e.to_dict() for e in self.evidence]
+        space = str(self.coordinate_space or "").strip().lower()
+        if space in {"screen", "image"}:
+            out["coordinate_space"] = space
+        if self.geometry_source:
+            out["geometry_source"] = str(self.geometry_source)[:40]
+        if self.owner_surface:
+            out["owner_surface"] = str(self.owner_surface)[:40]
         return out
 
 
@@ -484,6 +495,12 @@ def observed_from_ax(
                 risk=0.4 if not reversible else 0.05,
                 reversible=reversible,
                 evidence=evidence,
+                # AX measured bounds are pointer/screen space by producer contract.
+                coordinate_space="screen" if point is not None else "",
+                geometry_source="ax_action" if actions else "ax_role",
+                owner_surface=str(item.get("owner_surface") or item.get("surface") or "")[
+                    :40
+                ],
             )
         )
     return found, excluded
@@ -536,8 +553,11 @@ def observed_from_objects(
             except (TypeError, ValueError):
                 point = None
         actuators = _actuators(None, point, ())
-        if not actuators:
-            continue
+        space = str(item.get("coordinate_space") or "").strip().lower()
+        geo_src = str(item.get("geometry_source") or item.get("source") or "").strip()
+        owner = str(item.get("owner_surface") or item.get("surface") or "").strip()
+        # Keep untagged objects for probe/latent discovery. Executable publish
+        # requires stamped coordinate_space — never invent it here.
         # matches_goal is recall-only; do not let it dominate affordance rank.
         found.append(
             Affordance(
@@ -556,6 +576,9 @@ def observed_from_objects(
                         probability=0.8,
                     )
                 ],
+                coordinate_space=space if space in {"screen", "image"} else "",
+                geometry_source=geo_src[:40],
+                owner_surface=owner[:40],
             )
         )
     return found
@@ -818,6 +841,19 @@ def _best_per_label(latents: Sequence[Affordance]) -> List[Affordance]:
     return sorted(best.values(), key=lambda a: -float(a.confidence))
 
 
+def _provenance_from_grounded(match: Any) -> Tuple[str, str, str]:
+    """Copy producer stamps from a reveal Action target — never invent space."""
+    target = getattr(match, "target", None) or {}
+    if not isinstance(target, dict):
+        target = {}
+    space = str(target.get("coordinate_space") or "").strip().lower()
+    if space not in {"screen", "image"}:
+        space = ""
+    geo = str(target.get("geometry_source") or "").strip()[:40]
+    owner = str(target.get("owner_surface") or target.get("surface") or "").strip()[:40]
+    return space, geo, owner
+
+
 def _actuators_from_grounded(match: Any) -> Tuple[List[Dict[str, Any]], Optional[int]]:
     target = getattr(match, "target", None) or {}
     if not isinstance(target, dict):
@@ -875,6 +911,7 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
         if not actuators:
             still_latent.append(latent)
             continue
+        space, geo, owner = _provenance_from_grounded(match)
         promoted.append(
             Affordance(
                 id=f"revealed_{_norm(latent.target_label)}",
@@ -888,6 +925,9 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
                 risk=latent.risk,
                 reversible=latent.reversible,
                 evidence=[Evidence(SOURCE_TRANSITION_MEMORY, "grounded by reveal_actions")],
+                coordinate_space=space,
+                geometry_source=geo,
+                owner_surface=owner,
             )
         )
         grounded.pop(_norm(latent.target_label), None)
@@ -902,6 +942,7 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
             continue
         label = str(getattr(match, "label", "") or key)
         irreversible = is_irreversible_affordance(label)
+        space, geo, owner = _provenance_from_grounded(match)
         promoted.append(
             Affordance(
                 id=f"revealed_{key}",
@@ -914,6 +955,9 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
                 confidence=float(getattr(match, "confidence", 0.85) or 0.85),
                 reversible=not irreversible,
                 evidence=[Evidence(SOURCE_VISION_OBJECT, "menu item grounded after reveal")],
+                coordinate_space=space,
+                geometry_source=geo,
+                owner_surface=owner,
             )
         )
     frontier.observed_actions = frontier.observed_actions + promoted
@@ -931,9 +975,9 @@ def publish_grounded_affordance_set(
 ) -> List[Dict[str, Any]]:
     """Persist grounded menu controls as the affordance_set substrate.
 
-    Same thoroughness contract as materialize_vision_entities for addressable
-    objects: label + actuators/geometry + provenance, ready for invoke.
-    Stamps capture_id / coordinate_space so reground cannot accept a stale set.
+    Preserves producer provenance only. Unknown coordinate_space → not
+    executable (skipped). May stamp capture_id for freshness, never invent
+    coordinate_space or owner_surface.
     """
     out: List[Dict[str, Any]] = []
     if frontier is None:
@@ -944,7 +988,6 @@ def publish_grounded_affordance_set(
                 pass
         return out
     capture_id = ""
-    active_surface = ""
     if execution_state is not None:
         try:
             from plugin.agent.grounding_validity import current_capture_id_from_state
@@ -954,7 +997,6 @@ def publish_grounded_affordance_set(
             capture_id = ""
         doc = getattr(execution_state, "unified_world_document", None) or {}
         if isinstance(doc, dict):
-            active_surface = str(doc.get("surface") or "").strip().lower()
             if not capture_id:
                 capture_id = str(doc.get("capture_id") or "").strip()
             ts = doc.get("task_surface")
@@ -966,13 +1008,12 @@ def publish_grounded_affordance_set(
         if not aff.actuators:
             continue
         row = aff.to_dict()
+        space = str(row.get("coordinate_space") or "").strip().lower()
+        if space not in {"screen", "image"}:
+            # Unknown provenance stays ungrounded — publisher never invents space.
+            continue
         if capture_id:
             row["capture_id"] = capture_id
-        # Menu CTAs from AX/reveal are screen-space once grounded.
-        if not str(row.get("coordinate_space") or "").strip():
-            row["coordinate_space"] = "screen"
-        if active_surface and not str(row.get("owner_surface") or "").strip():
-            row["owner_surface"] = active_surface
         out.append(row)
     if execution_state is not None:
         try:
