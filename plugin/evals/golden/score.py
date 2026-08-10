@@ -900,7 +900,11 @@ def score_brain_actor_handoff_case(case: GoldenCase) -> CaseScore:
         brain_na = dict(proposal.next_action or {})
         # Actor binds against the perceptor object inventory (fresh look), which
         # is what execute paths should prefer once brain has chosen.
-        brief = brief_from_brain_choice(brain_na, wm, app="WhatsApp")
+        # Golden corpus predates stamped FrameGraphs; opt into legacy geometry
+        # at this ingestion boundary only — production paths stay fail-closed.
+        brief = brief_from_brain_choice(
+            brain_na, wm, app="WhatsApp", allow_legacy_geometry=True
+        )
         brief_ok, why = validate_brief(brief)
 
         brain_pt = brain_na.get("target_point")
@@ -950,6 +954,7 @@ def score_brain_actor_handoff_case(case: GoldenCase) -> CaseScore:
         dict(inp.get("next_action") or {}),
         dict(inp.get("accepted_world") or {}),
         app="WhatsApp",
+        allow_legacy_geometry=True,
     )
     brief_ok, why = validate_brief(brief)
 

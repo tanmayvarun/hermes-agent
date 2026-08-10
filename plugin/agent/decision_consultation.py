@@ -1111,10 +1111,10 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
     # consumes a valid binding (or bind-then-act via RoleBinder — not a second
     # copy of identity rules inline here).
     if capability in {"resolve_entity", "open_entity", "open_contact"} and target:
+        from plugin.agent.procedures.forward_message import role_for_action_family
         from plugin.agent.role_binding import (
             BindingRecord,
             RoleBinder,
-            role_for_action_family,
         )
 
         role = role_for_action_family(

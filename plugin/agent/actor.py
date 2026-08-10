@@ -437,6 +437,8 @@ def _normalize_to_screen(
     surface: Any,
     frame_id: str = "",
     graph: Any = None,
+    grounding_capture_id: str = "",
+    allow_legacy_geometry: bool = False,
 ) -> Tuple[
     Optional[Tuple[float, float]],
     Optional[Tuple[float, float, float, float]],
@@ -448,19 +450,26 @@ def _normalize_to_screen(
     Tagged ``coordinate_space=screen`` passes through unchanged.
     Missing/stale frames fail closed (``grounding_uncertain`` audit) — never
     ``looks_like_image_point`` / legacy heuristic conversion on act path.
+
+    Production default: naked ``[x,y]`` with no space/frame → uncertain.
+    Legacy goldens/corpus may pass ``allow_legacy_geometry=True`` (or stamp
+    ``legacy_geometry_provenance`` at the ingestion boundary) to opt into
+    historical screen-absolute / identity-image adapters.
     """
     from plugin.perception.coordinate_frame import (
         FrameGraph,
         GroundingUncertain,
         StaleCoordinateFrame,
         UnknownCoordinateFrame,
+        build_frame_graph,
         ensure_screen_space,
+        frame_graph_from_task_surface,
     )
-
-    from plugin.perception.coordinate_frame import frame_graph_from_task_surface
 
     audit: Dict[str, Any] = {}
     active_graph = graph
+    if isinstance(active_graph, dict):
+        active_graph = FrameGraph.from_dict(active_graph)
     if active_graph is None and surface is not None:
         raw = None
         if isinstance(surface, dict):
@@ -471,8 +480,6 @@ def _normalize_to_screen(
             active_graph = raw
         elif isinstance(raw, dict):
             active_graph = FrameGraph.from_dict(raw)
-
-    from plugin.perception.coordinate_frame import build_frame_graph
 
     # ONE ingestion adapter: TaskSurface / identity capture → FrameGraph, then
     # ONLY transform(). Never looks_like_image_point / to_screen_point.
@@ -488,19 +495,24 @@ def _normalize_to_screen(
     # TaskSurface adapter convention: untagged points are image-space.
     if adapter_used and not space and not frame_id:
         space = "image"
-    # Legacy ingestion: naked points with no topology were historically
-    # screen-absolute in goldens/inventory. Annotate once as screen — never
-    # invent image→screen via looks_like_image_point.
+    # Explicit legacy marker only — never infer screen from absence of info.
     elif (
-        active_graph is None
+        allow_legacy_geometry
+        and active_graph is None
         and not space
         and not frame_id
         and (point is not None or bounds is not None)
     ):
         space = "screen"
-    # Perceptor tagged image but capture was never stamped (tests / AX-only):
-    # identity FrameGraph (origin 0, scale 1) — not a heuristic "looks like".
-    elif active_graph is None and space == "image" and not frame_id:
+        audit["legacy_screen_assumption"] = True
+        audit["legacy_geometry_provenance"] = "legacy_inventory_v1"
+    # Identity image→screen only when legacy mode is explicitly enabled.
+    elif (
+        allow_legacy_geometry
+        and active_graph is None
+        and space == "image"
+        and not frame_id
+    ):
         active_graph = build_frame_graph(
             image_size=(0.0, 0.0),
             window_origin_in_screen=(0.0, 0.0),
@@ -510,6 +522,24 @@ def _normalize_to_screen(
             capture_id="legacy_identity",
         )
         adapter_used = True
+        audit["legacy_identity_adapter"] = True
+
+    # Naked geometry with no topology in production → fail closed.
+    if (
+        active_graph is None
+        and not space
+        and not frame_id
+        and (point is not None or bounds is not None)
+    ):
+        return None, None, {
+            "grounding_uncertain": True,
+            "attempt_validity": "inconclusive_grounding",
+            "error": "naked geometry without frame/space — re-ground",
+            "error_code": "grounding_uncertain",
+            "source_frame_id": frame_id or "",
+            "source_space": space,
+            "legacy_heuristic_refused": True,
+        }
 
     # Window/image with unresolved frame_id and no graph → fail closed.
     if active_graph is None and space not in {"", "screen"}:
@@ -534,7 +564,7 @@ def _normalize_to_screen(
         }
 
     try:
-        pt, bd, audit = ensure_screen_space(
+        pt, bd, norm_audit = ensure_screen_space(
             point,
             bounds,
             coordinate_space=space,
@@ -542,11 +572,13 @@ def _normalize_to_screen(
             graph=active_graph,
             surface=None,
             fail_closed=True,
+            grounding_capture_id=grounding_capture_id,
         )
+        merged = dict(audit)
+        merged.update(dict(norm_audit or {}))
         if adapter_used:
-            audit = dict(audit or {})
-            audit["task_surface_frame_adapter"] = True
-        return pt, bd, audit
+            merged["task_surface_frame_adapter"] = True
+        return pt, bd, merged
     except (UnknownCoordinateFrame, StaleCoordinateFrame, GroundingUncertain) as exc:
         return None, None, {
             "grounding_uncertain": True,
@@ -811,15 +843,23 @@ def brief_from_brain_choice(
     *,
     app: str = "",
     capability: str = "",
+    allow_legacy_geometry: bool = False,
 ) -> ActorBrief:
     """Build an ActorBrief from the brain's next_action + accepted world.
 
     This is the handoff. Missing geometry/text stays missing — validate_brief
     refuses rather than inventing a motor path. World lookup only materialises
     geometry the brain already named (target_id / target_label / target_point).
+
+    ``allow_legacy_geometry`` is for golden/corpus ingestion only. Production
+    callers must leave it False so naked / unstamped image geometry fails closed.
     """
     action = dict(next_action or {})
     doc = dict(world_document or {})
+    if action.get("allow_legacy_screen_geometry") or action.get(
+        "legacy_geometry_provenance"
+    ):
+        allow_legacy_geometry = True
     objects = [o for o in (doc.get("objects") or []) if isinstance(o, dict)]
     surface = str(doc.get("surface") or "").strip().lower()
     cap = (
@@ -895,6 +935,12 @@ def brief_from_brain_choice(
     point = brain_point
     task_surface = _task_surface_from_doc(doc, app=str(app or ""))
     brain_space = str(action.get("coordinate_space") or "").strip().lower()
+    # Positive provenance only: AX/OCR geometry is screen-absolute on macOS.
+    # Do not infer screen from absence of space/frame (that is the fail-open hole).
+    if not brain_space:
+        geo_src = str(action.get("geometry_source") or "").strip().lower()
+        if geo_src.startswith("ax") or geo_src.startswith("ocr"):
+            brain_space = "screen"
 
     # Only resolve named objects. Anonymous kind-picks invent a Search rect.
     obj = _resolve_named_object(
@@ -917,6 +963,23 @@ def brief_from_brain_choice(
             label = str(obj.get("text") or obj.get("label") or "").strip()
         target_kind = str(obj.get("kind") or "").strip().lower() or target_kind
         obj_space = str(obj.get("coordinate_space") or "").strip().lower()
+        # TaskSurface convention: untagged inventory points are image-local when
+        # capture topology is present (positive evidence — not naked→screen).
+        if not obj_space and task_surface is not None:
+            origin = getattr(task_surface, "capture_origin", None) or (0.0, 0.0)
+            try:
+                ox, oy = float(origin[0]), float(origin[1])
+            except Exception:
+                ox, oy = 0.0, 0.0
+            has_capture = (
+                getattr(task_surface, "frame_graph", None) is not None
+                or ox != 0.0
+                or oy != 0.0
+                or float(getattr(task_surface, "capture_scale", 1.0) or 1.0) != 1.0
+                or float(getattr(task_surface, "point_scale", 1.0) or 1.0) != 1.0
+            )
+            if has_capture:
+                obj_space = "image"
         obj_point = _as_point(obj.get("point"))
         obj_bounds = _as_bounds(obj.get("bounds")) or bounds
     elif (
@@ -946,6 +1009,18 @@ def brief_from_brain_choice(
             if not label:
                 label = str(obj.get("text") or obj.get("label") or "").strip()
             obj_space = str(obj.get("coordinate_space") or "").strip().lower()
+            if not obj_space and task_surface is not None:
+                origin = getattr(task_surface, "capture_origin", None) or (0.0, 0.0)
+                try:
+                    ox, oy = float(origin[0]), float(origin[1])
+                except Exception:
+                    ox, oy = 0.0, 0.0
+                if (
+                    getattr(task_surface, "frame_graph", None) is not None
+                    or ox != 0.0
+                    or oy != 0.0
+                ):
+                    obj_space = "image"
             obj_point = _as_point(obj.get("point"))
             obj_bounds = _as_bounds(obj.get("bounds")) or bounds
         elif hit_forbidden:
@@ -1012,6 +1087,17 @@ def brief_from_brain_choice(
         stamped_graph = doc.get("frame_graph")
     if stamped_graph is None and task_surface is not None:
         stamped_graph = getattr(task_surface, "frame_graph", None)
+    obj_grounding = (obj or {}).get("grounding") if isinstance(obj, dict) else None
+    obj_g_cid = ""
+    if isinstance(obj_grounding, dict):
+        obj_g_cid = str(obj_grounding.get("capture_id") or "")
+    grounding_capture_id = str(
+        action.get("capture_id")
+        or action.get("grounding_capture_id")
+        or (obj or {}).get("capture_id")
+        or obj_g_cid
+        or ""
+    )
     point, bounds, geometry_audit = _normalize_to_screen(
         point,
         bounds,
@@ -1019,6 +1105,8 @@ def brief_from_brain_choice(
         surface=task_surface,
         frame_id=frame_id,
         graph=stamped_graph,
+        grounding_capture_id=grounding_capture_id,
+        allow_legacy_geometry=allow_legacy_geometry,
     )
     geometry_audit = dict(geometry_audit or {})
     geometry_audit.setdefault(
@@ -1336,6 +1424,31 @@ def execute_actor(
     refused = _commit_perception_confirm(brief, bounds)
     if refused is not None:
         return refused
+
+    # Capture freshness: Grounding must match the active FrameGraph before motor.
+    if gesture in _COMMIT_GESTURES and (
+        brief.point is not None or brief.bounds is not None
+    ):
+        ga = dict(getattr(brief, "geometry_audit", None) or {})
+        g_cid = str(ga.get("grounding_capture_id") or "").strip()
+        graph_cid = str(ga.get("capture_id") or "").strip()
+        if g_cid and graph_cid and g_cid != graph_cid:
+            return ActorResult(
+                ok=False,
+                status="inconclusive_grounding",
+                message=(
+                    f"stale grounding capture_id={g_cid!r} vs active "
+                    f"FrameGraph capture_id={graph_cid!r} — re-ground"
+                ),
+                brief=payload,
+                evidence={
+                    "grounding_uncertain": True,
+                    "attempt_validity": "inconclusive_grounding",
+                    "error_code": "stale_coordinate_frame",
+                    "geometry_audit": ga,
+                    "motor_event_emitted": False,
+                },
+            )
 
     try:
         if gesture == "click" or gesture == "ax_press":

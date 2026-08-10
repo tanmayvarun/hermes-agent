@@ -1,5 +1,6 @@
 """Typed role-binding: domain evidence in, generic identity out."""
 
+from plugin.agent.procedures.forward_message import forward_role_specs
 from plugin.agent.role_binding import (
     REFERENT_MISMATCH,
     BindingRecord,
@@ -9,7 +10,6 @@ from plugin.agent.role_binding import (
     apply_referent_mismatch,
     assess_candidate_for_role,
     assess_observation_for_role,
-    forward_role_specs,
     is_negatively_evidenced,
     propose_binding,
 )

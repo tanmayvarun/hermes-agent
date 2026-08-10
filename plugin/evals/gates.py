@@ -2535,6 +2535,7 @@ def _typed_role_binding_identity_gates() -> Tuple[bool, str]:
     from plugin.agent.executive.meta_action import MetaAction, MetaContext
     from plugin.agent.executive.meta_consultation import sanitize_meta_choice
     from plugin.agent.composition import compose_domain_adapters
+    from plugin.agent.procedures.forward_message import forward_role_specs
     from plugin.agent.role_binding import (
         BindingRecord,
         EntityObservation,
@@ -2542,7 +2543,6 @@ def _typed_role_binding_identity_gates() -> Tuple[bool, str]:
         RoleBinder,
         assess_candidate_for_role,
         assess_observation_for_role,
-        forward_role_specs,
         record_negative_evidence,
     )
     import plugin.agent.role_binding as rb_mod
@@ -2984,6 +2984,50 @@ def _typed_action_and_untyped_geometry_gate() -> Tuple[bool, str]:
     if pt is not None or not audit.get("grounding_uncertain"):
         return False, f"stale frame_id must fail closed: pt={pt} audit={audit}"
 
+    # Naked [x,y] with no frame/space must fail closed in production.
+    naked_pt, _, naked_audit = _normalize_to_screen(
+        (450.0, 230.0),
+        None,
+        coordinate_space="",
+        surface=None,
+        frame_id="",
+        graph=None,
+        allow_legacy_geometry=False,
+    )
+    if naked_pt is not None or not naked_audit.get("grounding_uncertain"):
+        return False, f"naked geometry must fail closed: pt={naked_pt} audit={naked_audit}"
+
+    # Image geometry without FrameGraph must fail closed (no legacy_identity).
+    img_pt, _, img_audit = _normalize_to_screen(
+        (450.0, 230.0),
+        None,
+        coordinate_space="image",
+        surface=None,
+        frame_id="",
+        graph=None,
+        allow_legacy_geometry=False,
+    )
+    if img_pt is not None or not img_audit.get("grounding_uncertain"):
+        return False, f"image without FrameGraph must fail closed: {img_pt} {img_audit}"
+
+    # Cross-capture grounding must fail closed (zero motor coordinates emitted).
+    graph_b = build_frame_graph(
+        image_size=(100.0, 100.0),
+        window_origin_in_screen=(0.0, 0.0),
+        capture_id="c_B",
+    )
+    stale_pt, _, stale_audit = _normalize_to_screen(
+        (10.0, 20.0),
+        None,
+        coordinate_space="image",
+        surface=None,
+        frame_id=graph_b.image_frame_id,
+        graph=graph_b,
+        grounding_capture_id="c_A",
+    )
+    if stale_pt is not None or not stale_audit.get("grounding_uncertain"):
+        return False, f"stale capture must fail closed: pt={stale_pt} audit={stale_audit}"
+
     graph = build_frame_graph(
         image_size=(100.0, 100.0),
         window_origin_in_screen=(0.0, 0.0),
@@ -2996,9 +3040,49 @@ def _typed_action_and_untyped_geometry_gate() -> Tuple[bool, str]:
         surface=None,
         frame_id=graph.image_frame_id,
         graph=graph,
+        grounding_capture_id="c_typed",
     )
     if pt2 is None or audit2.get("grounding_uncertain"):
         return False, f"grounded image point must transform: {pt2} {audit2}"
+
+    # typed_actuators must stay dependency-clean (no legacy re-exports).
+    import ast
+    import inspect
+    from plugin.agent.capabilities import typed_actuators as ta_mod
+
+    ta_src = inspect.getsource(ta_mod)
+    if "def looks_like_keyboard_chord" in ta_src or "def parse_keyboard_chord" in ta_src:
+        return False, "typed_actuators must not re-export legacy chord parsers"
+    try:
+        tree = ast.parse(ta_src)
+    except SyntaxError:
+        return False, "typed_actuators parse failed"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and "legacy_action_adapter" in str(
+            node.module or ""
+        ):
+            return False, "typed_actuators must not import legacy_action_adapter"
+
+    # Production callers must not grow new role_binding forward shims.
+    from pathlib import Path
+
+    agent_root = Path(__file__).resolve().parents[1] / "agent"
+    shim_callers = ("controller.py", "decision_consultation.py")
+    for name in shim_callers:
+        src = (agent_root / name).read_text(encoding="utf-8")
+        if "from plugin.agent.role_binding import" in src and "role_for_action_family" in src:
+            # Allow only if role_for_action_family is not imported from role_binding.
+            import ast
+
+            tree = ast.parse(src)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "plugin.agent.role_binding":
+                    for alias in node.names:
+                        if alias.name == "role_for_action_family":
+                            return False, f"{name} still imports role_for_action_family shim"
+                        if alias.name == "forward_role_specs":
+                            return False, f"{name} still imports forward_role_specs shim"
+
     return True, "typed_action_and_untyped_geometry_gate"
 
 
@@ -4384,9 +4468,11 @@ def _high_cost_wrong_action_area_impossible() -> Tuple[bool, str]:
             "target_label": "Alice",
             "target_id": "row_alice",
             "target_point": [800, 400],
+            "coordinate_space": "screen",
         },
         world,
         app="GenericApp",
+        allow_legacy_geometry=True,
     )
     ok, why = validate_brief(brief)
     if not ok:

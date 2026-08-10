@@ -1,7 +1,7 @@
 """Cross-cutting goldens for the trustworthy observation→actuation chain."""
 
 from plugin.agent.capabilities.invoke_affordance import invoke_affordance
-from plugin.agent.capabilities.typed_actuators import (
+from plugin.agent.capabilities.legacy_action_adapter import (
     looks_like_keyboard_chord,
     parse_keyboard_chord,
 )

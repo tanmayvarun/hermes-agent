@@ -2,7 +2,8 @@
 
 Keyboard chords must never collapse into pointer clicks.
 
-Free-text parsers live in ``legacy_action_adapter`` (migration only).
+Free-text chord parsers belong in the migration/compatibility layer only;
+this module must remain import-clean of that layer.
 """
 
 from __future__ import annotations
@@ -66,21 +67,8 @@ class TextEntry:
         return {"kind": "text_entry", "text": self.text, "field_role": self.field_role}
 
 
-# Backward-compatible re-exports — prefer legacy_action_adapter for new code.
-def looks_like_keyboard_chord(label: str) -> bool:
-    from plugin.agent.capabilities.legacy_action_adapter import (
-        looks_like_keyboard_chord as _looks,
-    )
-
-    return _looks(label)
-
-
-def parse_keyboard_chord(label: str, *, provenance: str = "model_prior"):
-    from plugin.agent.capabilities.legacy_action_adapter import (
-        parse_keyboard_chord as _parse,
-    )
-
-    return _parse(label, provenance=provenance)
+# Clean layer: do not import the compatibility chord parser module.
+# Callers that still parse free-text chords must import that module directly.
 
 
 def realize_keyboard_chord(app: str, chord: KeyboardChord) -> Tuple[bool, str]:

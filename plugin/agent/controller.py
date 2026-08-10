@@ -3688,10 +3688,10 @@ def run_goal_closed_loop(
                     # Motor ok + wrong semantic entity → REFERENT_MISMATCH
                     # (distinct from GROUNDING). Invalidate binding; no identical retry.
                     try:
-                        from plugin.agent.role_binding import (
-                            apply_referent_mismatch,
+                        from plugin.agent.procedures.forward_message import (
                             role_for_action_family,
                         )
+                        from plugin.agent.role_binding import apply_referent_mismatch
 
                         role = role_for_action_family(fam) or "source_container"
                         label = str(getattr(step, "semantic_target", "") or "")
@@ -5644,9 +5644,11 @@ def _forward_predicate_gate_after_transition(
         fam = str(decision.action_family or "").strip().lower()
         if fam in {"open_entity", "open_contact"}:
             try:
+                from plugin.agent.procedures.forward_message import (
+                    role_for_action_family,
+                )
                 from plugin.agent.role_binding import (
                     apply_referent_mismatch,
-                    role_for_action_family,
                     verify_bound_identity,
                 )
 

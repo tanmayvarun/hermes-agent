@@ -180,11 +180,22 @@ def test_incomplete_brief_never_calls_motor():
 
 def test_handoff_picker_type_binds_filter_geometry():
     brief = brief_from_brain_choice(
-        {"family": "type_query", "text": "Tanmay", "target_label": "Search"},
+        {
+            "family": "type_query",
+            "text": "Tanmay",
+            "target_label": "Search",
+            "coordinate_space": "screen",
+        },
         {
             "surface": "forward_picker",
             "objects": [
-                {"id": "f1", "kind": "search_field", "text": "Search", "point": [420, 180]},
+                {
+                    "id": "f1",
+                    "kind": "search_field",
+                    "text": "Search",
+                    "point": [420, 180],
+                    "coordinate_space": "screen",
+                },
                 {"id": "c1", "kind": "contact_row", "text": "Tanmay", "point": [300, 400]},
             ],
         },
@@ -199,7 +210,11 @@ def test_handoff_picker_type_binds_filter_geometry():
 
 def test_handoff_reveal_prefers_content_kind():
     brief = brief_from_brain_choice(
-        {"family": "reveal_actions", "target_label": "zarooratwala"},
+        {
+            "family": "reveal_actions",
+            "target_label": "zarooratwala",
+            "coordinate_space": "screen",
+        },
         {
             "surface": "conversation",
             "objects": [
@@ -210,6 +225,7 @@ def test_handoff_reveal_prefers_content_kind():
                     "text": "zarooratwala link",
                     "point": [1575, 295],
                     "matches_goal": True,
+                    "coordinate_space": "screen",
                 },
             ],
         },
@@ -237,6 +253,7 @@ def test_compose_on_conversation_does_not_latch_contact_or_into_name():
             "target_label": "Pallavi",
             "target_id": "900000",
             "target_point": [2127, 363],
+            "coordinate_space": "screen",
         },
         {
             "surface": "conversation",
@@ -247,12 +264,14 @@ def test_compose_on_conversation_does_not_latch_contact_or_into_name():
                     "kind": "search_field",
                     "text": "Search",
                     "point": [150, 90],
+                    "coordinate_space": "screen",
                 },
                 {
                     "id": "900000",
                     "kind": "contact",
                     "text": "Pallavi",
                     "point": [2127, 363],
+                    "coordinate_space": "screen",
                 },
             ],
         },

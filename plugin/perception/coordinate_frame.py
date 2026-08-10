@@ -192,6 +192,9 @@ class FrameGraph:
 
     @classmethod
     def from_dict(cls, raw: Any) -> Optional["FrameGraph"]:
+        """Parse a graph. Does not certify actuation readiness — call
+        ``validate_for_actuation()`` before motor use.
+        """
         if not isinstance(raw, dict) or not raw.get("frames"):
             return None
         frames: Dict[str, CoordinateFrame] = {}
@@ -208,6 +211,78 @@ class FrameGraph:
             window_frame_id=str(raw.get("window_frame_id") or ""),
             screen_frame_id=str(raw.get("screen_frame_id") or ""),
             capture_id=str(raw.get("capture_id") or ""),
+        )
+
+    def validate_for_actuation(self) -> "FrameGraph":
+        """Authoritative validity: required frames, parent chain, spaces, scales.
+
+        Partially corrupt graphs (e.g. image+screen without window) must not
+        become trusted actuation topology.
+        """
+        img = self.get(self.image_frame_id) or self.by_space("image")
+        win = self.get(self.window_frame_id) or self.by_space("window")
+        scr = self.get(self.screen_frame_id) or self.by_space("screen")
+        if img is None or win is None or scr is None:
+            raise UnknownCoordinateFrame(
+                "FrameGraph incomplete for actuation — need image, window, screen"
+            )
+        if img.space != "image" or win.space != "window" or scr.space != "screen":
+            raise UnknownCoordinateFrame(
+                f"FrameGraph space mismatch: image={img.space!r} "
+                f"window={win.space!r} screen={scr.space!r}"
+            )
+        if img.parent_frame_id and img.parent_frame_id != win.frame_id:
+            raise UnknownCoordinateFrame(
+                f"image.parent={img.parent_frame_id!r} != window={win.frame_id!r}"
+            )
+        if win.parent_frame_id and win.parent_frame_id != scr.frame_id:
+            raise UnknownCoordinateFrame(
+                f"window.parent={win.parent_frame_id!r} != screen={scr.frame_id!r}"
+            )
+        for fr in (img, win, scr):
+            if not (float(fr.scale_x) > 0.0 and float(fr.scale_y) > 0.0):
+                raise UnknownCoordinateFrame(
+                    f"non-positive scale on frame {fr.frame_id!r}"
+                )
+            if float(fr.scale_x) != float(fr.scale_x) or float(fr.scale_y) != float(
+                fr.scale_y
+            ):
+                raise UnknownCoordinateFrame(f"NaN scale on frame {fr.frame_id!r}")
+        cid = str(self.capture_id or "").strip()
+        for fr in (img, win, scr):
+            fcid = str(fr.capture_id or "").strip()
+            if cid and fcid and fcid != cid:
+                raise StaleCoordinateFrame(
+                    f"frame {fr.frame_id!r} capture_id={fcid!r} != graph={cid!r}"
+                )
+        # Normalize resolved ids onto the graph for downstream resolve_frame.
+        self.image_frame_id = img.frame_id
+        self.window_frame_id = win.frame_id
+        self.screen_frame_id = scr.frame_id
+        if not self.capture_id:
+            self.capture_id = (
+                str(img.capture_id or win.capture_id or scr.capture_id or "").strip()
+            )
+        return self
+
+
+def assert_grounding_fresh(grounding: Grounding, graph: FrameGraph) -> None:
+    """Entity geometry is ephemeral to its capture — refuse cross-capture motors.
+
+    Semantic identity (EntityRef) may survive capture c42→c43; Grounding must not.
+    """
+    if grounding is None or graph is None:
+        raise GroundingUncertain("assert_grounding_fresh requires grounding and graph")
+    g_cid = str(grounding.capture_id or "").strip()
+    graph_cid = str(graph.capture_id or "").strip()
+    if not g_cid or not graph_cid:
+        raise GroundingUncertain(
+            "missing capture_id on Grounding or FrameGraph — re-ground"
+        )
+    if g_cid != graph_cid:
+        raise StaleCoordinateFrame(
+            f"Grounding.capture_id={g_cid!r} != active FrameGraph.capture_id="
+            f"{graph_cid!r} — re-ground"
         )
 
 
@@ -549,11 +624,13 @@ def ensure_screen_space(
     graph: Optional[FrameGraph] = None,
     surface: Any = None,
     fail_closed: bool = True,
+    grounding_capture_id: str = "",
 ) -> Tuple[Optional[Point], Optional[Bounds], Dict[str, Any]]:
     """Normalize to screen; refuse double-transform when already screen-tagged.
 
     Actuation: require ``frame_id`` or a stamped graph + known space. Unknown
     provenance raises ``GroundingUncertain`` / ``UnknownCoordinateFrame``.
+    When ``grounding_capture_id`` is set, it must match the active graph.
     """
     space = str(coordinate_space or "").strip().lower()
     fid = str(frame_id or "").strip()
@@ -573,10 +650,25 @@ def ensure_screen_space(
 
     # Hard ban: tagged screen with no conflicting frame passes through.
     if space == "screen" and (not fid or (graph and graph.get(fid) and graph.get(fid).space == "screen")):
+        g_cid = str(grounding_capture_id or "").strip()
+        if fail_closed and graph is not None and g_cid:
+            graph.validate_for_actuation()
+            assert_grounding_fresh(
+                Grounding(
+                    coordinate_frame_id=fid or graph.screen_frame_id,
+                    point=(float(point[0]), float(point[1]))
+                    if point and len(point) >= 2
+                    else None,
+                    capture_id=g_cid,
+                ),
+                graph,
+            )
         audit: Dict[str, Any] = {
             "source_frame_id": fid or (graph.screen_frame_id if graph else "screen"),
             "source_space": "screen",
             "screen_frame_id": graph.screen_frame_id if graph else "desktop:current",
+            "capture_id": graph.capture_id if graph else "",
+            "grounding_capture_id": g_cid,
             "double_transform_refused": True,
             "geometry_source": "screen",
         }
@@ -594,6 +686,20 @@ def ensure_screen_space(
         raise GroundingUncertain(
             "no FrameGraph on actuation path — stamp at capture; do not invent frames"
         )
+    if fail_closed and graph is not None:
+        graph.validate_for_actuation()
+        g_cid = str(grounding_capture_id or "").strip()
+        if g_cid:
+            assert_grounding_fresh(
+                Grounding(
+                    coordinate_frame_id=fid or graph.image_frame_id,
+                    point=(float(point[0]), float(point[1]))
+                    if point and len(point) >= 2
+                    else None,
+                    capture_id=g_cid,
+                ),
+                graph,
+            )
     if fail_closed and not fid and space not in {"image", "window", "screen"}:
         raise GroundingUncertain(
             "actionable geometry missing coordinate_frame_id and coordinate_space"
@@ -616,6 +722,7 @@ def ensure_screen_space(
         "source_space": src.space or space or "unknown",
         "screen_frame_id": screen.frame_id,
         "capture_id": (graph.capture_id if graph else src.capture_id),
+        "grounding_capture_id": str(grounding_capture_id or ""),
         "double_transform_refused": False,
         "geometry_source": space or src.space or "unknown",
     }

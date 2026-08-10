@@ -274,12 +274,28 @@ class BindingRef:
     def to_dict(self) -> Dict[str, Any]:
         return {"role": self.role}
 
+    def __str__(self) -> str:
+        return self.role
+
+
+@dataclass
+class CapabilityRef:
+    """Typed reference to a capability (not a free string)."""
+
+    name: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"capability": self.name}
+
+    def __str__(self) -> str:
+        return self.name
+
 
 @dataclass
 class ScopeRef:
     """Typed world-scope reference for intentions / methods."""
 
-    kind: str = ""  # surface | app | binding | world_signature
+    kind: str = ""  # surface | app | binding | method_context
     value: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -287,26 +303,88 @@ class ScopeRef:
 
 
 @dataclass
-class Predicate:
-    """Structured success / precondition predicate (prefer over raw strings)."""
+class MethodContext:
+    """Method-relevant semantic world state for failure scope.
 
-    subject: str = ""  # BindingRef.role or literal
-    relation: str = ""
-    object: str = ""
-    value: Any = None
+    Prefer this over opaque textual world hashes so irrelevant churn
+    (e.g. message timestamps) does not resurrect every failed method.
+    """
+
+    surface: str = ""
+    target_selected: bool = False
+    action_surface_visible: bool = False
+    overlay: str = ""
+
+    def signature(self) -> str:
+        return (
+            f"surface={str(self.surface or '').strip().lower()}"
+            f"|sel={int(bool(self.target_selected))}"
+            f"|act={int(bool(self.action_surface_visible))}"
+            f"|ov={str(self.overlay or '').strip().lower()}"
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "subject": self.subject,
+            "surface": self.surface,
+            "target_selected": bool(self.target_selected),
+            "action_surface_visible": bool(self.action_surface_visible),
+            "overlay": self.overlay,
+            "signature": self.signature(),
+        }
+
+    @classmethod
+    def from_any(cls, raw: Any) -> "MethodContext":
+        if isinstance(raw, MethodContext):
+            return raw
+        if isinstance(raw, dict):
+            return cls(
+                surface=str(raw.get("surface") or ""),
+                target_selected=bool(raw.get("target_selected")),
+                action_surface_visible=bool(raw.get("action_surface_visible")),
+                overlay=str(raw.get("overlay") or ""),
+            )
+        # Legacy: opaque string treated as overlay tag only (not a full hash).
+        text = str(raw or "").strip()
+        if not text:
+            return cls()
+        if text.startswith("surface="):
+            parts = dict(
+                p.split("=", 1) for p in text.split("|") if "=" in p
+            )
+            return cls(
+                surface=str(parts.get("surface") or ""),
+                target_selected=str(parts.get("sel") or "0") in {"1", "true"},
+                action_surface_visible=str(parts.get("act") or "0") in {"1", "true"},
+                overlay=str(parts.get("ov") or ""),
+            )
+        return cls(overlay=text)
+
+
+@dataclass
+class Predicate:
+    """Structured success / precondition predicate (prefer over raw strings)."""
+
+    subject: Any = ""  # BindingRef preferred; str accepted during migration
+    relation: str = ""
+    object: Any = ""  # CapabilityRef / BindingRef preferred
+    value: Any = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        subj = self.subject
+        obj = self.object
+        return {
+            "subject": subj.to_dict() if hasattr(subj, "to_dict") else subj,
             "relation": self.relation,
-            "object": self.object,
+            "object": obj.to_dict() if hasattr(obj, "to_dict") else obj,
             "value": self.value,
         }
 
     def as_legacy_string(self) -> str:
-        if self.relation and self.object:
-            return f"{self.subject}.{self.relation}:{self.object}".strip(".")
-        return self.relation or self.subject
+        subj = str(self.subject) if self.subject is not None else ""
+        obj = str(self.object) if self.object is not None else ""
+        if self.relation and obj:
+            return f"{subj}.{self.relation}:{obj}".strip(".")
+        return self.relation or subj
 
 
 @dataclass
@@ -316,6 +394,11 @@ class MethodFrontier:
     Eligibility derives from ``method_status`` (and explicit ineligible /
     invalidated / superseded sets). An inconclusive-grounding attempt leaves
     status UNTRIED → method stays eligible.
+
+    World-scoped ineffectiveness is coherent: when the method-relevant
+    ``MethodContext`` changes, ``refresh_method_frontier`` reactivates
+    ``INEFFECTIVE → UNTRIED`` rather than returning eligible while status
+    remains INEFFECTIVE.
     """
 
     known_untried: List[str] = field(default_factory=list)
@@ -326,17 +409,42 @@ class MethodFrontier:
     superseded: List[str] = field(default_factory=list)
     # method_id → MethodStatus value (decision state)
     method_status: Dict[str, str] = field(default_factory=dict)
-    # method_id → world signature under which INEFFECTIVE was recorded
+    # method_id → MethodContext.signature() under which INEFFECTIVE was recorded
     ineffective_in_world_signature: Dict[str, str] = field(default_factory=dict)
     # method_id → MethodSpec
     catalog: Dict[str, MethodSpec] = field(default_factory=dict)
+    # Last method-relevant context applied via refresh_method_frontier
+    active_context_signature: str = ""
 
     def status_of(self, method_id: str) -> str:
         return str(
             self.method_status.get(method_id) or MethodStatus.UNTRIED.value
         )
 
+    def refresh_method_frontier(self, world: Any = "") -> List[str]:
+        """Reactivate INEFFECTIVE methods when method-relevant context changes.
+
+        ``INEFFECTIVE@contextA`` + ``contextB`` → ``UNTRIED@contextB``.
+        Returns method ids that were reactivated.
+        """
+        ctx = MethodContext.from_any(world)
+        sig = ctx.signature()
+        reactivated: List[str] = []
+        for mid, prior in list(self.ineffective_in_world_signature.items()):
+            if self.status_of(mid) != MethodStatus.INEFFECTIVE.value:
+                continue
+            if prior and prior != sig:
+                self.method_status[mid] = MethodStatus.UNTRIED.value
+                self.ineffective_in_world_signature.pop(mid, None)
+                if mid not in self.known_untried and mid not in self.newly_discovered:
+                    self.known_untried.append(mid)
+                reactivated.append(mid)
+        self.active_context_signature = sig
+        return reactivated
+
     def eligible_methods(self, *, world_signature: str = "") -> List[str]:
+        if world_signature:
+            self.refresh_method_frontier(world_signature)
         blocked = set(self.currently_ineligible)
         blocked |= set(self.invalidated) | set(self.superseded)
         out: List[str] = []
@@ -357,11 +465,6 @@ class MethodFrontier:
                 MethodStatus.SUPERSEDED.value,
                 MethodStatus.SUCCEEDED.value,
             }:
-                # INEFFECTIVE may clear when world signature changes.
-                if st == MethodStatus.INEFFECTIVE.value and world_signature:
-                    prior = str(self.ineffective_in_world_signature.get(mid) or "")
-                    if prior and prior != world_signature:
-                        out.append(mid)
                 continue
             out.append(mid)
         return out
@@ -376,6 +479,7 @@ class MethodFrontier:
             "superseded": list(self.superseded),
             "method_status": dict(self.method_status),
             "ineffective_in_world_signature": dict(self.ineffective_in_world_signature),
+            "active_context_signature": self.active_context_signature,
             "catalog": {k: v.to_dict() for k, v in self.catalog.items()},
             "eligible": self.eligible_methods(),
         }
@@ -967,6 +1071,7 @@ def record_method_status(
     status: str,
     *,
     world_signature: str = "",
+    method_context: Any = None,
 ) -> None:
     """Update decision-state MethodStatus (orthogonal to attempt ledger)."""
     mid = str(method_id or "").strip()
@@ -974,8 +1079,12 @@ def record_method_status(
         return
     fr = frame.method_frontier
     fr.method_status[mid] = str(status or MethodStatus.UNTRIED.value)
-    if status == MethodStatus.INEFFECTIVE.value and world_signature:
-        fr.ineffective_in_world_signature[mid] = world_signature
+    if status == MethodStatus.INEFFECTIVE.value:
+        ctx = MethodContext.from_any(method_context if method_context is not None else world_signature)
+        sig = ctx.signature()
+        if sig:
+            fr.ineffective_in_world_signature[mid] = sig
+            fr.active_context_signature = sig
     if status == MethodStatus.UNTRIED.value:
         if mid not in fr.known_untried and mid not in fr.newly_discovered:
             fr.known_untried.append(mid)

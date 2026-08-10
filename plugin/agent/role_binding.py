@@ -73,8 +73,10 @@ class EntityObservation:
         }
 
 
+# DELETE_TICKET(forward_shims): remove after callers import procedures.forward_message.
+# Gate: no NEW call sites may use these shims (see contract_hardening_gate).
 def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
-    """Deprecated shim — import from procedures.forward_message instead."""
+    """DEPRECATED shim — import from procedures.forward_message instead."""
     from plugin.agent.procedures.forward_message import forward_role_specs as _specs
 
     return _specs(goal)
@@ -990,7 +992,7 @@ class RoleBinder:
 
 
 def role_for_action_family(family: str, *, phase: str = "") -> str:
-    """Compatibility shim — prefer procedures.forward_message.role_for_action_family."""
+    """DEPRECATED shim — import procedures.forward_message.role_for_action_family."""
     from plugin.agent.procedures.forward_message import (
         role_for_action_family as _proc_role,
     )
@@ -1005,7 +1007,11 @@ def verify_bound_identity(
     goal: Any,
     bindings: Optional[Dict[str, Any]] = None,
 ) -> tuple[bool, BindingProposal]:
-    """Post-action continuity: world evidence must still support the role."""
+    """Post-action continuity: world evidence must still support the role.
+
+    DELETE_TICKET(forward_shims): callers should pass ``RoleBindingSpec`` from
+    the active procedure rather than loading forward_message here.
+    """
     from plugin.agent.procedures.forward_message import role_specs_for_goal
 
     specs = role_specs_for_goal(goal)
