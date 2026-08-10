@@ -1,0 +1,8 @@
+# Default: keep JSON evidence, skip personal chat screenshots.
+**/screenshot.png
+**/*.png
+
+# Curriculum exceptions — system dialog / frozen live failures that must
+# ship with the packet (phenomenon goldens depend on complete bundles).
+!run_live_20260810_161105_*/screenshot.png
+!run_live_20260810_161105_*/**.png
