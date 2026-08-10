@@ -88,16 +88,17 @@ def _normalize_objects(raw: Any, frame: int) -> List[Dict[str, Any]]:
                 entry["bounds"] = [float(x) for x in bounds[:4]]
             except (TypeError, ValueError):
                 pass
+        geo_src = str(
+            item.get("geometry_source") or item.get("source") or ""
+        ).strip().lower()
+        if geo_src:
+            entry["geometry_source"] = geo_src[:40]
         space = str(item.get("coordinate_space") or "").strip().lower()
         if space in {"image", "screen"}:
             entry["coordinate_space"] = space
-        elif entry.get("bounds") and not space:
-            # Measured bounds (OCR/AX) are pointer/screen space by contract.
-            entry["coordinate_space"] = "screen"
-        elif entry.get("point") and not space:
-            # Producer contracts: OCR/AX → screen; VLM → image. Unknown stays
-            # untagged and is not executable downstream.
-            geo_src = str(item.get("geometry_source") or item.get("source") or "").strip().lower()
+        elif not space and (entry.get("point") or entry.get("bounds")):
+            # Producer provenance chooses the space — never point vs bounds.
+            # OCR/AX → screen; VLM → image; unknown stays untagged.
             if geo_src.startswith("ax") or geo_src.startswith("ocr") or geo_src in {
                 "accessibility",
                 "screen",

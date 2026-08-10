@@ -743,11 +743,12 @@ class IdentityResolver:
         return False, supporting, contradicting
 
     @staticmethod
-    def _values_same_identity(value: Any, referent: Any) -> bool:
-        """Generic identity equality — not substring-of-content.
+    def values_same_identity(value: Any, referent: Any) -> bool:
+        """Public value-level identity equality — not substring-of-content.
 
-        Accepts exact normalized match, or multi-token referent equal to the
-        full display value. Does not treat 'Name ExtraBrand' as 'Name'.
+        Distinct from :meth:`same_identity`, which scores an observation against
+        a referent. Downstream modules (query matching) should call this API
+        instead of the private ``_values_same_identity`` helper.
         """
         a, b = _norm(value), _norm(referent)
         if not a or not b:
@@ -758,6 +759,11 @@ class IdentityResolver:
         if a.replace("-", "") == b.replace("-", "") and " " not in a:
             return True
         return False
+
+    @staticmethod
+    def _values_same_identity(value: Any, referent: Any) -> bool:
+        """Internal alias for :meth:`values_same_identity`."""
+        return IdentityResolver.values_same_identity(value, referent)
 
 
 _DEFAULT_RESOLVER = IdentityResolver()

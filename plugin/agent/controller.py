@@ -355,42 +355,13 @@ def _note_post_action_reperceive(runtime: Any, *, open_conversation: str = "", s
 def _grounding_repair_satisfied(state: Any) -> bool:
     """True when the named reground target has fresh executable grounding.
 
-    Requires same semantic label, explicit coordinate_space, and geometry —
-    not merely seeing the word again on a stale/wrong layer.
+    Same semantic target + current capture/frame + Actor-grade executable
+    geometry + active surface. Delegates to grounding_validity so Controller
+    cannot clear repair under a looser definition than Actor.
     """
-    target = str(getattr(state, "grounding_reground_target", "") or "").strip().lower()
-    if not target:
-        return False
-    doc = getattr(state, "unified_world_document", None) or {}
-    if not isinstance(doc, dict):
-        return False
+    from plugin.agent.grounding_validity import grounding_repair_satisfied
 
-    def _label_hit(text: str) -> bool:
-        t = str(text or "").strip().lower()
-        return bool(t) and (target in t or t in target)
-
-    for obj in doc.get("objects") or []:
-        if not isinstance(obj, dict):
-            continue
-        if not _label_hit(str(obj.get("text") or obj.get("label") or "")):
-            continue
-        space = str(obj.get("coordinate_space") or "").strip().lower()
-        if space not in {"screen", "image"}:
-            continue
-        if obj.get("point") is None and not (
-            isinstance(obj.get("bounds"), (list, tuple)) and len(obj.get("bounds") or []) >= 4
-        ):
-            continue
-        return True
-    for aff in getattr(state, "last_grounded_affordance_set", None) or []:
-        if not isinstance(aff, dict):
-            continue
-        if not _label_hit(str(aff.get("target_label") or aff.get("label") or "")):
-            continue
-        acts = aff.get("actuators") or []
-        if acts:
-            return True
-    return False
+    return bool(grounding_repair_satisfied(state))
 
 
 def _clear_post_action_reperceive_if_fresh(

@@ -212,7 +212,7 @@ def originator_matches(observed: str, expected: str) -> bool:
         return False
     from plugin.agent.role_binding import IdentityResolver
 
-    return IdentityResolver._values_same_identity(observed, expected)
+    return IdentityResolver.values_same_identity(observed, expected)
 
 
 def evaluate_source_object_match(

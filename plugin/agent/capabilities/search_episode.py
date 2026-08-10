@@ -393,7 +393,7 @@ def advance_search_with_candidates(
         tokens.append(q)
 
     filtered = filter_search_candidates(
-        rows, referent=ref, query=q, evidence_tokens=tokens
+        rows, referent=ref, query=q, evidence_tokens=tokens, episode=ep
     )
     unique = unique_fitting_candidate(
         filtered, referent=ref, evidence_tokens=tokens, query=q
@@ -401,10 +401,31 @@ def advance_search_with_candidates(
     status = "ranking"
     chosen_label = ""
     chosen_id: Any = None
+    role_rejected_ids = [
+        x for x in list(ep.get("role_rejected_ids") or []) if x is not None
+    ][:24]
+    role_rejected_labels = [
+        str(x).strip()
+        for x in list(ep.get("role_rejected_labels") or [])
+        if str(x).strip()
+    ][:24]
+    just_rejected_unique = False
     if unique is not None and len(filtered) == 1:
-        status = "complete"
-        chosen_label = str(unique.get("label") or unique.get("text") or "")
-        chosen_id = unique.get("id")
+        gm = unique.get("goal_match")
+        if isinstance(gm, dict) and not bool(gm.get("binding_eligible")):
+            # Retrieval can finish; role must not resolve on a hard reject.
+            just_rejected_unique = True
+            status = "ranking"
+            chosen_label = str(unique.get("label") or unique.get("text") or "")
+            chosen_id = unique.get("id")
+            if chosen_id is not None and chosen_id not in role_rejected_ids:
+                role_rejected_ids.append(chosen_id)
+            if chosen_label and chosen_label not in role_rejected_labels:
+                role_rejected_labels.append(chosen_label)
+        else:
+            status = "complete"
+            chosen_label = str(unique.get("label") or unique.get("text") or "")
+            chosen_id = unique.get("id")
     elif unique is not None and len(filtered) > 1:
         # Strong unique among many after echo demotion — still rank when ambiguous.
         status = "ranking"
@@ -437,7 +458,17 @@ def advance_search_with_candidates(
         "filtered_count": len(filtered),
         "raw_count": len(rows),
         "explored_scopes": explored,
+        "role_rejected_ids": role_rejected_ids,
+        "role_rejected_labels": role_rejected_labels,
     }
+    if just_rejected_unique:
+        ep["retrieval_complete"] = True
+        ep["role_resolved"] = False
+        ep["role_unresolved_reason"] = "required identity constraint failed"
+        # Unique role-ineligible hit exhausted this frontier.
+        ep["status"] = "failed"
+        ep["fail_reason"] = "required identity constraint failed"
+        status = "failed"
     if status == "failed" and rows and not filtered:
         ep["fail_reason"] = "no_candidate_fits_referent"
     elif status == "failed" and not rows:
@@ -498,6 +529,20 @@ def note_retrieval_complete(
     if execution_state is None:
         return {}
     ep = search_episode_of(execution_state) or {}
+    rejected_ids = [
+        x for x in list(ep.get("role_rejected_ids") or []) if x is not None
+    ][:24]
+    rejected_labels = [
+        str(x).strip()
+        for x in list(ep.get("role_rejected_labels") or [])
+        if str(x).strip()
+    ][:24]
+    if not role_resolved:
+        if chosen_id is not None and chosen_id not in rejected_ids:
+            rejected_ids.append(chosen_id)
+        lab = str(chosen_label or "").strip()
+        if lab and lab not in rejected_labels:
+            rejected_labels.append(lab)
     ep = {
         **ep,
         "retrieval_complete": True,
@@ -511,6 +556,8 @@ def note_retrieval_complete(
         ),
         "role_unresolved_reason": str(role_unresolved_reason or "")[:160],
         "fail_reason": "",
+        "role_rejected_ids": rejected_ids,
+        "role_rejected_labels": rejected_labels,
     }
     if role_resolved:
         ep["status"] = "complete"
@@ -742,19 +789,64 @@ def clear_search_episode(execution_state: Any, *, why: str = "") -> None:
         pass
 
 
+def _is_role_rejected(
+    row: Dict[str, Any],
+    *,
+    rejected_ids: Sequence[Any],
+    rejected_labels: Sequence[str],
+) -> bool:
+    rid = row.get("id")
+    if rid is not None and rid in set(rejected_ids or []):
+        return True
+    label = str(row.get("label") or row.get("text") or "").strip()
+    if not label:
+        return False
+    low = _norm(label)
+    for rej in rejected_labels or []:
+        rj = _norm(rej)
+        if rj and (rj == low or rj in low or low in rj):
+            return True
+    return False
+
+
+def exclude_role_rejected_candidates(
+    candidates: Sequence[Dict[str, Any]],
+    episode: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Drop candidates already rejected for a hard identity/role constraint."""
+    ep = episode if isinstance(episode, dict) else {}
+    rejected_ids = list(ep.get("role_rejected_ids") or [])
+    rejected_labels = [
+        str(x) for x in (ep.get("role_rejected_labels") or []) if str(x).strip()
+    ]
+    if not rejected_ids and not rejected_labels:
+        return [dict(c) for c in candidates if isinstance(c, dict)]
+    out: List[Dict[str, Any]] = []
+    for row in candidates:
+        if not isinstance(row, dict):
+            continue
+        if _is_role_rejected(
+            row, rejected_ids=rejected_ids, rejected_labels=rejected_labels
+        ):
+            continue
+        out.append(dict(row))
+    return out
+
+
 def filter_search_candidates(
     candidates: Sequence[Dict[str, Any]],
     *,
     referent: str = "",
     query: str = "",
     evidence_tokens: Optional[Sequence[str]] = None,
+    episode: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Filter + soft-rank: demote query echoes when better fits exist."""
     tokens = [_norm(t) for t in (evidence_tokens or []) if _norm(t)]
     ref_n = _norm(referent)
     if ref_n and ref_n not in tokens:
         tokens = [ref_n] + tokens
-    rows = [dict(c) for c in candidates if isinstance(c, dict)]
+    rows = exclude_role_rejected_candidates(candidates, episode)
     if not rows:
         return []
 
@@ -840,15 +932,17 @@ def candidates_from_world_document(document: Optional[Dict[str, Any]]) -> List[D
         text = str(obj.get("text") or obj.get("label") or obj.get("name") or "").strip()
         if not text:
             continue
-        rows.append(
-            {
-                "label": text,
-                "id": obj.get("id"),
-                "kind": obj.get("kind"),
-                "point": obj.get("point"),
-                "matches_goal": bool(obj.get("matches_goal")),
-            }
-        )
+        row = {
+            "label": text,
+            "id": obj.get("id"),
+            "kind": obj.get("kind"),
+            "point": obj.get("point"),
+            "matches_goal": bool(obj.get("matches_goal")),
+        }
+        gm = obj.get("goal_match")
+        if isinstance(gm, dict):
+            row["goal_match"] = gm
+        rows.append(row)
     return rows
 
 
@@ -1086,7 +1180,29 @@ def search_continue_capability(
             referent=str(ep.get("referent") or ""),
             query=str(ep.get("query") or ""),
             evidence_tokens=list(ep.get("evidence_tokens") or []),
+            episode=ep,
         )
+        if not filtered and (
+            ep.get("role_rejected_ids") or ep.get("role_rejected_labels")
+        ):
+            # Hard identity rejects exhausted the frontier — do not reselect.
+            holder = _episode_holder(execution_state)
+            fail_search_episode(
+                holder,
+                reason=str(
+                    ep.get("role_unresolved_reason")
+                    or "role_rejected_no_remaining_candidates"
+                ),
+            )
+            try:
+                brief.search_episode = search_episode_of(holder)
+            except Exception:
+                pass
+            return (
+                "",
+                "",
+                "role-rejected candidates exhausted — broaden search or fail",
+            )
         unique = unique_fitting_candidate(
             filtered,
             referent=str(ep.get("referent") or ""),
@@ -1096,11 +1212,13 @@ def search_continue_capability(
         if unique is not None and len(filtered) == 1:
             label = str(unique.get("label") or unique.get("text") or "")
             holder = _episode_holder(execution_state)
-            unique_eligible = bool(
-                (unique.get("goal_match") or {}).get("binding_eligible")
-                if isinstance(unique.get("goal_match"), dict)
-                else False
-            )
+            # Explicit RoleBinder assessment required to reject; missing means
+            # no identity constraint attached to this candidate (contact search).
+            gm = unique.get("goal_match")
+            if isinstance(gm, dict):
+                unique_eligible = bool(gm.get("binding_eligible"))
+            else:
+                unique_eligible = True
             if unique_eligible:
                 complete_search_choice(
                     holder, chosen_label=label, chosen_id=unique.get("id")
@@ -1137,6 +1255,20 @@ def search_continue_capability(
                     brief.search_episode = search_episode_of(holder)
                 except Exception:
                     pass
+                # Hard reject recorded — do not immediately reselect same candidate.
+                fail_search_episode(
+                    holder,
+                    reason="required identity constraint failed",
+                )
+                try:
+                    brief.search_episode = search_episode_of(holder)
+                except Exception:
+                    pass
+                return (
+                    "",
+                    "",
+                    "retrieval complete; role-rejected unique candidate — broaden",
+                )
         if filtered and "resolve_entity" in allowed:
             top = filtered[0]
             label = str(top.get("label") or top.get("text") or "")
@@ -1144,11 +1276,11 @@ def search_continue_capability(
             scores = [float(r.get("_search_score") or 0) for r in filtered[:3]]
             # retrieval_complete ≠ role_resolved. Unique/high-margin candidates
             # finish retrieval; only binding_eligible commits role resolution.
-            top_eligible = bool(
-                (top.get("goal_match") or {}).get("binding_eligible")
-                if isinstance(top.get("goal_match"), dict)
-                else False
-            )
+            gm_top = top.get("goal_match")
+            if isinstance(gm_top, dict):
+                top_eligible = bool(gm_top.get("binding_eligible"))
+            else:
+                top_eligible = True
             retrieval_done = (
                 len(filtered) == 1
                 or (len(scores) >= 2 and scores[0] >= scores[1] + 2.0)
@@ -1192,8 +1324,32 @@ def search_continue_capability(
                 )
                 try:
                     brief.search_episode = search_episode_of(holder)
+                    ep = search_episode_of(holder) or ep
                 except Exception:
                     pass
+                # Course-correct: drop the reject and pick another candidate.
+                remaining = exclude_role_rejected_candidates(filtered, ep)
+                if not remaining:
+                    fail_search_episode(
+                        holder,
+                        reason="required identity constraint failed",
+                    )
+                    try:
+                        brief.search_episode = search_episode_of(holder)
+                    except Exception:
+                        pass
+                    return (
+                        "",
+                        "",
+                        "retrieval complete; role-rejected — no remaining candidates",
+                    )
+                nxt = remaining[0]
+                nxt_label = str(nxt.get("label") or nxt.get("text") or "")
+                return (
+                    "resolve_entity",
+                    nxt_label or str(ep.get("referent") or ep.get("query") or ""),
+                    "role reject recorded; resolve next non-rejected candidate",
+                )
             return (
                 "resolve_entity",
                 label or str(ep.get("referent") or ep.get("query") or ""),

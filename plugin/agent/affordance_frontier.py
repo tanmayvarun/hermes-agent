@@ -933,6 +933,7 @@ def publish_grounded_affordance_set(
 
     Same thoroughness contract as materialize_vision_entities for addressable
     objects: label + actuators/geometry + provenance, ready for invoke.
+    Stamps capture_id / coordinate_space so reground cannot accept a stale set.
     """
     out: List[Dict[str, Any]] = []
     if frontier is None:
@@ -942,12 +943,37 @@ def publish_grounded_affordance_set(
             except Exception:
                 pass
         return out
+    capture_id = ""
+    active_surface = ""
+    if execution_state is not None:
+        try:
+            from plugin.agent.grounding_validity import current_capture_id_from_state
+
+            capture_id = current_capture_id_from_state(execution_state)
+        except Exception:
+            capture_id = ""
+        doc = getattr(execution_state, "unified_world_document", None) or {}
+        if isinstance(doc, dict):
+            active_surface = str(doc.get("surface") or "").strip().lower()
+            if not capture_id:
+                capture_id = str(doc.get("capture_id") or "").strip()
+            ts = doc.get("task_surface")
+            if not capture_id and isinstance(ts, dict):
+                capture_id = str(ts.get("capture_id") or "").strip()
     for aff in frontier.observed_actions:
         if aff.family not in {"invoke_affordance", "commit_irreversible"}:
             continue
         if not aff.actuators:
             continue
-        out.append(aff.to_dict())
+        row = aff.to_dict()
+        if capture_id:
+            row["capture_id"] = capture_id
+        # Menu CTAs from AX/reveal are screen-space once grounded.
+        if not str(row.get("coordinate_space") or "").strip():
+            row["coordinate_space"] = "screen"
+        if active_surface and not str(row.get("owner_surface") or "").strip():
+            row["owner_surface"] = active_surface
+        out.append(row)
     if execution_state is not None:
         try:
             execution_state.last_grounded_affordance_set = list(out)
