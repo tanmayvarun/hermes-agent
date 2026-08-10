@@ -1,13 +1,13 @@
 {
-  "fixture_id": "parent_blocked_resolvable_storage",
+  "fixture_id": "known_precondition_executability",
   "family": "executability",
   "phenomenon": "environmental_blocker",
   "source_run": "20260810_161105",
-  "app": "WhatsApp",
-  "note": "Exact live bug class: perception saw blocker; executive must not SEARCH parent.",
+  "app": "",
+  "note": "Parent already carries free_storage>=N; assess unsatisfied.",
   "tags": [
     "hard_contract",
-    "from_live"
+    "counterfactual"
   ],
   "eval_level": "L1",
   "fixture_status": "golden",
@@ -44,7 +44,13 @@
     "id": "i_parent",
     "objective": "forward source message",
     "success_predicate": "forward_affordance_grounded",
-    "preconditions": []
+    "preconditions": [
+      {
+        "subject": "storage",
+        "relation": "available_bytes_at_least",
+        "value": 184350146
+      }
+    ]
   },
   "world_before": {},
   "resources": [],
@@ -54,9 +60,7 @@
     "status": "blocked_resolvable"
   },
   "forbidden": [
-    "continue_parent_search",
-    "normal_parent_act",
-    "generic_observe_loop"
+    "continue_parent_search"
   ],
   "frames": []
 }

@@ -37,11 +37,16 @@ def promote_candidate(
     tags: Optional[Sequence[str]] = None,
     root: str = DEFAULT_PHENOMENA_DIR,
     version: str = PHENOMENA_VERSION,
+    force_privacy: bool = False,
 ) -> Path:
     candidate_dir = Path(candidate_dir)
+    from plugin.evals.phenomena.redaction import require_promote_clearance
+
+    require_promote_clearance(candidate_dir, force=force_privacy)
     ann = _load_json(candidate_dir / "annotation.json")
     if str(ann.get("status") or "") not in {"approved", "annotated", "ready"}:
-        # Allow explicit CLI promote even if stub status — caller owns review.
+        # Allow explicit CLI promote even if stub status — caller owns review
+        # only when force_privacy was used; otherwise redaction already gated.
         pass
 
     texts: List[str] = []
@@ -174,12 +179,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--family", required=True)
     p.add_argument("--fixture-id", required=True)
     p.add_argument("--tag", action="append", default=[])
+    p.add_argument(
+        "--force-privacy",
+        action="store_true",
+        help="Bypass redaction gate after explicit human review (dangerous).",
+    )
     args = p.parse_args(list(argv) if argv is not None else None)
     path = promote_candidate(
         args.candidate,
         family=args.family,
         fixture_id=args.fixture_id,
         tags=args.tag,
+        force_privacy=bool(args.force_privacy),
     )
     print(f"promoted → {path}")
     return 0

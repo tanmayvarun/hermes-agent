@@ -28,6 +28,41 @@ def test_all_phenomenon_fixtures_pass():
     assert report["total"] >= 10
     fails = blocking_failures(report)
     assert not fails, fails
+    # Specs must not inflate the golden pass rate.
+    specs = report.get("specifications") or []
+    assert all(s.get("fixture_status") == "specification" for s in specs)
+    assert "L1" in (report.get("by_level") or {})
+    assert "L3" in (report.get("by_level") or {})
+    assert int((report["by_level"]["L3"]).get("n") or 0) >= 1
+
+
+def test_dynamic_precondition_discovery_has_empty_parent_preconditions():
+    by = load_all_fixtures()
+    fix = next(
+        f
+        for f in by["executability"]
+        if f.fixture_id == "dynamic_precondition_discovery"
+    )
+    assert not (fix.parent_intention or {}).get("preconditions")
+    from plugin.evals.phenomena.score import score_fixture
+
+    scored = score_fixture(fix)
+    assert scored.passed, scored.checks
+    assert scored.eval_level == "L3"
+
+
+def test_l3_trajectory_uses_gate_not_self_fulfill():
+    by = load_all_fixtures()
+    fix = next(f for f in by["trajectories"])
+    from plugin.evals.phenomena.score import score_fixture
+
+    scored = score_fixture(fix)
+    assert scored.passed, scored.checks
+    names = {c["name"] for c in scored.checks}
+    assert "no_premature_resume" in names
+    # Must have observed a real check detail, not a vacuous True.
+    detail = next(c["detail"] for c in scored.checks if c["name"] == "no_premature_resume")
+    assert "phase=" in detail
 
 
 def test_hard_blocking_storage_is_from_live_161105():

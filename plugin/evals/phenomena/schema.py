@@ -39,6 +39,29 @@ HARD_CONTRACT_TAGS = frozenset(
     }
 )
 
+# Eval validity levels (reported separately — not equivalent "goldens").
+# L1 Contract: structured state → primitive behaves
+# L2 Pipeline: production packet → semantic decision (perception+executive path)
+# L3 Trajectory: frozen sequence → gate/controller transitions + invariants
+EVAL_LEVELS = ("L1", "L2", "L3")
+
+# fixture_status:
+#   golden — production path exercised; failures block CI
+#   specification — documents intended API; NOT counted as a passing golden
+FIXTURE_STATUS_GOLDEN = "golden"
+FIXTURE_STATUS_SPECIFICATION = "specification"
+
+# Family → default level (overridable per fixture).
+FAMILY_DEFAULT_LEVEL = {
+    "warning_vs_blocker": "L1",
+    "executability": "L1",
+    "prerequisite_children": "L1",
+    "effect_resolution": "L1",
+    "effect_verification": "L1",
+    "resumption": "L1",
+    "trajectories": "L3",
+}
+
 
 @dataclass
 class GoldenFixture:
@@ -51,6 +74,12 @@ class GoldenFixture:
     app: str = ""
     note: str = ""
     tags: List[str] = field(default_factory=list)
+    # L1 | L2 | L3 — validity class for reporting.
+    eval_level: str = "L1"
+    # golden | specification
+    fixture_status: str = FIXTURE_STATUS_GOLDEN
+    # True when the scorer drives production gate/controller path.
+    production_exercised: bool = True
 
     # Raw / production-shaped evidence (paths or inline).
     observation_texts: List[str] = field(default_factory=list)
@@ -81,6 +110,9 @@ class GoldenFixture:
             "app": self.app,
             "note": self.note,
             "tags": list(self.tags),
+            "eval_level": self.eval_level,
+            "fixture_status": self.fixture_status,
+            "production_exercised": bool(self.production_exercised),
             "observation_texts": list(self.observation_texts),
             "system_facts": dict(self.system_facts),
             "view": dict(self.view),
@@ -97,14 +129,22 @@ class GoldenFixture:
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "GoldenFixture":
+        family = str(raw.get("family") or "")
+        level = str(raw.get("eval_level") or FAMILY_DEFAULT_LEVEL.get(family, "L1"))
+        status = str(raw.get("fixture_status") or FIXTURE_STATUS_GOLDEN)
+        if "specification" in [str(t) for t in (raw.get("tags") or [])]:
+            status = FIXTURE_STATUS_SPECIFICATION
         return cls(
             fixture_id=str(raw.get("fixture_id") or raw.get("id") or ""),
-            family=str(raw.get("family") or ""),
+            family=family,
             phenomenon=str(raw.get("phenomenon") or "environmental_blocker"),
             source_run=str(raw.get("source_run") or ""),
             app=str(raw.get("app") or ""),
             note=str(raw.get("note") or ""),
             tags=[str(t) for t in (raw.get("tags") or []) if str(t).strip()],
+            eval_level=level if level in EVAL_LEVELS else "L1",
+            fixture_status=status,
+            production_exercised=bool(raw.get("production_exercised", status == FIXTURE_STATUS_GOLDEN)),
             observation_texts=[
                 str(t) for t in (raw.get("observation_texts") or []) if str(t).strip()
             ],

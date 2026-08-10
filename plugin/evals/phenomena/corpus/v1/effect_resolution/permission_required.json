@@ -4,11 +4,15 @@
   "phenomenon": "effect_resolution",
   "source_run": "",
   "app": "",
-  "note": "",
+  "note": "SPECIFICATION: registry stub only — not a passing production golden.",
   "tags": [
     "counterfactual",
-    "stub"
+    "stub",
+    "specification"
   ],
+  "eval_level": "L1",
+  "fixture_status": "specification",
+  "production_exercised": false,
   "observation_texts": [],
   "system_facts": {
     "permission_prompt_available": true

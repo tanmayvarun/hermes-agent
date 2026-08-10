@@ -2820,235 +2820,42 @@ def run_goal_closed_loop(
         contract_complete = bool(contract.get("all_satisfied"))
 
         # --- Executability gate (before normal meta toward the parent goal) ---
-        # Warning ≠ Blocker ≠ Precondition. BLOCKED_RESOLVABLE spawns a
-        # prerequisite child and ACT toward its method; never hard-force storage
-        # via a special-case meta rewrite under storage_pressure alone.
+        # Warning ≠ Blocker ≠ Precondition. Production path lives in
+        # executability_gate.run_executability_gate (also driven by L3 evals).
         _skip_normal_meta = False
         meta = None  # type: ignore[assignment]
         sufficiency = None
         try:
-            from plugin.agent.executive.blocking import (
-                ExecutabilityStatus,
-                assess_executability,
-                detect_warnings_and_blockers,
-                resolve_methods_for_effect,
-            )
-            from plugin.agent.executive.intention_frame import (
-                Intention,
-                IntentionFrame,
-                IntentionOrigin,
-                active_intention_frame,
-                ensure_child_for_precondition,
-                evaluate_intention_success,
-                push_intention_frame,
-                resume_parent_after_child,
+            from plugin.agent.executive.executability_gate import (
+                run_executability_gate,
             )
 
-            _iframe = active_intention_frame(runtime.execution_state)
             _obs_for_block = [
                 getattr(node, "name", "") or getattr(node, "description", "")
                 for node in (observation.nodes or [])
             ]
-            _intent_id = (
-                str(_iframe.intention.id)
-                if _iframe is not None
-                else str(getattr(goal, "kind", "") or "goal")
-            )
-            _warns, _blockers = detect_warnings_and_blockers(
+            _gate = run_executability_gate(
+                runtime.execution_state,
                 observation_texts=_obs_for_block,
                 view=view if isinstance(view, dict) else {},
                 features=feats,
-                intention_id=_intent_id,
                 app=str(goal.app or ""),
+                goal_kind=str(getattr(goal, "kind", "") or "goal"),
+                iteration=iteration,
             )
-            runtime.execution_state.last_warnings = [  # type: ignore[attr-defined]
-                w.to_dict() for w in _warns
-            ]
-            runtime.execution_state.last_blocking_conditions = [  # type: ignore[attr-defined]
-                b.to_dict() for b in _blockers
-            ]
-            _exec_facts: Dict[str, Any] = {
-                "agent_owned_reclaimable_bytes": 1,
-                "blocked_app_recoverable": True,
-                "storage_pressure": bool(
-                    ((feats.extras or {}) if feats is not None else {}).get(
-                        "storage_pressure"
-                    )
-                ),
-            }
-
-            # Active prereq child: judge success_predicate from world, then
-            # recheck parent executability before resume.
-            if (
-                _iframe is not None
-                and _iframe.parent_intention_id
-                and str(_iframe.prerequisite_effect_key or "")
-            ):
-                _child_world = dict(view if isinstance(view, dict) else {})
-                _child_world.setdefault(
-                    "surface", _child_world.get("screen") or ""
-                )
-                _last_ev = getattr(
-                    runtime.execution_state, "last_housekeeping_evidence", None
-                )
-                if isinstance(_last_ev, dict):
-                    if _last_ev.get("available_storage_bytes") is not None:
-                        _child_world["available_storage_bytes"] = _last_ev[
-                            "available_storage_bytes"
-                        ]
-                    if _last_ev.get("headroom_met"):
-                        _child_world["free_storage_satisfied"] = True
-                if evaluate_intention_success(_iframe, world=_child_world):
-                    _resume = resume_parent_after_child(
-                        runtime.execution_state,
-                        world=_child_world,
-                        parent_blockers=_blockers,
-                        facts={
-                            **_exec_facts,
-                            "available_storage_bytes": _child_world.get(
-                                "available_storage_bytes"
-                            ),
-                            "app_operational": not bool(
-                                _exec_facts.get("storage_pressure")
-                            ),
-                        },
-                    )
-                    _log_cycle(
-                        log,
-                        iteration=iteration,
-                        phase="prerequisite_resume",
-                        payload=_resume,
-                        status="ok" if _resume.get("resumed") else "warn",
-                    )
-                    _iframe = active_intention_frame(runtime.execution_state)
-                else:
-                    # Child still unmet — ACT its first eligible method.
-                    _cap = ""
-                    _known = list(
-                        getattr(_iframe.method_frontier, "known_untried", None) or []
-                    )
-                    if _known:
-                        _spec = (_iframe.method_frontier.catalog or {}).get(_known[0])
-                        if _spec is not None:
-                            _cap = str(_spec.capability or _known[0])
-                    if not _cap:
-                        _cap = "relieve_host_storage"
-                    meta = MetaChoice(
-                        action=MetaAction.ACT,
-                        reason="prerequisite_child_method",
-                        capability=_cap,
-                    )
-                    _skip_normal_meta = True
-                    _log_cycle(
-                        log,
-                        iteration=iteration,
-                        phase="prerequisite_child_act",
-                        payload={
-                            "child_id": _iframe.intention.id,
-                            "capability": _cap,
-                            "effect_key": _iframe.prerequisite_effect_key,
-                        },
-                        status="ok",
-                    )
-
-            # Parent (or no frame): assess executability for interruption.
-            if not _skip_normal_meta and (
-                _iframe is None or not _iframe.parent_intention_id
-            ):
-                if _iframe is not None:
-                    _intent_id = str(_iframe.intention.id)
-                _assessment = assess_executability(
-                    intention_id=_intent_id,
-                    blockers=_blockers,
-                    world=view if isinstance(view, dict) else {},
-                    facts=_exec_facts,
-                )
+            _skip_normal_meta = bool(_gate.skip_normal_meta)
+            if _gate.meta is not None:
+                meta = _gate.meta
+            if _gate.phase:
                 _log_cycle(
                     log,
                     iteration=iteration,
-                    phase="executability",
-                    payload=_assessment.to_dict(),
-                    status=(
-                        "ok"
-                        if _assessment.status
-                        == ExecutabilityStatus.EXECUTABLE.value
-                        else "warn"
-                    ),
+                    phase=_gate.phase,
+                    payload=_gate.to_dict(),
+                    status="ok" if _gate.phase != "executability" or (
+                        _gate.assessment or {}
+                    ).get("status") == "executable" else "warn",
                 )
-                if (
-                    _assessment.status
-                    == ExecutabilityStatus.BLOCKED_RESOLVABLE.value
-                    and _assessment.resolvable_conditions
-                ):
-                    _bc = _assessment.resolvable_conditions[0]
-                    _key = _bc.semantic_key()
-                    _methods = [
-                        (m.capability, m.capability)
-                        for m in resolve_methods_for_effect(
-                            _bc.required_effect,
-                            facts=_exec_facts,
-                        )
-                    ]
-                    if _iframe is None:
-                        _iframe = IntentionFrame(
-                            intention=Intention(
-                                id=(
-                                    _intent_id
-                                    if str(_intent_id).startswith("i_")
-                                    else f"i_goal_{iteration}"
-                                ),
-                                objective=str(getattr(goal, "kind", "") or "goal"),
-                                success_predicate="goal_complete",
-                                created_from=IntentionOrigin(kind="goal"),
-                            )
-                        )
-                        push_intention_frame(runtime.execution_state, _iframe)
-                    _child = ensure_child_for_precondition(
-                        runtime.execution_state,
-                        _iframe,
-                        effect_key=_key,
-                        success_predicate=_key,
-                        objective=f"Resolve {_key}",
-                        methods=_methods,
-                        blocking_condition_id=_bc.id,
-                    )
-                    if _child is not None and _methods:
-                        meta = MetaChoice(
-                            action=MetaAction.ACT,
-                            reason="blocked_resolvable_prerequisite",
-                            capability=str(_methods[0][0]),
-                        )
-                        _skip_normal_meta = True
-                        _log_cycle(
-                            log,
-                            iteration=iteration,
-                            phase="prerequisite_child",
-                            payload={
-                                "child_id": _child.intention.id,
-                                "effect_key": _key,
-                                "methods": _methods,
-                                "blocker": _bc.to_dict(),
-                            },
-                            status="ok",
-                        )
-                elif _assessment.status == ExecutabilityStatus.UNKNOWN.value:
-                    runtime.execution_state.must_executive_reperceive = True
-                    meta = MetaChoice(
-                        action=MetaAction.PERCEIVE,
-                        reason="executability_unknown",
-                        capability="",
-                    )
-                    _skip_normal_meta = True
-                elif (
-                    _assessment.status
-                    == ExecutabilityStatus.BLOCKED_UNRESOLVABLE.value
-                ):
-                    meta = MetaChoice(
-                        action=MetaAction.ASK,
-                        reason="blocked_unresolvable_prerequisite",
-                        capability="",
-                    )
-                    _skip_normal_meta = True
         except Exception as _exec_exc:
             logger.debug("executability gate skipped: %s", _exec_exc)
             _skip_normal_meta = False

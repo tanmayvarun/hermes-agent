@@ -6,7 +6,7 @@
   "seed_run": "20260810_161105",
   "families": {
     "warning_vs_blocker": 4,
-    "executability": 3,
+    "executability": 5,
     "prerequisite_children": 2,
     "effect_resolution": 5,
     "effect_verification": 2,
@@ -23,7 +23,7 @@
     {
       "event": "seed",
       "source_run": "20260810_161105",
-      "n_fixtures": 20
+      "n_fixtures": 22
     }
   ],
   "workflow": [

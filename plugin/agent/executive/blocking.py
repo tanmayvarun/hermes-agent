@@ -10,7 +10,6 @@ Capability executes and returns evidence; IntentionFrame judges success_predicat
 
 from __future__ import annotations
 
-import re
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -213,35 +212,13 @@ class ResourceCandidate:
         return asdict(self)
 
 
-# --- Effect → methods (applicability-aware; not a hard switchboard) ----------
+# --- Effect → methods (applicability-aware; domain adapters register) ----------
 
 
-_EFFECT_METHODS: Dict[str, List[ResolvedMethod]] = {
-    "storage:available_bytes_at_least": [
-        ResolvedMethod(
-            capability="relieve_host_storage",
-            applicable_if="agent_owned_reclaimable_bytes > 0",
-            effect_key="storage:available_bytes_at_least",
-        )
-    ],
-    "app_operational:is_true": [
-        ResolvedMethod(
-            capability="recover_blocked_app",
-            applicable_if="blocked_app_recoverable",
-            effect_key="app_operational:is_true",
-        )
-    ],
-    # Golden stubs — not wired to live actuators yet.
-    "authenticated:is_true": [
-        ResolvedMethod(capability="authenticate", applicable_if="auth_flow_available")
-    ],
-    "permission_granted:is_true": [
-        ResolvedMethod(capability="obtain_permission", applicable_if="permission_prompt_available")
-    ],
-    "dependency_present:is_true": [
-        ResolvedMethod(capability="install_dependency", applicable_if="dependency_installable")
-    ],
-}
+def _effect_methods() -> Dict[str, List[ResolvedMethod]]:
+    from plugin.agent.executive.effect_resolvers import effect_method_catalog
+
+    return effect_method_catalog()
 
 
 def resolve_methods_for_effect(
@@ -252,7 +229,7 @@ def resolve_methods_for_effect(
     """Return applicable candidate methods for a required effect."""
     facts = facts if isinstance(facts, dict) else {}
     prefix = f"{str(effect.subject or '').strip().lower()}:{str(effect.relation or '').strip().lower()}"
-    candidates = list(_EFFECT_METHODS.get(prefix) or [])
+    candidates = list(_effect_methods().get(prefix) or [])
     out: List[ResolvedMethod] = []
     for m in candidates:
         if _applicable(m.applicable_if, facts):
@@ -345,30 +322,7 @@ def rank_resolution_plan(
     }
 
 
-# --- Detection: progress blocker vs mere warning ------------------------------
-
-
-_STORAGE_CANNOT_CONTINUE = re.compile(
-    r"(storage is too full|free up at least|to keep using .{0,40}free up|"
-    r"insufficient storage|not enough storage|disk (is )?full)",
-    re.I,
-)
-_STORAGE_MB_ASK = re.compile(
-    r"free up at least\s+([0-9]+(?:\.[0-9]+)?)\s*(mb|gb|mib|gib)",
-    re.I,
-)
-_STORAGE_WEAK_WARNING = re.compile(
-    r"(storage almost full|low (on )?storage|running out of space|"
-    r"disk space is low|storage getting full)",
-    re.I,
-)
-
-
-def _bytes_from_ask(amount: float, unit: str) -> int:
-    u = unit.lower()
-    if u in {"gb", "gib"}:
-        return int(amount * (1024**3))
-    return int(amount * (1024**2))
+# --- Detection: generic substrate delegates to domain detectors --------------
 
 
 def detect_warnings_and_blockers(
@@ -381,127 +335,18 @@ def detect_warnings_and_blockers(
 ) -> Tuple[List[Warning], List[BlockingCondition]]:
     """Split mere warnings from intention-scoped progress blockers.
 
-    High-confidence storage blocker requires inability-to-continue language
-    and/or a quantified reclaim ask on a blocking dialog surface — not keyword
-    "storage" alone.
+    Domain interpreters live under ``blocker_detectors/``. This entrypoint is
+    the substrate facade used by the executability gate and L1 contract evals.
     """
-    view = view if isinstance(view, dict) else {}
-    extras: Dict[str, Any] = {}
-    if features is not None:
-        if hasattr(features, "extras") and isinstance(features.extras, dict):
-            extras = dict(features.extras)
-        elif isinstance(features, dict):
-            extras = dict(features.get("extras") or features)
+    from plugin.agent.executive.blocker_detectors import run_detectors
 
-    texts: List[str] = []
-    for t in observation_texts or []:
-        if str(t).strip():
-            texts.append(str(t).strip())
-    for w in extras.get("system_warnings") or view.get("system_warnings") or []:
-        if str(w).strip():
-            texts.append(str(w).strip())
-    for d in extras.get("dialogs") or view.get("dialogs") or []:
-        if str(d).strip():
-            texts.append(str(d).strip())
-    blob = "\n".join(texts)
-
-    warnings: List[Warning] = []
-    blockers: List[BlockingCondition] = []
-
-    screen = str(
-        extras.get("screen_kind") or view.get("screen") or extras.get("wa_screen") or ""
-    ).strip().lower()
-    dialog_like = screen in {"dialog", "modal"} or bool(extras.get("has_dialog"))
-    storage_pressure_flag = bool(extras.get("storage_pressure") or view.get("storage_pressure"))
-
-    strong = bool(_STORAGE_CANNOT_CONTINUE.search(blob))
-    weak = bool(_STORAGE_WEAK_WARNING.search(blob)) and not strong
-    mb = _STORAGE_MB_ASK.search(blob)
-    required_bytes: Optional[int] = None
-    if mb:
-        try:
-            required_bytes = _bytes_from_ask(float(mb.group(1)), mb.group(2))
-        except (TypeError, ValueError):
-            required_bytes = None
-
-    # Progress blocker: strong language + (dialog surface or quantified ask).
-    is_progress_blocker = strong and (dialog_like or required_bytes is not None or storage_pressure_flag)
-    # Counterexample: weak toast / operational app → warning only.
-    if weak and not is_progress_blocker:
-        warnings.append(
-            Warning(
-                kind="low_storage",
-                severity="warn",
-                evidence=[t for t in texts if _STORAGE_WEAK_WARNING.search(t)][:4]
-                or texts[:2],
-            )
-        )
-
-    if is_progress_blocker:
-        effect = EffectPredicate(
-            subject="storage",
-            relation="available_bytes_at_least",
-            value=int(required_bytes or 0),
-        )
-        conf = 0.55
-        if dialog_like:
-            conf += 0.2
-        if required_bytes:
-            conf += 0.15
-        if strong:
-            conf += 0.1
-        suggested = ""
-        if "system settings" in blob.lower() or "storage" in blob.lower():
-            if "system settings" in blob.lower():
-                suggested = "system_settings_storage"
-        blocks = [IntentionRef(intention_id=intention_id)] if intention_id else []
-        blockers.append(
-            BlockingCondition(
-                kind="insufficient_storage",
-                required_effect=effect,
-                blocks=blocks,
-                evidence=texts[:6],
-                provenance={
-                    "surface_ownership": str(app or extras.get("app") or view.get("app") or ""),
-                    "modality": "blocking_dialog" if dialog_like else "warning_text",
-                    "confidence": min(1.0, conf),
-                    "language_cannot_continue": strong,
-                    "quantified_ask_bytes": required_bytes,
-                },
-                suggested_method_from_environment=suggested,
-                lifecycle=BlockerLifecycle.CONFIRMED.value
-                if conf >= 0.75
-                else BlockerLifecycle.DETECTED.value,
-            )
-        )
-        # Distinct second precondition: app may remain non-operational after
-        # free-space is met (dismiss/recover dialog). Child B only after parent
-        # recheck — assess orders unmet preds; storage first, then this.
-        blockers.append(
-            BlockingCondition(
-                kind="app_not_operational",
-                required_effect=EffectPredicate(
-                    subject="app_operational",
-                    relation="is_true",
-                    value=True,
-                ),
-                blocks=list(blocks),
-                evidence=texts[:4],
-                provenance={
-                    "modality": "blocking_dialog" if dialog_like else "warning_text",
-                    "confidence": min(1.0, conf),
-                    "paired_with": "insufficient_storage",
-                },
-                lifecycle=BlockerLifecycle.DETECTED.value,
-            )
-        )
-    elif strong and not dialog_like and required_bytes is None:
-        # Ambiguous strong-ish text without dialog — warning, not interrupt.
-        warnings.append(
-            Warning(kind="low_storage", severity="warn", evidence=texts[:3])
-        )
-
-    return warnings, blockers
+    return run_detectors(
+        observation_texts=observation_texts,
+        view=view,
+        features=features,
+        intention_id=intention_id,
+        app=app,
+    )
 
 
 def assess_executability(

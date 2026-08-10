@@ -10,6 +10,9 @@
     "no_duplicate_child",
     "from_live"
   ],
+  "eval_level": "L1",
+  "fixture_status": "golden",
+  "production_exercised": true,
   "observation_texts": [
     "Storage is too full",
     "To keep using WhatsApp on this device, free up at least 175.81 MB of your device's",
@@ -41,13 +44,7 @@
     "id": "i_parent",
     "objective": "forward source message",
     "success_predicate": "forward_affordance_grounded",
-    "preconditions": [
-      {
-        "subject": "storage",
-        "relation": "available_bytes_at_least",
-        "value": 184350146
-      }
-    ]
+    "preconditions": []
   },
   "world_before": {},
   "resources": [],

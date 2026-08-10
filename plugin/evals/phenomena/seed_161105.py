@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from plugin.evals.phenomena.schema import (
     DEFAULT_PHENOMENA_DIR,
+    FIXTURE_STATUS_SPECIFICATION,
     PHENOMENA_VERSION,
     GoldenFixture,
     write_fixture,
@@ -28,10 +29,17 @@ STORAGE_DIALOG_TEXTS = [
     "Exit WhatsApp",
 ]
 
+# Forward intention as discovered in the wild — no storage threshold attached.
 PARENT = {
     "id": "i_parent",
     "objective": "forward source message",
     "success_predicate": "forward_affordance_grounded",
+    "preconditions": [],
+}
+
+# Only for known_precondition_executability — precondition already attached.
+PARENT_WITH_STORAGE_PRE = {
+    **PARENT,
     "preconditions": [
         {
             "subject": "storage",
@@ -356,76 +364,99 @@ def _all() -> List[GoldenFixture]:
             forbidden=["delete_user_documents"],
         )
     )
+    # SPECIFICATION only — method stubs exist; no production detector/gate path yet.
+    for fid, subject, capability, fact in [
+        (
+            "permission_required",
+            "permission_granted",
+            "obtain_permission",
+            "permission_prompt_available",
+        ),
+        (
+            "authentication_required",
+            "authenticated",
+            "authenticate",
+            "auth_flow_available",
+        ),
+        (
+            "missing_dependency",
+            "dependency_present",
+            "install_dependency",
+            "dependency_installable",
+        ),
+    ]:
+        fixtures.append(
+            GoldenFixture(
+                fixture_id=fid,
+                family="effect_resolution",
+                phenomenon="effect_resolution",
+                tags=["counterfactual", "stub", "specification"],
+                eval_level="L1",
+                fixture_status=FIXTURE_STATUS_SPECIFICATION,
+                production_exercised=False,
+                note="SPECIFICATION: registry stub only — not a passing production golden.",
+                system_facts={fact: True},
+                parent_intention={
+                    "required_effect": {
+                        "subject": subject,
+                        "relation": "is_true",
+                        "value": True,
+                    }
+                },
+                gold={
+                    "required_effect": {
+                        "subject": subject,
+                        "relation": "is_true",
+                        "value": True,
+                    },
+                    "top_capability": capability,
+                },
+            )
+        )
+
+    # Dynamic discovery vs known precondition (do not collapse).
     fixtures.append(
         GoldenFixture(
-            fixture_id="permission_required",
-            family="effect_resolution",
-            phenomenon="effect_resolution",
-            tags=["counterfactual", "stub"],
-            system_facts={"permission_prompt_available": True},
-            parent_intention={
-                "required_effect": {
-                    "subject": "permission_granted",
-                    "relation": "is_true",
-                    "value": True,
-                }
-            },
+            fixture_id="dynamic_precondition_discovery",
+            family="executability",
+            phenomenon="environmental_blocker",
+            source_run=SOURCE_RUN,
+            app="WhatsApp",
+            note="Parent Forward has no storage precondition; dialog must derive it.",
+            tags=["hard_contract", "from_live", "dynamic_discovery"],
+            eval_level="L3",
+            production_exercised=True,
+            observation_texts=list(STORAGE_DIALOG_TEXTS),
+            system_facts={"agent_owned_reclaimable_bytes": 3_400_000_000},
+            view=_dialog_view(),
+            features=_dialog_features(),
+            parent_intention=dict(PARENT),  # empty preconditions
             gold={
-                "required_effect": {
-                    "subject": "permission_granted",
-                    "relation": "is_true",
-                    "value": True,
-                },
-                "top_capability": "obtain_permission",
+                "score_via": "dynamic_precondition_discovery",
+                "status": "blocked_resolvable",
             },
+            forbidden=["continue_parent_search"],
         )
     )
     fixtures.append(
         GoldenFixture(
-            fixture_id="authentication_required",
-            family="effect_resolution",
-            phenomenon="effect_resolution",
-            tags=["counterfactual", "stub"],
-            system_facts={"auth_flow_available": True},
-            parent_intention={
-                "required_effect": {
-                    "subject": "authenticated",
-                    "relation": "is_true",
-                    "value": True,
-                }
+            fixture_id="known_precondition_executability",
+            family="executability",
+            phenomenon="environmental_blocker",
+            source_run=SOURCE_RUN,
+            note="Parent already carries free_storage>=N; assess unsatisfied.",
+            tags=["hard_contract", "counterfactual"],
+            eval_level="L1",
+            observation_texts=list(STORAGE_DIALOG_TEXTS),
+            system_facts={
+                "agent_owned_reclaimable_bytes": 3_400_000_000,
+                "storage_pressure": True,
             },
-            gold={
-                "required_effect": {
-                    "subject": "authenticated",
-                    "relation": "is_true",
-                    "value": True,
-                },
-                "top_capability": "authenticate",
-            },
-        )
-    )
-    fixtures.append(
-        GoldenFixture(
-            fixture_id="missing_dependency",
-            family="effect_resolution",
-            phenomenon="effect_resolution",
-            tags=["counterfactual", "stub"],
-            system_facts={"dependency_installable": True},
-            parent_intention={
-                "required_effect": {
-                    "subject": "dependency_present",
-                    "relation": "is_true",
-                    "value": True,
-                }
-            },
-            gold={
-                "required_effect": {
-                    "subject": "dependency_present",
-                    "relation": "is_true",
-                    "value": True,
-                },
-                "top_capability": "install_dependency",
-            },
+            view=_dialog_view(),
+            features=_dialog_features(),
+            parent_intention=dict(PARENT_WITH_STORAGE_PRE),
+            gold={"status": "blocked_resolvable"},
+            forbidden=["continue_parent_search"],
         )
     )
 
@@ -561,11 +592,16 @@ def _all() -> List[GoldenFixture]:
                 "not exact motor steps."
             ),
             tags=["hard_contract", "from_live", "trajectory"],
+            eval_level="L3",
+            production_exercised=True,
             observation_texts=list(STORAGE_DIALOG_TEXTS),
-            system_facts={"agent_owned_reclaimable_bytes": 3_400_000_000},
+            system_facts={
+                "agent_owned_reclaimable_bytes": 3_400_000_000,
+                "required_bytes": REQUIRED_BYTES,
+            },
             view=_dialog_view(),
             features=_dialog_features(),
-            parent_intention=dict(PARENT),
+            parent_intention=dict(PARENT),  # no pre-attached storage precondition
             frames=[
                 {
                     "id": "A",
@@ -587,9 +623,11 @@ def _all() -> List[GoldenFixture]:
                     "parent_suspended",
                     "no_duplicate_child",
                     "safe_method",
+                    "no_premature_resume",
                     "effect_verified",
                     "eventual_parent_recovery",
                 ],
+                "required_bytes": REQUIRED_BYTES,
                 "free_after_bytes": REQUIRED_BYTES + 10_000_000,
                 "blocker_absent_after": True,
                 "expect_resume": True,

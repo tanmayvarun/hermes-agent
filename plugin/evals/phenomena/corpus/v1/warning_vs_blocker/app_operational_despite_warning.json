@@ -9,6 +9,9 @@
     "hard_contract",
     "counterfactual"
   ],
+  "eval_level": "L1",
+  "fixture_status": "golden",
+  "production_exercised": true,
   "observation_texts": [
     "Running out of space on this Mac"
   ],
@@ -26,13 +29,7 @@
     "id": "i_parent",
     "objective": "forward source message",
     "success_predicate": "forward_affordance_grounded",
-    "preconditions": [
-      {
-        "subject": "storage",
-        "relation": "available_bytes_at_least",
-        "value": 184350146
-      }
-    ]
+    "preconditions": []
   },
   "world_before": {},
   "resources": [],

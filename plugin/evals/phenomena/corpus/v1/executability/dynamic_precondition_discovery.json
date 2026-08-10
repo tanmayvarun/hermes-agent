@@ -1,15 +1,16 @@
 {
-  "fixture_id": "parent_blocked_resolvable_storage",
+  "fixture_id": "dynamic_precondition_discovery",
   "family": "executability",
   "phenomenon": "environmental_blocker",
   "source_run": "20260810_161105",
   "app": "WhatsApp",
-  "note": "Exact live bug class: perception saw blocker; executive must not SEARCH parent.",
+  "note": "Parent Forward has no storage precondition; dialog must derive it.",
   "tags": [
     "hard_contract",
-    "from_live"
+    "from_live",
+    "dynamic_discovery"
   ],
-  "eval_level": "L1",
+  "eval_level": "L3",
   "fixture_status": "golden",
   "production_exercised": true,
   "observation_texts": [
@@ -21,8 +22,7 @@
     "Exit WhatsApp"
   ],
   "system_facts": {
-    "agent_owned_reclaimable_bytes": 3400000000,
-    "storage_pressure": true
+    "agent_owned_reclaimable_bytes": 3400000000
   },
   "view": {
     "screen": "dialog",
@@ -51,12 +51,11 @@
   "offered_capabilities": [],
   "artifacts": {},
   "gold": {
+    "score_via": "dynamic_precondition_discovery",
     "status": "blocked_resolvable"
   },
   "forbidden": [
-    "continue_parent_search",
-    "normal_parent_act",
-    "generic_observe_loop"
+    "continue_parent_search"
   ],
   "frames": []
 }

@@ -10,6 +10,9 @@
     "no_premature_resume",
     "from_live"
   ],
+  "eval_level": "L1",
+  "fixture_status": "golden",
+  "production_exercised": true,
   "observation_texts": [],
   "system_facts": {
     "agent_owned_reclaimable_bytes": 1,
@@ -21,13 +24,7 @@
     "id": "i_parent",
     "objective": "forward source message",
     "success_predicate": "forward_affordance_grounded",
-    "preconditions": [
-      {
-        "subject": "storage",
-        "relation": "available_bytes_at_least",
-        "value": 184350146
-      }
-    ]
+    "preconditions": []
   },
   "world_before": {
     "available_storage_bytes": 184350156,

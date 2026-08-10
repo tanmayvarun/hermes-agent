@@ -70,6 +70,23 @@ Re-seed the 161105 curriculum (idempotent):
 python -m plugin.evals.phenomena.seed_161105
 ```
 
+## Eval validity levels (reported separately)
+
+| Level | Meaning | Example |
+| --- | --- | --- |
+| **L1 Contract** | Structured state → primitive behaves | `detect_warnings_and_blockers`, `assess_executability` |
+| **L2 Pipeline** | Production packet → semantic decision | (reserved; perception→executive) |
+| **L3 Trajectory** | Frozen sequence → **production gate** | `run_executability_gate` replay |
+
+L1 can go 100% green while the agent still misbehaves — do not treat L1 as behavioral proof. L3 drives [`executability_gate.py`](../../agent/executive/executability_gate.py) (same path as the controller).
+
+## Fixture status
+
+| Status | CI |
+| --- | --- |
+| `golden` | Failures block |
+| `specification` | Documented intent only (auth/perm/dep stubs today) — **not** a passing golden |
+
 ## Hard contracts (zero regression)
 
 - Warning cannot automatically suspend parent
@@ -80,3 +97,21 @@ python -m plugin.evals.phenomena.seed_161105
 
 Wired into `plugin.evals.check` / `gates.py` as
 `phenomenon_curriculum_hard_contracts`.
+
+## Privacy before promote
+
+```text
+harvest raw locally → candidate → redaction scan → human privacy_ack → promote
+```
+
+`python -m plugin.evals.phenomena.promote` refuses screenshots without
+`annotation.privacy_ack=true` (or `--force-privacy` after review).
+
+## Domain adapters
+
+```text
+executive/blocking.py                 # generic substrate
+executive/blocker_detectors/storage.py
+executive/effect_resolvers/storage.py
+executive/executability_gate.py       # controller + L3 share this
+```

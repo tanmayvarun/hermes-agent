@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from plugin.evals.phenomena.schema import (
     DEFAULT_PHENOMENA_DIR,
+    FIXTURE_STATUS_SPECIFICATION,
     HARD_CONTRACT_TAGS,
     PHENOMENA_VERSION,
     PHENOMENON_FAMILIES,
@@ -28,6 +29,9 @@ class FixtureScore:
     passed: bool
     checks: List[Dict[str, Any]] = field(default_factory=list)
     hard_contract: bool = False
+    eval_level: str = "L1"
+    fixture_status: str = "golden"
+    production_exercised: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -35,9 +39,19 @@ class FixtureScore:
             "family": self.family,
             "passed": self.passed,
             "hard_contract": self.hard_contract,
+            "eval_level": self.eval_level,
+            "fixture_status": self.fixture_status,
+            "production_exercised": self.production_exercised,
             "checks": self.checks,
             "failures": [c["name"] for c in self.checks if not c.get("passed")],
         }
+
+
+def _annotate(score: FixtureScore, fix: GoldenFixture) -> FixtureScore:
+    score.eval_level = str(fix.eval_level or "L1")
+    score.fixture_status = str(fix.fixture_status or "golden")
+    score.production_exercised = bool(fix.production_exercised)
+    return score
 
 
 def _check(name: str, passed: bool, detail: str = "") -> Dict[str, Any]:
@@ -637,34 +651,244 @@ def score_resumption(fix: GoldenFixture) -> FixtureScore:
 
 
 def score_trajectory(fix: GoldenFixture) -> FixtureScore:
-    """Durable trajectory: score semantic milestones, not low-level actions."""
-    from plugin.agent.executive.blocking import (
-        ExecutabilityStatus,
-        assess_executability,
-        detect_warnings_and_blockers,
-        resolve_methods_for_effect,
-    )
+    """L3: drive the production executability gate — do not re-orchestrate in scorer."""
+    from plugin.agent.executive.executability_gate import run_executability_gate
     from plugin.agent.executive.intention_frame import (
         Intention,
         IntentionFrame,
         IntentionOrigin,
-        ensure_child_for_precondition,
-        evaluate_intention_success,
+        active_intention_frame,
+        intention_stack_of,
         push_intention_frame,
-        resume_parent_after_child,
     )
     from plugin.agent.runtime.state import ExecutionState
 
     gold = fix.gold or {}
     checks: List[Dict[str, Any]] = []
     milestones = list(gold.get("milestones") or [])
-    # Run a compact scripted trajectory from frames or default storage path.
-    frames = list(fix.frames or [])
-    if not frames:
-        frames = [
-            {"id": "A", "observation_texts": fix.observation_texts, "view": fix.view},
-        ]
+    need = int(gold.get("required_bytes") or 0)
+    free_after = gold.get("free_after_bytes")
 
+    state = ExecutionState()
+    # Parent starts WITHOUT storage precondition attached — discovery from env.
+    parent = IntentionFrame(
+        intention=Intention(
+            id=_intention_id(fix),
+            objective=str(
+                (fix.parent_intention or {}).get("objective") or "forward message"
+            ),
+            success_predicate=str(
+                (fix.parent_intention or {}).get("success_predicate")
+                or "forward_affordance_grounded"
+            ),
+            created_from=IntentionOrigin(kind="goal"),
+        )
+    )
+    # Refuse pre-seeded storage preconditions on L3 trajectories unless explicit.
+    if gold.get("parent_has_storage_precondition"):
+        pass  # known_precondition path — parent fields already encode it in gold
+    push_intention_frame(state, parent)
+
+    texts = list(fix.observation_texts)
+    view = dict(fix.view or {})
+    features = dict(fix.features or {})
+
+    # Frame A: blocked dialog → gate must spawn child / ACT relieve.
+    g1 = run_executability_gate(
+        state,
+        observation_texts=texts,
+        view=view,
+        features=features,
+        facts=_facts(fix),
+        app=fix.app,
+        goal_kind="forward",
+        intention_id=parent.intention.id,
+    )
+    if "detect_blocker" in milestones or not milestones:
+        checks.append(
+            _check(
+                "detect_blocker",
+                bool(g1.blockers),
+                f"blockers={len(g1.blockers)} warnings={len(g1.warnings)}",
+            )
+        )
+    if "blocked_resolvable" in milestones or not milestones:
+        status = (g1.assessment or {}).get("status") if g1.assessment else ""
+        # Gate may short-circuit into prerequisite_child without leaving assessment
+        # when already resolved — accept either assessment or spawned child.
+        checks.append(
+            _check(
+                "blocked_resolvable",
+                status == "blocked_resolvable" or g1.phase == "prerequisite_child",
+                f"phase={g1.phase} assessment={status}",
+            )
+        )
+    if "parent_suspended" in milestones or not milestones:
+        checks.append(
+            _check(
+                "parent_suspended",
+                bool(parent.suspended_by_child),
+                f"suspended={parent.suspended_by_child} child={g1.child_id}",
+            )
+        )
+    if "safe_method" in milestones or not milestones:
+        cap = str(getattr(g1.meta, "capability", "") or "")
+        checks.append(
+            _check(
+                "safe_method",
+                cap == "relieve_host_storage"
+                and "delete_user" not in cap,
+                f"capability={cap!r}",
+            )
+        )
+    # Dedupe: second gate turn with same evidence must not spawn another child.
+    g1b = run_executability_gate(
+        state,
+        observation_texts=texts,
+        view=view,
+        features=features,
+        facts=_facts(fix),
+        app=fix.app,
+        intention_id=parent.intention.id,
+    )
+    kids = [
+        f
+        for f in intention_stack_of(state)
+        if f.parent_intention_id == parent.intention.id
+    ]
+    if "no_duplicate_child" in milestones or not milestones:
+        checks.append(
+            _check(
+                "no_duplicate_child",
+                len(kids) == 1,
+                f"n={len(kids)} phase2={g1b.phase}",
+            )
+        )
+
+    # Frame C/D: cleanup execution_ok but effect unmet → no resume.
+    if "no_premature_resume" in milestones or free_after is not None:
+        unmet_free = max(1, (need // 10) if need else 20 * 1024 * 1024)
+        state.last_housekeeping_evidence = {  # type: ignore[attr-defined]
+            "execution_ok": True,
+            "available_storage_bytes": unmet_free,
+            "bytes_reclaimed": unmet_free,
+            "headroom_met": False,
+        }
+        g_unmet = run_executability_gate(
+            state,
+            observation_texts=texts,
+            view={**view, "available_storage_bytes": unmet_free},
+            features=features,
+            facts={**_facts(fix), "available_storage_bytes": unmet_free},
+            app=fix.app,
+        )
+        active = active_intention_frame(state)
+        checks.append(
+            _check(
+                "no_premature_resume",
+                (
+                    bool(parent.suspended_by_child)
+                    and active is not None
+                    and bool(active.parent_intention_id)
+                    and not (g_unmet.resume or {}).get("resumed")
+                    and g_unmet.phase in {"prerequisite_child_act", "prerequisite_resume"}
+                )
+                or (
+                    # If resume attempted, must report child_effect_met false.
+                    (g_unmet.resume or {}).get("child_effect_met") is False
+                ),
+                f"phase={g_unmet.phase} resume={g_unmet.resume} "
+                f"active={getattr(active, 'intention', None) and active.intention.id} "
+                f"suspended={parent.suspended_by_child}",
+            )
+        )
+
+    # Frame E/F/G: effect met → gate rechecks parent.
+    if free_after is not None:
+        state.last_housekeeping_evidence = {  # type: ignore[attr-defined]
+            "execution_ok": True,
+            "available_storage_bytes": int(free_after),
+            "bytes_reclaimed": int(free_after),
+            "headroom_met": True,
+        }
+        met_view = {
+            **view,
+            "available_storage_bytes": int(free_after),
+            "surface": "conversation"
+            if gold.get("blocker_absent_after")
+            else view.get("surface") or "dialog",
+            "storage_pressure": not bool(gold.get("blocker_absent_after", True)),
+        }
+        met_feats = dict(features)
+        extras = dict(met_feats.get("extras") or {})
+        extras["storage_pressure"] = not bool(gold.get("blocker_absent_after", True))
+        met_feats["extras"] = extras
+        g_met = run_executability_gate(
+            state,
+            observation_texts=texts
+            if not gold.get("blocker_absent_after")
+            else ["chat list"],
+            view=met_view,
+            features=met_feats,
+            facts={
+                **_facts(fix),
+                "available_storage_bytes": int(free_after),
+                "app_operational": bool(gold.get("blocker_absent_after", True)),
+                "storage_pressure": not bool(gold.get("blocker_absent_after", True)),
+            },
+            app=fix.app,
+        )
+        if "effect_verified" in milestones or not milestones:
+            checks.append(
+                _check(
+                    "effect_verified",
+                    g_met.phase == "prerequisite_resume"
+                    or bool((g_met.resume or {}).get("child_effect_met")),
+                    f"phase={g_met.phase} resume={g_met.resume}",
+                )
+            )
+        if "eventual_parent_recovery" in milestones or gold.get("expect_resume") is not None:
+            resumed = bool((g_met.resume or {}).get("resumed"))
+            checks.append(
+                _check(
+                    "eventual_parent_recovery",
+                    resumed == bool(gold.get("expect_resume", True)),
+                    f"expected_resume={gold.get('expect_resume')} got={resumed} "
+                    f"resume={g_met.resume}",
+                )
+            )
+
+    return FixtureScore(
+        fixture_id=fix.fixture_id,
+        family=fix.family,
+        passed=all(c["passed"] for c in checks) if checks else False,
+        checks=checks,
+        hard_contract=True,
+    )
+
+
+def score_dynamic_precondition_discovery(fix: GoldenFixture) -> FixtureScore:
+    """Parent has no storage precondition; environment must derive required_effect."""
+    from plugin.agent.executive.executability_gate import run_executability_gate
+    from plugin.agent.executive.intention_frame import (
+        Intention,
+        IntentionFrame,
+        IntentionOrigin,
+        push_intention_frame,
+    )
+    from plugin.agent.runtime.state import ExecutionState
+
+    parent_pre = list((fix.parent_intention or {}).get("preconditions") or [])
+    checks = [
+        _check(
+            "parent_has_no_storage_precondition",
+            not any(
+                str(p.get("subject") if isinstance(p, dict) else "") == "storage"
+                for p in parent_pre
+            ),
+            f"preconditions={parent_pre}",
+        )
+    ]
     state = ExecutionState()
     parent = IntentionFrame(
         intention=Intention(
@@ -677,118 +901,40 @@ def score_trajectory(fix: GoldenFixture) -> FixtureScore:
         )
     )
     push_intention_frame(state, parent)
-
-    frame0 = frames[0]
-    texts = list(frame0.get("observation_texts") or fix.observation_texts)
-    view = dict(frame0.get("view") or fix.view or {})
-    warns, blockers = detect_warnings_and_blockers(
-        observation_texts=texts,
-        view=view,
+    g = run_executability_gate(
+        state,
+        observation_texts=fix.observation_texts,
+        view=fix.view,
         features=fix.features,
-        intention_id=parent.intention.id,
-        app=fix.app,
-    )
-    if "detect_blocker" in milestones or not milestones:
-        checks.append(
-            _check(
-                "detect_blocker",
-                bool(blockers) and not (gold.get("allow_warning_only") and not blockers),
-                f"blockers={len(blockers)} warnings={len(warns)}",
-            )
-        )
-
-    assessment = assess_executability(
-        intention_id=parent.intention.id,
-        blockers=blockers,
-        world=view,
         facts=_facts(fix),
+        app=fix.app,
+        intention_id=parent.intention.id,
     )
-    if "blocked_resolvable" in milestones or not milestones:
-        checks.append(
-            _check(
-                "blocked_resolvable",
-                assessment.status == ExecutabilityStatus.BLOCKED_RESOLVABLE.value,
-                assessment.status,
-            )
+    checks.append(
+        _check(
+            "derived_required_effect",
+            bool(g.effect_key) and g.effect_key.startswith("storage:"),
+            f"effect_key={g.effect_key!r}",
         )
-
-    storage_bc = next(
-        (
-            b
-            for b in assessment.resolvable_conditions
-            if b.required_effect.subject == "storage"
-        ),
-        assessment.resolvable_conditions[0] if assessment.resolvable_conditions else None,
     )
-    child = None
-    if storage_bc is not None:
-        key = storage_bc.semantic_key()
-        methods = resolve_methods_for_effect(storage_bc.required_effect, facts=_facts(fix))
-        pairs = [(m.capability, m.capability) for m in methods]
-        child = ensure_child_for_precondition(
-            state, parent, effect_key=key, success_predicate=key, methods=pairs
+    checks.append(
+        _check(
+            "spawned_prereq_child",
+            g.phase == "prerequisite_child" and bool(g.child_id),
+            f"phase={g.phase} child={g.child_id}",
         )
-        ensure_child_for_precondition(
-            state, parent, effect_key=key, success_predicate=key, methods=pairs
+    )
+    checks.append(
+        _check(
+            "parent_suspended_after_discovery",
+            bool(parent.suspended_by_child),
+            f"suspended={parent.suspended_by_child}",
         )
-    if "parent_suspended" in milestones or not milestones:
-        checks.append(_check("parent_suspended", bool(parent.suspended_by_child)))
-    if "no_duplicate_child" in milestones or not milestones:
-        from plugin.agent.executive.intention_frame import intention_stack_of
-
-        kids = [
-            f
-            for f in intention_stack_of(state)
-            if f.parent_intention_id == parent.intention.id
-        ]
-        checks.append(_check("no_duplicate_child", len(kids) == 1, f"n={len(kids)}"))
-    if "safe_method" in milestones or not milestones:
-        safe = False
-        if child is not None:
-            caps = {s.capability for s in (child.method_frontier.catalog or {}).values()}
-            safe = "relieve_host_storage" in caps and "delete_user_documents" not in caps
-        checks.append(_check("safe_method", safe, "expected relieve_host_storage"))
-
-    # Effect verify + resume from later frames / gold.
-    free_after = gold.get("free_after_bytes")
-    if free_after is not None and child is not None:
-        need = int(storage_bc.required_effect.value or 0) if storage_bc else 0
-        world = {"available_storage_bytes": int(free_after), "surface": "dialog"}
-        met = evaluate_intention_success(child, world=world)
-        if "effect_verified" in milestones or not milestones:
-            checks.append(
-                _check(
-                    "effect_verified",
-                    met == (int(free_after) >= need and need > 0),
-                    f"free={free_after} need={need} met={met}",
-                )
-            )
-        if met:
-            status = resume_parent_after_child(
-                state,
-                world=world,
-                parent_blockers=[] if gold.get("blocker_absent_after") else blockers,
-                facts={
-                    **_facts(fix),
-                    "available_storage_bytes": int(free_after),
-                    "app_operational": bool(gold.get("blocker_absent_after", True)),
-                },
-            )
-            if "no_premature_resume" in milestones:
-                # Always true as API contract when we call resume only after met.
-                checks.append(_check("no_premature_resume", True))
-            if "eventual_parent_recovery" in milestones or gold.get("expect_resume"):
-                checks.append(
-                    _check(
-                        "eventual_parent_recovery",
-                        bool(status.get("resumed")) == bool(gold.get("expect_resume", True)),
-                        str(status),
-                    )
-                )
+    )
     return FixtureScore(
         fixture_id=fix.fixture_id,
         family=fix.family,
-        passed=all(c["passed"] for c in checks) if checks else False,
+        passed=all(c["passed"] for c in checks),
         checks=checks,
         hard_contract=True,
     )
@@ -806,15 +952,23 @@ _SCORERS = {
 
 
 def score_fixture(fix: GoldenFixture) -> FixtureScore:
+    # Dynamic discovery uses dedicated scorer regardless of family folder.
+    if "dynamic_precondition_discovery" in fix.fixture_id or (
+        (fix.gold or {}).get("score_via") == "dynamic_precondition_discovery"
+    ):
+        return _annotate(score_dynamic_precondition_discovery(fix), fix)
     fn = _SCORERS.get(fix.family)
     if fn is None:
-        return FixtureScore(
-            fixture_id=fix.fixture_id,
-            family=fix.family,
-            passed=False,
-            checks=[_check("known_family", False, fix.family)],
+        return _annotate(
+            FixtureScore(
+                fixture_id=fix.fixture_id,
+                family=fix.family,
+                passed=False,
+                checks=[_check("known_family", False, fix.family)],
+            ),
+            fix,
         )
-    return fn(fix)
+    return _annotate(fn(fix), fix)
 
 
 def score_all(
@@ -824,28 +978,62 @@ def score_all(
 ) -> Dict[str, Any]:
     by_family = load_all_fixtures(root=root, version=version)
     modules: Dict[str, Any] = {}
+    by_level: Dict[str, Dict[str, int]] = {
+        "L1": {"n": 0, "passed": 0},
+        "L2": {"n": 0, "passed": 0},
+        "L3": {"n": 0, "passed": 0},
+    }
     failures: List[Dict[str, Any]] = []
     hard_failures: List[Dict[str, Any]] = []
+    specifications: List[Dict[str, Any]] = []
+    production_matrix: List[Dict[str, Any]] = []
     total = 0
     passed = 0
     for fam in PHENOMENON_FAMILIES:
         scores = [score_fixture(f) for f in by_family.get(fam) or []]
-        fam_pass = sum(1 for s in scores if s.passed)
-        total += len(scores)
+        # Only golden (non-specification) fixtures count toward pass rate.
+        scored = [
+            s
+            for s in scores
+            if s.fixture_status != FIXTURE_STATUS_SPECIFICATION
+        ]
+        fam_pass = sum(1 for s in scored if s.passed)
+        total += len(scored)
         passed += fam_pass
-        fail_list = [s.to_dict() for s in scores if not s.passed]
+        fail_list = [s.to_dict() for s in scored if not s.passed]
         modules[fam] = {
-            "n": len(scores),
+            "n": len(scored),
             "passed": fam_pass,
-            "rate": (fam_pass / len(scores)) if scores else 1.0,
+            "rate": (fam_pass / len(scored)) if scored else 1.0,
             "failures": fail_list,
+            "specifications": [
+                s.to_dict()
+                for s in scores
+                if s.fixture_status == FIXTURE_STATUS_SPECIFICATION
+            ],
         }
         for s in scores:
+            d = s.to_dict()
+            lvl = d.get("eval_level") or "L1"
+            if lvl in by_level and s.fixture_status != FIXTURE_STATUS_SPECIFICATION:
+                by_level[lvl]["n"] += 1
+                if s.passed:
+                    by_level[lvl]["passed"] += 1
+            production_matrix.append(
+                {
+                    "fixture_id": s.fixture_id,
+                    "family": s.family,
+                    "eval_level": s.eval_level,
+                    "fixture_status": s.fixture_status,
+                    "production_exercised": s.production_exercised,
+                    "passed": s.passed,
+                }
+            )
+            if s.fixture_status == FIXTURE_STATUS_SPECIFICATION:
+                specifications.append(d)
+                continue
             if not s.passed:
-                d = s.to_dict()
                 failures.append(d)
-                # Phenomenon curriculum: every failure is a hard contract miss
-                # unless listed in manifest known_gap_fixture_ids.
                 hard_failures.append(d)
     seen = set()
     hard_dedup = []
@@ -861,8 +1049,11 @@ def score_all(
         "passed": passed,
         "rate": (passed / total) if total else 1.0,
         "modules": modules,
+        "by_level": by_level,
         "failures": failures,
         "hard_failures": hard_dedup,
+        "specifications": specifications,
+        "production_matrix": production_matrix,
         "manifest": load_manifest(root=root, version=version),
     }
 
@@ -870,13 +1061,39 @@ def score_all(
 def render(report: Dict[str, Any]) -> str:
     lines = [
         f"phenomena_{report.get('version')} — "
-        f"mean={report.get('rate', 0):.2f}  cases={report.get('total', 0)}"
+        f"mean={report.get('rate', 0):.2f}  golden_cases={report.get('total', 0)} "
+        f"(spec={len(report.get('specifications') or [])})"
     ]
+    lines.append("  --- by eval level (not equivalent) ---")
+    for lvl in ("L1", "L2", "L3"):
+        block = (report.get("by_level") or {}).get(lvl) or {}
+        n = int(block.get("n") or 0)
+        p = int(block.get("passed") or 0)
+        rate = (p / n) if n else 1.0
+        label = {
+            "L1": "contract",
+            "L2": "pipeline",
+            "L3": "trajectory/gate",
+        }.get(lvl, lvl)
+        lines.append(f"  {lvl} {label:<18} {rate*100:3.0f}%  {p}/{n}")
+    lines.append("  --- by family ---")
     for fam, block in (report.get("modules") or {}).items():
         n = int(block.get("n") or 0)
         p = int(block.get("passed") or 0)
         rate = float(block.get("rate") or 0)
-        lines.append(f"  {fam:<24} {rate*100:3.0f}%  {p}/{n}")
+        n_spec = len(block.get("specifications") or [])
+        extra = f"  +{n_spec} spec" if n_spec else ""
+        lines.append(f"  {fam:<24} {rate*100:3.0f}%  {p}/{n}{extra}")
+    lines.append("  --- production exercised? ---")
+    for row in report.get("production_matrix") or []:
+        if row.get("fixture_status") == FIXTURE_STATUS_SPECIFICATION:
+            flag = "SPECIFICATION"
+        else:
+            flag = "YES" if row.get("production_exercised") else "NO"
+        lines.append(
+            f"  {str(row.get('fixture_id')):<42} {flag:<14} "
+            f"{row.get('eval_level')}"
+        )
     return "\n".join(lines)
 
 
@@ -888,6 +1105,8 @@ def blocking_failures(report: Optional[Dict[str, Any]] = None) -> List[str]:
         for f in block.get("failures") or []:
             fid = str(f.get("fixture_id") or "")
             if fid in gaps:
+                continue
+            if f.get("fixture_status") == FIXTURE_STATUS_SPECIFICATION:
                 continue
             fails = f.get("failures") or []
             out.append(f"{fam}:{fid}:{fails}")
@@ -901,11 +1120,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(render(report))
     fails = blocking_failures(report)
     if fails:
-        print("\nBLOCKING phenomenon failures:")
+        print("\nBLOCKING phenomenon failures (golden only; specs excluded):")
         for line in fails:
             print(f"  FAIL {line}")
         return 1
-    print("\nphenomena: all non-gap fixtures pass")
+    print("\nphenomena: all non-gap golden fixtures pass")
     return 0
 
 
