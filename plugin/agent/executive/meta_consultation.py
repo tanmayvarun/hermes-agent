@@ -616,11 +616,15 @@ def sanitize_meta_choice(
                 "source": "llm_contract",
             },
         )
-    # Patient already established (SEARCH debt cleared) + reveal/select failure:
-    # repair interaction affordance on the same patient — do not re-enter SEARCH
-    # (live 113806: context_menu miss → locate_content found=False).
+    # Same earned patient + reveal/select failure → repair affordance for that
+    # patient only. Generic reveal_failed + any query-bearing object must not
+    # suppress SEARCH (live 113806 authority correction).
+    established_patient = str(
+        getattr(ctx, "established_patient_ref", "") or ""
+    ).strip()
     if (
         reveal_failed
+        and established_patient
         and bool(getattr(ctx, "address_known", False))
         and not content_search_owed
         and not bool(getattr(ctx, "role_identity_search_owed", False))
@@ -633,24 +637,27 @@ def sanitize_meta_choice(
         if prefer_select:
             return MetaChoice(
                 MetaAction.ACT,
-                "contract: patient established — repair affordance via select, not re-search",
+                "contract: earned patient — repair same-patient affordance via select, not re-search",
                 {
                     "act": 1.0,
                     "affordance_repair": 1.0,
                     "reveal_episode_failed": 1.0,
                     "forbid_search": 1.0,
+                    "established_patient_ref": 1.0,
                     "llm_proposed": action.value,
                     "source": "llm_contract",
                 },
+                capability="select_content",
             )
         return MetaChoice(
             MetaAction.EXPLORE,
-            "contract: patient established — repair affordance, not re-search",
+            "contract: earned patient — repair same-patient affordance, not re-search",
             {
                 "explore": 1.0,
                 "affordance_repair": 1.0,
                 "reveal_episode_failed": 1.0,
                 "forbid_search": 1.0,
+                "established_patient_ref": 1.0,
                 "llm_proposed": action.value,
                 "source": "llm_contract",
             },

@@ -212,6 +212,9 @@ class MetaContext:
     reveal_episode_failed: bool = False
     # After failed reveal: next recovery capability (usually select_content).
     reveal_prefer_capability: str = ""
+    # Patient previously earned by retrieval/binding (not mere visibility).
+    # Affordance repair must scope to this same patient.
+    established_patient_ref: str = ""
     # IntentionFrame: EXPLORE objective still has eligible methods.
     intention_explore_active: bool = False
     # IntentionFrame derived local-route / budget exhaustion.

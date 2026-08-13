@@ -731,7 +731,11 @@ def note_retrieval_complete(
 
 
 def search_selection_trace(episode: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Compact candidate→ledger→choice→ACT-target telemetry for live probes."""
+    """SEARCH-side telemetry: candidate→ledger→selected hypothesis.
+
+    Does **not** invent an ACT target. Correlate separately with the observed
+    DecisionOutcome / PlanStep target (see ``correlate_search_choice_with_decision``).
+    """
     ep = episode if isinstance(episode, dict) else {}
     if not ep:
         return {}
@@ -742,18 +746,47 @@ def search_selection_trace(episode: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             path = "rank"
         elif str(ep.get("chosen_label") or "").strip():
             path = "source_contact_shortcut"
-    chosen = str(ep.get("chosen_label") or ep.get("explore_label") or "").strip()
+    chosen = str(ep.get("chosen_label") or "").strip()
+    explore = str(ep.get("explore_label") or "").strip()
     return {
         "selection_path": path,
         "candidate_count": int(ep.get("candidate_count") or 0),
         "hypothesis_ledger": ledger,
         "selected_hypothesis": chosen,
-        "explore_label": str(ep.get("explore_label") or ""),
+        "explore_label": explore,
         "choice_confidence": str(ep.get("choice_confidence") or ""),
         "role_resolved": bool(ep.get("role_resolved")),
-        "act_target": chosen,
         "status": str(ep.get("status") or ""),
         "role": str(ep.get("role") or ""),
+    }
+
+
+def correlate_search_choice_with_decision(
+    episode: Optional[Dict[str, Any]],
+    *,
+    decision_target: str = "",
+) -> Dict[str, Any]:
+    """Observe whether ACT/decision target consumed the SEARCH authority output.
+
+    Compares the observed decision target against SEARCH's committed choice
+    (``selected_hypothesis``) or, while still ranking, the explore pointer.
+    Does not invent decision_target from the episode.
+    """
+    sel = search_selection_trace(episode)
+    decided = str(decision_target or "").strip()
+    chosen = str(sel.get("selected_hypothesis") or "").strip()
+    explore = str(sel.get("explore_label") or "").strip()
+    authority = chosen or explore
+    match = False
+    if decided and authority:
+        left = authority.lower()
+        right = decided.lower()
+        match = left == right or left in right or right in left
+    return {
+        **sel,
+        "search_authority_label": authority,
+        "decision_target": decided,
+        "search_choice_matches_decision": match,
     }
 
 
@@ -1537,23 +1570,31 @@ def search_continue_capability(
     ).strip()
     # Open conversation + unpaid content query under SEARCH → locate in-chat
     # (live 225807: SEARCH meta kept falling through to Observe).
-    # Live 113806: skip when patient content is already established on-screen —
-    # affordance repair must not regress into retrieval.
-    patient_known = False
-    if link_q and surface == "conversation":
-        try:
-            from plugin.agent.source_query_binding import document_locates_source_query
-
-            doc = brief.world if isinstance(getattr(brief, "world", None), dict) else {}
-            patient_known = bool(document_locates_source_query(doc, link_q))
-        except Exception:
-            patient_known = False
+    # Live 113806: skip only when retrieval already earned a patient (not mere
+    # on-screen query text). Affordance repair must not invent commitment.
+    patient_earned = bool(getattr(task, "content_located", False))
+    if not patient_earned:
+        ep_chk = search_episode_of(execution_state) or {}
+        if not ep_chk and isinstance(getattr(brief, "search_episode", None), dict):
+            ep_chk = brief.search_episode or {}
+        role_chk = str(ep_chk.get("role") or "").strip().lower()
+        chosen_chk = str(ep_chk.get("chosen_label") or "").strip()
+        if (
+            role_chk == "content"
+            and chosen_chk
+            and (
+                bool(ep_chk.get("retrieval_complete"))
+                or str(ep_chk.get("status") or "").strip().lower() == "complete"
+                or bool(str(ep_chk.get("choice_confidence") or "").strip())
+            )
+        ):
+            patient_earned = True
     if (
         surface == "conversation"
         and meta == "search"
         and bool(getattr(task, "source_chat_open", False))
         and not bool(getattr(task, "content_located", False))
-        and not patient_known
+        and not patient_earned
         and link_q
         and "locate_content" in allowed
     ):
@@ -1906,23 +1947,23 @@ def meta_referent_search_signals(
     # (live 214626: false/true source open + ACT on unrelated visible row).
     role = str(ep.get("role") or "").strip().lower()
     content_episode_done = bool(complete and role == "content")
-    # Soft on-screen patient clears SEARCH debt without RoleBinder commit
-    # (live 113806: visible URL + reveal miss must not re-arm locate).
-    patient_on_screen = bool(content_located)
-    if not patient_on_screen and link_q and isinstance(document, dict):
-        try:
-            from plugin.agent.source_query_binding import document_locates_source_query
-
-            patient_on_screen = bool(document_locates_source_query(document, link_q))
-        except Exception:
-            patient_on_screen = False
+    # Content SEARCH debt clears only on earned retrieval progress
+    # (content_located / content-role choice) — never mere query-bearing text.
+    content_retrieval_earned = bool(content_located) or content_episode_done
+    if (
+        not content_retrieval_earned
+        and role == "content"
+        and bool(ep.get("retrieval_complete"))
+        and str(ep.get("chosen_label") or "").strip()
+    ):
+        content_retrieval_earned = True
     # Content SEARCH debt only after the container is open. A completed *source*
     # episode (Pallavi row chosen) must not clear it (live 214025).
     need_content = (
         bool(link_q)
         and bool(source_chat_open)
         and not failed
-        and not patient_on_screen
+        and not content_retrieval_earned
         and not content_episode_done
     )
     need_dest = surf == "forward_picker" and bool(dest) and not complete
@@ -2021,6 +2062,16 @@ def meta_referent_search_signals(
         "contact": contact,
         "link_query": link_q,
         "content_located": bool(content_located),
+        "content_retrieval_earned": bool(content_retrieval_earned),
+        "earned_patient_ref": (
+            str(ep.get("chosen_label") or "").strip()
+            if content_retrieval_earned and role == "content"
+            else (
+                str(link_q or "").strip()
+                if content_located
+                else ""
+            )
+        ),
         "address_known": address_known,
         "retrieve_ready": retrieve_ready,
         "source_contact_open_ready": source_contact_open_ready,

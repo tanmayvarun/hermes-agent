@@ -256,7 +256,7 @@ class DecisionBrief:
                     for k in (
                         "selection_path",
                         "selected_hypothesis",
-                        "act_target",
+                        "explore_label",
                         "candidate_count",
                         "choice_confidence",
                     )
@@ -3085,34 +3085,118 @@ def _entity_resolution_type_query_outcome(
     )
 
 
-def _patient_content_established(brief: "DecisionBrief") -> bool:
-    """True when source-query patient is already on-screen / soft-located.
+def _patient_refs_compatible(a: str, b: str) -> bool:
+    """Loose identity match for earned patient vs reveal/select target."""
+    left = str(a or "").strip().lower()
+    right = str(b or "").strip().lower()
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    return left in right or right in left
 
-    Interaction-affordance failures must not erase this fact and restart
-    retrieval (live 113806: reveal miss → locate_content found=False).
+
+def _earned_patient_ref(
+    brief: "DecisionBrief",
+    *,
+    execution_state: Any = None,
+) -> str:
+    """Patient previously earned by retrieval/binding — never mere visibility.
+
+    Progress can only be preserved if this layer previously earned it.
+    ``document_locates_source_query`` / phase are not authority.
     """
+    ep = brief.search_episode if isinstance(brief.search_episode, dict) else {}
+    role = str(ep.get("role") or "").strip().lower()
+    chosen = str(ep.get("chosen_label") or "").strip()
+    # Content-role SEARCH choice / retrieval completion.
+    if (
+        chosen
+        and role == "content"
+        and (
+            bool(ep.get("retrieval_complete"))
+            or str(ep.get("status") or "").strip().lower() == "complete"
+            or bool(str(ep.get("choice_confidence") or "").strip())
+        )
+    ):
+        return chosen
     task = brief.task_state
     if bool(getattr(task, "content_located", False)):
-        return True
-    link_q = str(
-        (brief.goal or {}).get("source_query")
-        or (brief.goal or {}).get("link_query")
+        if chosen and role in {"", "content"}:
+            return chosen
+        last = getattr(task, "last_action", None) or {}
+        if isinstance(last, dict):
+            fam = str(last.get("family") or "").strip().lower()
+            tgt = str(last.get("target") or last.get("text") or "").strip()
+            if tgt and fam in {
+                "reveal_actions",
+                "select_content",
+                "locate_content",
+                "invoke_affordance",
+            }:
+                return tgt
+        link_q = str(
+            (brief.goal or {}).get("source_query")
+            or (brief.goal or {}).get("link_query")
+            or ""
+        ).strip()
+        return link_q
+    # Affordance commitment / reground patient (semantic identity, not geometry).
+    if execution_state is not None:
+        ref = str(
+            getattr(execution_state, "grounding_reground_patient_ref", "") or ""
+        ).strip()
+        if ref:
+            return ref
+    return ""
+
+
+def _patient_identity_contradicted(
+    brief: "DecisionBrief",
+    *,
+    execution_state: Any = None,
+) -> bool:
+    """True only on explicit identity/container contradiction — not mere absence."""
+    goal = brief.goal if isinstance(brief.goal, dict) else {}
+    expected = str(goal.get("source_conversation") or goal.get("contact") or "").strip()
+    open_c = str(
+        (brief.world or {}).get("open_conversation")
+        or getattr(brief.task_state, "open_conversation", "")
         or ""
     ).strip()
-    if not link_q:
-        return False
-    doc = brief.world if isinstance(brief.world, dict) else {}
-    try:
-        from plugin.agent.source_query_binding import document_locates_source_query
+    if expected and open_c:
+        try:
+            from plugin.agent.capabilities.resolve_entity import open_matches_referent
 
-        if document_locates_source_query(doc, link_q):
-            return True
-    except Exception:
-        pass
-    # Soft extras / phase already acknowledging patient presence.
-    if str(getattr(task, "phase", "") or "").strip().lower() == "act_on_content":
+            if not open_matches_referent(open_c, expected):
+                return True
+        except Exception:
+            pass
+    ep = brief.search_episode if isinstance(brief.search_episode, dict) else {}
+    status = str(ep.get("status") or "").strip().lower()
+    role = str(ep.get("role") or "").strip().lower()
+    if role == "content" and status in {"failed", "exhausted"}:
+        return True
+    if execution_state is not None and bool(
+        getattr(execution_state, "role_identity_search_owed", False)
+    ):
         return True
     return False
+
+
+def _patient_content_established(
+    brief: "DecisionBrief",
+    *,
+    execution_state: Any = None,
+) -> bool:
+    """True when retrieval already earned a patient that is still valid.
+
+    Interaction-affordance failures must not erase that earned fact and restart
+    retrieval (live 113806). Visibility / phase alone must not invent it.
+    """
+    if _patient_identity_contradicted(brief, execution_state=execution_state):
+        return False
+    return bool(_earned_patient_ref(brief, execution_state=execution_state))
 
 
 def _content_search_locate_outcome(
@@ -3138,9 +3222,11 @@ def _content_search_locate_outcome(
     task = brief.task_state
     if not bool(getattr(task, "source_chat_open", False)):
         return None
-    if bool(getattr(task, "content_located", False)):
+    if bool(getattr(task, "content_located", False)) and not _patient_identity_contradicted(
+        brief, execution_state=execution_state
+    ):
         return None
-    if _patient_content_established(brief):
+    if _patient_content_established(brief, execution_state=execution_state):
         return None
     link_q = str(
         (brief.goal or {}).get("source_query")
@@ -3158,9 +3244,14 @@ def _content_search_locate_outcome(
     prior_cap = str(getattr(prior, "capability", "") or "").strip().lower()
     if prior_cap == "locate_content" and str(getattr(prior, "target", "") or "").strip():
         return None
-    # Affordance repair: never overwrite reveal/select with locate while patient known.
+    # Affordance repair: preserve locate-suppression only for the same earned patient.
     if prior_cap in {"reveal_actions", "select_content"}:
-        return None
+        prior_tgt = str(getattr(prior, "target", "") or "").strip()
+        earned = _earned_patient_ref(brief, execution_state=execution_state)
+        if earned and (
+            not prior_tgt or _patient_refs_compatible(prior_tgt, earned)
+        ):
+            return None
     if prior_cap in {"type_query", "compose_search_query", "resolve_entity"}:
         # Prefer locate inside an open chat over sidebar compose.
         if prior_cap != "type_query" or surface == "conversation":
@@ -3607,8 +3698,20 @@ def apply_decision_consultation(
         brief, prior=outcome, execution_state=execution_state
     )
     _cap_now = str(outcome.capability or "").strip().lower()
-    _patient_known = _patient_content_established(brief)
+    _patient_known = _patient_content_established(
+        brief, execution_state=execution_state
+    )
     _affordance_caps = {"reveal_actions", "select_content"}
+    _same_patient_affordance = False
+    if _cap_now in _affordance_caps and _patient_known:
+        earned = _earned_patient_ref(brief, execution_state=execution_state)
+        _same_patient_affordance = bool(
+            earned
+            and (
+                not str(outcome.target or "").strip()
+                or _patient_refs_compatible(str(outcome.target or ""), earned)
+            )
+        )
     if _content_seal is not None and (
         not outcome.ok
         or (
@@ -3621,7 +3724,7 @@ def apply_decision_consultation(
                 "open_entity",
                 "commit_irreversible",
             }
-            or (_cap_now in _affordance_caps and not _patient_known)
+            or (_cap_now in _affordance_caps and not _same_patient_affordance)
         )
     ):
         outcome = _content_seal

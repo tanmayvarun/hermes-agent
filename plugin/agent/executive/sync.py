@@ -332,6 +332,7 @@ def _route_discovery_meta_kwargs(
         "act_clear": False,
         "reveal_episode_failed": False,
         "reveal_prefer_capability": "",
+        "established_patient_ref": "",
         "intention_explore_active": False,
         "intention_locally_exhausted": False,
         "locate_effect_verify_owed": False,
@@ -459,6 +460,21 @@ def _route_discovery_meta_kwargs(
         or str(referent_signals.get("chosen_label") or "").strip()
     )
     address_known = bool(referent_signals.get("address_known"))
+    # Affordance-repair authority: earned content patient only — never invent
+    # from arbitrary query-bearing text on screen.
+    earned_ref = str(referent_signals.get("earned_patient_ref") or "").strip()
+    if not earned_ref and bool(referent_signals.get("content_retrieval_earned")):
+        if str(referent_signals.get("role") or "").strip().lower() == "content":
+            earned_ref = str(referent_signals.get("chosen_label") or "").strip()
+        if not earned_ref:
+            earned_ref = str(referent_signals.get("link_query") or "").strip()
+    if not earned_ref and bool(referent_signals.get("content_located")):
+        earned_ref = str(referent_signals.get("link_query") or "").strip()
+    if not earned_ref:
+        earned_ref = str(
+            getattr(execution_state, "grounding_reground_patient_ref", "") or ""
+        ).strip()
+    out["established_patient_ref"] = earned_ref
     # Route discovery only while a probe still has information value:
     # pending unpaid look, or content known + empty grounded + budget left.
     # Terminal failed_reveal does *not* keep route debt (escalation → ACT).

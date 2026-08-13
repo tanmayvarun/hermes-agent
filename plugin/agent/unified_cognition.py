@@ -5443,8 +5443,10 @@ def proposal_to_action(
 
             cand = text or semantic_target
             cand_l = str(cand or "").strip().lower()
-            # Perception object ids (msg_link_*) must never become locate queries
-            # (live 113806: locate "msg_link_zarooratwala" → found=False).
+            # TEMPORARY debt: perception object ids (msg_link_*) must not become
+            # locate queries (live 113806). Proper fix is typed —
+            # locate_content.query accepts only semantic query text; object IDs
+            # travel through target refs. Do not expand this shape heuristic.
             object_id_query = bool(
                 cand_l.startswith("msg_")
                 or cand_l.startswith("obj_")
