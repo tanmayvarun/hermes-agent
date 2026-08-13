@@ -26,12 +26,19 @@ class SessionRef:
 
 @dataclass(frozen=True)
 class ExecutionConstraints:
-    """Constraints that may affect executive / method choice — not presentation config."""
+    """Constraints that may affect executive / method choice — not presentation config.
+
+    ``allowed_substrates`` / ``forced_substrate`` are the architectural way to
+    force ComputerUse (or other) for benchmarks — not a harness-specific branch.
+    Empty ``allowed_substrates`` means no substrate filter.
+    """
 
     foreground_allowed: bool = True
     network_allowed: bool = True
     destructive_actions_allowed: bool = False
     approval_policy: str = "default"
+    allowed_substrates: tuple[str, ...] = ()
+    forced_substrate: str = ""
 
 
 @dataclass
@@ -133,6 +140,8 @@ def semantic_task_fingerprint(request: TaskRequest) -> dict[str, Any]:
             "network_allowed": bool(constraints.network_allowed),
             "destructive_actions_allowed": bool(constraints.destructive_actions_allowed),
             "approval_policy": str(constraints.approval_policy or "default"),
+            "allowed_substrates": list(constraints.allowed_substrates or ()),
+            "forced_substrate": str(constraints.forced_substrate or ""),
         },
         "interaction_capabilities": dict(request.interaction_capabilities or {}),
         "client_context_semantic": ctx,

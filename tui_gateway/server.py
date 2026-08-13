@@ -10026,21 +10026,8 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 else:
                     run_message = _enrich_with_attached_images(prompt, images)
 
-            structured_goal_context = ""
-            try:
-                from plugin.agent.goal import Goal
-
-                inferred_goal = Goal.infer_from_text(prompt)
-                if inferred_goal.kind != "unknown":
-                    structured_goal_context = inferred_goal.execution_context_block()
-                    session["structured_goal_kind"] = inferred_goal.kind
-                    session["structured_goal_prompt"] = inferred_goal.description
-                else:
-                    session.pop("structured_goal_kind", None)
-                    session.pop("structured_goal_prompt", None)
-            except Exception as _goal_exc:
-                print(f"[tui_gateway] structured goal inference failed: {_goal_exc}", file=sys.stderr)
-
+            # Stage A cutover: every ordinary TUI turn enters the common runtime.
+            # Gateway is ClientAdapter only — does not classify executive vs chat.
             def _stream(delta):
                 with session["history_lock"]:
                     _append_inflight_delta(session, delta)
@@ -10053,14 +10040,69 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 "conversation_history": list(history),
                 "stream_callback": _stream,
             }
-            if structured_goal_context:
-                run_kwargs["system_message"] = structured_goal_context
             try:
                 if "task_id" in inspect.signature(agent.run_conversation).parameters:
                     run_kwargs["task_id"] = session["session_key"]
             except (TypeError, ValueError):
                 pass
-            result = agent.run_conversation(run_message, **run_kwargs)
+
+            from plugin.agent.ingress import SessionRef, TaskIngress, TaskRequest
+            from plugin.agent.runtime.agent_runtime import AgentRuntime
+            from plugin.agent.runtime.state import RuntimeState
+            from plugin.agent.runtime.turn_result import TurnStatus
+
+            _task_req = TaskIngress.normalize(
+                TaskRequest(
+                    user_turn=str(prompt or ""),
+                    attachments=list(images or []),
+                    session=SessionRef(str(session.get("session_key") or sid)),
+                    client_context={
+                        "client": "tui",
+                        "supports_rich_ui": True,
+                        "supports_streaming": True,
+                    },
+                )
+            )
+            if "agent_runtime_state" not in session:
+                session["agent_runtime_state"] = RuntimeState()
+            _agent_runtime = AgentRuntime(
+                runtime_state=session["agent_runtime_state"],
+                task_request=_task_req,
+            )
+            _turn = _agent_runtime.handle_turn(
+                _task_req,
+                conversation_runner=agent.run_conversation,
+                run_message=run_message,
+                conversation_kwargs=run_kwargs,
+            )
+            session["last_runtime_trace"] = dict(_turn.acceptance_trace or {})
+            interp = getattr(_turn, "interpretation", None)
+            if interp is not None and str(getattr(interp, "goal_kind", "") or "") not in {
+                "",
+                "unknown",
+            }:
+                session["structured_goal_kind"] = interp.goal_kind
+                session["structured_goal_prompt"] = str(
+                    getattr(getattr(interp, "goal", None), "description", "") or prompt
+                )
+            else:
+                session.pop("structured_goal_kind", None)
+                session.pop("structured_goal_prompt", None)
+
+            if _turn.status == TurnStatus.WAITING_FOR_USER:
+                result = {
+                    "final_response": str(_turn.question or _turn.message or ""),
+                    "messages": [],
+                    "waiting_for_user": True,
+                    "intention_id": _turn.intention_id,
+                }
+            else:
+                result = _turn.legacy_result
+                if result is None:
+                    result = {
+                        "final_response": str(_turn.message or ""),
+                        "messages": [],
+                    }
             if "moa_one_shot_restore" in session:
                 _restore = session.pop("moa_one_shot_restore", None)
                 # Restore the model the user was on before the /moa one-shot.

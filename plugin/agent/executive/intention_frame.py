@@ -223,6 +223,15 @@ class MethodSpec:
     risk: float = 0.1
     reversibility: float = 0.9
     gesture: str = ""  # optional motor detail (context_click / hover)
+    # Substrate / provider identity (domain catalogs set these; AgentRuntime does not).
+    substrate: str = ""
+    provider: str = ""
+    # Quality dimensions (orthogonal to MethodAvailability).
+    user_interference: float = 0.5
+    reliability: float = 0.5
+    semantic_precision: float = 0.5
+    # Implementation readiness: UNAVAILABLE ⇒ overall UNSUPPORTED (never ASK).
+    readiness: str = "unavailable"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -238,6 +247,12 @@ class MethodSpec:
             "risk": self.risk,
             "reversibility": self.reversibility,
             "gesture": self.gesture,
+            "substrate": self.substrate,
+            "provider": self.provider,
+            "user_interference": self.user_interference,
+            "reliability": self.reliability,
+            "semantic_precision": self.semantic_precision,
+            "readiness": self.readiness,
         }
 
 

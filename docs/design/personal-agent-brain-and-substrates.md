@@ -545,33 +545,45 @@ both attach. This document locks that target; it does not refactor clients.
 
 ---
 
-## Implementation status (A + thin C)
+## Implementation status
 
-Landed as a **seam only** (no durable store, no TUI/CLI wire-in yet):
+### A + thin C (seam)
 
 ```text
 plugin/agent/ingress.py              TaskRequest, SessionRef, TaskIngress
 plugin/agent/memory/                 MemorySystem Protocol + NoopMemorySystem
-plugin/agent/runtime/agent_runtime.py  AgentRuntime façade
+plugin/agent/runtime/agent_runtime.py  AgentRuntime
 ```
 
-Ownership invariants in code:
+### Stage A — TUI cutover onto generic AgentRuntime
 
 ```text
-TaskIngress → AgentRuntime is the common seam.
-run_goal_closed_loop is the first *legacy adapter* into that seam
-  (Goal → from_legacy_goal → normalize → AgentRuntime),
-  not the owner/composition root of TaskIngress.
-
-AgentRuntime owns RuntimeState (one-way).
-RuntimeState must not backreference AgentRuntime.
-
-TaskIngress.normalize is canonical; from_legacy_goal is compatibility only.
-No constructor / normalize path calls retrieve / submit_candidate / invalidate.
-Noop submit_candidate → MemoryWriteResult(disposition="ignored", …).
+TUI → TaskRequest → TaskIngress → AgentRuntime.handle_turn
+  → interpret → method providers → quality ⊥ availability → decide
+  → WAITING_FOR_USER (resumable ASK) | legacy AIAgent delegate | selected method
 ```
 
-Architectural goldens: `tests/plugin/test_task_ingress_memory_seam.py`.
+Hard invariants:
+
+```text
+AgentRuntime is domain-generic (no if forward_message / WhatsApp).
+Domain catalogs register via method_providers.
+Implementation readiness UNAVAILABLE ⇒ UNSUPPORTED (never ASK to link a stub).
+READY + missing user prereq ⇒ MISSING_PRECONDITION (may ASK).
+ASK = resumable WAITING_FOR_USER across session turns (not a sync UI callback).
+All ordinary TUI turns enter AgentRuntime; gateway does not classify chat vs executive.
+Method quality ranking ⊥ MethodAvailability.
+Forced ComputerUse = ExecutionConstraints.allowed_substrates / forced_substrate.
+```
+
+**Stage A live acceptance:** traditional TUI reaches common runtime + method selection.
+If WhatsApp Web is not READY, ComputerUse may win — correct.
+
+**Stage B (deferred):** ASK→decline→ComputerUse live only once WhatsApp Web executor
+is READY so linking would make the method executable.
+
+Goldens: `tests/plugin/test_task_ingress_memory_seam.py`,
+`tests/plugin/test_ui_runtime_method_selection.py`.
 
 ## Roadmap (conceptual)
 
