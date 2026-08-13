@@ -1902,13 +1902,13 @@ def _multimodal_look(
         open_conversation=open_after,
         state_sig=str(getattr(runtime.execution_state, "last_state_signature", "") or ""),
     )
-    # Paid visual look after AX-blind locate: resolve EffectStatus UNKNOWN when
-    # the query patient is still absent (ACHIEVED path resolves in task_state).
+    # Paid visual look after AX-blind locate: resolve EffectStatus UNKNOWN.
+    # Absence alone ≠ still_unobservable — only insufficient observation does.
     try:
         state = runtime.execution_state
         if bool(getattr(state, "locate_effect_verify_owed", False)):
             from plugin.agent.capabilities.locate_content import (
-                resolve_locate_effect_verification,
+                resolve_locate_effect_after_visual_verify,
             )
             from plugin.agent.source_query_binding import document_locates_source_query
 
@@ -1919,13 +1919,14 @@ def _multimodal_look(
                 and isinstance(doc, dict)
                 and document_locates_source_query(doc, q)
             )
-            if not visible:
-                resolve_locate_effect_verification(
-                    state,
-                    content_located=False,
-                    query_visible=False,
-                    still_unobservable=True,
-                )
+            resolve_locate_effect_after_visual_verify(
+                state,
+                content_located=False,
+                query_visible=visible,
+                multimodal_ok=True,
+                proposal_model=model,
+                document=doc,
+            )
     except Exception:
         pass
     return True

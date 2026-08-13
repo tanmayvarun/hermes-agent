@@ -794,6 +794,116 @@ def note_locate_outcome(
     return out
 
 
+# Visual-verify gaps that mean absence cannot be trusted yet.
+_INSUFFICIENT_VERIFY_GAP_NEEDLES = (
+    "unreadable",
+    "can't see",
+    "cannot see",
+    "could not see",
+    "ax unavailable",
+    "accessibility",
+    "held_last_good",
+    "stale",
+    "incomplete",
+    "needs_more_evidence",
+    "screen must be read",
+    "blind",
+)
+
+# Idle reuse is not a paid visual verification look.
+_INSUFFICIENT_VERIFY_MODELS = frozenset({"phash_reuse", "held_last_good", "reuse"})
+
+
+def locate_verify_can_establish_absence(
+    execution_state: Any,
+    *,
+    document: Any = None,
+    multimodal_ok: bool = True,
+    proposal_model: str = "",
+    coverage: Optional[float] = None,
+    evidence_gaps: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """Whether a paid visual verify can establish *absence* of the locate patient.
+
+    ``query not visible`` is not itself ``still_unobservable``. Absence is only
+    NOT_ACHIEVED when observation quality is sufficient to establish it.
+    """
+    if not multimodal_ok:
+        return {"sufficient": False, "reason": "multimodal_failed"}
+    model = str(proposal_model or "").strip().lower()
+    if model in _INSUFFICIENT_VERIFY_MODELS:
+        return {"sufficient": False, "reason": f"model_{model or 'empty'}"}
+    if execution_state is not None and bool(
+        getattr(execution_state, "perception_incomplete", False)
+    ):
+        return {"sufficient": False, "reason": "perception_incomplete"}
+    doc = document
+    if doc is None and execution_state is not None:
+        doc = getattr(execution_state, "unified_world_document", None)
+    if not isinstance(doc, dict):
+        return {"sufficient": False, "reason": "document_missing"}
+    if "objects" not in doc or not isinstance(doc.get("objects"), list):
+        return {"sufficient": False, "reason": "object_inventory_missing"}
+
+    cov = coverage
+    gaps = list(evidence_gaps or [])
+    if execution_state is not None:
+        uni = getattr(execution_state, "last_unified_proposal", None)
+        if isinstance(uni, dict):
+            if cov is None and uni.get("coverage") is not None:
+                try:
+                    cov = float(uni.get("coverage"))
+                except (TypeError, ValueError):
+                    cov = None
+            if not gaps and isinstance(uni.get("evidence_gaps"), list):
+                gaps = [str(g) for g in uni.get("evidence_gaps") if str(g).strip()]
+            if not model:
+                model = str(uni.get("model") or "").strip().lower()
+                if model in _INSUFFICIENT_VERIFY_MODELS:
+                    return {"sufficient": False, "reason": f"model_{model}"}
+
+    if cov is not None and float(cov) < 0.55:
+        return {"sufficient": False, "reason": "coverage_low"}
+    gap_blob = " ".join(str(g).lower() for g in gaps)
+    if any(n in gap_blob for n in _INSUFFICIENT_VERIFY_GAP_NEEDLES):
+        return {"sufficient": False, "reason": "evidence_gaps_insufficient"}
+    return {"sufficient": True, "reason": "observed_absence_capable"}
+
+
+def resolve_locate_effect_after_visual_verify(
+    execution_state: Any,
+    *,
+    content_located: bool = False,
+    query_visible: bool = False,
+    multimodal_ok: bool = True,
+    proposal_model: str = "",
+    document: Any = None,
+) -> Dict[str, Any]:
+    """Resolve locate verify using observation quality, not bare visibility."""
+    if content_located or query_visible:
+        return resolve_locate_effect_verification(
+            execution_state,
+            content_located=content_located,
+            query_visible=query_visible,
+            still_unobservable=False,
+        )
+    quality = locate_verify_can_establish_absence(
+        execution_state,
+        document=document,
+        multimodal_ok=multimodal_ok,
+        proposal_model=proposal_model,
+    )
+    out = resolve_locate_effect_verification(
+        execution_state,
+        content_located=False,
+        query_visible=False,
+        still_unobservable=not bool(quality.get("sufficient")),
+    )
+    out["observation_sufficient"] = bool(quality.get("sufficient"))
+    out["observation_reason"] = str(quality.get("reason") or "")
+    return out
+
+
 def resolve_locate_effect_verification(
     execution_state: Any,
     *,

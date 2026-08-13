@@ -4654,6 +4654,7 @@ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
     from plugin.agent.capabilities.locate_content import (
         note_locate_outcome,
         prefer_next_locate_realization,
+        resolve_locate_effect_after_visual_verify,
         resolve_locate_effect_verification,
         same_locate_unresolved,
     )
@@ -4765,6 +4766,64 @@ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
     seal = _content_search_locate_outcome(brief, execution_state=state)
     if seal is None or "scroll_scan" not in (seal.why + seal.realization):
         return False, f"after failed verify must reseal next frontier method, got {seal}"
+
+    # High-quality visual absence → NOT_ACHIEVED (not still_unobservable).
+    hq = ExecutionState()
+    note_locate_outcome(
+        hq,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="native_find",
+        message="accessibility text unavailable, screen must be read",
+    )
+    hq.unified_world_document = {
+        "surface": "conversation",
+        "open_conversation": "Pallavi",
+        "objects": [{"id": "m1", "kind": "message_bubble", "text": "hey"}],
+    }
+    hq.last_unified_proposal = {"coverage": 0.9, "evidence_gaps": [], "model": "vision"}
+    hq_out = resolve_locate_effect_after_visual_verify(
+        hq,
+        query_visible=False,
+        multimodal_ok=True,
+        proposal_model="vision",
+        document=hq.unified_world_document,
+    )
+    if hq_out.get("effect_status") != "not_achieved":
+        return False, f"high-quality absent verify must be NOT_ACHIEVED, got {hq_out}"
+    hq_frame = active_intention_frame(hq)
+    if hq_frame is None or hq_frame.method_frontier.status_of(
+        "locate_native_find"
+    ) != MethodStatus.INEFFECTIVE.value:
+        return False, "high-quality absence must mark method INEFFECTIVE in context"
+
+    # Incomplete visual look → remains UNKNOWN / not INEFFECTIVE.
+    inc = ExecutionState()
+    note_locate_outcome(
+        inc,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="native_find",
+        message="accessibility text unavailable, screen must be read",
+    )
+    inc.unified_world_document = {"surface": "conversation"}
+    inc_out = resolve_locate_effect_after_visual_verify(
+        inc,
+        query_visible=False,
+        multimodal_ok=True,
+        proposal_model="phash_reuse",
+        document=inc.unified_world_document,
+    )
+    if inc_out.get("effect_status") != "unknown":
+        return False, f"incomplete visual verify must remain UNKNOWN, got {inc_out}"
+    inc_frame = active_intention_frame(inc)
+    if inc_frame is None or inc_frame.method_frontier.status_of(
+        "locate_native_find"
+    ) != MethodStatus.UNTRIED.value:
+        return False, "incomplete verify must not mark method INEFFECTIVE"
+
     return True, "locate effect-unknown contracts ok"
 
 

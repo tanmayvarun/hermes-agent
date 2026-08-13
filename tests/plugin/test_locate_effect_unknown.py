@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from plugin.agent.capabilities.locate_content import (
     classify_locate_effect_status,
+    locate_verify_can_establish_absence,
     note_locate_outcome,
     prefer_next_locate_realization,
+    resolve_locate_effect_after_visual_verify,
     resolve_locate_effect_verification,
     same_locate_unresolved,
 )
@@ -165,6 +167,99 @@ def test_still_unobservable_does_not_mark_method_ineffective():
     assert st == MethodStatus.UNTRIED.value, "lack of observability ≠ method fails"
     assert "locate_native_find" in iframe.method_frontier.currently_ineligible
     assert "locate_scroll_scan" in iframe.method_frontier.eligible_methods()
+
+
+def test_high_quality_visual_verify_absent_resolves_unknown_to_not_achieved():
+    """Complete relevant viewport, patient absent → NOT_ACHIEVED (not still_unobs)."""
+    state = ExecutionState()
+    note_locate_outcome(
+        state,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="native_find",
+        message="accessibility text unavailable, screen must be read",
+    )
+    state.unified_world_document = {
+        "surface": "conversation",
+        "open_conversation": "Pallavi",
+        "objects": [
+            {
+                "id": "m1",
+                "kind": "message_bubble",
+                "text": "hey, free later?",
+                "matches_goal": False,
+            }
+        ],
+    }
+    state.last_unified_proposal = {
+        "coverage": 0.9,
+        "evidence_gaps": [],
+        "model": "vision",
+    }
+    quality = locate_verify_can_establish_absence(
+        state,
+        document=state.unified_world_document,
+        multimodal_ok=True,
+        proposal_model="vision",
+    )
+    assert quality["sufficient"] is True
+    out = resolve_locate_effect_after_visual_verify(
+        state,
+        query_visible=False,
+        multimodal_ok=True,
+        proposal_model="vision",
+        document=state.unified_world_document,
+    )
+    assert out.get("effect_status") == "not_achieved"
+    assert state.last_locate_effect_status == "not_achieved"
+    assert state.locate_effect_verify_owed is False
+    iframe = active_intention_frame(state)
+    assert iframe is not None
+    assert iframe.method_frontier.status_of("locate_native_find") == (
+        MethodStatus.INEFFECTIVE.value
+    )
+
+
+def test_incomplete_visual_verify_absent_remains_unknown():
+    """Degenerate / reuse look cannot convert absence into NOT_ACHIEVED."""
+    state = ExecutionState()
+    note_locate_outcome(
+        state,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="native_find",
+        message="accessibility text unavailable, screen must be read",
+    )
+    state.unified_world_document = {"surface": "conversation", "open_conversation": "Pallavi"}
+    state.last_unified_proposal = {
+        "coverage": 0.2,
+        "evidence_gaps": ["needs_more_evidence"],
+        "model": "phash_reuse",
+    }
+    quality = locate_verify_can_establish_absence(
+        state,
+        document=state.unified_world_document,
+        multimodal_ok=True,
+        proposal_model="phash_reuse",
+    )
+    assert quality["sufficient"] is False
+    out = resolve_locate_effect_after_visual_verify(
+        state,
+        query_visible=False,
+        multimodal_ok=True,
+        proposal_model="phash_reuse",
+        document=state.unified_world_document,
+    )
+    assert out.get("effect_status") == "unknown"
+    assert state.last_locate_effect_status == "unknown"
+    iframe = active_intention_frame(state)
+    assert iframe is not None
+    assert iframe.method_frontier.status_of("locate_native_find") == (
+        MethodStatus.UNTRIED.value
+    )
+    assert "locate_native_find" in iframe.method_frontier.currently_ineligible
 
 
 def test_query_text_in_input_control_cannot_bind_content_role():
