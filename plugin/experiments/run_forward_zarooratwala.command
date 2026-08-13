@@ -40,7 +40,8 @@ fi
 export FORWARD_LOG="${LOG_DIR}/forward_zarooratwala_live_${STAMP}.jsonl"
 export FORWARD_CONSOLE="${LOG_DIR}/terminal_forward_zarooratwala_${STAMP}_console.txt"
 export FORWARD_STATUS="${LOG_DIR}/terminal_forward_zarooratwala_${STAMP}_status.txt"
-export FORWARD_PROMPT='Find the zarooratwala link from Pallavi on WhatsApp and forward it to Tanmay'
+# Override for relation probes, e.g. "sent to Pallavi" (recipient ≠ originator).
+export FORWARD_PROMPT="${FORWARD_PROMPT:-Find the zarooratwala link from Pallavi on WhatsApp and forward it to Tanmay}"
 
 printf 'status=launching\nstamp=%s\nlog_path=%s\nconsole_path=%s\ncwd=%s\n' \
   "$STAMP" "$FORWARD_LOG" "$FORWARD_CONSOLE" "$ROOT" > "$FORWARD_STATUS"

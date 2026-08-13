@@ -4401,6 +4401,45 @@ def apply_decision_consultation(
 
     # recommended_probe rides along for fast-path fallback only.
     probe = dict(getattr(proposal, "recommended_probe", None) or {})
+    # Probe telemetry: earned patient → SEARCH choice → decision target
+    # (observational; does not invent ACT from SEARCH).
+    earned_ref = _earned_patient_ref(brief, execution_state=execution_state)
+    search_corr: Dict[str, Any] = {}
+    try:
+        from plugin.agent.capabilities.search_episode import (
+            correlate_search_choice_with_decision,
+        )
+
+        search_corr = correlate_search_choice_with_decision(
+            brief.search_episode if isinstance(brief.search_episode, dict) else None,
+            decision_target=str(outcome.target or ""),
+        )
+    except Exception:
+        search_corr = {}
+    ep = brief.search_episode if isinstance(brief.search_episode, dict) else {}
+    patient_progress = {
+        "patient_ref": earned_ref,
+        "established": bool(earned_ref)
+        and not _patient_identity_contradicted(
+            brief, execution_state=execution_state
+        ),
+        "provenance": (
+            "content_located"
+            if bool(getattr(brief.task_state, "content_located", False))
+            else (
+                "search_content_choice"
+                if str(ep.get("role") or "").strip().lower() == "content"
+                and str(ep.get("chosen_label") or "").strip()
+                else (
+                    "grounding_reground_patient_ref"
+                    if earned_ref
+                    else ""
+                )
+            )
+        ),
+        "selection_path": str(ep.get("selection_path") or ""),
+        "reveal_episode_failed": bool(getattr(brief, "reveal_episode_failed", False)),
+    }
     trace = {
         "phase": brief.task_state.phase,
         "surface": brief.navigation.surface,
@@ -4412,19 +4451,35 @@ def apply_decision_consultation(
         "affordance_qc": qc,
         **outcome.to_dict(),
         "applied": applied,
+        "patient_progress": patient_progress,
+        "search_selection": {
+            k: search_corr.get(k)
+            for k in (
+                "selection_path",
+                "selected_hypothesis",
+                "explore_label",
+                "search_authority_label",
+                "decision_target",
+                "search_choice_matches_decision",
+            )
+            if search_corr.get(k) not in (None, "", [])
+        },
     }
 
     if features is not None and isinstance(getattr(features, "extras", None), dict):
         features.extras["decision_consultation"] = trace
     logger.info(
         "Decision consultation: phase=%s surface=%s chosen=%s target=%r "
-        "applied=%s via=%s why=%s",
+        "applied=%s via=%s patient=%r provenance=%s search_match=%s why=%s",
         trace.get("phase"),
         trace.get("surface"),
         outcome.capability,
         outcome.target,
         applied,
         outcome.realization,
+        earned_ref,
+        patient_progress.get("provenance"),
+        search_corr.get("search_choice_matches_decision"),
         (outcome.why or "")[:120],
     )
     return trace

@@ -271,3 +271,66 @@ def test_earned_content_located_clears_search_debt():
     )
     assert sig["needed"] is False
     assert sig.get("content_retrieval_earned") is True
+
+
+def test_reveal_failure_does_not_transfer_progress_to_similar_patient():
+    """Earned patient A survives; visible similar B must not steal recovery."""
+    patient_a = "https://www.zarooratwala.com/"
+    patient_b = "https://www.instagram.com/zarooratwala"
+    brief = DecisionBrief(
+        goal={
+            "source_conversation": "Alice",
+            "source_query": "zarooratwala",
+            "link_query": "zarooratwala",
+        },
+        world={
+            "surface": "conversation",
+            "open_conversation": "Alice",
+            "objects": [
+                {
+                    "id": "msg_b",
+                    "kind": "link",
+                    "text": patient_b,
+                    "matches_goal": True,
+                }
+            ],
+        },
+        capabilities=["locate_content", "reveal_actions", "select_content"],
+        meta_action="search",
+        task_state=TaskState(
+            phase="act_on_content",
+            source_chat_open=True,
+            content_located=True,
+            content_visible=True,
+        ),
+        search_episode=_earned_content_episode(patient_a),
+        reveal_episode_failed=True,
+    )
+    assert _earned_patient_ref(brief) == patient_a
+    assert _patient_content_established(brief) is True
+    # Reveal failure on A must not reseal locate just because B is attractive.
+    seal = _content_search_locate_outcome(
+        brief,
+        prior=DecisionOutcome(
+            ok=False,
+            capability="reveal_actions",
+            target=patient_a,
+            why="context_menu absent on A",
+        ),
+    )
+    assert seal is None
+    # Meta recovery stays scoped to A; B's visibility alone is not authority.
+    choice = sanitize_meta_choice(
+        {"meta_action": "search", "why": "B looks like query", "confidence": 0.9},
+        MetaContext(
+            address_known=True,
+            referent_search_needed=False,
+            reveal_episode_failed=True,
+            reveal_prefer_capability="select_content",
+            established_patient_ref=patient_a,
+        ),
+    )
+    assert choice is not None
+    assert choice.action is MetaAction.ACT
+    assert choice.scores.get("established_patient_ref") == 1.0
+    assert choice.scores.get("forbid_search") == 1.0
