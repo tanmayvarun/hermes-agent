@@ -221,6 +221,19 @@ class DecisionBrief:
         if self.effect_closure:
             packet["effect_closure"] = dict(self.effect_closure)
         if isinstance(self.search_episode, dict) and self.search_episode:
+            try:
+                from plugin.agent.capabilities.search_episode import (
+                    search_selection_trace,
+                )
+
+                trace = search_selection_trace(self.search_episode)
+            except Exception:
+                trace = {}
+            ledger = list(
+                (trace.get("hypothesis_ledger") if trace else None)
+                or self.search_episode.get("hypothesis_ledger")
+                or []
+            )[:4]
             packet["search_episode"] = {
                 "status": self.search_episode.get("status"),
                 "role": self.search_episode.get("role"),
@@ -228,7 +241,27 @@ class DecisionBrief:
                 "query": self.search_episode.get("query"),
                 "candidate_count": self.search_episode.get("candidate_count"),
                 "chosen_label": self.search_episode.get("chosen_label"),
+                "explore_label": self.search_episode.get("explore_label"),
+                "choice_confidence": self.search_episode.get("choice_confidence"),
+                "role_resolved": self.search_episode.get("role_resolved"),
                 "space": self.search_episode.get("space"),
+                "hypothesis_ledger": ledger,
+                "path": str(
+                    (trace or {}).get("selection_path")
+                    or self.search_episode.get("selection_path")
+                    or ""
+                ),
+                "selection_trace": {
+                    k: (trace or {}).get(k)
+                    for k in (
+                        "selection_path",
+                        "selected_hypothesis",
+                        "act_target",
+                        "candidate_count",
+                        "choice_confidence",
+                    )
+                    if (trace or {}).get(k) not in (None, "", [])
+                },
             }
         return packet
 
@@ -3050,8 +3083,6 @@ def _entity_resolution_type_query_outcome(
             "+entity_resolution_search_type_query"
         ),
     )
-
-
 
 
 def _patient_content_established(brief: "DecisionBrief") -> bool:

@@ -569,6 +569,12 @@ def advance_search_with_candidates(
         ),
         # Unique / ranked choice is not RoleBinder resolution.
         "role_resolved": bool(ep.get("role_resolved")) if status != "complete" else False,
+        # End-to-end ranking path marker (vs source-contact shortcut).
+        "selection_path": (
+            "rank"
+            if ledger
+            else str(ep.get("selection_path") or "")
+        ),
     }
     if status == "complete" and choice_confidence == "provisional":
         ep["role_resolved"] = False
@@ -724,15 +730,43 @@ def note_retrieval_complete(
     return ep
 
 
+def search_selection_trace(episode: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Compact candidate→ledger→choice→ACT-target telemetry for live probes."""
+    ep = episode if isinstance(episode, dict) else {}
+    if not ep:
+        return {}
+    ledger = list(ep.get("hypothesis_ledger") or [])[:8]
+    path = str(ep.get("selection_path") or "").strip()
+    if not path:
+        if ledger:
+            path = "rank"
+        elif str(ep.get("chosen_label") or "").strip():
+            path = "source_contact_shortcut"
+    chosen = str(ep.get("chosen_label") or ep.get("explore_label") or "").strip()
+    return {
+        "selection_path": path,
+        "candidate_count": int(ep.get("candidate_count") or 0),
+        "hypothesis_ledger": ledger,
+        "selected_hypothesis": chosen,
+        "explore_label": str(ep.get("explore_label") or ""),
+        "choice_confidence": str(ep.get("choice_confidence") or ""),
+        "role_resolved": bool(ep.get("role_resolved")),
+        "act_target": chosen,
+        "status": str(ep.get("status") or ""),
+        "role": str(ep.get("role") or ""),
+    }
+
+
 def complete_search_choice(
     execution_state: Any,
     *,
     chosen_label: str,
     chosen_id: Any = None,
     scores: Optional[Sequence[Any]] = None,
+    selection_path: str = "",
 ) -> Dict[str, Any]:
     """Role-resolved search completion (retrieval + binding-eligible referent)."""
-    return note_retrieval_complete(
+    ep = note_retrieval_complete(
         execution_state,
         chosen_label=chosen_label,
         chosen_id=chosen_id,
@@ -740,6 +774,15 @@ def complete_search_choice(
         role_resolved=True,
         candidate_count=1,
     )
+    path = str(selection_path or "").strip()
+    if path and isinstance(ep, dict):
+        ep = {**ep, "selection_path": path}
+        try:
+            if execution_state is not None:
+                execution_state.search_episode = ep
+        except Exception:
+            pass
+    return ep
 
 
 def maybe_complete_source_contact_from_visible_row(
@@ -805,6 +848,7 @@ def maybe_complete_source_contact_from_visible_row(
         chosen_label=label,
         chosen_id=row.get("id"),
         scores=[1.0],
+        selection_path="source_contact_shortcut",
     )
 
 

@@ -264,6 +264,76 @@ def test_frozen_world_old_vs_new_ranking_separates_ties():
     assert ranked[0]["id"] != "related"
 
 
+def test_rank_path_emits_candidate_ledger_choice_act_trace():
+    """End-to-end: candidates → ledger → selected hypothesis → ACT target."""
+    from plugin.agent.capabilities.search_episode import search_selection_trace
+    from plugin.agent.decision_consultation import DecisionBrief
+
+    state = ExecutionState()
+    start_search_episode(
+        state,
+        role="content",
+        referent="acme",
+        query="acme",
+        evidence_tokens=["Alice", "acme"],
+        expected_originator="Alice",
+        expected_container="Alice",
+    )
+    ep = advance_search_with_candidates(
+        state,
+        _frozen_inventory(),
+        referent="acme",
+        query="acme",
+        evidence_tokens=["Alice", "acme"],
+    )
+    assert ep.get("selection_path") == "rank"
+    assert ep.get("hypothesis_ledger")
+    trace = search_selection_trace(ep)
+    assert trace["selection_path"] == "rank"
+    assert trace["selected_hypothesis"]
+    assert trace["act_target"] == trace["selected_hypothesis"]
+    brief = DecisionBrief(
+        goal={"source_conversation": "Alice", "source_query": "acme"},
+        world={"surface": "search", "objects": _frozen_inventory()},
+        search_episode=ep,
+        task_state=TaskState(phase="reach_source"),
+        capabilities=["open_entity"],
+    )
+    packet = brief.to_packet()
+    assert packet["search_episode"]["path"] == "rank"
+    assert packet["search_episode"]["hypothesis_ledger"]
+    assert packet["search_episode"]["selection_trace"]["act_target"]
+    assert _open_entity_target_from_brief(brief) == packet["search_episode"][
+        "selection_trace"
+    ]["act_target"]
+
+
+def test_source_contact_shortcut_marks_selection_path():
+    from plugin.agent.capabilities.search_episode import (
+        maybe_complete_source_contact_from_visible_row,
+        search_selection_trace,
+    )
+
+    state = ExecutionState()
+    doc = {
+        "surface": "chat_list",
+        "objects": [
+            {
+                "id": "r1",
+                "kind": "chat_row",
+                "text": "Alice",
+                "point": [10, 20],
+            }
+        ],
+    }
+    ep = maybe_complete_source_contact_from_visible_row(
+        state, document=doc, contact="Alice", source_chat_open=False
+    )
+    assert ep is not None
+    assert ep.get("selection_path") == "source_contact_shortcut"
+    assert search_selection_trace(ep)["selection_path"] == "source_contact_shortcut"
+
+
 def test_hypothesis_ledger_mandatory_fields():
     ranked = rank_search_hypotheses(
         _frozen_inventory(),
