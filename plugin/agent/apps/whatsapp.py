@@ -1917,7 +1917,24 @@ class WhatsAppOverlay:
             )
         target = (goal.target_contact or "").strip().lower()
         query = (goal.link_query or "").strip().lower()
-        open_c = (view.open_conversation or "").lower()
+        # Authoritative settled world document dominates stale view cache when
+        # they disagree (live 123703: view=Pallavi while document=ZarooratWala).
+        open_raw = str(view.open_conversation or "").strip()
+        try:
+            hints = getattr(world, "overlay_hints", None) or {}
+            doc = hints.get("unified_world_document") if isinstance(hints, dict) else None
+            if not isinstance(doc, dict):
+                doc = getattr(world, "unified_world_document", None)
+            if isinstance(doc, dict):
+                doc_open = str(doc.get("open_conversation") or "").strip()
+                if doc_open and (
+                    not open_raw
+                    or open_raw.lower() != doc_open.lower()
+                ):
+                    open_raw = doc_open
+        except Exception:
+            pass
+        open_c = open_raw.lower()
         on_target = _on_named_conversation(open_c, target)
         has_query = _query_in_conversation_timeline(world, query) if query else False
         # Also accept query anywhere if already forwarded into dest chat
@@ -1937,14 +1954,16 @@ class WhatsAppOverlay:
                     "forward_chrome": forward_chrome,
                 },
             )
+        evidence = dict(view.to_dict() or {})
+        evidence["open_conversation"] = open_raw
         return GoalStatus(
             succeeded=False,
             reason=(
                 f"forward pending source={goal.contact!r} query={goal.link_query!r} "
-                f"target={goal.target_contact!r} open={view.open_conversation!r} "
+                f"target={goal.target_contact!r} open={open_raw!r} "
                 f"has_query={has_query}"
             ),
-            evidence=view.to_dict(),
+            evidence=evidence,
         )
 
     def resolve_target(self, world: WorldModel, semantic: str, action: str) -> Optional[Entity]:

@@ -64,6 +64,8 @@ class FailureClass(str, Enum):
     METHOD_INEFFECTIVE = "method_ineffective"
     PRECONDITION_MISSING = "precondition_missing"
     UNEXPECTED_WORLD = "unexpected_world"
+    # Motor ok + world changed, but to an incompatible semantic container.
+    NAVIGATION_MISMATCH = "navigation_mismatch"
     LOCAL_ROUTE_EXHAUSTED = "local_route_exhausted"
     UNSAFE = "unsafe"
 
@@ -308,9 +310,14 @@ class MethodContext:
 
     Prefer this over opaque textual world hashes so irrelevant churn
     (e.g. message timestamps) does not resurrect every failed method.
+
+    ``semantic_container`` is the locus of action (conversation/folder/tab),
+    not the UI surface alone — so failures in Alice's chat do not suppress
+    the same method in Bob's chat.
     """
 
     surface: str = ""
+    semantic_container: str = ""
     target_selected: bool = False
     action_surface_visible: bool = False
     overlay: str = ""
@@ -318,6 +325,7 @@ class MethodContext:
     def signature(self) -> str:
         return (
             f"surface={str(self.surface or '').strip().lower()}"
+            f"|ctr={str(self.semantic_container or '').strip().lower()}"
             f"|sel={int(bool(self.target_selected))}"
             f"|act={int(bool(self.action_surface_visible))}"
             f"|ov={str(self.overlay or '').strip().lower()}"
@@ -326,6 +334,7 @@ class MethodContext:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "surface": self.surface,
+            "semantic_container": self.semantic_container,
             "target_selected": bool(self.target_selected),
             "action_surface_visible": bool(self.action_surface_visible),
             "overlay": self.overlay,
@@ -339,6 +348,9 @@ class MethodContext:
         if isinstance(raw, dict):
             return cls(
                 surface=str(raw.get("surface") or ""),
+                semantic_container=str(
+                    raw.get("semantic_container") or raw.get("ctr") or ""
+                ),
                 target_selected=bool(raw.get("target_selected")),
                 action_surface_visible=bool(raw.get("action_surface_visible")),
                 overlay=str(raw.get("overlay") or ""),
@@ -353,6 +365,7 @@ class MethodContext:
             )
             return cls(
                 surface=str(parts.get("surface") or ""),
+                semantic_container=str(parts.get("ctr") or ""),
                 target_selected=str(parts.get("sel") or "0") in {"1", "true"},
                 action_surface_visible=str(parts.get("act") or "0") in {"1", "true"},
                 overlay=str(parts.get("ov") or ""),
@@ -633,7 +646,10 @@ def score_method(
     *,
     attempted: bool = False,
     grounding_confidence: float = 0.7,
+    locus_forbidden: bool = False,
 ) -> float:
+    if locus_forbidden:
+        return 0.0
     info = 0.8 if "reveal" in spec.capability or spec.gesture else 0.4
     progress = 0.3 if "reveal" in spec.capability else 0.5
     if spec.provenance == MethodProvenance.OBSERVED.value:
@@ -655,10 +671,40 @@ def score_method(
     )
 
 
+def apply_wrong_locus_ineligibility(
+    frame: IntentionFrame,
+    *,
+    brief: Any = None,
+    state: Any = None,
+    field_role: str = "",
+) -> List[str]:
+    """Mark methods whose actuation locus is currently forbidden ineligible.
+
+    Returns the method ids newly marked ineligible.
+    """
+    from plugin.agent.capabilities.locus_contract import method_locus_ineligible
+
+    marked: List[str] = []
+    fr = frame.method_frontier
+    for mid, spec in list(fr.catalog.items()):
+        cap = str(getattr(spec, "capability", "") or mid or "").strip().lower()
+        if not method_locus_ineligible(
+            cap, brief=brief, state=state, field_role=field_role
+        ):
+            continue
+        if mid not in fr.currently_ineligible:
+            fr.currently_ineligible.append(mid)
+            marked.append(mid)
+    return marked
+
+
 def rank_eligible(
     frame: IntentionFrame,
     *,
     demote_ids: Optional[Sequence[str]] = None,
+    brief: Any = None,
+    state: Any = None,
+    field_role: str = "",
 ) -> List[Tuple[str, float]]:
     frontier = frame.method_frontier
     demote = {str(x) for x in (demote_ids or ()) if str(x or "").strip()}
@@ -667,6 +713,19 @@ def rank_eligible(
         spec = frontier.catalog.get(mid)
         if spec is None:
             continue
+        cap = str(getattr(spec, "capability", "") or mid or "").strip().lower()
+        locus_bad = False
+        if brief is not None or state is not None or field_role:
+            try:
+                from plugin.agent.capabilities.locus_contract import (
+                    method_locus_ineligible,
+                )
+
+                locus_bad = method_locus_ineligible(
+                    cap, brief=brief, state=state, field_role=field_role
+                )
+            except Exception:
+                locus_bad = False
         ranked.append(
             (
                 mid,
@@ -674,6 +733,7 @@ def rank_eligible(
                     spec,
                     frame.scoring_policy,
                     attempted=mid in frontier.attempted,
+                    locus_forbidden=locus_bad,
                 ),
             )
         )
@@ -736,6 +796,23 @@ def is_local_route_exhausted(frame: IntentionFrame) -> bool:
     return True
 
 
+def world_with_prerequisite_evidence(
+    state: Any,
+    world: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Annotate world with downstream evidence that retires obsolete prerequisites.
+
+    Domain implications (which surfaces/capabilities entail which predicates)
+    live in ``effect_implications`` — this helper only merges evidence.
+    Motor/executor success alone never retires a prerequisite.
+    """
+    from plugin.agent.executive.effect_implications import (
+        annotate_world_with_effect_evidence,
+    )
+
+    return annotate_world_with_effect_evidence(state, world)
+
+
 def evaluate_intention_success(
     frame: IntentionFrame,
     *,
@@ -744,10 +821,16 @@ def evaluate_intention_success(
     grounded_forward: bool = False,
 ) -> bool:
     """Re-evaluate success_predicate after every world update (before next method)."""
+    from plugin.agent.executive.effect_implications import (
+        collect_effect_evidence,
+        predicate_satisfied_by_evidence,
+    )
+
     pred = str(frame.intention.success_predicate or "").strip().lower()
     stance = str(affordance_stance or "").strip().lower()
     doc = world if isinstance(world, dict) else {}
     surface = str(doc.get("surface") or "").strip().lower()
+    evidence = collect_effect_evidence(None, doc)
     if pred in {
         "forward_affordance_grounded",
         "usable_forwarding_route_discovered",
@@ -755,8 +838,10 @@ def evaluate_intention_success(
     }:
         if grounded_forward or stance == "act_clear":
             return True
-        if surface in {"context_menu", "action_menu", "selection_mode", "forward_picker"}:
-            # Surface alone is not enough — need Forward-ish control when possible.
+        if predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence):
+            return True
+        if surface in {"context_menu", "action_menu", "selection_mode"}:
+            # Menu/selection alone: need Forward-ish control or act_clear.
             objs = doc.get("objects") or []
             for o in objs if isinstance(objs, list) else []:
                 if not isinstance(o, dict):
@@ -764,18 +849,19 @@ def evaluate_intention_success(
                 text = str(o.get("text") or o.get("label") or "").strip().lower()
                 if text in {"forward", "share"} or "forward" in text:
                     return True
-            # selection_mode / menu with act_clear handled above
             if stance == "act_clear":
                 return True
         return False
     if pred == "message_action_surface_visible":
+        if predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence):
+            return True
         return surface in {"context_menu", "action_menu", "selection_mode"}
     if pred == "source_object_selected":
         if bool(doc.get("source_object_selected")):
             return True
-        if surface == "selection_mode":
+        if bool(doc.get("downstream_implies_source_selected")):
             return True
-        return False
+        return predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence)
     # Effect-keyed child success predicates (storage / operational / stubs).
     if pred.startswith("storage:available_bytes_at_least") or pred == "free_storage_satisfied":
         from plugin.agent.executive.blocking import (
@@ -820,23 +906,29 @@ def method_preconditions_met(
     predicates: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """True when every named precondition holds in world/predicates."""
+    from plugin.agent.executive.effect_implications import (
+        collect_effect_evidence,
+        predicate_satisfied_by_evidence,
+    )
+
     preds = predicates if isinstance(predicates, dict) else {}
     doc = world if isinstance(world, dict) else {}
+    evidence = collect_effect_evidence(None, doc)
     for p in spec.preconditions or []:
         key = str(p or "").strip()
         if not key:
             continue
-        if key == "source_object_selected":
-            if bool(preds.get("source_object_selected")) or bool(
-                doc.get("source_object_selected")
-            ):
-                continue
-            if str(doc.get("surface") or "").strip().lower() == "selection_mode":
-                continue
-            return False
+        if bool(preds.get(key)) or predicate_satisfied_by_evidence(
+            key, world=doc, evidence=evidence
+        ):
+            continue
         if key in preds and not bool(preds.get(key)):
             return False
         if key in doc and not bool(doc.get(key)):
+            return False
+        # Absent from both: selection-style preconditions fail closed; others
+        # remain vacuous (legacy MethodSpec keys without world facts).
+        if key not in preds and key not in doc and key == "source_object_selected":
             return False
     return True
 
@@ -1225,16 +1317,32 @@ def ensure_prereq_child_or_next_method(
     predicates: Optional[Dict[str, Any]] = None,
 ) -> Optional[MethodSpec]:
     """Pick next method; spawn child when top-ranked method lacks preconditions."""
+    evidence_world = world_with_prerequisite_evidence(state, world)
+    if isinstance(predicates, dict):
+        # Explicit predicates win when True; do not let False erase downstream.
+        for k, v in predicates.items():
+            if v:
+                evidence_world[k] = v
     if frame.suspended_by_child:
         child = active_intention_frame(state)
         if child is not None and child.intention.id != frame.intention.id:
-            return next_reveal_method(child)
+            # Downstream may have already satisfied the child's effect.
+            if evaluate_intention_success(child, world=evidence_world):
+                resume_parent_after_child(state, world=evidence_world)
+                frame = active_intention_frame(state) or frame
+            else:
+                return next_reveal_method(child)
     ranked = rank_eligible(frame)
     for mid, _score in ranked:
         spec = frame.method_frontier.catalog.get(mid)
         if spec is None:
             continue
-        if method_preconditions_met(spec, world=world, predicates=predicates):
+        # Prefer world evidence over stale False predicates from task state.
+        if method_preconditions_met(spec, world=evidence_world, predicates=None):
+            return spec
+        if method_preconditions_met(
+            spec, world=evidence_world, predicates=predicates
+        ):
             return spec
         # First unmet → spawn child for that precondition (v1: select only).
         if "source_object_selected" in (spec.preconditions or []):
@@ -1317,6 +1425,10 @@ def recommend_recovery(
     if budget_exhausted(frame):
         return RecoveryAction.RETURN_TO_EXECUTIVE.value
     if failure_class == FailureClass.UNEXPECTED_WORLD.value:
+        return RecoveryAction.RETURN_TO_EXECUTIVE.value
+    # Motor worked but landed in the wrong semantic container — do not
+    # re-try the same navigation method; escalate for alternate context path.
+    if failure_class == FailureClass.NAVIGATION_MISMATCH.value:
         return RecoveryAction.RETURN_TO_EXECUTIVE.value
     if failure_class == FailureClass.PRECONDITION_MISSING.value:
         return RecoveryAction.SPAWN_CHILD_INTENTION.value

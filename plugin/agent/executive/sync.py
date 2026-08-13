@@ -910,6 +910,12 @@ def assess_executive_judgement(
             "reach_source",
             "open_source",
             "preclear",
+            # Content/reveal phases still require the source container —
+            # foreign open must not authorize reveal (live 123703).
+            "find_link",
+            "hunt_content",
+            "act_on_content",
+            "open_forward",
         }
         source_row_ready = bool(referent_signals.get("source_contact_open_ready"))
         if (

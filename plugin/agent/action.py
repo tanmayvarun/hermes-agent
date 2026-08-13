@@ -49,6 +49,8 @@ class Action:
     legacy_semantics: bool = False
     # locate_content MethodFrontier preference (native_find / scroll_scan).
     prefer_realization: str = ""
+    # Typed navigation: required container after settle (content hit ≠ container).
+    expected_container: str = ""
 
 
 # Backward-compatible alias for one release

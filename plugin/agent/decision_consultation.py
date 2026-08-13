@@ -1153,6 +1153,75 @@ def _llm_required_observe(why: str, *, realization: str) -> DecisionOutcome:
     )
 
 
+def _stamp_open_navigation_semantics(
+    outcome: DecisionOutcome, brief: "DecisionBrief"
+) -> DecisionOutcome:
+    """Type open_entity/open_contact with content≠container navigation semantics.
+
+    Search-commit and sanitize rewrites must not remain ``legacy_semantics`` —
+    without establishes_roles + is_navigation, settle cannot detect
+    NAVIGATION_MISMATCH when a content hit opens the wrong container.
+    """
+    cap = str(getattr(outcome, "capability", "") or "").strip().lower()
+    if cap not in {"open_entity", "open_contact"}:
+        return outcome
+    if bool(getattr(outcome, "legacy_semantics", False)) and bool(
+        getattr(outcome, "establishes_roles", None)
+    ):
+        # Already typed; do not downgrade.
+        pass
+    target = str(getattr(outcome, "target", "") or "").strip()
+    if not target:
+        return outcome
+    try:
+        from plugin.agent.procedures.forward_message import action_open_semantics
+
+        phase = str(getattr(brief.task_state, "phase", "") or "")
+        # Prefer forward_task derived phase when present (OPEN_SOURCE etc.).
+        ft = (
+            (brief.world or {}).get("forward_task")
+            if isinstance(brief.world, dict)
+            else None
+        )
+        if isinstance(ft, dict) and str(ft.get("derived_phase") or "").strip():
+            phase = str(ft.get("derived_phase") or phase)
+        cand: Dict[str, Any] = {"label": target, "text": target}
+        # Attach world object kind when the target matches a visible row.
+        for obj in (brief.world or {}).get("objects") or []:
+            if not isinstance(obj, dict):
+                continue
+            lab = str(obj.get("text") or obj.get("label") or "").strip()
+            if lab and lab.lower() == target.lower():
+                cand = dict(obj)
+                cand.setdefault("label", lab)
+                break
+        sem = action_open_semantics(
+            cap,
+            phase=phase,
+            candidate=cand,
+            target=target,
+            target_kind=str(
+                getattr(outcome, "target_kind", "") or cand.get("kind") or ""
+            ),
+        )
+        est = [str(r) for r in (sem.get("establishes_roles") or []) if str(r).strip()]
+        if not est and not sem.get("is_navigation"):
+            # Still untyped — leave as-is (caller may mark legacy).
+            return outcome
+        outcome.target_kind = str(sem.get("target_kind") or outcome.target_kind or "")
+        outcome.establishes_roles = est
+        outcome.action_is_navigation = bool(sem.get("is_navigation"))
+        outcome.legacy_semantics = False
+        if sem.get("content_hit_not_container"):
+            why = str(outcome.why or "")
+            note = "content_hit≠container; expect source_container verify"
+            if note not in why:
+                outcome.why = f"{why}; {note}"[:200]
+    except Exception:
+        return outcome
+    return outcome
+
+
 @dataclass
 class LlmDecisionChooser:
     """Default realization: one short bounded text call."""
@@ -1246,6 +1315,17 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
     target = str(payload.get("target") or payload.get("text") or "").strip()
     if capability in {"invoke_affordance", "commit_irreversible", "reveal_actions"}:
         target = _affordance_label(target)
+        # State/provenance markers are not actionable controls (live 123703).
+        tok = str(target or "").strip().lower()
+        tok = tok.lstrip("•·▪●◦-–— ").strip()
+        if tok.startswith("forwarded") or tok in {"forwarded", "• forwarded"}:
+            return DecisionOutcome(
+                ok=False,
+                why=(
+                    f"{capability} target {target!r} is message metadata "
+                    "(Forwarded badge), not the Forward affordance"
+                ),
+            )
     if capability == "resolve_entity" and not brief.candidates:
         return DecisionOutcome(ok=False, why="resolve_entity chosen with an empty candidate_set")
     # RoleBinder owns identity. resolve_* may propose a binding; open/act
@@ -1306,6 +1386,34 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
             target=target,
         )
         role = str(sem.get("target_role") or "")
+        # Do not retry a content hit already invalidated by NAVIGATION_MISMATCH.
+        try:
+            from plugin.agent.capabilities.search_episode import (
+                exclude_role_rejected_candidates,
+            )
+
+            ep = (
+                brief.search_episode
+                if isinstance(getattr(brief, "search_episode", None), dict)
+                else None
+            )
+            if isinstance(ep, dict) and (
+                ep.get("role_rejected_labels") or ep.get("role_rejected_ids")
+            ):
+                surviving = exclude_role_rejected_candidates(
+                    [{"label": target, "text": target, "id": cand.get("id")}],
+                    ep,
+                )
+                if not surviving:
+                    return DecisionOutcome(
+                        ok=False,
+                        why=(
+                            f"open candidate {target!r} invalidated by prior "
+                            "NAVIGATION_MISMATCH — re-establish required container"
+                        ),
+                    )
+        except Exception:
+            pass
         # Navigation via content: click target is not a container identity claim.
         # Allow open; RoleBinder will verify established roles after settle.
         # Must NOT auto-bind source_object from this click.
@@ -1669,8 +1777,11 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
         tgt_l = target.strip().lower()
         dest_l = dest.lower()
         looks_like_dest = bool(dest_l) and (dest_l in tgt_l or tgt_l in dest_l)
+        # Exact / menu-verb match only — "Forwarded" must not count as Forward
+        # (startswith("forward") is a false positive on provenance badges).
+        tok = tgt_l.lstrip("•·▪●◦-–— ").strip()
         is_forward_verb = (not looks_like_dest) and (
-            tgt_l
+            tok
             in {
                 "forward",
                 "forward message",
@@ -1678,7 +1789,10 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
                 "share",
                 "send",
             }
-            or tgt_l.startswith("forward")
+            or (
+                tok.startswith("forward ")
+                and not tok.startswith("forwarded")
+            )
         )
         if is_forward_verb and dest:
             selected = False
@@ -1822,14 +1936,38 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
                 "(desired-effect selection pending)"
             ),
         )
-    # Message actions need an open conversation; on chat_list/search the same
-    # URL often appears as a preview row — revealing there is a dead end.
-    if capability in {"reveal_actions", "select_content", "invoke_affordance"} and surface in {
-        "chat_list",
-        "search",
-        "search_results",
-    }:
-        if not brief.task_state.source_chat_open:
+    # Message actions need a *verified* source container. Content relevance on
+    # search rows / wrong chats must not authorize reveal/select/invoke.
+    # Destination-picker invoke (Send) is past source establishment.
+    if capability in {"reveal_actions", "select_content", "invoke_affordance"}:
+        dest_surfaces = {
+            "forward_picker",
+            "destination_picker",
+            "send_to",
+            "share_sheet",
+        }
+        source_ref = str(
+            (brief.goal or {}).get("contact")
+            or (brief.goal or {}).get("source_conversation")
+            or ""
+        ).strip()
+        if (
+            source_ref
+            and not bool(brief.task_state.source_chat_open)
+            and surface not in dest_surfaces
+            and str(brief.task_state.phase or "").strip().lower()
+            not in {"choose_destination", "pick_dest", "invoke_forward"}
+        ):
+            return DecisionOutcome(
+                ok=False,
+                why=(
+                    f"{capability} requires verified source container "
+                    f"{source_ref!r}; current open="
+                    f"{brief.task_state.open_conversation!r} — "
+                    "ResolveContext / open_entity first"
+                ),
+            )
+        if surface in {"chat_list", "search", "search_results"}:
             return DecisionOutcome(
                 ok=False,
                 why=f"{capability} before the source chat is open; open_entity first",
@@ -3677,6 +3815,8 @@ def apply_decision_consultation(
                     confidence=max(0.7, float(outcome.confidence or 0.0)),
                     realization=f"{outcome.realization or 'decision'}+search_commit_chosen",
                 )
+            # Always type search-commit opens (content hit ≠ container identity).
+            outcome = _stamp_open_navigation_semantics(outcome, brief)
 
     # Final SEARCH→type_query seal: sanitize/barren/search_continue must not
     # leave Observe or Forward as the realization of an entity-resolution gap.
@@ -4354,16 +4494,16 @@ def apply_decision_consultation(
                     }
         if outcome.capability in {"locate_content", "type_query"} and outcome.target:
             next_action["text"] = outcome.target
-        # Preserve already-typed navigation semantics. Legacy untyped opens must
-        # NOT acquire role-establishing navigation authority via re-inference.
+        # Type open navigation (content hit ≠ container). Prefer typing over
+        # legacy so settle can detect NAVIGATION_MISMATCH.
         if outcome.capability in {"open_entity", "open_contact"}:
             try:
+                outcome = _stamp_open_navigation_semantics(outcome, brief)
                 typed = (
                     bool(getattr(outcome, "action_is_navigation", False))
                     or bool(getattr(outcome, "establishes_roles", None))
-                    or bool(str(getattr(outcome, "target_kind", "") or "").strip())
-                )
-                if typed and not bool(getattr(outcome, "legacy_semantics", False)):
+                ) and not bool(getattr(outcome, "legacy_semantics", False))
+                if typed:
                     next_action["target_kind"] = str(
                         getattr(outcome, "target_kind", "") or ""
                     )
@@ -4374,6 +4514,14 @@ def apply_decision_consultation(
                         getattr(outcome, "action_is_navigation", False)
                     )
                     next_action["legacy_semantics"] = False
+                    # Required container for post-settle verification.
+                    src = str(
+                        (brief.goal or {}).get("contact")
+                        or (brief.goal or {}).get("source_conversation")
+                        or ""
+                    ).strip()
+                    if src and bool(outcome.action_is_navigation):
+                        next_action["expected_container"] = src
                 else:
                     import logging as _logging
 
@@ -4385,7 +4533,6 @@ def apply_decision_consultation(
                     outcome.legacy_semantics = True
                     outcome.action_is_navigation = False
                     outcome.establishes_roles = []
-                    # Keep any explicit target_kind; do not invent one.
                     next_action["target_kind"] = str(
                         getattr(outcome, "target_kind", "")
                         or next_action.get("target_kind")

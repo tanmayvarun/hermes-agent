@@ -6615,8 +6615,8 @@ def _forward_predicate_gate_after_transition(
                                     status="ok",
                                 )
                         elif contact_ref:
-                            # Settled wrong container — mismatch on destination
-                            # identity, never on the content click label.
+                            # Settled wrong container — NAVIGATION_MISMATCH when
+                            # a content hit opened an incompatible context.
                             new_ft = apply_referent_mismatch(
                                 runtime.execution_state,
                                 role=role,
@@ -6626,6 +6626,112 @@ def _forward_predicate_gate_after_transition(
                             )
                             if isinstance(new_ft, dict):
                                 hints["forward_task"] = new_ft
+                            nav_class = "REFERENT_MISMATCH"
+                            if bool(sem.get("is_navigation")) or bool(
+                                getattr(decision, "action_is_navigation", False)
+                            ):
+                                nav_class = "NAVIGATION_MISMATCH"
+                                try:
+                                    from plugin.agent.capabilities.search_episode import (
+                                        reject_navigation_mismatch_candidate,
+                                    )
+
+                                    reject_navigation_mismatch_candidate(
+                                        runtime.execution_state,
+                                        click_label=click_label,
+                                        observed_container=open_name,
+                                        required_container=contact_ref,
+                                    )
+                                except Exception:
+                                    pass
+                                try:
+                                    runtime.execution_state.leave_wrong_conversation_owed = (
+                                        True
+                                    )
+                                    runtime.execution_state.leave_wrong_conversation_open = (
+                                        open_name
+                                    )
+                                    runtime.execution_state.leave_wrong_conversation_source = (
+                                        contact_ref
+                                    )
+                                except Exception:
+                                    pass
+                                # Ledger: motor ok + wrong semantic container.
+                                # Same-method retry is forbidden without new evidence.
+                                try:
+                                    from plugin.agent.executive.intention_frame import (
+                                        AttemptRecord,
+                                        AttemptValidity,
+                                        FailureClass,
+                                        MethodOutcome,
+                                        MethodStatus,
+                                        active_intention_frame,
+                                        apply_derived_status,
+                                        mark_method_attempted,
+                                        record_method_status,
+                                    )
+                                    from plugin.agent.executive.effect_implications import (
+                                        method_context_from_state,
+                                    )
+
+                                    iframe = active_intention_frame(
+                                        runtime.execution_state
+                                    )
+                                    if iframe is not None:
+                                        mid = (
+                                            f"{fam}:{click_label[:80]}"
+                                            if click_label
+                                            else fam
+                                        )
+                                        mark_method_attempted(iframe, mid)
+                                        ctx = method_context_from_state(
+                                            runtime.execution_state,
+                                            world={
+                                                "surface": str(
+                                                    (
+                                                        hints.get("unified_world_document")
+                                                        or {}
+                                                    ).get("surface")
+                                                    or ""
+                                                ),
+                                                "open_conversation": open_name,
+                                            },
+                                        )
+                                        record_method_status(
+                                            iframe,
+                                            mid,
+                                            MethodStatus.INEFFECTIVE.value,
+                                            method_context=ctx,
+                                            world_signature=ctx.signature(),
+                                        )
+                                        iframe.attempts.append(
+                                            AttemptRecord(
+                                                method_id=mid,
+                                                execution_status="motor_ok",
+                                                observation_quality=0.9,
+                                                method_outcome=(
+                                                    MethodOutcome.UNEXPECTED_EFFECT.value
+                                                ),
+                                                failure_class=(
+                                                    FailureClass.NAVIGATION_MISMATCH.value
+                                                ),
+                                                attempt_validity=(
+                                                    AttemptValidity.VALID.value
+                                                ),
+                                                method_status=(
+                                                    MethodStatus.INEFFECTIVE.value
+                                                ),
+                                                evidence_refs=[
+                                                    (
+                                                        f"expected={contact_ref!r}"
+                                                        f" observed={open_name!r}"
+                                                    )[:160]
+                                                ],
+                                            )
+                                        )
+                                        apply_derived_status(iframe)
+                                except Exception:
+                                    pass
                             _log_cycle(
                                 log,
                                 iteration=iteration,
@@ -6636,7 +6742,12 @@ def _forward_predicate_gate_after_transition(
                                     "click_target": click_label[:120],
                                     "attempt_id": attempt_id,
                                     "proposal": proposal.to_dict(),
-                                    "class": "REFERENT_MISMATCH",
+                                    "class": nav_class,
+                                    "failure_class": (
+                                        "navigation_mismatch"
+                                        if nav_class == "NAVIGATION_MISMATCH"
+                                        else "referent_mismatch"
+                                    ),
                                 },
                                 status="fail",
                             )

@@ -274,6 +274,28 @@ def wrong_locus_forbidden(
 
     # --- patient locus (commitment) ----------------------------------------
     if cap in _PATIENT_CAPS:
+        # Content actions require verified source container. Foreign open
+        # (leave_wrong owed) must not authorize reveal/select/invoke.
+        if brief is not None:
+            foreign, open_c, source = _foreign_container(brief)
+            phase = _norm(getattr(getattr(brief, "task_state", None), "phase", ""))
+            dest_phases = {
+                "choose_destination",
+                "pick_dest",
+                "invoke_forward",
+            }
+            if foreign and phase not in dest_phases:
+                r = LocusRequirement(
+                    desired_effect="source_container_open",
+                    required_locus="open_matches_referent(source)",
+                    forbidden_loci=("foreign_container",),
+                    kind=LocusKind.CONTAINER,
+                )
+                return (
+                    True,
+                    f"wrong_locus:container:foreign_open:{open_c!r}!={source!r}",
+                    r,
+                )
         if role in COMPOSER_FIELD_ROLES or label_looks_like_composer(lab):
             r = LocusRequirement(
                 desired_effect="affordance_invoked",

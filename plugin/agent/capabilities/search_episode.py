@@ -1184,6 +1184,77 @@ def exclude_role_rejected_candidates(
     return out
 
 
+def reject_navigation_mismatch_candidate(
+    execution_state: Any,
+    *,
+    click_label: str = "",
+    observed_container: str = "",
+    required_container: str = "",
+    candidate_id: Any = None,
+) -> Dict[str, Any]:
+    """Invalidate a content-hit open that landed in the wrong container.
+
+    Content relevance ≠ container identity. After NAVIGATION_MISMATCH the same
+    hit must not be re-opened without new evidence.
+    """
+    out: Dict[str, Any] = {"rejected": False}
+    label = str(click_label or "").strip()
+    if execution_state is None or not label:
+        return out
+    try:
+        holder = _episode_holder(execution_state)
+        ep = search_episode_of(holder) or {}
+        if not isinstance(ep, dict):
+            ep = {}
+        rejected_ids = [x for x in list(ep.get("role_rejected_ids") or []) if x is not None]
+        rejected_labels = [
+            str(x).strip()
+            for x in list(ep.get("role_rejected_labels") or [])
+            if str(x).strip()
+        ]
+        reasons = [
+            str(x).strip()
+            for x in list(ep.get("role_rejected_reasons") or [])
+            if str(x).strip()
+        ]
+        if candidate_id is not None and candidate_id not in rejected_ids:
+            rejected_ids.append(candidate_id)
+        if label not in rejected_labels:
+            rejected_labels.append(label)
+        reason = (
+            f"navigation_mismatch:expected={required_container!r}"
+            f":observed={observed_container!r}"
+        )
+        if reason not in reasons:
+            reasons.append(reason)
+        ep = {
+            **ep,
+            "role_rejected_ids": rejected_ids[:24],
+            "role_rejected_labels": rejected_labels[:24],
+            "role_rejected_reasons": reasons[:24],
+            "chosen_label": "",
+            "chosen_id": None,
+            "choice_confidence": "",
+            "status": "ranking" if rejected_labels else str(ep.get("status") or ""),
+            "role_resolved": False,
+            "last_navigation_mismatch": {
+                "click_label": label[:160],
+                "observed_container": str(observed_container or "")[:120],
+                "required_container": str(required_container or "")[:120],
+            },
+        }
+        # Clear complete-commit so SEARCH does not reseal the same hit.
+        ep["retrieval_complete"] = False
+        if hasattr(holder, "search_episode"):
+            holder.search_episode = ep
+        elif isinstance(holder, dict):
+            holder["search_episode"] = ep
+        out.update({"rejected": True, "reason": reason, "episode": ep})
+    except Exception as exc:
+        out["error"] = str(exc)[:120]
+    return out
+
+
 def filter_search_candidates(
     candidates: Sequence[Dict[str, Any]],
     *,
@@ -1622,10 +1693,22 @@ def search_continue_capability(
             # Ranking done — do not re-resolve or open under SEARCH; next meta ACT.
             # status=complete is retrieval/choice complete, not RoleBinder resolved.
             return "", "", "search complete; await ACT open"
+        chosen = str(ep.get("chosen_label") or "")
+        # NAVIGATION_MISMATCH invalidation: do not reseal the same content hit.
+        rejected = exclude_role_rejected_candidates(
+            [{"label": chosen, "text": chosen, "id": ep.get("chosen_id")}],
+            ep,
+        )
+        if not rejected:
+            return (
+                "",
+                "",
+                "chosen hit invalidated by NAVIGATION_MISMATCH — re-establish container",
+            )
         if "open_entity" in allowed:
             return (
                 "open_entity",
-                str(ep.get("chosen_label") or ""),
+                chosen,
                 "search complete; explore/open chosen hypothesis (not role bind)",
             )
         return "", "", ""
