@@ -1,0 +1,593 @@
+# Hermes runtime — clients, executive, memory, substrates
+
+**Status:** Architecture roof (design locked for incremental implementation).  
+**Related:** [agent-design.md](agent-design.md), [executive-runtime.md](executive-runtime.md),
+[representation-capability-substrate.md](representation-capability-substrate.md),
+[belief-centric-control-loop.md](belief-centric-control-loop.md),
+[interface-foundation.md](interface-foundation.md).
+
+---
+
+## Stance
+
+> Hermes is **one agent/runtime** with multiple clients. TUI, console/UI app,
+> future voice/mobile, and background automation are presentation/control
+> surfaces over the same brain — not separate agent architectures.
+
+> **The brain does not own stored memory; it owns the decision about when
+> memory is relevant. A MemorySystem owns durable knowledge, retrieval,
+> provenance, consolidation, and forgetting.**
+
+```text
+One runtime.
+One semantic task model.
+One MemorySystem.
+One capability / method / substrate model.
+Many clients.
+```
+
+Central cognition invariant:
+
+```text
+Brain reasons in goals, facts, questions, intentions, desired effects.
+Execution substrates reason in mechanisms.
+MemorySystem supplies evidence-bearing durable knowledge.
+```
+
+---
+
+## Four authorities (must not collapse)
+
+```text
+WorldState       = observed current reality
+TaskState        = authoritative state of the current task
+WorkingContext   = temporary reasoning / hypotheses / recent evidence (Executive)
+LongTermMemory   = durable knowledge via MemorySystem
+```
+
+### Authority reconciliation
+
+> WorldState, TaskState, WorkingContext, and LongTermMemory are distinct
+> authorities. Evidence from one may contradict another, but cross-authority
+> changes require **explicit reconciliation** with provenance-aware
+> invalidation/supersession; **no authority silently overwrites another**.
+
+Example:
+
+```text
+TaskState:
+  source_container = Pallavi
+  evidence = search navigation attempt A
+
+WorldState:
+  settled_open_container = ZarooratWala
+  evidence = fresh observation
+
+Reconciliation:
+  Task binding contradicted
+  → invalidate / stale binding
+  → source_container unresolved
+```
+
+The principle is not that TaskState beats WorldState (or the reverse).
+**Contradictions cause explicit belief revision.**
+
+Hypotheses and memory never silently become task truth:
+
+```text
+WorkingContext: "I suspect this hit belongs to Pallavi."
+TaskState:      source_conversation = unresolved
+
+LongTermMemory: "Pallavi is usually relevant for ZarooratWala."
+TaskState:      source_conversation = unresolved
+
+Memory:         "WhatsApp was installed last time."
+WorldState:     "WhatsApp is running now."
+```
+
+---
+
+## Three layers (+ TaskIngress)
+
+```text
+ClientAdapter → TaskIngress → HermesRuntime{Executive ∥ MemorySystem}
+                            → CapabilityRegistry → MethodFrontier
+                            → ExecutionSubstrate
+```
+
+```text
+                         CLIENTS
+           TUI / UI / CLI / Voice / Automation
+                            │
+                      ClientAdapter
+                            │
+                       TaskIngress
+                            │
+                     HERMES RUNTIME
+                 ┌──────────┴──────────┐
+                 │                     │
+             Executive             MemorySystem
+                 │                     │
+       goal / intention /          retrieve
+       questions / progress        remember
+       decision problems           consolidate
+       WorkingContext              invalidate/forget
+                 │                     │
+                 └──────────┬──────────┘
+                            │
+                    CapabilityRegistry
+                            │
+                     MethodFrontier
+                            │
+          ┌─────────┬───────┼───────┬──────────┐
+          ▼         ▼       ▼       ▼          ▼
+        MCP/API   Files   Shell   Browser   ComputerUse
+                                             Specialists
+```
+
+| Layer | Owns | Must not own |
+| --- | --- | --- |
+| **ClientAdapter** | user IO, rendering, approvals UI, notifications, attachments, interaction capabilities | meta-action, phase, capability choice, retry policy, world/task truth, durable memory |
+| **TaskIngress** | normalize request, attach session, expose session/memory **handles** | long-term memory relevance / `retrieve` decisions |
+| **Executive** | Goal, TaskState, WorkingContext, intentions, DecisionProblem, progress, **when** to retrieve memory, effect/method choice | MemoryRecord durability, consolidation jobs, motor geometry |
+| **MemorySystem** | retrieve / remember / consolidate / invalidate; provenance; scopes | current-world truth, task bindings, execution mechanics |
+| **ExecutionSubstrate** | mechanisms; local recovery under unchanged intention+target+effect | reinterpret goal / change semantic target / change desired effect |
+
+**MemorySystem is neither a client feature nor an execution substrate.** It is a
+persistent cognitive service of HermesRuntime, shared by every client, session,
+and substrate.
+
+### Client ≠ AgentSession
+
+Sessions/tasks belong to the runtime. Clients **attach**. The same session may
+move TUI ↔ Console later. UI chrome (selected tab, expanded panel) is client
+state — not agent intention.
+
+Memory scopes:
+
+```text
+user → workspace → agent → session → task
+```
+
+**Not** TUI memory / Console memory / ComputerUse memory. Clients may keep
+presentation history; that is not Hermes cognitive memory.
+
+### Same-task invariant
+
+> The same TaskRequest presented through different clients must traverse the
+> same semantic runtime path; client differences appear only as interaction
+> capabilities/constraints, not different cognition.
+
+Interactive command, scheduled task, and background continuation are all
+requests to the **same** runtime.
+
+---
+
+## Capability / Method / ExecutionSubstrate
+
+Normative distinction (do not collapse):
+
+```text
+Capability         = what Hermes can accomplish (effect class)
+Method             = a concrete strategy for accomplishing an effect
+ExecutionSubstrate = mechanism/environment through which a method executes
+```
+
+Example:
+
+```text
+Capability:
+    send_message
+
+Desired effect:
+    message_sent(recipient, content)
+
+Methods:
+    gmail_api_send
+    browser_gmail_send
+    native_mail_send
+
+Substrates:
+    MCP/API
+    browser
+    computer_use
+```
+
+Flow:
+
+```text
+CapabilityRegistry
+       ↓
+candidate capabilities
+       ↓
+MethodFrontier
+       ↓
+MethodSpec(substrate=...)
+       ↓
+ExecutionSubstrate
+```
+
+The brain reasons about **effects and methods**, not “use computer” as a goal.
+Computer use is a realization when it is the best currently available method —
+not an intention.
+
+Substrates (initial set): `mcp`, `filesystem`, `shell`, `browser`,
+`computer_use`, `specialist_agent`. Structured local tools (filesystem/shell)
+are first-class and cheap; GUI substrates are higher latency / uncertainty.
+
+---
+
+## TaskIngress (cognition stays out)
+
+```text
+TaskRequest
+    ↓
+TaskIngress
+    ↓
+normalize + session attach + expose handles
+    ↓
+Executive initial DecisionProblem
+    ↓
+memory need / retrieval policy (Executive)
+    ↓
+MemorySystem.retrieve(...)
+```
+
+TaskIngress may attach **session-scoped existing context / memory handles**.
+It must **not** decide which long-term memories are relevant.
+
+Otherwise ingress becomes cognition. Example:
+
+```text
+User: "Send this to Sarah."
+```
+
+Ingress must not independently retrieve every Sarah memory before Executive
+has determined whether “Sarah” is a person, document, or project.
+
+Target request / event shapes (design only):
+
+```text
+TaskRequest {
+  user_turn, attachments,
+  client_context,                 # streaming, rich UI, notifications…
+  permissions / ExecutionConstraints,
+  interaction_capabilities
+}
+
+ExecutionConstraints {
+  foreground_allowed, destructive_actions_allowed,
+  approval_mode, network_allowed, …
+}
+
+AgentEvent:
+  thought_status | progress | question | approval_request
+  | task_update | artifact | completion | error
+```
+
+No `if client == "tui"` inside executive logic. Permissions enter as
+constraints; the client does not choose a different agent strategy.
+
+---
+
+## Executive ownership
+
+Executive owns:
+
+```text
+Goal, TaskState, CurrentIntention
+KnownFacts, OpenQuestions, Bindings
+WorkingContext
+Progress facts (target shape; not implemented in this roof PR)
+Semantic AttemptHistory
+Constraints
+Decision about when MemorySystem is relevant
+```
+
+**Semantic AttemptHistory** (brain) =
+
+```text
+intention | method | effect sought | effect result | failure class
+```
+
+Raw grounding/motor attempt logs (points, bounds, AX/OCR/VLM retries) belong
+to the substrate — not the brain.
+
+Meta-actions remain the frozen v1 eight from [agent-design.md](agent-design.md):
+THINK / PERCEIVE / SEARCH / EXPLORE / ACT / ASK / DELEGATE / WAIT.
+Purpose, not mechanism.
+
+Phases (e.g. OPEN_SOURCE) may remain as **derived diagnostics**; they must not
+become self-validating semantic evidence or control authority long-term.
+
+---
+
+## Recovery ownership
+
+| Failure level | Owner |
+| --- | --- |
+| transient motor miss | executor / substrate |
+| bad/stale grounding | executor / substrate |
+| alternate local method (same target + effect) | executor / substrate |
+| substrate unavailable | capability layer |
+| desired effect still valid but method exhausted | Executive |
+| goal / semantic target reinterpretation | Executive |
+| user permission / safety | Executive / ASK |
+
+### Local recovery invariant
+
+> A substrate may recover locally only while **parent intention, semantic
+> target, and desired effect** remain unchanged. Changing any of these returns
+> control to Executive.
+
+Allowed:
+
+```text
+reveal_actions(message_A)
+  AX point fails → re-ground message_A with VLM → retry context-click
+```
+
+Forbidden (semantic replanning disguised as motor recovery):
+
+```text
+reveal_actions(message_A) fails
+  → executor clicks similar message_B
+```
+
+---
+
+## ComputerUseExecutor (target boundary)
+
+Computer use is a **runtime capability**, not Console-specific or a parallel
+“personal agent.”
+
+Target façade (later code):
+
+```text
+execute_ui_effect(desired_effect, target, context, constraints)
+→ ExecutionResult(
+      execution_status,   # motor / dispatch
+      effect_status,      # achieved | absent | uncertain | unexpected
+      failure_class,      # grounding | wrong_context | blocked | …
+      evidence,
+      world_updates,
+      recoverability,     # local_ok | escalate_brain | ask_user
+    )
+```
+
+Use a **structured** result — not one ever-growing flat enum — so that
+`execution_ok + effect_unknown` and `execution_ok + wrong_transition` stay
+first-class (locate EffectStatus UNKNOWN; NAVIGATION_MISMATCH).
+
+Internally the executor may own perception, grounding, motor, short local
+recovery, and effect verification. The parent receives structured outcomes.
+
+### Slice 2a exemplar (landed; ownership policy before encapsulation)
+
+Commit `8dde6a38f` implements GROUNDING_WRONG_LOCUS in **today’s stack**
+(actor / reveal / commitment / live harness / health watch). That proves the
+ownership policy; it does **not** mean `ComputerUseExecutor` already exists.
+
+> Slice 2a proves the ownership policy in today's stack.
+> Slice 2 later creates the actual encapsulation boundary.
+
+---
+
+## MemorySystem (first-class — design only here)
+
+### Placement
+
+```text
+HermesRuntime
+├── Executive
+│   ├── TaskState
+│   └── WorkingContext
+└── MemorySystem (LongTerm)
+    ├── Episodic
+    ├── Semantic
+    ├── Entity / relationship
+    ├── Preference
+    ├── Procedural
+    └── Environment
+```
+
+WorkingContext may be checkpointed by runtime infrastructure; it is **not**
+LongTermMemory. Session history may later produce episodic MemoryCandidates
+(consolidation). `MemorySystem.retrieve()` does **not** retrieve the current
+hypothesis ledger.
+
+### Taxonomy (durable)
+
+| Kind | Answers | Notes |
+| --- | --- | --- |
+| Episodic | What happened / tried / worked / failed? | Experience records |
+| Semantic | What do I know? | Provenance + temporal validity required |
+| Entity / relationship | Who/what is this entity? | Candidate identity for RoleBinder; task bindings stay task-local |
+| Preference | What does the user prefer? | Distinct update/forget semantics |
+| Procedural | How have we done this before? | **Proposes** methods; MethodFrontier decides executability |
+| Environment | What is installed / where / which accounts? | Never substitutes for fresh WorldState when freshness matters |
+
+**Personal memory** vs **operational/agent-learning memory** may share
+MemorySystem with different scopes and retention (e.g. “Tanmay prefers concise
+email” vs “AX menu grounding unreliable on WhatsApp X”).
+
+### MemoryRecord (minimum)
+
+Architecture requires at least: **identity + type + provenance + time +
+confidence + scope**.
+
+Target shape (not frozen field-for-field):
+
+```text
+MemoryRecord {
+  memory_id, kind,
+  subject / entities, content,
+  provenance, evidence_refs,
+  created_at, observed_at, valid_from, valid_until,
+  confidence, scope, sensitivity,
+  supersedes, contradictions,
+  retrieval_metadata
+}
+```
+
+### MemoryCandidate ≠ MemoryRecord
+
+```text
+Task experience / significant event
+     ↓
+MemoryCandidate          # "may be worth remembering"
+     ↓
+Memory write policy      # dedupe, contradict, transient, sensitive,
+                         # scope, merge, supersede, retain?
+     ↓
+MemoryRecord             # durable only if policy accepts
+```
+
+The Executive/runtime emits candidates. MemorySystem decides persistence.
+Do not make the Executive a memory database manager.
+
+### Operations
+
+```text
+retrieve(query, context)  → MemoryEvidence[]
+remember(MemoryCandidate)
+consolidate(...)
+forget / invalidate(...)
+```
+
+**Invariant:** Retrieved memory is **evidence**, never automatic current-world
+truth and never task truth.
+
+Do **not** add REMEMBER / RECALL meta-actions. Memory is an information source
+available to DecisionProblem / capability selection.
+
+### Progress ↔ Memory (future)
+
+```text
+ProgressLedger / significant events → MemoryCandidate → MemorySystem
+MemoryEvidence → cognition → TaskState
+NOT every ProgressFact → permanent memory
+NOT Memory → ProgressLedger direct mutate
+```
+
+### Two loops (do not conflate)
+
+```text
+FAST TASK LOOP                         LONG MEMORY LOOP
+World → Perceive/Search/Act            episodes / outcomes / corrections
+  → Executive                            → MemoryCandidates
+  → TaskState / Progress                 → consolidate
+  → next decision                        → LongTermMemory
+                                         → retrieve into future DecisionProblems
+```
+
+Fast loop: low latency, current-world correctness.  
+Long loop: slower consolidation, contradiction resolution, summarization.
+
+---
+
+## Locked ontology
+
+```text
+Client
+TaskIngress
+Session
+AgentRuntime
+
+WorldState
+TaskState
+WorkingContext
+MemorySystem
+
+Goal
+Intention
+ProgressFact
+DecisionProblem
+
+Capability
+Method
+ExecutionSubstrate
+ExecutionResult
+
+MemoryCandidate
+MemoryRecord
+```
+
+---
+
+## Current client / runtime map (debt)
+
+Code today still has parallel surfaces (audit snapshot):
+
+```text
+TUI / Web+Desktop chat → tui_gateway → AIAgent.run_conversation
+Classic CLI            → cli.py → AIAgent
+hermes console         → HermesConsoleEngine (ops REPL — NOT the agent)
+Live zarooratwala      → plugin/experiments → run_goal_closed_loop  (third path)
+```
+
+Known divergences (document; converge behavior-preservingly later):
+
+1. Design “one work loop for every surface” ≠ code: closed loop is
+   experiment/tool, not every chat prompt.
+2. Goal inference on chat is **TUI-gateway-only**; classic CLI skips
+   `Goal.infer_from_text`.
+3. TUI Goal path injects system context; does **not** call
+   `run_goal_closed_loop`.
+4. Call has `plugin_call_whatsapp`; forward/zarooratwala stays experiment-only.
+5. Chat persistence (`SessionDB`) and plugin run logs (`EventLogger`) are
+   separate ownership planes.
+6. No `client == tui|console` branches inside plugin executive (good);
+   platform hints live in chat prompt builder.
+
+Target: one `TaskRequest` into AgentRuntime; chat gateway and live harnesses
+both attach. This document locks that target; it does not refactor clients.
+
+---
+
+## Roadmap (conceptual)
+
+```text
+Current packaging:
+  architecture roof + GROUNDING_WRONG_LOCUS exemplar (landed)
+
+A. Common runtime / TaskIngress seam
+B. Capability / Method / Substrate contract
+C. MemorySystem minimal seam (retrieve / submit_candidate / invalidate)
+D. ComputerUseExecutor boundary
+E. Executive / Progress evolution (ProgressLedger target shape)
+F. Additional substrates / specialists (CodingAgent as large tool)
+```
+
+MemorySystem is **not** “after everything else.” A minimal interface can land
+early once seams exist; storage/consolidation improve independently.
+
+Specialist agents (coding, research) are **large tools** with episode-local
+retries. Parent owns objective and acceptance criteria; specialist owns
+mechanics. Do not build an in-Hermes coding engine now.
+
+WhatsApp forward remains the adversarial **computer-use benchmark**, not the
+definition of Hermes.
+
+---
+
+## Explicit non-goals for the roof packaging PR
+
+- No MemorySystem storage, embeddings, schemas, or consolidation jobs
+- No ProgressLedger / DecisionProblem / MethodFrontier rewrite
+- No broad TUI/Console client refactor
+- No CodingAgent / Agent Desktop / cloud VM
+- No further expansion of this architecture roof in the same PR
+
+---
+
+## Acceptance for this document
+
+- Clients / TaskIngress / Executive ∥ MemorySystem / Capability→Method→Substrate
+  are explicit
+- Authority reconciliation (provenance-aware) is explicit
+- TaskIngress does not auto-retrieve long-term memory
+- WorkingContext is under Executive; durable taxonomy starts at Episodic
+- Local recovery requires intention + semantic target + desired effect
+- MemoryCandidate ≠ MemoryRecord write-policy boundary is documented
+- Slice 2a framed as ownership-policy exemplar before ComputerUseExecutor exists

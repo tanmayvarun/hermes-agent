@@ -9,6 +9,9 @@ Related code: [`plugin/agent/executive/meta_action.py`](../../plugin/agent/execu
 [`plugin/agent/executive/meta_contract.py`](../../plugin/agent/executive/meta_contract.py),
 [`plugin/agent/capabilities/search_episode.py`](../../plugin/agent/capabilities/search_episode.py).
 
+Architecture roof (clients, MemorySystem, capability/method/substrate):
+[`personal-agent-brain-and-substrates.md`](personal-agent-brain-and-substrates.md).
+
 ---
 
 ## Key design rule

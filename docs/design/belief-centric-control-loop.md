@@ -413,5 +413,6 @@ This design does not treat every action as safe experimentation. Interventional 
 - `content-object-discovery.md`: Defines how relevant objects are resolved from visible and latent content.
 - `whatsapp-evaluation-ladder.md`: Defines staged WhatsApp training and regression evaluation.
 - `task-model-routing.md`: Defines how model families are selected for a task.
+- `personal-agent-brain-and-substrates.md`: Architecture roof — WorldState / TaskState / WorkingContext / LongTermMemory authorities; MemorySystem beside Executive; retrieved memory is evidence, never automatic world or task truth.
 
 This specification: Defines the connective runtime contract: how evidence becomes beliefs, how uncertainty produces experiments, and how consequences revise the world model.

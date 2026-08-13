@@ -30,6 +30,13 @@ but they must not own separate task semantics or separate notions of progress.
 Run-relative clocks and no-progress watchdogs belong to the shared work loop,
 while the UI turn clock is only a presentation aid.
 
+**Client vs runtime (locked roof):** see
+[`personal-agent-brain-and-substrates.md`](personal-agent-brain-and-substrates.md).
+Clients are adapters; cognition and execution policy live in HermesRuntime.
+Current code still has chat (`AIAgent`) vs executive closed-loop
+(`run_goal_closed_loop`) divergence — documented there as debt to converge
+behavior-preservingly, not as a second architecture.
+
 ## Core principle
 
 - Core learning stays generic across apps.

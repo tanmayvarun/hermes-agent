@@ -115,6 +115,14 @@ correlating each recorded `executive_judgement` with what the loop then did:
 match a simple oracle?), and `skip_safety` (were skipped re-perceives followed
 by clean transitions?). Run with `python -m plugin.evals.run --executive`.
 
+## Architecture roof
+
+See [`personal-agent-brain-and-substrates.md`](personal-agent-brain-and-substrates.md)
+for the locked layering: ClientAdapter → TaskIngress → HermesRuntime
+(Executive ∥ MemorySystem) → Capability / Method / ExecutionSubstrate. This
+document remains the detailed executive-runtime contract; the roof places it
+beside MemorySystem and under a single multi-client ingress.
+
 ## Deliberately deferred
 
 - The remaining WhatsApp forward controller branches (`_note_forward_observe`,
