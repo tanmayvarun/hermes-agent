@@ -791,8 +791,9 @@ def build_decision_brief(
         "source_conversation": str(getattr(goal, "contact", "") or ""),
         "source_query": str(getattr(goal, "link_query", "") or ""),
         "destination": str(getattr(goal, "target_contact", "") or ""),
-        # Typed authorship only — never alias from contact/source_conversation.
+        # Typed authorship / addressee — never alias from contact.
         "originator": str(getattr(goal, "originator", "") or ""),
+        "recipient": str(getattr(goal, "recipient", "") or ""),
     }
     candidate_labels = [str(r.get("label") or "") for r in rows if r.get("label")]
 

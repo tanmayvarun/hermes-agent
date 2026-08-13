@@ -37,6 +37,9 @@ class Goal:
     # container (conversation_with / source_conversation). Empty means UNKNOWN —
     # never alias to contact.
     originator: str = ""
+    # Message addressee ("sent to Pallavi"). Distinct from originator and from
+    # forward destination (target_contact). Empty means UNKNOWN.
+    recipient: str = ""
     procedure_id: str = ""
     procedure_score: float = 0.0
     procedure_reasons: list[str] = field(default_factory=list)
@@ -82,11 +85,25 @@ class Goal:
             return cls(kind="unknown", app=app, prompt="")
 
         if "whatsapp" in lowered and any(keyword in lowered for keyword in ("forward", "share", "send", "find")):
-            source = cls._extract_name(
+            # Typed relations — keep independent (never alias sent_to → originator).
+            recipient = cls._extract_name(
                 (
-                    r"(?:sent\s+to|from|with)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                    r"(?:sent|forwarded|shared)\s+to\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                ),
+                prompt,
+            )
+            originator_named = cls._extract_name(
+                (
+                    r"(?:received\s+)?from\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                    r"(?:sent|shared|forwarded)\s+by\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                ),
+                prompt,
+            )
+            container = cls._extract_name(
+                (
                     r"(?:chat|conversation)\s+(?:with\s+)?([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
-                    r"(?:to|from)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                    r"(?:in|inside)\s+([A-Z][\w .'-]{1,80}?)(?:'s)?\s+(?:chat|conversation)\b",
+                    r"\bwith\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
                 ),
                 prompt,
             )
@@ -104,7 +121,7 @@ class Goal:
                 ),
                 prompt,
             )
-            # Directional originator: "I sent/shared" → self; "from X" → X.
+            # Authorship only from explicit self / from-X cues — never from recipient.
             self_origin = bool(
                 re.search(
                     r"\b(?:i|me|my)\s+(?:sent|shared|forwarded)\b"
@@ -112,26 +129,30 @@ class Goal:
                     lowered,
                 )
             )
-            originator = "self" if self_origin else (source or "")
+            originator = "self" if self_origin else (originator_named or "")
+            # Container: chat-with / in-X-chat, else recipient (sent-to), else author chat.
+            contact = container or recipient or (originator_named if originator_named else "")
             if "forward" in lowered or "share" in lowered or "send" in lowered:
                 return cls(
                     kind="whatsapp_forward_message",
                     app=app,
                     prompt=prompt,
-                    contact=source,
+                    contact=contact,
                     target_contact=target,
                     link_query=link_query,
                     originator=originator,
+                    recipient=recipient,
                 )
             if "find" in lowered:
                 return cls(
                     kind="whatsapp_read_message",
                     app=app,
                     prompt=prompt,
-                    contact=source,
+                    contact=contact,
                     target_contact=target,
                     link_query=link_query,
                     originator=originator,
+                    recipient=recipient,
                 )
 
         if "call" in lowered:
@@ -171,8 +192,19 @@ class Goal:
         if self.kind == "whatsapp_voice_call" and self.contact:
             return f"Call {self.contact} on {self.app}"
         if self.kind == "whatsapp_forward_message":
+            if self.originator and self.originator != "self":
+                who = f"from {self.originator}"
+            elif self.originator == "self":
+                who = "I sent"
+            elif self.recipient:
+                # sent_to ⇒ recipient relation; authorship remains UNKNOWN.
+                who = f"sent to {self.recipient}"
+            elif self.contact:
+                who = f"in {self.contact}"
+            else:
+                who = "content"
             return (
-                f"Find {self.link_query or 'content'} from {self.contact} "
+                f"Find {self.link_query or 'content'} {who} "
                 f"and forward to {self.target_contact} on {self.app}"
             )
         return f"{self.kind} on {self.app}"
@@ -188,6 +220,10 @@ class Goal:
         ]
         if self.contact:
             lines.append(f"- contact: {self.contact}")
+        if self.originator:
+            lines.append(f"- originator: {self.originator}")
+        if self.recipient:
+            lines.append(f"- recipient: {self.recipient}")
         if self.target_contact:
             lines.append(f"- target_contact: {self.target_contact}")
         if self.link_query:
