@@ -545,15 +545,44 @@ both attach. This document locks that target; it does not refactor clients.
 
 ---
 
+## Implementation status (A + thin C)
+
+Landed as a **seam only** (no durable store, no TUI/CLI wire-in yet):
+
+```text
+plugin/agent/ingress.py              TaskRequest, SessionRef, TaskIngress
+plugin/agent/memory/                 MemorySystem Protocol + NoopMemorySystem
+plugin/agent/runtime/agent_runtime.py  AgentRuntime façade
+```
+
+Ownership invariants in code:
+
+```text
+TaskIngress → AgentRuntime is the common seam.
+run_goal_closed_loop is the first *legacy adapter* into that seam
+  (Goal → from_legacy_goal → normalize → AgentRuntime),
+  not the owner/composition root of TaskIngress.
+
+AgentRuntime owns RuntimeState (one-way).
+RuntimeState must not backreference AgentRuntime.
+
+TaskIngress.normalize is canonical; from_legacy_goal is compatibility only.
+No constructor / normalize path calls retrieve / submit_candidate / invalidate.
+Noop submit_candidate → MemoryWriteResult(disposition="ignored", …).
+```
+
+Architectural goldens: `tests/plugin/test_task_ingress_memory_seam.py`.
+
 ## Roadmap (conceptual)
 
 ```text
 Current packaging:
   architecture roof + GROUNDING_WRONG_LOCUS exemplar (landed)
+  A + thin C seam (TaskIngress / AgentRuntime / NoopMemorySystem) — landed
 
-A. Common runtime / TaskIngress seam
+A. Common runtime / TaskIngress seam          ← thin seam landed
 B. Capability / Method / Substrate contract
-C. MemorySystem minimal seam (retrieve / submit_candidate / invalidate)
+C. MemorySystem minimal seam                   ← Protocol + noop landed; no store
 D. ComputerUseExecutor boundary
 E. Executive / Progress evolution (ProgressLedger target shape)
 F. Additional substrates / specialists (CodingAgent as large tool)

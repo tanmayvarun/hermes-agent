@@ -2413,6 +2413,7 @@ def run_goal_closed_loop(
     wait_fn: Optional[WaitFn] = None,
     retention_floor: float = 0.35,
     engine: Optional[DecisionEngine] = None,
+    memory: Optional["MemorySystem"] = None,
 ) -> GoalResult:
     """Brain-owned tools closed loop (controller is a dispatcher).
 
@@ -2425,6 +2426,13 @@ def run_goal_closed_loop(
 
     Surprise / low worldview / dead motors set signals for meta — they do not
     force a look ahead of the brain's choice.
+
+    Ingress note: this function is the **first legacy adapter** into the common
+    TaskIngress → AgentRuntime seam. It is not the owner/composition root of
+    TaskIngress. Target shape remains: all clients/harnesses → TaskIngress →
+    AgentRuntime. Ownership is one-way (AgentRuntime owns RuntimeState); this
+    path never attaches AgentRuntime onto RuntimeState and never auto-retrieves
+    memory.
     """
     # Composition root: register domain evidence providers outside generic core.
     try:
@@ -2452,6 +2460,34 @@ def run_goal_closed_loop(
             "on",
         }:
             raise SystemExit(f"live eval preflight failed: {exc}") from exc
+
+    # Legacy Goal → TaskRequest → AgentRuntime (first adapter; not ingress owner).
+    # Locals kept for the seam; closed-loop internals continue to use ``runtime``.
+    # RuntimeState must never gain an AgentRuntime backreference.
+    from plugin.agent.ingress import TaskIngress
+    from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
+    from plugin.agent.runtime.agent_runtime import AgentRuntime
+
+    _memory: MemorySystem = memory if memory is not None else NoopMemorySystem()
+    _task_request = TaskIngress.normalize(
+        TaskIngress.from_legacy_goal(
+            goal,
+            client_context={
+                "client": "live_harness",
+                "legacy_adapter": "run_goal_closed_loop",
+            },
+        )
+    )
+    agent_runtime = AgentRuntime(
+        runtime_state=runtime,
+        memory=_memory,
+        task_request=_task_request,
+    )
+    if agent_runtime.runtime_state is not runtime:
+        raise RuntimeError("AgentRuntime must preserve RuntimeState identity")
+    # Kept at the composition boundary for future executive/memory decisions.
+    # Existing loop internals continue to use ``runtime`` (same object).
+    _ = agent_runtime.task_request
 
     eng = engine or get_decision_engine()
     # Goal tokens for branch/selection consistency + revert_effects analyze.
