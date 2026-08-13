@@ -15,12 +15,15 @@ onto pre-act geometry.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol
+
+logger = logging.getLogger(__name__)
 
 from plugin.agent.action import Action
 from plugin.agent.apps.registry import get_overlay
@@ -397,19 +400,53 @@ def _clear_post_action_reperceive_if_fresh(
         # grounding — not merely because any PERCEIVE ran.
         if bool(getattr(state, "grounding_reground_only", False)):
             if _grounding_repair_satisfied(state):
-                state.grounding_reground_only = False
-                state.grounding_reground_target = ""
+                try:
+                    from plugin.agent.executive.affordance_commitment import (
+                        clear_grounding_recovery,
+                    )
+
+                    clear_grounding_recovery(state)
+                except Exception:
+                    state.grounding_reground_only = False
+                    state.grounding_reground_target = ""
+                    state.grounding_reground_commitment_id = ""
             else:
-                # Target disappeared / still ungrounded → escalate reveal/route.
-                state.grounding_reground_only = False
-                state.grounding_reground_target = ""
-                state.world_exploration_needed = True
-                if not str(getattr(state, "reveal_prefer_capability", "") or "").strip():
-                    state.reveal_prefer_capability = "reveal_actions"
+                # Target disappeared / still ungrounded → escalate reveal/route
+                # for the committed patient (latent restore), not a silent drop.
+                try:
+                    from plugin.agent.executive.affordance_commitment import (
+                        active_commitment,
+                        arm_grounding_recovery,
+                        derive_availability,
+                        AVAIL_LATENT,
+                    )
+
+                    c = active_commitment(state)
+                    if c is not None and derive_availability(state, c) == AVAIL_LATENT:
+                        arm_grounding_recovery(
+                            state, c, reason="still_ungrounded_after_perceive"
+                        )
+                    else:
+                        state.grounding_reground_only = False
+                        state.grounding_reground_target = ""
+                        state.grounding_reground_commitment_id = ""
+                        state.world_exploration_needed = True
+                        if not str(
+                            getattr(state, "reveal_prefer_capability", "") or ""
+                        ).strip():
+                            state.reveal_prefer_capability = "reveal_actions"
+                except Exception:
+                    state.grounding_reground_only = False
+                    state.grounding_reground_target = ""
+                    state.world_exploration_needed = True
+                    if not str(getattr(state, "reveal_prefer_capability", "") or "").strip():
+                        state.reveal_prefer_capability = "reveal_actions"
                 try:
                     closure = dict(getattr(state, "last_effect_closure", None) or {})
                     closure["grounding_repair"] = "target_disappeared_or_ungrounded"
-                    closure["recovery"] = "explore_reveal"
+                    closure["recovery"] = str(
+                        closure.get("recovery") or "explore_reveal"
+                    )
                     state.last_effect_closure = closure
                 except Exception:
                     pass
@@ -1865,6 +1902,32 @@ def _multimodal_look(
         open_conversation=open_after,
         state_sig=str(getattr(runtime.execution_state, "last_state_signature", "") or ""),
     )
+    # Paid visual look after AX-blind locate: resolve EffectStatus UNKNOWN when
+    # the query patient is still absent (ACHIEVED path resolves in task_state).
+    try:
+        state = runtime.execution_state
+        if bool(getattr(state, "locate_effect_verify_owed", False)):
+            from plugin.agent.capabilities.locate_content import (
+                resolve_locate_effect_verification,
+            )
+            from plugin.agent.source_query_binding import document_locates_source_query
+
+            doc = getattr(state, "unified_world_document", None)
+            q = str(getattr(state, "last_locate_query", "") or "").strip()
+            visible = bool(
+                q
+                and isinstance(doc, dict)
+                and document_locates_source_query(doc, q)
+            )
+            if not visible:
+                resolve_locate_effect_verification(
+                    state,
+                    content_located=False,
+                    query_visible=False,
+                    still_unobservable=True,
+                )
+    except Exception:
+        pass
     return True
 
 
@@ -1876,15 +1939,100 @@ def _note_failed_motor(
     point: Any = None,
 ) -> None:
     from plugin.agent.brain import motor_fingerprint
+    from plugin.agent.executive.effect_implications import (
+        method_context_from_state,
+        scoped_method_avoid_key,
+    )
+    from plugin.agent.executive.intention_frame import active_intention_frame
 
-    key = motor_fingerprint(family, target, point)
-    if not key or key == "||":
-        return
-    runtime.execution_state.last_failed_motor_key = key
     keys = list(getattr(runtime.execution_state, "avoid_motor_keys", None) or [])
-    if key not in keys:
+    world_sig = ""
+    intention_id = ""
+    try:
+        iframe = active_intention_frame(runtime.execution_state)
+        intention_id = str(getattr(getattr(iframe, "intention", None), "id", "") or "")
+        open_c = ""
+        try:
+            feats = getattr(runtime.execution_state, "last_features", None)
+            extras = getattr(feats, "extras", None) if feats is not None else None
+            if isinstance(extras, dict):
+                open_c = str(extras.get("open_conversation") or "")
+        except Exception:
+            open_c = ""
+        ctx = method_context_from_state(
+            runtime.execution_state,
+            world={
+                "surface": str(
+                    getattr(runtime.execution_state, "last_surface", "") or ""
+                ),
+                "open_conversation": open_c,
+            },
+        )
+        world_sig = ctx.signature() if ctx is not None else ""
+        if not world_sig:
+            world_sig = str(
+                getattr(runtime.execution_state, "last_world_signature", "") or ""
+            )
+    except Exception:
+        pass
+    # Point-specific grounding avoid — also world-scoped so the same XY is not
+    # sticky after a legitimate surface/container transition.
+    base_point = motor_fingerprint(family, target, point)
+    key = f"{base_point}|sig={world_sig}" if base_point and base_point != "||" else ""
+    if key and key not in keys:
         keys.append(key)
-    runtime.execution_state.avoid_motor_keys = keys[-16:]
+    # Method-level: scoped to intention + world signature.
+    method_key = ""
+    try:
+        method_key = scoped_method_avoid_key(
+            family,
+            target,
+            intention_id=intention_id,
+            world_signature=world_sig,
+        )
+        if method_key not in keys:
+            keys.append(method_key)
+    except Exception:
+        method_key = ""
+    if key:
+        runtime.execution_state.last_failed_motor_key = key
+    elif method_key:
+        runtime.execution_state.last_failed_motor_key = method_key
+    runtime.execution_state.avoid_motor_keys = keys[-24:]
+
+
+def _open_repair_should_escalate_to_search(
+    runtime: RuntimeState,
+    *,
+    last_target: str = "",
+) -> bool:
+    """SEARCH only when retrieval/container identity is still owed.
+
+    Uses authoritative bindings / search-episode state — not URL/`You:` label
+    shape heuristics (those are not semantic typing).
+    """
+    _ = last_target  # retained for call-site compatibility / logging
+    try:
+        hints = runtime.world_model.overlay_hints or {}
+        ft = hints.get("forward_task") if isinstance(hints, dict) else None
+        preds = (ft.get("predicates") if isinstance(ft, dict) else None) or {}
+        if isinstance(preds, dict):
+            if preds.get("source_conversation_open"):
+                return False
+            if preds.get("source_object_visible"):
+                return False
+        ep = getattr(runtime.execution_state, "search_episode", None) or {}
+        if isinstance(ep, dict) and str(ep.get("status") or "") in {
+            "complete",
+            "ranking",
+            "retrieving",
+        }:
+            # Results already in hand — method failed, not retrieval.
+            if ep.get("candidates") or ep.get("chosen_label") or ep.get("status") == "complete":
+                return False
+    except Exception:
+        pass
+    return True
 
 
 def _note_open_source_failure(
@@ -1897,15 +2045,17 @@ def _note_open_source_failure(
 
     More important than never missing: after a wrong open click the agent must
     not reuse the same eid/point or burn looks on stale perception — it must
-    re-perceive and retry with a different strategy (VLM point, then search).
+    re-perceive and retry with a different strategy (VLM point, then search
+    only when retrieval is still owed).
     """
     fam = str(getattr(decision, "action_family", "") or "").strip().lower()
     if fam not in {"open_entity", "open_contact"}:
         return {}
+    last_target = str(getattr(decision, "semantic_target", "") or "")
     _note_failed_motor(
         runtime,
         family=fam,
-        target=str(getattr(decision, "semantic_target", "") or ""),
+        target=last_target,
         point=getattr(decision, "target_point", None),
     )
     # Drop phash / carried perception so the next look is not frame-1 reuse.
@@ -1948,14 +2098,23 @@ def _note_open_source_failure(
     attempts = int(repair.get("attempts") or 0) + 1
     prefer = "vlm_point"
     if attempts >= 2:
-        prefer = "compose_search_query"
+        if _open_repair_should_escalate_to_search(runtime, last_target=last_target):
+            prefer = "compose_search_query"
+        else:
+            # Method exhausted under current world; do not wipe retrieval.
+            prefer = "method_exhausted_reperceive"
     repair.update(
         {
             "failed_entity_ids": failed_ids[-8:],
             "attempts": attempts,
             "prefer": prefer,
             "last_reason": str(reason or "")[:200],
-            "last_target": str(getattr(decision, "semantic_target", "") or "")[:120],
+            "last_target": last_target[:120],
+            "failure_class": (
+                "method_ineffective"
+                if prefer == "method_exhausted_reperceive"
+                else str(repair.get("failure_class") or "")
+            ),
         }
     )
     hints["open_repair"] = repair
@@ -1965,6 +2124,242 @@ def _note_open_source_failure(
         pass
     # Mirror into features extras on the next observe via overlay_hints.
     return repair
+
+
+def _handle_open_entity_effect_absent(
+    runtime: RuntimeState,
+    step: Any,
+    *,
+    fam: str = "",
+    pred_error: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Prediction-miss path for open_entity / open_contact.
+
+    Authoritative typed navigation uses ``Action.attempt_id`` only — never
+    ambient ExecutionState. Missing attempt id fails closed (no debt mutation).
+    Legacy / untyped opens cannot acquire navigation establish authority.
+    """
+    pred_error = pred_error if isinstance(pred_error, dict) else {}
+    fam_l = str(
+        fam
+        or getattr(step, "action_family", "")
+        or pred_error.get("action_family")
+        or ""
+    ).strip().lower()
+    if step is None or fam_l not in {"open_entity", "open_contact"}:
+        return {}
+    open_repair = _note_open_source_failure(
+        runtime,
+        step,
+        reason=str(pred_error.get("verdict") or "prediction_mismatch"),
+    )
+    referent_mismatch: Dict[str, Any] = {}
+    try:
+        from plugin.agent.procedures.forward_message import action_open_semantics
+        from plugin.agent.role_binding import (
+            apply_referent_mismatch,
+            note_transition_pending,
+        )
+
+        label = str(getattr(step, "semantic_target", "") or "")
+        target_kind = str(
+            getattr(step, "target_kind", "") or pred_error.get("target_kind") or ""
+        )
+        # Causal identity rides on the Action — never ambient ExecutionState.
+        attempt_id = str(getattr(step, "attempt_id", "") or "").strip()
+        legacy = bool(getattr(step, "legacy_semantics", False))
+        typed_nav = bool(getattr(step, "action_is_navigation", False)) and not legacy
+        if typed_nav and not attempt_id:
+            logger.warning(
+                "open miss: typed navigation missing Action.attempt_id — "
+                "causal attribution incomplete; refusing debt mutation"
+            )
+            return {
+                "open_repair": open_repair,
+                "referent_mismatch": {
+                    "role": "",
+                    "label": label[:120],
+                    "class": "CAUSAL_ATTRIBUTION_INCOMPLETE",
+                    "attempt_id": "",
+                    "establishes_roles": [],
+                },
+            }
+        ft_phase = ""
+        try:
+            hints0 = runtime.world_model.overlay_hints or {}
+            ft0 = hints0.get("forward_task") or {}
+            ft_phase = str(
+                (ft0.get("derived_phase") if isinstance(ft0, dict) else "") or ""
+            )
+        except Exception:
+            ft_phase = ""
+        if typed_nav:
+            est = [
+                str(r)
+                for r in (getattr(step, "establishes_roles", None) or [])
+                if str(r).strip()
+            ]
+            sem = {
+                "is_navigation": True,
+                "target_role": "",
+                "establishes_roles": est,
+                "target_kind": target_kind,
+                "incomplete": not bool(est),
+            }
+        else:
+            # Legacy / untyped: RoleBinder target-role path only — never invent
+            # navigation establish authority from phase/label re-inference.
+            if legacy or not bool(getattr(step, "establishes_roles", None)):
+                sem = {
+                    "is_navigation": False,
+                    "target_role": "source_container",
+                    "establishes_roles": [],
+                    "target_kind": target_kind,
+                    "legacy": True,
+                }
+            else:
+                sem = action_open_semantics(
+                    fam_l,
+                    phase=ft_phase or "OPEN_SOURCE",
+                    target=label,
+                    target_kind=target_kind,
+                )
+                # Strip any accidental navigation power from re-inference.
+                if sem.get("is_navigation"):
+                    sem = {
+                        "is_navigation": False,
+                        "target_role": str(sem.get("target_role") or "source_container"),
+                        "establishes_roles": [],
+                        "target_kind": target_kind,
+                        "legacy": True,
+                    }
+        hints = runtime.world_model.overlay_hints
+        if hints is None:
+            runtime.world_model.overlay_hints = {}
+            hints = runtime.world_model.overlay_hints
+        if sem.get("is_navigation"):
+            est_roles = list(sem.get("establishes_roles") or [])
+            if sem.get("incomplete") or not est_roles:
+                referent_mismatch = {
+                    "role": "",
+                    "label": label[:120],
+                    "class": "INCOMPLETE_TYPED_NAVIGATION",
+                    "attempt_id": attempt_id,
+                    "establishes_roles": [],
+                }
+            else:
+                note_transition_pending(
+                    runtime.execution_state,
+                    establishes_roles=est_roles,
+                    target_label=label,
+                    attempt_id=attempt_id,
+                )
+                referent_mismatch = {
+                    "role": "",
+                    "label": label[:120],
+                    "class": "EXPECTED_TRANSITION_NOT_SETTLED_YET",
+                    "attempt_id": attempt_id,
+                    "establishes_roles": est_roles,
+                }
+        else:
+            # Attempt-scoped debt mutation still requires Action.attempt_id.
+            if not attempt_id:
+                referent_mismatch = {
+                    "role": str(sem.get("target_role") or "source_container"),
+                    "label": label[:120],
+                    "class": "CAUSAL_ATTRIBUTION_INCOMPLETE",
+                    "attempt_id": "",
+                }
+            else:
+                role = str(sem.get("target_role") or "source_container")
+                ft = dict(hints.get("forward_task") or {})
+                new_ft = apply_referent_mismatch(
+                    runtime.execution_state,
+                    role=role,
+                    candidate_label=label,
+                    forward_task=ft,
+                    attempt_id=attempt_id,
+                )
+                if isinstance(new_ft, dict):
+                    hints["forward_task"] = new_ft
+                referent_mismatch = {
+                    "role": role,
+                    "label": label[:120],
+                    "class": "REFERENT_MISMATCH",
+                    "attempt_id": attempt_id,
+                }
+    except Exception as exc:
+        referent_mismatch = {"error": str(exc)[:120]}
+    # Ledger open ACT miss as METHOD_INEFFECTIVE when an IntentionFrame is active
+    # (same world-scoped reactivation rules as reveal).
+    try:
+        from plugin.agent.executive.intention_frame import (
+            AttemptRecord,
+            AttemptValidity,
+            FailureClass,
+            MethodOutcome,
+            MethodStatus,
+            active_intention_frame,
+            apply_derived_status,
+            mark_method_attempted,
+            record_method_status,
+        )
+
+        iframe = active_intention_frame(runtime.execution_state)
+        if iframe is not None and fam_l in {"open_entity", "open_contact"}:
+            mid = f"{fam_l}:{str(getattr(step, 'semantic_target', '') or '')[:80]}"
+            mark_method_attempted(iframe, mid)
+            from plugin.agent.executive.effect_implications import (
+                method_context_from_state,
+            )
+
+            open_c = ""
+            try:
+                feats = getattr(runtime.execution_state, "last_features", None)
+                extras = getattr(feats, "extras", None) if feats is not None else None
+                if isinstance(extras, dict):
+                    open_c = str(extras.get("open_conversation") or "")
+                if not open_c:
+                    snap = getattr(runtime, "last_snapshot", None)
+                    view = getattr(snap, "view", None) if snap is not None else None
+                    if isinstance(view, dict):
+                        open_c = str(view.get("open_conversation") or "")
+            except Exception:
+                open_c = ""
+            ctx = method_context_from_state(
+                runtime.execution_state,
+                world={
+                    "surface": str(
+                        getattr(runtime.execution_state, "last_surface", "") or ""
+                    ),
+                    "open_conversation": open_c,
+                },
+            )
+            record_method_status(
+                iframe,
+                mid,
+                MethodStatus.INEFFECTIVE.value,
+                method_context=ctx,
+                world_signature=ctx.signature(),
+            )
+            iframe.attempts.append(
+                AttemptRecord(
+                    method_id=mid,
+                    execution_status="motor_ok",
+                    observation_quality=0.9,
+                    method_outcome=MethodOutcome.EFFECT_ABSENT.value,
+                    failure_class=FailureClass.METHOD_INEFFECTIVE.value,
+                    attempt_validity=AttemptValidity.VALID.value,
+                    method_status=MethodStatus.INEFFECTIVE.value,
+                    evidence_refs=[
+                        str(pred_error.get("verdict") or "execution_effect_missing")[:120]
+                    ],
+                )
+            )
+            apply_derived_status(iframe)
+    except Exception:
+        pass
+    return {"open_repair": open_repair, "referent_mismatch": referent_mismatch}
 
 
 def run_goal_closed_loop(
@@ -3745,11 +4140,8 @@ def run_goal_closed_loop(
                         )
                         or ""
                     ).strip().lower()
-                attempt_id = str(
-                    pred_error.get("attempt_id")
-                    or getattr(runtime.execution_state, "active_attempt_id", "")
-                    or ""
-                )
+                # Prefer Action.attempt_id; do not invent ambient attribution here.
+                attempt_id = str(getattr(step, "attempt_id", "") or "").strip()
                 _note_failed_motor(
                     runtime,
                     family=fam,
@@ -3760,10 +4152,11 @@ def run_goal_closed_loop(
                     ),
                     point=getattr(step, "target_point", None) if step is not None else None,
                 )
-                try:
-                    runtime.execution_state.last_effect_attempt_id = attempt_id
-                except Exception:
-                    pass
+                if attempt_id:
+                    try:
+                        runtime.execution_state.last_effect_attempt_id = attempt_id
+                    except Exception:
+                        pass
                 reveal_esc: Dict[str, Any] = {}
                 if fam in {
                     "reveal_actions",
@@ -3802,42 +4195,116 @@ def run_goal_closed_loop(
                 runtime.execution_state.must_executive_reperceive = True
                 open_repair = {}
                 referent_mismatch: Dict[str, Any] = {}
+                commitment_recovery: Dict[str, Any] = {}
                 if step is not None and fam in {"open_entity", "open_contact"}:
-                    open_repair = _note_open_source_failure(
+                    # Motor ok + wrong/unsettled semantic effect. Typed content
+                    # navigation → settle debt; container open → REFERENT_MISMATCH.
+                    handled = _handle_open_entity_effect_absent(
                         runtime,
                         step,
-                        reason=str(pred_error.get("verdict") or "prediction_mismatch"),
+                        fam=fam,
+                        pred_error=pred_error,
                     )
-                    # Motor ok + wrong semantic entity → REFERENT_MISMATCH
-                    # (distinct from GROUNDING). Invalidate binding; no identical retry.
+                    open_repair = dict(handled.get("open_repair") or {})
+                    referent_mismatch = dict(handled.get("referent_mismatch") or {})
+                # Generic commitment path: evidence-based GROUNDING only.
+                # Effect absence alone does not force grounding class.
+                if fam in {
+                    "invoke_affordance",
+                    "commit_irreversible",
+                } or str(getattr(step, "semantic_target", "") or "").strip():
                     try:
-                        from plugin.agent.procedures.forward_message import (
-                            role_for_action_family,
+                        from plugin.agent.executive.affordance_commitment import (
+                            handle_failed_committed_action,
                         )
-                        from plugin.agent.role_binding import apply_referent_mismatch
+                        from plugin.agent.executive.intention_frame import (
+                            AttemptValidity,
+                            FailureClass,
+                            MethodStatus,
+                            active_intention_frame,
+                            record_method_status,
+                        )
 
-                        role = role_for_action_family(fam) or "source_container"
-                        label = str(getattr(step, "semantic_target", "") or "")
-                        hints = runtime.world_model.overlay_hints
-                        if hints is None:
-                            runtime.world_model.overlay_hints = {}
-                            hints = runtime.world_model.overlay_hints
-                        ft = dict(hints.get("forward_task") or {})
-                        new_ft = apply_referent_mismatch(
-                            runtime.execution_state,
-                            role=role,
-                            candidate_label=label,
-                            forward_task=ft,
+                        tgt = str(
+                            pred_error.get("target")
+                            or getattr(step, "semantic_target", "")
+                            or ""
                         )
-                        if isinstance(new_ft, dict):
-                            hints["forward_task"] = new_ft
-                        referent_mismatch = {
-                            "role": role,
-                            "label": label[:120],
-                            "class": "REFERENT_MISMATCH",
-                        }
-                    except Exception as exc:
-                        referent_mismatch = {"error": str(exc)[:120]}
+                        commitment_recovery = handle_failed_committed_action(
+                            runtime.execution_state,
+                            family=fam,
+                            target=tgt,
+                            point=(
+                                getattr(step, "target_point", None)
+                                if step is not None
+                                else None
+                            ),
+                            pred_error=pred_error
+                            if isinstance(pred_error, dict)
+                            else {},
+                            surface_before=str(
+                                pred_error.get("expected_surface")
+                                or pred_error.get("predicted")
+                                or getattr(
+                                    runtime.execution_state, "last_surface", ""
+                                )
+                                or ""
+                            ),
+                            surface_after=str(
+                                pred_error.get("observed_surface")
+                                or pred_error.get("actual")
+                                or ""
+                            ),
+                        )
+                        if (
+                            commitment_recovery.get("classified") == "grounding"
+                            and step is not None
+                        ):
+                            iframe = active_intention_frame(
+                                runtime.execution_state
+                            )
+                            if iframe is not None:
+                                mid = str(
+                                    commitment_recovery.get(
+                                        "preserve_semantic_method"
+                                    )
+                                    or (
+                                        f"{fam}:{tgt[:80]}"
+                                        if fam and tgt
+                                        else ""
+                                    )
+                                )
+                                if mid:
+                                    # Preserve semantic method (do not mark INEFFECTIVE).
+                                    record_method_status(
+                                        iframe,
+                                        mid,
+                                        MethodStatus.UNTRIED.value,
+                                    )
+                                    try:
+                                        runtime.execution_state.last_effect_closure = {
+                                            **dict(
+                                                getattr(
+                                                    runtime.execution_state,
+                                                    "last_effect_closure",
+                                                    None,
+                                                )
+                                                or {}
+                                            ),
+                                            "attempt_validity": (
+                                                AttemptValidity.INCONCLUSIVE_GROUNDING.value
+                                            ),
+                                            "failure_class": (
+                                                FailureClass.GROUNDING.value
+                                            ),
+                                            "commitment_id": commitment_recovery.get(
+                                                "commitment_id"
+                                            ),
+                                        }
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        commitment_recovery = {}
                 _log_cycle(
                     log,
                     iteration=iteration,
@@ -3849,6 +4316,7 @@ def run_goal_closed_loop(
                         "open_repair": open_repair or None,
                         "reveal_escalation": reveal_esc or None,
                         "referent_mismatch": referent_mismatch or None,
+                        "commitment_recovery": commitment_recovery or None,
                     },
                     status="fail",
                 )
@@ -4073,6 +4541,7 @@ def run_goal_closed_loop(
                     or getattr(decision, "action", "")
                     or ""
                 ).strip().lower()
+                fam_compact = fam.replace("_", "").replace("-", "")
                 if fam in {"reveal_actions", "revealactions", "right_click", "context_click"}:
                     exec_ok = bool(getattr(execution, "ok", False))
                     if exec_ok:
@@ -4109,6 +4578,97 @@ def run_goal_closed_loop(
                                 "discovery": "pending_perception",
                                 "surface": "context_menu",
                                 "probe_gesture": gesture,
+                            },
+                        )
+                # locate_content: EffectStatus UNKNOWN latch (dispatch may have
+                # already noted; re-note is idempotent on ledger append).
+                if fam_compact in {"locatecontent", "locate"} or fam == "locate_content":
+                    from plugin.agent.capabilities.locate_content import note_locate_outcome
+
+                    msg = str(getattr(execution, "message", "") or "")
+                    found = False
+                    if "text_match_reachable=true" in msg.lower():
+                        found = True
+                    elif "text_match_reachable=false" in msg.lower():
+                        found = False
+                    realization = ""
+                    if "realization=" in msg:
+                        try:
+                            realization = msg.split("realization=", 1)[1].split()[0]
+                        except Exception:
+                            realization = ""
+                    query = str(
+                        getattr(decision, "text", None)
+                        or getattr(decision, "semantic_target", None)
+                        or getattr(runtime.execution_state, "last_locate_query", "")
+                        or ""
+                    ).strip()
+                    # Skip duplicate note when dispatch already latched this query.
+                    already = (
+                        bool(getattr(runtime.execution_state, "locate_effect_verify_owed", False))
+                        or str(
+                            getattr(runtime.execution_state, "last_locate_effect_status", "")
+                            or ""
+                        )
+                        == "achieved"
+                    ) and str(
+                        getattr(runtime.execution_state, "last_locate_query", "") or ""
+                    ).strip().lower() == query.lower()
+                    if query and not already:
+                        note_info = note_locate_outcome(
+                            runtime.execution_state,
+                            query=query,
+                            ok=bool(getattr(execution, "ok", False)),
+                            found=found,
+                            realization=realization,
+                            message=msg,
+                        )
+                        _log_cycle(
+                            log,
+                            iteration=iteration,
+                            phase="locate_effect",
+                            payload={
+                                "effect_status": note_info.get("effect_status")
+                                or getattr(
+                                    runtime.execution_state,
+                                    "last_locate_effect_status",
+                                    "",
+                                ),
+                                "pending_effect_verification": bool(
+                                    note_info.get("pending_effect_verification")
+                                    or getattr(
+                                        runtime.execution_state,
+                                        "locate_effect_verify_owed",
+                                        False,
+                                    )
+                                ),
+                                "query": query[:80],
+                                "realization": realization,
+                                "found": found,
+                            },
+                        )
+                    elif already and bool(
+                        getattr(runtime.execution_state, "locate_effect_verify_owed", False)
+                    ):
+                        _log_cycle(
+                            log,
+                            iteration=iteration,
+                            phase="locate_effect",
+                            payload={
+                                "effect_status": getattr(
+                                    runtime.execution_state,
+                                    "last_locate_effect_status",
+                                    "",
+                                ),
+                                "pending_effect_verification": True,
+                                "query": query[:80],
+                                "realization": realization
+                                or getattr(
+                                    runtime.execution_state,
+                                    "last_locate_realization",
+                                    "",
+                                ),
+                                "found": found,
                             },
                         )
             except Exception:
@@ -4151,6 +4711,42 @@ def run_goal_closed_loop(
                 runtime.execution_state.grounding_reground_target = str(
                     decision.semantic_target or decision.action or ""
                 )[:120]
+                # Prefer commitment-scoped debt when an active commitment matches.
+                try:
+                    from plugin.agent.executive.affordance_commitment import (
+                        arm_grounding_recovery,
+                        ensure_commitment_from_menu_observation,
+                        list_commitments,
+                    )
+
+                    c = None
+                    tgt = str(decision.semantic_target or decision.action or "")
+                    for item in list_commitments(runtime.execution_state):
+                        if tgt and tgt.lower() in (
+                            item.label.lower(),
+                            item.semantic_method_id.lower(),
+                        ):
+                            c = item
+                            break
+                    if c is None and tgt:
+                        c = ensure_commitment_from_menu_observation(
+                            runtime.execution_state,
+                            label=tgt,
+                            patient_ref=str(
+                                getattr(
+                                    runtime.execution_state,
+                                    "grounding_reground_patient_ref",
+                                    "",
+                                )
+                                or ""
+                            ),
+                        )
+                    if c is not None:
+                        arm_grounding_recovery(
+                            runtime.execution_state, c, reason="stale_precondition"
+                        )
+                except Exception:
+                    pass
                 runtime.execution_state.must_executive_reperceive = True
                 # Do not burn no-progress / frontier invalidate on a typed
                 # grounding failure — semantic binding stays.
@@ -4183,7 +4779,14 @@ def run_goal_closed_loop(
             # better than one that commits wrongly, so let the next attempt through
             # and let the ordinary transition machinery judge a real outcome.
             runtime.execution_state.consecutive_stale_aborts = 0
-            runtime.execution_state.grounding_reground_only = False
+            try:
+                from plugin.agent.executive.affordance_commitment import (
+                    clear_grounding_recovery,
+                )
+
+                clear_grounding_recovery(runtime.execution_state)
+            except Exception:
+                runtime.execution_state.grounding_reground_only = False
             bypass_next_gate()
             _log_cycle(
                 log,
@@ -5634,6 +6237,11 @@ def _note_forward_observe(runtime: RuntimeState, state_sig: str) -> None:
 def _bind_forward_after_execution(runtime: RuntimeState, decision: Action) -> None:
     hints = _forward_hints(runtime)
     fam = (decision.action_family or "").lower()
+    # Do NOT retire source_object_selected from invoke_affordance + last_result
+    # + ambient picker surface here. That pairs action-specific executor state
+    # with a world fact and can latch from a stale/unrelated result.
+    # Prerequisites retire via effect_implications once perception establishes
+    # forward_picker / named effect predicates (single effect authority).
     if fam in {"select_content", "reveal_actions"} and decision.target_entity_id is not None:
         selected_id = int(decision.target_entity_id)
         # Refuse to latch selection on a left-rail chat-list echo.
@@ -5662,11 +6270,17 @@ def _bind_forward_after_execution(runtime: RuntimeState, decision: Action) -> No
         ):
             return
         result = getattr(runtime.execution_state, "last_result", None)
-        if isinstance(result, dict):
-            if str(result.get("status") or "") == "geometry_mismatch":
+        try:
+            from plugin.agent.executive.effect_implications import (
+                execution_authoritatively_ok,
+            )
+
+            if not execution_authoritatively_ok(result):
                 return
-            if not result.get("ok", True):
-                return
+        except Exception:
+            return
+        if isinstance(result, dict) and str(result.get("status") or "") == "geometry_mismatch":
+            return
         hints["source_object_entity_id"] = selected_id
         ft = dict(hints.get("forward_task") or {})
         state = ForwardTaskState.from_dict(ft)
@@ -5795,20 +6409,85 @@ def _forward_predicate_gate_after_transition(
         if isinstance(aft, dict):
             hints["forward_task"] = aft
             ft = aft
-        # Post-act identity verify: surface may have changed, but the open
-        # entity must still satisfy the role's identity contract.
+        # Post-act identity verify: settled *destination* must satisfy the
+        # role(s) the action was meant to establish — not the clicked label.
         fam = str(decision.action_family or "").strip().lower()
         if fam in {"open_entity", "open_contact"}:
             try:
-                from plugin.agent.procedures.forward_message import (
-                    role_for_action_family,
-                )
                 from plugin.agent.role_binding import (
+                    RoleBinder,
                     apply_referent_mismatch,
+                    clear_referent_mismatch_debt,
+                    note_transition_pending,
                     verify_bound_identity,
                 )
 
-                role = role_for_action_family(fam) or "source_container"
+                click_label = str(getattr(decision, "semantic_target", "") or "")
+                target_kind = str(getattr(decision, "target_kind", "") or "")
+                attempt_id = str(getattr(decision, "attempt_id", "") or "").strip()
+                legacy = bool(getattr(decision, "legacy_semantics", False))
+                typed_nav = (
+                    bool(getattr(decision, "action_is_navigation", False))
+                    and not legacy
+                )
+                # Settle authority comes only from Action-stamped contracts —
+                # never from ambient ids or phase/label re-inference.
+                if typed_nav and not attempt_id:
+                    logger.warning(
+                        "settle: typed navigation missing Action.attempt_id — "
+                        "causal attribution incomplete; refusing debt mutation"
+                    )
+                    _log_cycle(
+                        log,
+                        iteration=iteration,
+                        phase="causal_attribution_incomplete",
+                        payload={
+                            "click_target": click_label[:120],
+                            "class": "CAUSAL_ATTRIBUTION_INCOMPLETE",
+                        },
+                        status="fail",
+                    )
+                    establish_roles = []
+                    sem = {
+                        "is_navigation": True,
+                        "establishes_roles": [],
+                        "incomplete": True,
+                        "causal_incomplete": True,
+                    }
+                elif typed_nav:
+                    est = [
+                        str(r)
+                        for r in (getattr(decision, "establishes_roles", None) or [])
+                        if str(r).strip()
+                    ]
+                    sem = {
+                        "is_navigation": True,
+                        "establishes_roles": est,
+                        "target_kind": target_kind,
+                        "incomplete": not bool(est),
+                    }
+                    establish_roles = [] if not est else est
+                elif legacy:
+                    sem = {
+                        "is_navigation": False,
+                        "establishes_roles": [],
+                        "target_kind": target_kind,
+                        "legacy": True,
+                    }
+                    establish_roles = []
+                else:
+                    # Explicit container open stamped on Action may establish.
+                    est = [
+                        str(r)
+                        for r in (getattr(decision, "establishes_roles", None) or [])
+                        if str(r).strip()
+                    ]
+                    sem = {
+                        "is_navigation": False,
+                        "establishes_roles": est if attempt_id else [],
+                        "target_kind": target_kind,
+                    }
+                    establish_roles = list(sem.get("establishes_roles") or [])
                 open_name = str(
                     feature_get(after_feats, "open_conversation")
                     or feature_get(after_feats, "active_conversation")
@@ -5823,48 +6502,105 @@ def _forward_predicate_gate_after_transition(
                         "link_query": "",
                         "target_contact": "",
                     }
-                # Skip when the goal has no contact referent — nothing to verify.
                 contact_ref = str(
                     getattr(goal_obj, "contact", None)
                     or (goal_obj.get("contact") if isinstance(goal_obj, dict) else "")
+                    or getattr(goal_obj, "source_contact", None)
+                    or (
+                        goal_obj.get("source_contact")
+                        if isinstance(goal_obj, dict)
+                        else ""
+                    )
                     or ""
                 ).strip()
-                world_fact = {
-                    "label": open_name,
-                    "title": open_name,
-                    "text": open_name,
-                    "kind": "conversation",
-                    "open_conversation": open_name,
-                }
-                ok, proposal = verify_bound_identity(
-                    role=role,
-                    world_fact=world_fact,
-                    goal=goal_obj,
-                )
-                # Only fire when we have an open title *and* a goal referent.
-                # Empty open is "not yet perceived", not a mismatch.
-                if open_name and contact_ref and not ok:
-                    new_ft = apply_referent_mismatch(
-                        runtime.execution_state,
-                        role=role,
-                        candidate_label=str(
-                            getattr(decision, "semantic_target", "") or open_name
-                        ),
-                        forward_task=dict(hints.get("forward_task") or ft),
-                    )
-                    if isinstance(new_ft, dict):
-                        hints["forward_task"] = new_ft
-                    _log_cycle(
-                        log,
-                        iteration=iteration,
-                        phase="referent_mismatch",
-                        payload={
-                            "role": role,
+                # Empty open: navigation/open not settled yet — never terminal.
+                # Requires Action.attempt_id (note_transition_pending refuses empty).
+                if not open_name:
+                    if typed_nav and establish_roles and attempt_id:
+                        note_transition_pending(
+                            runtime.execution_state,
+                            establishes_roles=establish_roles,
+                            target_label=click_label,
+                            attempt_id=attempt_id,
+                        )
+                elif establish_roles and attempt_id:
+                    binder = RoleBinder()
+                    for role in establish_roles:
+                        world_fact = {
+                            "label": open_name,
+                            "title": open_name,
+                            "text": open_name,
+                            "kind": "conversation",
+                            "entity_kind": "conversation",
                             "open_conversation": open_name,
-                            "proposal": proposal.to_dict(),
-                            "class": "REFERENT_MISMATCH",
-                        },
-                        status="fail",
-                    )
+                            "domain": "whatsapp",
+                        }
+                        ok, proposal = verify_bound_identity(
+                            role=role,
+                            world_fact=world_fact,
+                            goal=goal_obj,
+                        )
+                        if ok:
+                            # Prefer settled open label on the proposal.
+                            try:
+                                proposal.candidate_label = open_name
+                            except Exception:
+                                pass
+                            # Commit then clear — debt supersede only after commit.
+                            new_ft = binder.commit_effect(
+                                runtime.execution_state,
+                                proposal=proposal,
+                                forward_task=dict(hints.get("forward_task") or ft),
+                                evidence="settled_destination_verified",
+                            )
+                            if isinstance(new_ft, dict):
+                                hints["forward_task"] = new_ft
+                                clear_referent_mismatch_debt(
+                                    runtime.execution_state,
+                                    role=role,
+                                    verified_label=open_name,
+                                    attempt_id=attempt_id,
+                                )
+                                _log_cycle(
+                                    log,
+                                    iteration=iteration,
+                                    phase="role_established",
+                                    payload={
+                                        "role": role,
+                                        "open_conversation": open_name,
+                                        "click_target": click_label[:120],
+                                        "attempt_id": attempt_id,
+                                        "navigation": bool(sem.get("is_navigation")),
+                                        "source_object_bound": False,
+                                        "class": "SETTLED_DESTINATION_VERIFIED",
+                                    },
+                                    status="ok",
+                                )
+                        elif contact_ref:
+                            # Settled wrong container — mismatch on destination
+                            # identity, never on the content click label.
+                            new_ft = apply_referent_mismatch(
+                                runtime.execution_state,
+                                role=role,
+                                candidate_label=open_name,
+                                forward_task=dict(hints.get("forward_task") or ft),
+                                attempt_id=attempt_id,
+                            )
+                            if isinstance(new_ft, dict):
+                                hints["forward_task"] = new_ft
+                            _log_cycle(
+                                log,
+                                iteration=iteration,
+                                phase="referent_mismatch",
+                                payload={
+                                    "role": role,
+                                    "open_conversation": open_name,
+                                    "click_target": click_label[:120],
+                                    "attempt_id": attempt_id,
+                                    "proposal": proposal.to_dict(),
+                                    "class": "REFERENT_MISMATCH",
+                                },
+                                status="fail",
+                            )
             except Exception:
                 pass

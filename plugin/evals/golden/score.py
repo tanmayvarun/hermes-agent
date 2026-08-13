@@ -201,8 +201,13 @@ def score_critic_case(case: GoldenCase) -> CaseScore:
                 f"accepted_open={got_open!r}",
             )
         )
-    if gold.get("youtube_not_binding_eligible"):
-        from plugin.agent.source_query_binding import scrub_matches_goal_flags
+    if gold.get("youtube_not_binding_eligible") or gold.get(
+        "distractor_not_binding_eligible"
+    ):
+        from plugin.agent.source_query_binding import (
+            evaluate_source_object_match,
+            scrub_matches_goal_flags,
+        )
 
         query = str(
             gold.get("source_query")
@@ -214,21 +219,65 @@ def score_critic_case(case: GoldenCase) -> CaseScore:
             query=query,
             expected_container=str(accepted.get("open_conversation") or ""),
         )
-        yt_still = False
+        distractor_hosts = (
+            "youtu.be",
+            "youtube.com",
+            "instagram.com",
+            "facebook.com",
+            "tiktok.com",
+        )
+        bad_distractor = False
         for obj in scrubbed.get("objects") or []:
             if not isinstance(obj, dict):
                 continue
             text = str(obj.get("text") or "").lower()
-            if ("youtu.be" in text or "youtube.com" in text) and bool(
+            if any(h in text for h in distractor_hosts) and bool(
                 obj.get("matches_goal")
             ):
-                yt_still = True
+                bad_distractor = True
                 break
         result.checks.append(
             _check(
-                "youtube_not_binding_eligible",
-                not yt_still,
-                "YouTube object still matches_goal after source_query scrub",
+                "distractor_not_binding_eligible"
+                if gold.get("distractor_not_binding_eligible")
+                else "youtube_not_binding_eligible",
+                not bad_distractor,
+                "distractor URL still matches_goal after source_query scrub",
+            )
+        )
+    if gold.get("draft_not_binding_eligible"):
+        from plugin.agent.source_query_binding import evaluate_source_object_match
+
+        query = str(
+            gold.get("source_query")
+            or inp.get("source_query")
+            or "zarooratwala"
+        ).strip()
+        draft_bound = False
+        for obj in (accepted.get("objects") or []):
+            if not isinstance(obj, dict):
+                continue
+            kind = str(obj.get("kind") or "").lower()
+            role = str(obj.get("role") or obj.get("field_role") or "").lower()
+            if kind not in {"draft", "composer", "composer_draft"} and "composer" not in role:
+                continue
+            gm = evaluate_source_object_match(
+                text=str(obj.get("text") or obj.get("label") or ""),
+                kind=kind,
+                query=query,
+                container_open=str(accepted.get("open_conversation") or ""),
+                expected_container=str(accepted.get("open_conversation") or ""),
+                role=role,
+                perception_matches_goal=bool(obj.get("matches_goal")),
+            )
+            if gm.binding_eligible:
+                draft_bound = True
+                break
+        result.checks.append(
+            _check(
+                "draft_not_binding_eligible",
+                not draft_bound,
+                "composer/draft object was binding_eligible for content patient",
             )
         )
     result.passed = all(c["passed"] for c in result.checks)
@@ -334,6 +383,11 @@ def score_meta_action_case(case: GoldenCase) -> CaseScore:
         search_episode_complete=bool(inp.get("search_episode_complete")),
         search_retreat_owed=bool(inp.get("search_retreat_owed")),
         role_identity_search_owed=bool(inp.get("role_identity_search_owed")),
+        wrong_locus_recovery_owed=bool(inp.get("wrong_locus_recovery_owed")),
+        wrong_locus_kind=str(inp.get("wrong_locus_kind") or ""),
+        locate_effect_verify_owed=bool(inp.get("locate_effect_verify_owed")),
+        source_contact_open_ready=bool(inp.get("source_contact_open_ready")),
+        leave_wrong_conversation_owed=bool(inp.get("leave_wrong_conversation_owed")),
     )
     situation = situation_from_mapping(
         inp.get("situation") if isinstance(inp.get("situation"), dict) else {}

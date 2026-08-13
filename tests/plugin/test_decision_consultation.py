@@ -320,19 +320,31 @@ def test_apply_grounds_pointer_family_from_accepted_objects():
         "objects": [
             {
                 "id": 7,
-                "text": "zarooratwala link",
+                "kind": "message_bubble",
+                "text": "https://www.zarooratwala.com/order",
                 "matches_goal": True,
                 "point": [200, 254],
             }
         ],
     }
     proposal = _proposal("conversation", "reveal_actions")
+    # last_locate_query alone is not content_located (185549); found/achieved required.
     trace = apply_decision_consultation(
         proposal,
         _goal(),
-        features=_features(conversation_open=True, last_locate_query="zarooratwala"),
+        features=_features(
+            conversation_open=True,
+            last_locate_query="zarooratwala",
+            last_locate_found=True,
+            last_locate_effect_status="achieved",
+        ),
         execution_state=_State(document),
-        chooser=_FakeChooser({"capability": "reveal_actions", "target": "zarooratwala"}),
+        chooser=_FakeChooser(
+            {
+                "capability": "reveal_actions",
+                "target": "https://www.zarooratwala.com/order",
+            }
+        ),
     )
     assert trace["applied"] is True
     assert proposal.next_action["target_point"] == [200, 254]
@@ -537,10 +549,12 @@ def test_reflect_repair_open_entity_is_rewritten_to_compose_first():
                 "text": "Search",
                 "point": [150, 90],
             },
+            # Preview text only — no actuatable geometry. An actuatable source
+            # chat_row may open despite unpaid link_query (live 145943); this
+            # golden keeps the compose-first path for non-actuatable previews.
             {
-                "id": "pallavi_row",
+                "id": "pallavi_preview",
                 "text": "Pallavi - zarooratwala Pallavi",
-                "point": [2176, 173],
                 "matches_goal": True,
             },
         ],

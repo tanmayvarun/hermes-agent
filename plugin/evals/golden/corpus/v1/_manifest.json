@@ -26,12 +26,13 @@
     "live 235701 post-accept promote + multipass explore (menu in accepted doc; no OCR invent)",
     "live 123746 compose demoted geometry_required_missing despite AX Q Search on frontier",
     "live failure 20260809_210526 (search evidence vs conversation patch; resolve\u2260open)",
-    "live failure 20260809_214025 (YouTube distractor bound as zarooratwala source_object)"
+    "live failure 20260809_214025 (YouTube distractor bound as zarooratwala source_object)",
+    "live failure 20260812_185549 (AX-blind locate EffectStatus UNKNOWN; Instagram distractor; draft\neq content patient)"
   ],
   "modules": {
     "perceive": 3,
-    "critic": 4,
-    "meta_action": 224,
+    "critic": 5,
+    "meta_action": 225,
     "brain": 2,
     "actor": 15,
     "brain_actor_handoff": 11,

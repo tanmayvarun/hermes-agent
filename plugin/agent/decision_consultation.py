@@ -241,6 +241,11 @@ class DecisionOutcome:
     why: str = ""
     confidence: float = 0.0
     realization: str = ""
+    # Survive sanitize → next_action → Action/PlanStep → controller.
+    target_kind: str = ""
+    establishes_roles: List[str] = field(default_factory=list)
+    action_is_navigation: bool = False
+    legacy_semantics: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -250,6 +255,10 @@ class DecisionOutcome:
             "why": self.why[:200],
             "confidence": round(float(self.confidence or 0.0), 3),
             "realization": self.realization,
+            "target_kind": self.target_kind,
+            "establishes_roles": list(self.establishes_roles or []),
+            "action_is_navigation": bool(self.action_is_navigation),
+            "legacy_semantics": bool(self.legacy_semantics),
         }
 
 
@@ -488,10 +497,68 @@ def task_state_from_context(
     source_open = bool(
         conv_open and source and open_matches_referent(open_conversation, source)
     )
+    # Locate execution_ok alone is not content_located (185549 AX-blind).
     located = bool(
         link_q
         and str(extras.get("last_locate_query") or "").strip().lower() == link_q.lower()
+        and (
+            bool(extras.get("last_locate_found"))
+            or str(extras.get("last_locate_effect_status") or "").lower() == "achieved"
+        )
     )
+    # Close EffectStatus UNKNOWN only on ACHIEVED here. Failed verify (still
+    # blind / no patient) is resolved after a paid look in the controller —
+    # never on the immediate post-locate frame before visual verify runs.
+    if (
+        execution_state is not None
+        and link_q
+        and bool(getattr(execution_state, "locate_effect_verify_owed", False))
+        and isinstance(doc, dict)
+    ):
+        try:
+            from plugin.agent.capabilities.locate_content import (
+                resolve_locate_effect_verification,
+            )
+            from plugin.agent.source_query_binding import (
+                document_locates_source_query,
+                evaluate_source_object_match,
+            )
+
+            query_visible = bool(document_locates_source_query(doc, link_q))
+            content_located = False
+            if query_visible:
+                open_c = str(doc.get("open_conversation") or "")
+                source = str(getattr(goal, "contact", "") or "")
+                for obj in doc.get("objects") or []:
+                    if not isinstance(obj, dict):
+                        continue
+                    gm = evaluate_source_object_match(
+                        text=str(obj.get("text") or obj.get("label") or ""),
+                        kind=str(obj.get("kind") or ""),
+                        query=link_q,
+                        container_open=open_c,
+                        expected_container=source,
+                        expected_originator=source,
+                        sender=obj.get("sender") or obj.get("originator"),
+                        perception_matches_goal=bool(obj.get("matches_goal")),
+                        role=str(obj.get("role") or obj.get("field_role") or ""),
+                    )
+                    if gm.binding_eligible:
+                        content_located = True
+                        break
+            if content_located or query_visible:
+                resolve_locate_effect_verification(
+                    execution_state,
+                    content_located=content_located,
+                    query_visible=query_visible and not content_located,
+                )
+                if content_located or (
+                    str(getattr(execution_state, "last_locate_effect_status", "") or "")
+                    == "achieved"
+                ):
+                    located = True
+        except Exception:
+            pass
     visible = bool(
         extras.get("source_content_visible")
         or extras.get("timeline_query_hit")
@@ -732,8 +799,19 @@ def build_decision_brief(
     from plugin.agent.executive.capabilities import default_registry
     from plugin.agent.capabilities.search_episode import (
         ensure_search_episode_from_brief,
+        maybe_complete_source_contact_from_visible_row,
         search_episode_of,
     )
+
+    # Grounded source contact row completes the source find before compose-first
+    # ranking arms (live 145943).
+    if execution_state is not None and not task_state.source_chat_open:
+        maybe_complete_source_contact_from_visible_row(
+            execution_state,
+            document=doc,
+            contact=str(goal_dict.get("source_conversation") or ""),
+            source_chat_open=bool(task_state.source_chat_open),
+        )
 
     closure = getattr(execution_state, "last_effect_closure", None) if execution_state else None
     if not isinstance(closure, dict):
@@ -1111,38 +1189,101 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
     # consumes a valid binding (or bind-then-act via RoleBinder — not a second
     # copy of identity rules inline here).
     if capability in {"resolve_entity", "open_entity", "open_contact"} and target:
-        from plugin.agent.procedures.forward_message import role_for_action_family
+        from plugin.agent.procedures.forward_message import (
+            action_open_semantics,
+            looks_like_container_open_target,
+            looks_like_content_open_target,
+        )
         from plugin.agent.role_binding import (
             BindingRecord,
             RoleBinder,
         )
 
-        role = role_for_action_family(
-            capability, phase=str(brief.task_state.phase or "")
-        )
-        if role:
-            cand = {
-                "label": target,
-                "text": target,
-                "title": target,
-                "kind": "conversation"
-                if role in {"source_container", "destination"}
-                else "message",
-                "domain": "whatsapp",
-            }
-            for row in brief.candidates or []:
-                if isinstance(row, dict):
-                    lab = str(row.get("label") or row.get("text") or "")
-                    if lab.strip().lower() == target.strip().lower() or (
-                        target.strip().lower() in lab.strip().lower()
-                    ):
-                        cand = dict(row)
-                        cand.setdefault("label", lab)
-                        cand.setdefault("domain", "whatsapp")
-                        break
-                elif str(row or "").strip().lower() == target.strip().lower():
-                    cand["label"] = str(row)
+        cand = {
+            "label": target,
+            "text": target,
+            "title": target,
+            "domain": "whatsapp",
+        }
+        payload_target_id = str(
+            payload.get("target_id") or payload.get("id") or ""
+        ).strip()
+        target_n = target.strip().lower()
+        for row in brief.candidates or []:
+            if isinstance(row, dict):
+                lab = str(row.get("label") or row.get("text") or "")
+                lab_n = lab.strip().lower()
+                row_id = str(row.get("id") or row.get("target_id") or "").strip()
+                # Exact match only — substring (`target in lab`) is not authority.
+                if payload_target_id and row_id and payload_target_id == row_id:
+                    cand = dict(row)
+                    cand.setdefault("label", lab or target)
+                    cand.setdefault("domain", "whatsapp")
                     break
+                if lab_n and lab_n == target_n:
+                    cand = dict(row)
+                    cand.setdefault("label", lab)
+                    cand.setdefault("domain", "whatsapp")
+                    break
+            elif str(row or "").strip().lower() == target_n:
+                cand["label"] = str(row)
+                break
+        # Unknown stays unknown — never flatten “not content” → conversation.
+        if not str(cand.get("entity_kind") or cand.get("kind") or "").strip():
+            if looks_like_content_open_target(candidate=cand, target=target):
+                cand["kind"] = "message"
+                cand["entity_kind"] = "message"
+            elif looks_like_container_open_target(candidate=cand, target=target):
+                cand["kind"] = "conversation"
+                cand["entity_kind"] = "conversation"
+        sem = action_open_semantics(
+            capability,
+            phase=str(brief.task_state.phase or ""),
+            candidate=cand,
+            target=target,
+        )
+        role = str(sem.get("target_role") or "")
+        # Navigation via content: click target is not a container identity claim.
+        # Allow open; RoleBinder will verify established roles after settle.
+        # Must NOT auto-bind source_object from this click.
+        if sem.get("is_navigation") and capability in {"open_entity", "open_contact"}:
+            closure = (
+                brief.effect_closure if isinstance(brief.effect_closure, dict) else {}
+            )
+            bad_label = str(closure.get("referent_mismatch_label") or "").strip()
+            # Only block re-open of a settled *wrong container*, not content labels.
+            if (
+                bad_label
+                and str(closure.get("referent_mismatch_role") or "")
+                in {"source_container", "destination"}
+                and bad_label.lower() == target.strip().lower()
+                and not looks_like_content_open_target(target=bad_label)
+            ):
+                return DecisionOutcome(
+                    ok=False,
+                    why=(
+                        f"container candidate {target!r} negatively evidenced "
+                        f"({closure.get('modes')}) — resume SEARCH"
+                    ),
+                )
+            # Fail closed: typed navigation must carry establishes_roles from sem.
+            est = [str(r) for r in (sem.get("establishes_roles") or []) if str(r).strip()]
+            if not est:
+                return DecisionOutcome(
+                    ok=False,
+                    why=(
+                        "incomplete typed navigation — missing establishes_roles "
+                        "(no invented source_container contract)"
+                    ),
+                )
+            # Stamp on payload; final DecisionOutcome copies these fields.
+            try:
+                payload["target_kind"] = str(sem.get("target_kind") or "")
+                payload["establishes_roles"] = est
+                payload["action_is_navigation"] = True
+            except Exception:
+                pass
+        elif role:
             closure = (
                 brief.effect_closure if isinstance(brief.effect_closure, dict) else {}
             )
@@ -1232,10 +1373,17 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
     if meta_now == "probe":
         meta_now = "explore"
     if meta_now == "search" and capability in SEARCH_FORBIDDEN_CAPABILITIES:
-        return DecisionOutcome(
-            ok=False,
-            why="search meta forbids commit verbs; use compose/resolve or wait for act",
-        )
+        # Exception (live 145943): grounded source contact row may open under
+        # search meta — container open is ACT-commit of the source find.
+        if capability in {"open_entity", "open_contact"} and _actuatable_source_contact_ready(
+            brief, target=target
+        ):
+            pass
+        else:
+            return DecisionOutcome(
+                ok=False,
+                why="search meta forbids commit verbs; use compose/resolve or wait for act",
+            )
     if meta_now == "explore" and capability in EXPLORE_FORBIDDEN_CAPABILITIES:
         return DecisionOutcome(
             ok=False,
@@ -1518,6 +1666,8 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
     # while the clickable target is still a chat-list preview row.
     # Exception (live 131221): when search/results already show a matches_goal
     # row, AX may have dropped search_query — still allow open_entity.
+    # Exception (live 145943): actuatable source *contact* chat_row may open
+    # even with unpaid link_query — container open is parent of link hunt.
     if (
         capability == "open_entity"
         and brief.task_state.phase == "reach_source"
@@ -1526,25 +1676,88 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
         and not search_q
         and not had_search_attempt
         and not _search_results_ready_for_open(brief)
+        and not _actuatable_source_contact_ready(brief, target=target)
     ):
         return DecisionOutcome(
             ok=False,
             why="link query unresolved; compose_search_query before opening a preview row",
         )
-    # Source already open (e.g. leftover from prior run) but no search/URL yet:
-    # re-clicking the chat-list preview is a no-op thrash; hunt inside the chat
-    # (sidebar compose is forbidden once source_chat_open — live 031605).
+    # Wrong-locus forbid (field | container | patient): locally executable
+    # methods whose actuation locus is forbidden for the active desired effect.
+    # Absorbs foreign-compose (145943) and composer-focused type/locate (181132).
+    try:
+        from plugin.agent.capabilities.locus_contract import wrong_locus_forbidden
+
+        field_role = str(
+            (brief.world or {}).get("focused_field_role")
+            or brief.navigation.focused_field_role
+            or ""
+        ).strip()
+        target_kind = str(
+            payload.get("target_kind")
+            or payload.get("kind")
+            or ""
+        ).strip()
+        locus_bad, locus_why, locus_req = wrong_locus_forbidden(
+            capability,
+            brief=brief,
+            field_role=field_role,
+            label=str(target or ""),
+            target_kind=target_kind,
+        )
+        if locus_bad:
+            # Preserve legacy why substrings used by remap / goldens.
+            if "foreign_open" in locus_why:
+                if _actuatable_source_contact_ready(brief):
+                    return DecisionOutcome(
+                        ok=False,
+                        why=(
+                            f"{locus_why}; foreign conversation open with source "
+                            "contact row visible; open_entity before compose_search_query"
+                        ),
+                    )
+                return DecisionOutcome(
+                    ok=False,
+                    why=(
+                        f"{locus_why}; foreign conversation open; leave/dismiss "
+                        "toward chat list before compose_search_query"
+                    ),
+                )
+            if "composer" in locus_why:
+                return DecisionOutcome(
+                    ok=False,
+                    why=(
+                        f"{locus_why}; wrong field locus — locate_content / dismiss "
+                        "draft, do not type or context-click composer"
+                    ),
+                )
+            detail = (
+                locus_req.kind.value if locus_req is not None else "locus"
+            )
+            return DecisionOutcome(
+                ok=False,
+                why=f"{locus_why}; wrong_locus:{detail}",
+            )
+    except Exception:
+        pass
+    # Compatibility gate (live 131030): when the forward task is hunting
+    # content inside an already-open source chat, prefer locate/reveal over
+    # open_entity. Temporary — not the final desired-effect architecture
+    # (same object may legitimately need OPEN_CONTENT for other goals).
     if (
         capability == "open_entity"
         and brief.task_state.source_chat_open
         and link_q
         and not bool(brief.task_state.content_located)
         and brief.task_state.phase in {"hunt_content", "act_on_content"}
-        and not _looks_like_url_blob(target)
     ):
         return DecisionOutcome(
             ok=False,
-            why="source chat open; locate_content for link_query instead of reopening a row",
+            why=(
+                "compat: source chat open while hunting link_query — "
+                "locate_content / reveal_actions instead of open_entity "
+                "(desired-effect selection pending)"
+            ),
         )
     # Message actions need an open conversation; on chat_list/search the same
     # URL often appears as a preview row — revealing there is a dead end.
@@ -1562,9 +1775,30 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
     # (e.g. content_item geometry re-ground) are not distractor evidence.
     # Container open + generic URL is not identity (live 214025 YouTube).
     if capability == "reveal_actions" and link_q and surface == "conversation":
+        from plugin.agent.capabilities.action_area import label_looks_like_composer
         from plugin.agent.source_query_binding import text_locates_source_query
 
         target_blob = str(target or "")
+        field_role = str(
+            (brief.world or {}).get("focused_field_role")
+            or brief.navigation.focused_field_role
+            or ""
+        ).strip().lower()
+        # Live 181132: typed query echo in the chat composer is not a message.
+        # Right-click yields spellcheck, not Forward.
+        if field_role in {
+            "composer",
+            "message_composer",
+            "chat_composer",
+            "message_input",
+        } or label_looks_like_composer(target_blob):
+            return DecisionOutcome(
+                ok=False,
+                why=(
+                    "reveal_actions on message composer — "
+                    "locate_content / dismiss draft, do not context-click typed text"
+                ),
+            )
         target_ok = text_locates_source_query(target_blob, link_q)
         concrete = _looks_like_url_blob(target_blob) or (
             len(target_blob) >= 12 and " " in target_blob and "/" in target_blob
@@ -1573,6 +1807,25 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
             or "https://" in target_blob.lower()
             or "youtu" in target_blob.lower()
         )
+        # Query-token echo without URL/path is almost always composer draft text.
+        q_low = link_q.lower()
+        t_low = target_blob.lower().strip()
+        query_echo = bool(
+            q_low
+            and t_low
+            and (q_low in t_low or t_low in q_low or t_low.startswith(q_low[:8]))
+            and not concrete
+            and "http" not in t_low
+            and "/" not in t_low
+        )
+        if query_echo:
+            return DecisionOutcome(
+                ok=False,
+                why=(
+                    "reveal_actions on source_query echo (likely composer draft) — "
+                    "locate_content for the timeline URL first"
+                ),
+            )
         if concrete and not target_ok:
             return DecisionOutcome(
                 ok=False,
@@ -1690,6 +1943,9 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
         confidence = float(payload.get("confidence") or 0.0)
     except (TypeError, ValueError):
         confidence = 0.0
+    est_roles = payload.get("establishes_roles") or []
+    if not isinstance(est_roles, list):
+        est_roles = []
     return DecisionOutcome(
         ok=True,
         capability=capability,
@@ -1697,6 +1953,10 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
         why=str(payload.get("why") or "")[:200],
         confidence=max(0.0, min(1.0, confidence)) or 0.6,
         realization="llm_decision",
+        target_kind=str(payload.get("target_kind") or ""),
+        establishes_roles=[str(r) for r in est_roles if str(r).strip()],
+        action_is_navigation=bool(payload.get("action_is_navigation")),
+        legacy_semantics=bool(payload.get("legacy_semantics")),
     )
 
 
@@ -1963,6 +2223,53 @@ def _search_results_ready_for_open(brief: "DecisionBrief") -> bool:
         and str(ep.get("status") or "") == "complete"
         and ep.get("chosen_label")
     )
+
+
+def _actuatable_source_contact_ready(
+    brief: "DecisionBrief",
+    *,
+    target: str = "",
+) -> bool:
+    """True when an actuatable source-contact chat_row is grounded for open.
+
+    Optional ``target`` must match that row (or the source name) when provided.
+    """
+    if brief.task_state.source_chat_open:
+        return False
+    if brief.task_state.phase not in {"reach_source", "open_source", "preclear", ""}:
+        return False
+    source = str(
+        (brief.goal or {}).get("source_conversation")
+        or (brief.goal or {}).get("contact")
+        or ""
+    ).strip()
+    if not source:
+        return False
+    from plugin.agent.capabilities.resolve_entity import (
+        actuatable_source_contact_row,
+        open_matches_referent,
+        row_matches_source_contact,
+    )
+
+    doc = brief.world if isinstance(brief.world, dict) else {}
+    row = actuatable_source_contact_row(doc, source)
+    if not isinstance(row, dict):
+        return False
+    if not target:
+        return True
+    tgt = str(target or "").strip()
+    label = str(row.get("text") or row.get("label") or "").strip()
+    if not tgt:
+        return True
+    if row_matches_source_contact(tgt, source) or open_matches_referent(tgt, source):
+        return True
+    if label and (
+        tgt.lower() == label.lower()
+        or tgt.lower() in label.lower()
+        or label.lower() in tgt.lower()
+    ):
+        return True
+    return False
 
 
 def _looks_like_url_blob(text: Any) -> bool:
@@ -2730,11 +3037,15 @@ def _content_search_locate_outcome(
     brief: "DecisionBrief",
     *,
     prior: Optional["DecisionOutcome"] = None,
+    execution_state: Any = None,
 ) -> Optional["DecisionOutcome"]:
     """SEARCH with source open + unpaid source_query → locate_content, not Observe.
 
     Live 225807: binding correctly refused YouTube, meta kept SEARCH, but the
     planner realized Observe forever because content SEARCH had no seal.
+
+    Live 185549: AX-blind locate left EffectStatus UNKNOWN; identical locate must
+    not reseal while verification is pending / method still unresolved.
     """
     meta_now = str(getattr(brief, "meta_action", "") or "").strip().lower()
     if meta_now != "search":
@@ -2766,6 +3077,36 @@ def _content_search_locate_outcome(
             pass
         else:
             return None
+    # EffectStatus UNKNOWN / pending verify: forbid same-method SEARCH replay.
+    if execution_state is not None:
+        try:
+            from plugin.agent.capabilities.locate_content import (
+                prefer_next_locate_realization,
+                same_locate_unresolved,
+            )
+
+            if same_locate_unresolved(execution_state, query=link_q):
+                return None
+            next_r = prefer_next_locate_realization(execution_state)
+            if next_r:
+                return DecisionOutcome(
+                    ok=True,
+                    capability="locate_content",
+                    target=link_q,
+                    why=(
+                        f"source open; prior locate route uninformative — "
+                        f"MethodFrontier next={next_r}({link_q!r})"
+                    ),
+                    confidence=max(
+                        0.85, float(getattr(prior, "confidence", 0.0) or 0.0)
+                    ),
+                    realization=(
+                        f"{getattr(prior, 'realization', None) or 'decision'}"
+                        f"+content_search_locate_{next_r}"
+                    ),
+                )
+        except Exception:
+            pass
     return DecisionOutcome(
         ok=True,
         capability="locate_content",
@@ -2916,7 +3257,70 @@ def apply_decision_consultation(
             allowed = set(brief.capabilities or [])
             why = str(gated.why or "")
             prior_r = str(outcome.realization or "decision")
-            if "compose_search_query" in why and "compose_search_query" in allowed:
+            if (
+                "open_entity before compose" in why.lower()
+                or (
+                    "foreign conversation open with source contact" in why.lower()
+                    and "open_entity" in allowed
+                )
+            ):
+                src_tgt = _open_entity_target_from_brief(brief)
+                from plugin.agent.capabilities.resolve_entity import (
+                    actuatable_source_contact_row,
+                )
+
+                row = actuatable_source_contact_row(
+                    brief.world if isinstance(brief.world, dict) else {},
+                    str(
+                        (brief.goal or {}).get("source_conversation")
+                        or (brief.goal or {}).get("contact")
+                        or ""
+                    ),
+                )
+                if isinstance(row, dict):
+                    src_tgt = str(
+                        row.get("text") or row.get("label") or src_tgt or ""
+                    ).strip() or src_tgt
+                outcome = DecisionOutcome(
+                    ok=True,
+                    capability="open_entity",
+                    target=src_tgt,
+                    why=why,
+                    confidence=max(0.7, float(outcome.confidence or 0.0)),
+                    realization=f"{prior_r}+sanitize_source_contact_open",
+                )
+            elif (
+                "leave/dismiss" in why.lower()
+                or "wrong_locus:container" in why.lower()
+                or (
+                    "foreign conversation open" in why.lower()
+                    and "compose_search_query" in why.lower()
+                )
+            ) and "dismiss_transient" in allowed:
+                outcome = DecisionOutcome(
+                    ok=True,
+                    capability="dismiss_transient",
+                    target="",
+                    why=why,
+                    confidence=max(0.65, float(outcome.confidence or 0.0)),
+                    realization=f"{prior_r}+sanitize_leave_wrong_conversation",
+                )
+                if execution_state is not None:
+                    try:
+                        from plugin.agent.capabilities.locus_contract import (
+                            stamp_wrong_locus_debt,
+                        )
+
+                        stamp_wrong_locus_debt(
+                            execution_state,
+                            kind="container",
+                            forbidden="foreign_container",
+                            required="open_matches_referent(source)",
+                            why=why,
+                        )
+                    except Exception:
+                        pass
+            elif "compose_search_query" in why and "compose_search_query" in allowed:
                 outcome = DecisionOutcome(
                     ok=True,
                     capability="compose_search_query",
@@ -2925,7 +3329,13 @@ def apply_decision_consultation(
                     confidence=max(0.55, float(outcome.confidence or 0.0)),
                     realization=f"{prior_r}+sanitize_compose_first",
                 )
-            elif "locate_content" in why and "locate_content" in allowed:
+            elif (
+                "locate_content" in why
+                or "wrong_locus:field" in why.lower()
+                or "composer draft" in why.lower()
+                or "message composer" in why.lower()
+                or "source_query echo" in why.lower()
+            ) and "locate_content" in allowed:
                 link_q = str((brief.goal or {}).get("source_query") or "").strip()
                 outcome = DecisionOutcome(
                     ok=True,
@@ -2935,6 +3345,21 @@ def apply_decision_consultation(
                     confidence=max(0.55, float(outcome.confidence or 0.0)),
                     realization=f"{prior_r}+sanitize_locate",
                 )
+                if execution_state is not None and "wrong_locus:field" in why.lower():
+                    try:
+                        from plugin.agent.capabilities.locus_contract import (
+                            stamp_wrong_locus_debt,
+                        )
+
+                        stamp_wrong_locus_debt(
+                            execution_state,
+                            kind="field",
+                            forbidden="composer",
+                            required="filter_field",
+                            why=why,
+                        )
+                    except Exception:
+                        pass
             elif "search_incomplete" in why.lower() and "resolve_entity" in allowed:
                 from plugin.agent.capabilities.search_episode import (
                     search_continue_capability,
@@ -3086,7 +3511,9 @@ def apply_decision_consultation(
 
     # SEARCH with open source chat + unpaid link query → locate_content
     # (live 225807 Observe thrash after correct YouTube reject).
-    _content_seal = _content_search_locate_outcome(brief, prior=outcome)
+    _content_seal = _content_search_locate_outcome(
+        brief, prior=outcome, execution_state=execution_state
+    )
     if _content_seal is not None and (
         not outcome.ok
         or str(outcome.capability or "").strip().lower()
@@ -3108,6 +3535,10 @@ def apply_decision_consultation(
         "text": outcome.target if outcome.capability != "compose_search_query" else "",
         "confidence": outcome.confidence
         or float(getattr(proposal, "confidence", 0.0) or 0.0),
+        "target_kind": str(getattr(outcome, "target_kind", "") or ""),
+        "establishes_roles": list(getattr(outcome, "establishes_roles", None) or []),
+        "action_is_navigation": bool(getattr(outcome, "action_is_navigation", False)),
+        "legacy_semantics": bool(getattr(outcome, "legacy_semantics", False)),
     }
     if outcome.ok and outcome.capability:
         pointer_caps = _pointer_capabilities()
@@ -3281,6 +3712,13 @@ def apply_decision_consultation(
                     escalate_failed_reveal,
                     reveal_motor_fingerprint,
                 )
+                from plugin.agent.executive.effect_implications import (
+                    avoid_key_blocks_method,
+                    method_context_from_state,
+                )
+                from plugin.agent.executive.intention_frame import (
+                    active_intention_frame,
+                )
 
                 avoid = set(
                     getattr(execution_state, "avoid_motor_keys", None) or []
@@ -3288,6 +3726,36 @@ def apply_decision_consultation(
                 tgt = str(next_action.get("target_label") or outcome.target or "")
                 pt = next_action.get("target_point")
                 key = motor_fingerprint(outcome.capability, tgt, pt)
+                iframe = active_intention_frame(execution_state)
+                intention_id = str(
+                    getattr(getattr(iframe, "intention", None), "id", "") or ""
+                )
+                doc_world = document if isinstance(document, dict) else {}
+                ctx = method_context_from_state(
+                    execution_state,
+                    world={
+                        "surface": str(
+                            doc_world.get("surface")
+                            or getattr(execution_state, "last_surface", "")
+                            or ""
+                        ),
+                        "open_conversation": str(
+                            doc_world.get("open_conversation") or ""
+                        ),
+                        "semantic_container": str(
+                            doc_world.get("semantic_container") or ""
+                        ),
+                    },
+                )
+                world_sig = ctx.signature() if ctx is not None else ""
+                method_blocked = avoid_key_blocks_method(
+                    list(avoid),
+                    family=str(outcome.capability or ""),
+                    target=tgt,
+                    intention_id=intention_id,
+                    world_signature=world_sig,
+                    point_key=key,
+                )
                 reveal_caps = {
                     "reveal_actions",
                     "revealactions",
@@ -3300,7 +3768,7 @@ def apply_decision_consultation(
                     prefer = str(
                         getattr(execution_state, "reveal_prefer_capability", "") or ""
                     ).strip().lower()
-                    blocked = (gkey in avoid) or (key in avoid)
+                    blocked = (gkey in avoid) or method_blocked
                     if blocked or prefer == "select_content":
                         if prefer != "select_content":
                             escalate_failed_reveal(
@@ -3380,15 +3848,21 @@ def apply_decision_consultation(
                             "gesture": mode if mode in {"context_click", "hover"} else "context_click",
                             "reveal_probe_mode": mode,
                         }
-                elif key in avoid and outcome.capability not in {"observe", ""}:
+                elif method_blocked and outcome.capability not in {"observe", ""}:
+                    why = (
+                        f"blocked repeat of failed motor {key}; "
+                        "method ineffective under current intention/world"
+                        if key not in avoid
+                        else (
+                            f"blocked repeat of failed motor {key}; "
+                            "re-perceive for fresh geometry"
+                        )
+                    )
                     outcome = DecisionOutcome(
                         ok=True,
                         capability="observe",
                         target="",
-                        why=(
-                            f"blocked repeat of failed motor {key}; "
-                            "re-perceive for fresh geometry"
-                        ),
+                        why=why,
                         confidence=0.3,
                         realization=f"{outcome.realization}+avoid_failed_motor",
                     )
@@ -3397,10 +3871,75 @@ def apply_decision_consultation(
                         "text": "",
                         "confidence": 0.3,
                     }
+                # Hierarchical gate: known-ungrounded commitment → grounding
+                # recovery, not silent patient substitute.
+                try:
+                    from plugin.agent.executive.affordance_commitment import (
+                        active_commitment,
+                        arm_grounding_recovery,
+                        derive_availability,
+                        derive_executable,
+                        forbids_wrong_locus,
+                        next_grounding_strategy,
+                        AVAIL_LATENT,
+                        STRATEGY_RE_REVEAL,
+                    )
+
+                    c = active_commitment(execution_state)
+                    if (
+                        c is not None
+                        and not derive_executable(execution_state, c)
+                        and forbids_wrong_locus(
+                            execution_state,
+                            family=str(outcome.capability or ""),
+                            semantic_target=tgt,
+                            brief=brief,
+                        )
+                    ):
+                        avail = derive_availability(execution_state, c)
+                        strat = next_grounding_strategy(execution_state, c)
+                        arm_grounding_recovery(
+                            execution_state, c, reason="decision_gate_ungrounded"
+                        )
+                        if (
+                            avail == AVAIL_LATENT
+                            or strat == STRATEGY_RE_REVEAL
+                        ) and str(outcome.capability or "") in {
+                            "reveal_actions",
+                            "select_content",
+                        }:
+                            # Explicit re-reveal for this commitment — allow.
+                            pass
+                        else:
+                            outcome = DecisionOutcome(
+                                ok=True,
+                                capability="observe",
+                                target=str(c.label or ""),
+                                why=(
+                                    f"grounding recovery for committed "
+                                    f"{c.semantic_method_id} (availability={avail}, "
+                                    f"strategy={strat}); do not substitute patient"
+                                ),
+                                confidence=0.55,
+                                realization=(
+                                    f"{outcome.realization}+commitment_grounding_recovery"
+                                ),
+                            )
+                            next_action = {
+                                "family": "observe",
+                                "text": str(c.label or ""),
+                                "confidence": 0.55,
+                                "grounding_recovery": True,
+                                "commitment_id": c.commitment_id,
+                                "strategy": strat,
+                            }
+                except Exception:
+                    pass
             except Exception:
                 pass
             # Open-source repair: after repeated failed open_entity clicks, escalate
-            # to compose_search_query instead of re-clicking the same wrong band.
+            # to compose_search_query only when retrieval is still owed. Content-
+            # address misses prefer observe so explore/reveal can take over.
             try:
                 repair = None
                 extras = getattr(features, "extras", None) if features is not None else None
@@ -3408,9 +3947,12 @@ def apply_decision_consultation(
                     repair = extras.get("open_repair")
                 if repair is None:
                     repair = getattr(execution_state, "open_repair", None)
+                prefer_repair = (
+                    str(repair.get("prefer") or "") if isinstance(repair, dict) else ""
+                )
                 if (
                     isinstance(repair, dict)
-                    and str(repair.get("prefer") or "") == "compose_search_query"
+                    and prefer_repair == "compose_search_query"
                     and outcome.capability in {"open_entity", "open_contact"}
                     and not brief.task_state.source_chat_open
                     and brief.task_state.phase == "reach_source"
@@ -3443,6 +3985,28 @@ def apply_decision_consultation(
                             document, "compose_search_query", contact
                         )
                     )
+                elif (
+                    isinstance(repair, dict)
+                    and prefer_repair == "method_exhausted_reperceive"
+                    and outcome.capability in {"open_entity", "open_contact"}
+                ):
+                    outcome = DecisionOutcome(
+                        ok=True,
+                        capability="observe",
+                        target="",
+                        why=(
+                            f"open_repair: open_entity ineffective on "
+                            f"{str(repair.get('last_target') or 'target')[:60]}; "
+                            "re-perceive for alternate effect/method"
+                        ),
+                        confidence=0.35,
+                        realization=f"{outcome.realization}+open_repair_method_exhausted",
+                    )
+                    next_action = {
+                        "family": "observe",
+                        "text": "",
+                        "confidence": 0.35,
+                    }
             except Exception:
                 pass
             # Last chance: exclusive filter caps may still lack inventory geometry
@@ -3570,6 +4134,48 @@ def apply_decision_consultation(
                     }
         if outcome.capability in {"locate_content", "type_query"} and outcome.target:
             next_action["text"] = outcome.target
+        # Preserve already-typed navigation semantics. Legacy untyped opens must
+        # NOT acquire role-establishing navigation authority via re-inference.
+        if outcome.capability in {"open_entity", "open_contact"}:
+            try:
+                typed = (
+                    bool(getattr(outcome, "action_is_navigation", False))
+                    or bool(getattr(outcome, "establishes_roles", None))
+                    or bool(str(getattr(outcome, "target_kind", "") or "").strip())
+                )
+                if typed and not bool(getattr(outcome, "legacy_semantics", False)):
+                    next_action["target_kind"] = str(
+                        getattr(outcome, "target_kind", "") or ""
+                    )
+                    next_action["establishes_roles"] = list(
+                        getattr(outcome, "establishes_roles", None) or []
+                    )
+                    next_action["action_is_navigation"] = bool(
+                        getattr(outcome, "action_is_navigation", False)
+                    )
+                    next_action["legacy_semantics"] = False
+                else:
+                    import logging as _logging
+
+                    _logging.getLogger(__name__).info(
+                        "decision_consultation: legacy open without typed nav "
+                        "contract — RoleBinder target-role path only "
+                        "(no navigation establish authority)"
+                    )
+                    outcome.legacy_semantics = True
+                    outcome.action_is_navigation = False
+                    outcome.establishes_roles = []
+                    # Keep any explicit target_kind; do not invent one.
+                    next_action["target_kind"] = str(
+                        getattr(outcome, "target_kind", "")
+                        or next_action.get("target_kind")
+                        or ""
+                    )
+                    next_action["establishes_roles"] = []
+                    next_action["action_is_navigation"] = False
+                    next_action["legacy_semantics"] = True
+            except Exception:
+                pass
         if outcome.ok and next_action.get("family"):
             proposal.next_action = next_action
             applied = True

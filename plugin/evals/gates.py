@@ -4407,6 +4407,769 @@ def _phenomenon_curriculum_hard_contracts() -> Tuple[bool, str]:
     return True, f"phenomena_pass={report.get('passed')}/{total}"
 
 
+def _foreign_attempt_progress_does_not_verify_forward() -> Tuple[bool, str]:
+    """Capability implications must be attempt-scoped (no foreign progress)."""
+    from types import SimpleNamespace
+
+    from plugin.agent.executive.effect_implications import collect_effect_evidence
+    from plugin.agent.runtime.state import ExecutionState
+
+    state = ExecutionState()
+    state.last_plan_step = SimpleNamespace(
+        action_family="invoke_affordance",
+        semantic_target="Forward",
+        attempt_id="attempt-B",
+    )
+    state.last_result = {"ok": True, "attempt_id": "attempt-B"}
+    state.last_attribution = {
+        "effect_kind": "progress",
+        "attempt_id": "attempt-A",
+    }
+    state.last_effect_attempt_id = "attempt-A"
+    evidence = collect_effect_evidence(state, {"surface": "conversation"})
+    if "source_object_selected" in evidence.implies:
+        return False, "foreign attempt progress retired source_object_selected"
+    if "forward_route_discovered" in evidence.achieved:
+        return False, "foreign attempt progress claimed forward_route_discovered"
+    # Same-attempt generic progress still insufficient without named predicate/surface.
+    state.last_attribution = {
+        "effect_kind": "progress",
+        "attempt_id": "attempt-B",
+    }
+    state.last_effect_attempt_id = "attempt-B"
+    evidence2 = collect_effect_evidence(state, {"surface": "conversation"})
+    if "forward_route_discovered" in evidence2.achieved:
+        return False, "generic progress implied forward_route_discovered"
+    # Unscoped named predicates (no effect-side attempt id) fail closed.
+    state.last_result = {"ok": True}
+    state.last_attribution = {
+        "verified_effect_predicates": ["forward_surface_open"],
+    }
+    state.last_effect_attempt_id = ""
+    evidence3 = collect_effect_evidence(state, {"surface": "conversation"})
+    if "source_object_selected" in evidence3.implies:
+        return False, "unscoped named effect verified current attempt"
+    return True, "attempt-scoped effect evidence ok"
+
+
+def _foreign_result_plus_picker_does_not_bind_via_action() -> Tuple[bool, str]:
+    """Stale last_result + ambient picker must not mutate task via bind path."""
+    from plugin.agent.action import Action
+    from plugin.agent.controller import _bind_forward_after_execution
+    from plugin.agent.runtime.state import RuntimeState
+    from plugin.worldmodel.model import WorldModel
+
+    rt = RuntimeState(world_model=WorldModel(active_app="WhatsApp"))
+    rt.execution_state.last_surface = "forward_picker"
+    rt.execution_state.last_result = {"ok": True}
+    rt.world_model.overlay_hints = {
+        "forward_task": {
+            "predicates": {"source_object_selected": False},
+            "derived_phase": "FIND_LINK",
+        }
+    }
+    _bind_forward_after_execution(
+        rt,
+        Action(
+            action="InvokeAffordance",
+            action_family="invoke_affordance",
+            semantic_target="Forward",
+            attempt_id="attempt-forward-now",
+        ),
+    )
+    preds = ((rt.world_model.overlay_hints or {}).get("forward_task") or {}).get(
+        "predicates"
+    ) or {}
+    if preds.get("source_object_selected") is True:
+        return False, "stale result + picker latched source_object_selected via bind"
+    return True, "bind path does not pair stale result with picker"
+
+
+def _open_conversation_sync_closes_open_source() -> Tuple[bool, str]:
+    """Pipeline: open_conversation matches goal contact → FIND_LINK."""
+    from plugin.agent.apps.whatsapp import build_forward_task_state
+    from plugin.agent.goal import Goal
+    from plugin.agent.whatsapp_view import WhatsAppWorldView
+    from plugin.worldmodel.entities.entity import Entity
+    from plugin.worldmodel.model import WorldModel
+
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Alice",
+        target_contact="Bob",
+        link_query="example",
+    )
+    wm = WorldModel(active_app="WhatsApp")
+    wm.entities[1] = Entity(
+        id=1,
+        entity_type="static",
+        semantic_role="Alice",
+        label="Alice",
+        role="AXStaticText",
+        bounds=(100.0, 40.0, 40.0, 16.0),
+        actions=[],
+        attributes={},
+        visible=True,
+    )
+    view = WhatsAppWorldView(screen="CONVERSATION", open_conversation="Alice")
+    prior = {
+        "predicates": {"source_conversation_open": False},
+        "derived_phase": "OPEN_SOURCE",
+    }
+    state = build_forward_task_state(goal, wm, view, leftover=False, prior=prior)
+    if not state.predicates.source_conversation_open:
+        return False, "source_conversation_open not synchronized from open_conversation"
+    if state.derived_phase != "FIND_LINK":
+        return False, f"expected FIND_LINK, got {state.derived_phase}"
+    if state.binding("source_conversation").status != "confirmed":
+        return False, "source_conversation binding not confirmed"
+    return True, "open_conversation sync closes OPEN_SOURCE"
+
+
+def _scoped_method_avoid_respects_world_signature() -> Tuple[bool, str]:
+    """Point-free method avoid must not stick across world signature changes."""
+    from plugin.agent.controller import _note_failed_motor
+    from plugin.agent.executive.effect_implications import (
+        avoid_key_blocks_method,
+        method_context_from_state,
+    )
+    from plugin.agent.executive.intention_frame import (
+        MethodContext,
+        active_intention_frame,
+        push_intention_frame,
+        seed_reveal_explore_frame,
+    )
+    from plugin.agent.runtime.state import RuntimeState
+    from plugin.worldmodel.model import WorldModel
+
+    rt = RuntimeState(world_model=WorldModel(active_app="App"))
+    rt.execution_state.last_surface = "search"
+    push_intention_frame(rt.execution_state, seed_reveal_explore_frame())
+    hit = "https://www.example.com/item"
+    _note_failed_motor(rt, family="open_entity", target=hit, point=(10.0, 20.0))
+    keys = list(rt.execution_state.avoid_motor_keys or [])
+    iframe = active_intention_frame(rt.execution_state)
+    search_sig = method_context_from_state(
+        rt.execution_state, world={"surface": "search"}
+    ).signature()
+    if not avoid_key_blocks_method(
+        keys,
+        family="open_entity",
+        target=hit,
+        intention_id=iframe.intention.id,
+        world_signature=search_sig,
+    ):
+        return False, "same-signature method avoid missing"
+    conv_sig = MethodContext(surface="conversation").signature()
+    if avoid_key_blocks_method(
+        keys,
+        family="open_entity",
+        target=hit,
+        intention_id=iframe.intention.id,
+        world_signature=conv_sig,
+    ):
+        return False, "method avoid stuck across world signature change"
+    return True, "scoped method avoid ok"
+
+
+def _foreign_open_conversation_triggers_leave_before_compose() -> Tuple[bool, str]:
+    """Live 145943: foreign open must not compose; meta ACT leave instead."""
+    from plugin.agent.decision_consultation import build_decision_brief, sanitize_decision
+    from plugin.agent.executive.meta_action import MetaAction, MetaContext
+    from plugin.agent.executive.meta_consultation import sanitize_meta_choice
+    from plugin.agent.features import StateFeatures
+    from plugin.agent.goal import Goal
+
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Pallavi",
+        target_contact="Tanmay",
+        link_query="zarooratwala",
+    )
+    brief = build_decision_brief(
+        goal,
+        world_document={
+            "surface": "conversation",
+            "open_conversation": "[CoE - IoT & AI] BLR Startups",
+            "objects": [
+                {"kind": "search_field", "text": "Search", "point": [120.0, 80.0]},
+            ],
+        },
+        features=StateFeatures(conversation_open=True, extras={}),
+    )
+    rejected = sanitize_decision(
+        {"capability": "compose_search_query", "target": ""}, brief
+    )
+    why_l = (rejected.why or "").lower()
+    if rejected.ok or (
+        "foreign" not in why_l and "wrong_locus:container" not in why_l
+    ):
+        return False, f"compose not blocked on foreign open: {rejected.why}"
+    choice = sanitize_meta_choice(
+        {"meta_action": "search", "why": "find", "confidence": 0.9},
+        MetaContext(leave_wrong_conversation_owed=True),
+    )
+    if choice is None or choice.action is not MetaAction.ACT:
+        return False, f"meta did not ACT for leave debt: {choice}"
+    return True, "foreign open leave-before-compose ok"
+
+
+def _wrong_field_locus_forbids_type_when_composer_focused() -> Tuple[bool, str]:
+    """Composer-focused locate/type must be forbidden (wrong field locus)."""
+    from plugin.agent.decision_consultation import build_decision_brief, sanitize_decision
+    from plugin.agent.features import StateFeatures
+    from plugin.agent.goal import Goal
+
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Pallavi",
+        target_contact="Tanmay",
+        link_query="zarooratwala",
+    )
+    brief = build_decision_brief(
+        goal,
+        world_document={
+            "surface": "conversation",
+            "open_conversation": "Pallavi",
+            "focused_field_role": "composer",
+            "objects": [],
+        },
+        features=StateFeatures(conversation_open=True, extras={}),
+    )
+    rejected = sanitize_decision(
+        {"capability": "locate_content", "target": "zarooratwala"}, brief
+    )
+    why = (rejected.why or "").lower()
+    if rejected.ok or ("composer" not in why and "wrong_locus" not in why):
+        return False, f"locate not blocked on composer: {rejected.why}"
+    return True, "wrong field locus forbids type/locate on composer"
+
+
+def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
+    """185549: blind locate → UNKNOWN; trustworthy negative → NOT_ACHIEVED.
+
+    Also: still_unobservable ≠ INEFFECTIVE; MethodFrontier advances; matches_goal
+    alone cannot authorize source_object binding.
+    """
+    from plugin.agent.capabilities.locate_content import (
+        note_locate_outcome,
+        prefer_next_locate_realization,
+        resolve_locate_effect_verification,
+        same_locate_unresolved,
+    )
+    from plugin.agent.decision_consultation import (
+        DecisionBrief,
+        TaskState,
+        _content_search_locate_outcome,
+    )
+    from plugin.agent.executive.intention_frame import (
+        MethodOutcome,
+        MethodStatus,
+        active_intention_frame,
+    )
+    from plugin.agent.executive.meta_action import MetaAction, MetaContext, select_meta_action
+    from plugin.agent.executive.meta_consultation import sanitize_meta_choice
+    from plugin.agent.runtime.state import ExecutionState
+    from plugin.agent.source_query_binding import evaluate_source_object_match
+
+    # Trustworthy negative must not arm UNKNOWN / verify debt.
+    neg = ExecutionState()
+    neg_info = note_locate_outcome(
+        neg,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="scroll_scan",
+        message="scanned 12 screenful(s) without a match; budget reached",
+        exhausted=True,
+    )
+    if neg_info.get("effect_status") != "not_achieved" or neg.locate_effect_verify_owed:
+        return False, f"exhausted/negative must be NOT_ACHIEVED, got {neg_info}"
+
+    state = ExecutionState()
+    info = note_locate_outcome(
+        state,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="native_find",
+        message="queried via find; accessibility text unavailable, screen must be read",
+    )
+    if info.get("effect_status") != "unknown" or not state.locate_effect_verify_owed:
+        return False, f"blind locate must be effect unknown+verify owed, got {info}"
+    iframe = active_intention_frame(state)
+    if iframe is None or not iframe.pending_effect_verification:
+        return False, "pending_effect_verification not armed"
+    if not any(
+        a.method_outcome == MethodOutcome.EFFECT_UNCERTAIN.value for a in iframe.attempts
+    ):
+        return False, "attempt ledger missing EFFECT_UNCERTAIN"
+    if not same_locate_unresolved(state, query="zarooratwala"):
+        return False, "same locate must be unresolved while verify owed"
+
+    brief = DecisionBrief(
+        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
+        world={"surface": "conversation", "open_conversation": "Pallavi"},
+        capabilities=["locate_content", "observe"],
+        meta_action="search",
+        task_state=TaskState(source_chat_open=True, content_located=False),
+    )
+    if _content_search_locate_outcome(brief, execution_state=state) is not None:
+        return False, "SEARCH must not reseal identical locate while effect unknown"
+
+    meta = select_meta_action(
+        MetaContext(locate_effect_verify_owed=True, awaiting_verification=True)
+    )
+    if meta.action is not MetaAction.PERCEIVE:
+        return False, f"meta must PERCEIVE for locate verify, got {meta}"
+    san = sanitize_meta_choice(
+        {"meta_action": "search", "why": "unpaid", "confidence": 0.9},
+        MetaContext(locate_effect_verify_owed=True),
+    )
+    if san is None or san.action is not MetaAction.PERCEIVE:
+        return False, f"sanitize SEARCH→PERCEIVE failed: {san}"
+
+    draft = evaluate_source_object_match(
+        text="zarooratwala lasawe",
+        kind="draft",
+        query="zarooratwala",
+        container_open="Pallavi",
+        expected_container="Pallavi",
+        role="composer",
+        perception_matches_goal=True,
+    )
+    if draft.binding_eligible:
+        return False, "matches_goal/draft must not bind content patient"
+
+    distractor = evaluate_source_object_match(
+        text="https://www.instagram.com/reel/abc/",
+        kind="message_bubble",
+        query="zarooratwala",
+        container_open="Pallavi",
+        expected_container="Pallavi",
+        perception_matches_goal=True,
+    )
+    if distractor.binding_eligible or distractor.query_match:
+        return False, "distractor URL must not be query_match/binding_eligible"
+
+    resolve_locate_effect_verification(
+        state, content_located=False, query_visible=False, still_unobservable=True
+    )
+    iframe2 = active_intention_frame(state)
+    if iframe2 is None:
+        return False, "intention frame missing after still_unobservable"
+    if iframe2.method_frontier.status_of("locate_native_find") != MethodStatus.UNTRIED.value:
+        return False, "still_unobservable must not mark method INEFFECTIVE"
+    if prefer_next_locate_realization(state) != "scroll_scan":
+        return False, "MethodFrontier must surface next eligible locate method"
+    seal = _content_search_locate_outcome(brief, execution_state=state)
+    if seal is None or "scroll_scan" not in (seal.why + seal.realization):
+        return False, f"after failed verify must reseal next frontier method, got {seal}"
+    return True, "locate effect-unknown contracts ok"
+
+
+def _native_find_does_not_type_when_only_composer_focused() -> Tuple[bool, str]:
+    """Cmd+F no-op + composer focus ⇒ NativeFind must not type."""
+    from plugin.agent.capabilities.locate_content import (
+        MACOS_FIND,
+        LocateRequest,
+        NativeFind,
+    )
+
+    class _ComposerSurface:
+        def __init__(self) -> None:
+            self.typed: list = []
+            self.keys: list = []
+
+        def activate(self, app: str) -> None:
+            return None
+
+        def key(self, chord) -> None:
+            self.keys.append(chord)
+
+        def type_text(self, text: str) -> None:
+            self.typed.append(text)
+
+        def scroll(self, direction: str, amount: int) -> None:
+            return None
+
+        def surface_text(self) -> str:
+            return "composer draft"
+
+        def surface_signature(self) -> str:
+            return "composer"
+
+        def text_input_focused(self) -> bool:
+            return True
+
+        def filter_field_ready(self) -> bool:
+            return False
+
+    surface = _ComposerSurface()
+    outcome = NativeFind(MACOS_FIND).locate(
+        LocateRequest(query="zarooratwala", app="SomeChatApp"), surface
+    )
+    if outcome.ok or surface.typed:
+        return False, f"typed into composer-only focus: ok={outcome.ok} typed={surface.typed}"
+    return True, "native find fail-closed on composer focus"
+
+
+def _wrong_container_locus_forbids_compose_into_foreign_open() -> Tuple[bool, str]:
+    """Foreign open container ⇒ compose forbidden (general wrong-locus)."""
+    from plugin.agent.capabilities.locus_contract import wrong_locus_forbidden
+    from plugin.agent.decision_consultation import build_decision_brief
+    from plugin.agent.features import StateFeatures
+    from plugin.agent.goal import Goal
+
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Pallavi",
+        target_contact="Tanmay",
+        link_query="zarooratwala",
+    )
+    brief = build_decision_brief(
+        goal,
+        world_document={
+            "surface": "conversation",
+            "open_conversation": "[CoE - IoT & AI] BLR Startups",
+            "objects": [],
+        },
+        features=StateFeatures(conversation_open=True, extras={}),
+    )
+    bad, why, req = wrong_locus_forbidden("compose_search_query", brief=brief)
+    if not bad or "container" not in why:
+        return False, f"container locus not forbidden: {why}"
+    if req is None or req.kind.value != "container":
+        return False, f"requirement kind not container: {req}"
+    return True, "wrong container locus forbids compose"
+
+
+def _empty_kind_high_cost_filter_fails_closed() -> Tuple[bool, str]:
+    """HIGH-cost filter families refuse empty field_role/kind at motor."""
+    from plugin.agent.actor import ActorBrief, validate_brief
+    from plugin.agent.capabilities.action_area import validate_actuation_grounding
+
+    ok, why = validate_actuation_grounding(
+        capability="type_query",
+        field_role="",
+        label="",
+        target_kind="",
+    )
+    if ok or "empty_kind" not in why:
+        return False, f"empty kind not refused: ok={ok} why={why}"
+    vok, vwhy = validate_brief(
+        ActorBrief(
+            gesture="type",
+            capability="locate_content",
+            field_role="none",
+            label="",
+            text="zarooratwala",
+            point=(400.0, 400.0),
+            target_kind="",
+        )
+    )
+    if vok or ("empty_kind" not in vwhy and "wrong_locus" not in vwhy):
+        return False, f"actor brief not fail-closed: ok={vok} why={vwhy}"
+    return True, "empty kind high-cost filter fail-closed"
+
+
+def _visible_source_chat_row_allows_open_despite_link_query() -> Tuple[bool, str]:
+    """Live 145943: actuatable Pallavi chat_row may open despite unpaid link_query."""
+    from plugin.agent.decision_consultation import build_decision_brief, sanitize_decision
+    from plugin.agent.features import StateFeatures
+    from plugin.agent.goal import Goal
+    from plugin.agent.runtime.state import ExecutionState
+
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Pallavi",
+        target_contact="Tanmay",
+        link_query="zarooratwala",
+    )
+    brief = build_decision_brief(
+        goal,
+        world_document={
+            "surface": "chat_list",
+            "open_conversation": "[CoE - IoT & AI] BLR Startups",
+            "objects": [
+                {
+                    "id": "pallavi_row",
+                    "kind": "chat_row",
+                    "text": "Pallavi",
+                    "point": [180.0, 240.0],
+                }
+            ],
+        },
+        features=StateFeatures(conversation_open=True, extras={}),
+        execution_state=ExecutionState(),
+    )
+    allowed = sanitize_decision(
+        {"capability": "open_entity", "target": "Pallavi"}, brief
+    )
+    if not allowed.ok:
+        return False, f"open_entity blocked: {allowed.why}"
+    compose = sanitize_decision(
+        {"capability": "compose_search_query", "target": ""}, brief
+    )
+    if compose.ok:
+        return False, "compose still allowed with foreign open + source row"
+    return True, "visible source chat_row open ok"
+
+
+def _preclear_does_not_skip_when_list_with_foreign_pane() -> Tuple[bool, str]:
+    """Harness preclear must not break solely on LIST/SEARCH with foreign pane."""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "experiments" / "run_forward_message.py"
+    text = src.read_text(encoding="utf-8")
+    if "foreign_pane" not in text or "list_clean" not in text:
+        return False, "preclear foreign_pane / list_clean missing"
+    if "open_matches_referent" not in text:
+        return False, "preclear should use open_matches_referent for on_source"
+    return True, "preclear foreign pane guard present"
+
+
+def _search_type_regression_with_foreign_open_keeps_reach_source_leave_debt() -> Tuple[bool, str]:
+    """Foreign open leave debt must beat SEARCH after type regression."""
+    from plugin.agent.executive.meta_action import MetaAction, MetaContext
+    from plugin.agent.executive.meta_consultation import sanitize_meta_choice
+
+    choice = sanitize_meta_choice(
+        {"meta_action": "search", "why": "type again", "confidence": 0.8},
+        MetaContext(
+            leave_wrong_conversation_owed=True,
+            source_contact_open_ready=False,
+            referent_search_needed=True,
+            search_episode_incomplete=True,
+        ),
+    )
+    if choice is None or choice.action is not MetaAction.ACT:
+        return False, f"expected ACT leave, got {choice}"
+    return True, "leave debt survives search-type regression"
+
+
+def _identity_contract_does_not_block_matching_source_chat_row_open() -> Tuple[bool, str]:
+    """Matching source chat_row open must not die on identity_contract."""
+    from plugin.agent.decision_consultation import build_decision_brief, sanitize_decision
+    from plugin.agent.features import StateFeatures
+    from plugin.agent.goal import Goal
+    from plugin.agent.runtime.state import ExecutionState
+
+    goal = Goal(
+        kind="whatsapp_forward_message",
+        contact="Pallavi",
+        target_contact="Tanmay",
+        link_query="zarooratwala",
+    )
+    brief = build_decision_brief(
+        goal,
+        world_document={
+            "surface": "chat_list",
+            "open_conversation": "[CoE - IoT & AI] BLR Startups",
+            "objects": [
+                {
+                    "id": "pallavi_row",
+                    "kind": "chat_row",
+                    "text": "Pallavi",
+                    "point": [180.0, 240.0],
+                }
+            ],
+        },
+        features=StateFeatures(conversation_open=True, extras={}),
+        execution_state=ExecutionState(),
+    )
+    decided = sanitize_decision(
+        {
+            "capability": "open_entity",
+            "target": "Pallavi",
+            "target_id": "pallavi_row",
+        },
+        brief,
+    )
+    if not decided.ok:
+        return False, f"open blocked: {decided.why}"
+    if "identity_contract" in (decided.why or "").lower():
+        return False, decided.why
+    return True, "identity contract allows source chat_row open"
+
+
+def _same_surface_different_container_reconsiders_method() -> Tuple[bool, str]:
+    """Same surface + different semantic_container must not keep method suppressed."""
+    from plugin.agent.executive.effect_implications import (
+        avoid_key_blocks_method,
+        method_context_from_state,
+        scoped_method_avoid_key,
+    )
+    from plugin.agent.executive.intention_frame import (
+        active_intention_frame,
+        push_intention_frame,
+        seed_reveal_explore_frame,
+    )
+    from plugin.agent.runtime.state import RuntimeState
+    from plugin.worldmodel.model import WorldModel
+
+    rt = RuntimeState(world_model=WorldModel(active_app="App"))
+    rt.execution_state.last_surface = "conversation"
+    push_intention_frame(rt.execution_state, seed_reveal_explore_frame())
+    hit = "https://www.example.com/item"
+    iframe = active_intention_frame(rt.execution_state)
+    alice = method_context_from_state(
+        rt.execution_state,
+        world={"surface": "conversation", "open_conversation": "Alice"},
+    )
+    bob = method_context_from_state(
+        rt.execution_state,
+        world={"surface": "conversation", "open_conversation": "Bob"},
+    )
+    if alice.signature() == bob.signature():
+        return False, "container locus missing from MethodContext signature"
+    key = scoped_method_avoid_key(
+        "open_entity",
+        hit,
+        intention_id=iframe.intention.id,
+        world_signature=alice.signature(),
+    )
+    if not avoid_key_blocks_method(
+        [key],
+        family="open_entity",
+        target=hit,
+        intention_id=iframe.intention.id,
+        world_signature=alice.signature(),
+    ):
+        return False, "Alice-container method avoid missing"
+    if avoid_key_blocks_method(
+        [key],
+        family="open_entity",
+        target=hit,
+        intention_id=iframe.intention.id,
+        world_signature=bob.signature(),
+    ):
+        return False, "method avoid stuck across semantic_container change"
+    return True, "same-surface different-container reconsider ok"
+
+
+def _known_affordance_grounding_recovery_not_patient_substitute() -> Tuple[bool, str]:
+    """Known-ungrounded Forward must trigger recovery, not bubble invoke."""
+    from plugin.agent.executive.affordance_commitment import (
+        arm_grounding_recovery,
+        ensure_commitment_from_menu_observation,
+        forbids_patient_substitute,
+    )
+    from plugin.agent.goal import Goal
+    from plugin.agent.runtime.state import ExecutionState
+    from plugin.agent.unified_cognition import UnifiedProposal, proposal_to_action
+    from plugin.worldmodel.model import WorldModel
+
+    state = ExecutionState()
+    state.last_surface = "context_menu"
+    state.unified_world_document = {
+        "surface": "context_menu",
+        "objects": [{"text": "Forward", "kind": "menu_item", "enabled": True}],
+    }
+    c = ensure_commitment_from_menu_observation(
+        state,
+        label="Forward",
+        patient_ref="zarooratwala.com",
+        desired_effect="forward_picker",
+    )
+    if c is None:
+        return False, "commitment not created"
+    arm_grounding_recovery(state, c, reason="label_only")
+    if not forbids_patient_substitute(state, family="invoke_affordance"):
+        return False, "patient substitute not forbidden"
+    action, reason = proposal_to_action(
+        UnifiedProposal(
+            observed_state={"surface": "conversation"},
+            world_model={"surface": "conversation"},
+            next_action={
+                "family": "invoke_affordance",
+                "target_label": "Forward",
+                "text": "Forward",
+            },
+        ),
+        Goal(kind="whatsapp_forward_message"),
+        WorldModel(active_app="WhatsApp"),
+        execution_state=state,
+    )
+    if action is not None:
+        return False, f"invoke rebound to patient: {reason}"
+    return True, "grounding recovery blocks patient substitute"
+
+
+def _effect_absent_without_grounding_evidence_does_not_force_grounding() -> Tuple[bool, str]:
+    from plugin.agent.executive.affordance_commitment import (
+        handle_failed_committed_action,
+        upsert_commitment,
+    )
+    from plugin.agent.runtime.state import ExecutionState
+
+    state = ExecutionState()
+    state.unified_world_document = {
+        "surface": "context_menu",
+        "objects": [
+            {"text": "Forward", "point": [1259.0, 290.0], "kind": "menu_item"}
+        ],
+    }
+    upsert_commitment(
+        state,
+        family="invoke_affordance",
+        label="Forward",
+        patient_ref="msg-A",
+        desired_effect="forward_picker",
+    )
+    result = handle_failed_committed_action(
+        state,
+        family="invoke_affordance",
+        target="Forward",
+        point=(1259.0, 290.0),
+        pred_error={
+            "matched": False,
+            "predicted": "forward_picker",
+            "actual": "conversation",
+            "target": "Forward",
+        },
+        intended_point=(1259.0, 290.0),
+        surface_before="context_menu",
+    )
+    if result.get("classified") == "grounding":
+        return False, "effect_absent alone forced GROUNDING"
+    return True, "effect_absent without evidence is not grounding"
+
+
+def _same_label_different_patient_does_not_satisfy_commitment() -> Tuple[bool, str]:
+    from plugin.agent.executive.affordance_commitment import (
+        arm_grounding_recovery,
+        commitment_satisfied_by_label_patient,
+        derive_executable,
+        upsert_commitment,
+    )
+    from plugin.agent.runtime.state import ExecutionState
+
+    state = ExecutionState()
+    c = upsert_commitment(
+        state,
+        family="invoke_affordance",
+        label="Forward",
+        patient_ref="message-A",
+        owner_surface_expected="context_menu",
+    )
+    arm_grounding_recovery(state, c, reason="gate")
+    if commitment_satisfied_by_label_patient(
+        c, label="Forward", patient_ref="message-B"
+    ):
+        return False, "different patient incorrectly satisfied commitment"
+    state.last_grounded_affordance_set = [
+        {
+            "target_label": "Forward",
+            "patient_ref": "message-B",
+            "actuators": [{"type": "coordinate_click", "point": [10.0, 20.0]}],
+        }
+    ]
+    if derive_executable(state, c):
+        return False, "patient-B Forward satisfied patient-A commitment"
+    return True, "patient identity scoped"
+
+
 def _prerequisite_intention_interrupts_on_blocking_condition() -> Tuple[bool, str]:
     """BlockingCondition spawns a prereq child; warnings and unmet effects do not resume.
 
@@ -4786,6 +5549,96 @@ GATES: Tuple[Gate, ...] = (
         "prerequisite_intention_interrupts_on_blocking_condition",
         "Does a BlockingCondition spawn a prereq child and resume only after recheck?",
         _prerequisite_intention_interrupts_on_blocking_condition,
+    ),
+    Gate(
+        "foreign_attempt_progress_does_not_verify_forward",
+        "Can foreign-attempt / unscoped named effects verify Forward implications?",
+        _foreign_attempt_progress_does_not_verify_forward,
+    ),
+    Gate(
+        "foreign_result_plus_picker_does_not_bind_via_action",
+        "Can stale last_result + ambient forward_picker latch source_object_selected via bind?",
+        _foreign_result_plus_picker_does_not_bind_via_action,
+    ),
+    Gate(
+        "open_conversation_sync_closes_open_source",
+        "Does open_conversation=goal contact fail to close OPEN_SOURCE via real sync?",
+        _open_conversation_sync_closes_open_source,
+    ),
+    Gate(
+        "scoped_method_avoid_respects_world_signature",
+        "Does point-free method avoid stick globally across world signature changes?",
+        _scoped_method_avoid_respects_world_signature,
+    ),
+    Gate(
+        "foreign_open_conversation_triggers_leave_before_compose",
+        "Can foreign open CoE pane still compose_search instead of leave (145943)?",
+        _foreign_open_conversation_triggers_leave_before_compose,
+    ),
+    Gate(
+        "visible_source_chat_row_allows_open_despite_link_query",
+        "Is actuatable Pallavi chat_row blocked by compose-first when link_query unpaid?",
+        _visible_source_chat_row_allows_open_despite_link_query,
+    ),
+    Gate(
+        "preclear_does_not_skip_when_list_with_foreign_pane",
+        "Does harness preclear skip leave on LIST/SEARCH while foreign pane open?",
+        _preclear_does_not_skip_when_list_with_foreign_pane,
+    ),
+    Gate(
+        "search_type_regression_with_foreign_open_keeps_reach_source_leave_debt",
+        "After search type regression under foreign open, does SEARCH still override leave?",
+        _search_type_regression_with_foreign_open_keeps_reach_source_leave_debt,
+    ),
+    Gate(
+        "identity_contract_does_not_block_matching_source_chat_row_open",
+        "Does identity_contract refuse open_entity on matching Pallavi chat_row?",
+        _identity_contract_does_not_block_matching_source_chat_row_open,
+    ),
+    Gate(
+        "same_surface_different_container_reconsiders_method",
+        "Does same-surface method avoid stick across semantic_container (Alice→Bob)?",
+        _same_surface_different_container_reconsiders_method,
+    ),
+    Gate(
+        "wrong_field_locus_forbids_type_when_composer_focused",
+        "Can locate/type still run when composer is the focused locus?",
+        _wrong_field_locus_forbids_type_when_composer_focused,
+    ),
+    Gate(
+        "locate_effect_unknown_contracts",
+        "Does AX-blind locate (ok+found=False) still allow same-method SEARCH replay (185549)?",
+        _locate_effect_unknown_contracts,
+    ),
+    Gate(
+        "native_find_does_not_type_when_only_composer_focused",
+        "Does NativeFind type after Cmd+F no-op while composer holds focus?",
+        _native_find_does_not_type_when_only_composer_focused,
+    ),
+    Gate(
+        "wrong_container_locus_forbids_compose_into_foreign_open",
+        "Does wrong-locus container forbid compose into foreign open?",
+        _wrong_container_locus_forbids_compose_into_foreign_open,
+    ),
+    Gate(
+        "empty_kind_high_cost_filter_fails_closed",
+        "Do HIGH-cost filter writes pass with empty field_role/kind?",
+        _empty_kind_high_cost_filter_fails_closed,
+    ),
+    Gate(
+        "known_affordance_grounding_recovery_not_patient_substitute",
+        "Does known-ungrounded Forward collapse to source bubble click (141617)?",
+        _known_affordance_grounding_recovery_not_patient_substitute,
+    ),
+    Gate(
+        "effect_absent_without_grounding_evidence_does_not_force_grounding",
+        "Does effect-absent alone force GROUNDING class without hit evidence?",
+        _effect_absent_without_grounding_evidence_does_not_force_grounding,
+    ),
+    Gate(
+        "same_label_different_patient_does_not_satisfy_commitment",
+        "Can Forward grounded on patient B clear commitment for patient A?",
+        _same_label_different_patient_does_not_satisfy_commitment,
     ),
     Gate(
         "phenomenon_curriculum_hard_contracts",
