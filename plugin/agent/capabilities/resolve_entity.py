@@ -20,7 +20,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, runtime_checkable
 
 from plugin.agent.capabilities.base import CapabilityOutcome
 
@@ -318,6 +318,106 @@ def open_matches_referent(open_title: str, referent: str) -> bool:
     if title_base and ref_base and title_base == ref_base:
         return True
     return False
+
+
+_SOURCE_CONTACT_ROW_KINDS = frozenset(
+    {
+        "chat_row",
+        "conversation",
+        "conversation_row",
+        "contact",
+        "contact_row",
+        "row",
+        "list_row",
+        "thread",
+        "container",
+        "chat",
+        "search_result",
+        "search_result_row",
+        "picker_row",
+        "result",
+    }
+)
+
+
+def row_matches_source_contact(label: str, source: str) -> bool:
+    """Whether a list/search row is the source contact (name head, not preview)."""
+    if not source or not label:
+        return False
+    head = _row_contact_name(label)
+    if open_matches_referent(head, source):
+        return True
+    return open_matches_referent(_clean_label(label), source)
+
+
+def _object_has_actuatable_geometry(obj: Dict[str, Any]) -> bool:
+    point = obj.get("point") or obj.get("target_point")
+    if isinstance(point, (list, tuple)) and len(point) >= 2:
+        try:
+            float(point[0])
+            float(point[1])
+            return True
+        except (TypeError, ValueError):
+            pass
+    bounds = obj.get("bounds")
+    if isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+        try:
+            return float(bounds[2]) > 0 and float(bounds[3]) > 0
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def actuatable_source_contact_row(
+    document: Optional[Dict[str, Any]],
+    source: str,
+) -> Optional[Dict[str, Any]]:
+    """Best actuatable chat/contact row matching ``source``, or None.
+
+    Live 145943: Pallavi chat_row already visible while a foreign pane is open —
+    opening that row is the required next effect; link-query compose is a child
+    of being in the right conversation.
+    """
+    src = _clean_label(source)
+    doc = document if isinstance(document, dict) else {}
+    if not src:
+        return None
+    best: Optional[Tuple[float, Dict[str, Any]]] = None
+    for obj in doc.get("objects") or []:
+        if not isinstance(obj, dict):
+            continue
+        if not _object_has_actuatable_geometry(obj):
+            continue
+        kind = str(obj.get("kind") or obj.get("entity_kind") or obj.get("type") or "").strip().lower()
+        text = _clean_label(obj.get("text") or obj.get("label") or obj.get("name") or "")
+        if not text or not row_matches_source_contact(text, src):
+            continue
+        # Prefer explicit chat/contact rows; reject message/link content kinds.
+        if kind in {
+            "message",
+            "message_row",
+            "message_bubble",
+            "link",
+            "content_item",
+            "attachment",
+            "document",
+            "search_field",
+            "search_input",
+            "textfield",
+            "composer",
+        }:
+            continue
+        if kind and kind not in _SOURCE_CONTACT_ROW_KINDS:
+            # Unknown presentation kinds still OK when name head matches exactly.
+            head = _row_contact_name(text)
+            if not open_matches_referent(head, src):
+                continue
+        score = 2.0 if kind in {"chat_row", "conversation", "conversation_row", "contact"} else 1.0
+        if obj.get("matches_goal"):
+            score += 0.5
+        if best is None or score > best[0]:
+            best = (score, dict(obj))
+    return best[1] if best else None
 
 
 def allow_keyboard_search_open(

@@ -226,6 +226,16 @@ def visible_actions_from_context(context: Optional[Dict[str, Any]]) -> List[Acti
             owner = str(obj.get("owner_surface") or obj.get("surface") or "").strip()
             if owner:
                 target["owner_surface"] = owner[:40]
+            cid = str(
+                obj.get("capture_id") or obj.get("grounding_capture_id") or ""
+            ).strip()
+            if cid:
+                target["capture_id"] = cid[:80]
+            fid = str(
+                obj.get("frame_id") or obj.get("coordinate_frame_id") or ""
+            ).strip()
+            if fid:
+                target["frame_id"] = fid[:80]
             out.append(
                 Action(
                     label=label,
@@ -256,6 +266,21 @@ def visible_actions_from_context(context: Optional[Dict[str, Any]]) -> List[Acti
                 if isinstance(act, dict) and act.get("point"):
                     target["point"] = list(act["point"])
                     break
+            space = str(aff.get("coordinate_space") or "").strip().lower()
+            if space in {"screen", "image"}:
+                target["coordinate_space"] = space
+            geo = str(aff.get("geometry_source") or "").strip()
+            if geo:
+                target["geometry_source"] = geo[:40]
+            owner = str(aff.get("owner_surface") or "").strip()
+            if owner:
+                target["owner_surface"] = owner[:40]
+            cid = str(aff.get("capture_id") or "").strip()
+            if cid:
+                target["capture_id"] = cid[:80]
+            fid = str(aff.get("frame_id") or "").strip()
+            if fid:
+                target["frame_id"] = fid[:80]
             out.append(
                 Action(
                     label=label,
@@ -402,6 +427,68 @@ def reveal_actions(
                 message="reveal probe exhausted; prefer select_content path",
                 evidence={"label": entity.label, "prefer": "select_content"},
             )
+    except Exception:
+        pass
+    # Pre-motor locus: refuse input-region geometry (live 134636 composer band).
+    try:
+        from plugin.agent.capabilities.locus_contract import (
+            point_locus_forbidden_for_capability,
+        )
+
+        cx = cy = None
+        b = getattr(entity, "bounds", None)
+        if isinstance(b, (list, tuple)) and len(b) >= 4:
+            try:
+                # Support xywh and x0y0x1y1.
+                x0, y0, c, d = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                if c > x0 and d > y0:
+                    cx, cy = (x0 + c) / 2.0, (y0 + d) / 2.0
+                else:
+                    cx, cy = x0 + c / 2.0, y0 + d / 2.0
+            except (TypeError, ValueError):
+                cx = cy = None
+        pt = getattr(entity, "point", None)
+        if cx is None and isinstance(pt, (list, tuple)) and len(pt) >= 2:
+            cx, cy = float(pt[0]), float(pt[1])
+        ctx = context if isinstance(context, dict) else {}
+        sg = ctx.get("scene_graph")
+        objs = ctx.get("objects") if isinstance(ctx.get("objects"), list) else None
+        if cx is not None and cy is not None:
+            bad, why, _ = point_locus_forbidden_for_capability(
+                "reveal_actions",
+                (cx, cy),
+                scene_graph=sg,
+                objects=objs,
+            )
+            if bad:
+                est = ctx.get("execution_state")
+                if est is not None:
+                    try:
+                        from plugin.agent.executive.affordance_commitment import (
+                            arm_wrong_point_grounding_recovery,
+                        )
+
+                        arm_wrong_point_grounding_recovery(
+                            est,
+                            family="reveal_actions",
+                            label=str(getattr(entity, "label", "") or ""),
+                            patient_ref=str(getattr(entity, "label", "") or ""),
+                            point=(cx, cy),
+                            why=why,
+                        )
+                    except Exception:
+                        pass
+                return RevealResult(
+                    ok=False,
+                    method=gesture,
+                    escalated=False,
+                    message=why,
+                    evidence={
+                        "label": getattr(entity, "label", ""),
+                        "mode": gesture,
+                        "grounding": "wrong_locus_input",
+                    },
+                )
     except Exception:
         pass
     try:

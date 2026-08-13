@@ -25,6 +25,7 @@ from plugin.agent.executive.intention_frame import (
     evaluate_intention_success,
     push_intention_frame,
     resume_parent_after_child,
+    world_with_prerequisite_evidence,
 )
 from plugin.agent.executive.meta_action import MetaAction, MetaChoice
 
@@ -57,6 +58,28 @@ class ExecutabilityGateResult:
         }
 
 
+def mandatory_epistemic_debt(state: Any) -> str:
+    """Non-empty reason when ACT is inadmissible until a look/repair is paid.
+
+    Mandatory epistemic debts outrank instrumental intentions (including
+    ACT-producing prerequisite children). Ordering:
+
+    1. terminal safety / stop (controller)
+    2. mandatory post-action verification / reground  ← here
+    3. active prerequisite child
+    4. normal executability / meta selection
+    """
+    if state is None:
+        return ""
+    if bool(getattr(state, "must_executive_reperceive", False)) or bool(
+        getattr(state, "post_action_reperceive_pending", False)
+    ):
+        return "mandatory_post_action_verification"
+    if bool(getattr(state, "grounding_reground_only", False)):
+        return "must_reground"
+    return ""
+
+
 def run_executability_gate(
     state: Any,
     *,
@@ -73,6 +96,23 @@ def run_executability_gate(
     """Production executability interruption (same semantics as controller gate)."""
     view = view if isinstance(view, dict) else {}
     result = ExecutabilityGateResult()
+
+    # Epistemic debt preempts every ACT-producing interruption, including
+    # skip_normal_meta prerequisite children. Child remains on the stack.
+    debt = mandatory_epistemic_debt(state)
+    if debt:
+        iframe = active_intention_frame(state)
+        result.meta = MetaChoice(
+            action=MetaAction.PERCEIVE,
+            reason=debt,
+            capability="",
+        )
+        result.skip_normal_meta = True
+        result.phase = "mandatory_verification"
+        if iframe is not None:
+            result.child_id = str(iframe.intention.id or "")
+            result.effect_key = str(iframe.prerequisite_effect_key or "")
+        return result
 
     iframe = active_intention_frame(state)
     intent_id = (
@@ -117,7 +157,7 @@ def run_executability_gate(
         and iframe.parent_intention_id
         and str(iframe.prerequisite_effect_key or "")
     ):
-        child_world = dict(view)
+        child_world = world_with_prerequisite_evidence(state, view)
         child_world.setdefault("surface", child_world.get("screen") or "")
         last_ev = getattr(state, "last_housekeeping_evidence", None)
         if isinstance(last_ev, dict):

@@ -375,6 +375,9 @@ def evidence_indicates_grounding_failure(
             audit.get("reason"),
             err.get("geometry_mismatch"),
             err.get("failure_class"),
+            err.get("why"),
+            err.get("validation"),
+            err.get("message"),
         )
     )
 
@@ -452,9 +455,92 @@ def evidence_indicates_grounding_failure(
         except (TypeError, ValueError):
             pass
 
+    # Pre-motor / post-act: grounded into input locus while patient act intended.
+    if (
+        "composer_point" in status_bits
+        or "wrong_locus:patient:composer" in status_bits
+    ):
+        reasons.append("point_in_input_locus")
+
     if reasons:
         return True, ",".join(reasons[:4])
     return False, ""
+
+
+def arm_wrong_point_grounding_recovery(
+    state: Any,
+    *,
+    family: str = "reveal_actions",
+    label: str = "",
+    patient_ref: str = "",
+    point: Any = None,
+    why: str = "",
+) -> Dict[str, Any]:
+    """Invalidate a bad grounding hypothesis; keep semantic method + patient.
+
+    Used when pre-motor locus validation refuses a composer/input point
+    (live 134636). Does not mark the reveal method ineffective.
+    """
+    out: Dict[str, Any] = {"armed": False}
+    if state is None:
+        return out
+    fam = str(family or "reveal_actions").strip().lower() or "reveal_actions"
+    lab = str(label or "").strip()
+    patient = str(patient_ref or "").strip()
+    c = active_commitment(state)
+    if c is None or (
+        lab
+        and not _label_match(c.label, lab)
+        and semantic_method_id(fam, lab) != c.semantic_method_id
+    ):
+        c = upsert_commitment(
+            state,
+            family=fam,
+            label=lab or fam,
+            desired_effect="forward_picker" if "reveal" in fam else "",
+            patient_ref=patient,
+            owner_surface_expected="conversation",
+        )
+    invalidate_grounding_hypothesis(
+        state,
+        c,
+        point=point,
+        strategy="point_locus",
+        outcome="wrong_locus_input",
+    )
+    arm_grounding_recovery(state, c, reason=str(why or "wrong_locus:composer_point")[:200])
+    try:
+        from plugin.agent.capabilities.locus_contract import stamp_wrong_locus_debt
+
+        stamp_wrong_locus_debt(
+            state,
+            kind="patient",
+            forbidden="composer",
+            required="patient/content region",
+            why=str(why or "")[:240],
+        )
+    except Exception:
+        pass
+    # Preserve semantic method — force reground, not method exhaustion.
+    try:
+        closure = dict(getattr(state, "last_effect_closure", None) or {})
+        closure["classified"] = "grounding"
+        closure["failure_class"] = "grounding"
+        closure["modes"] = ["INCONCLUSIVE_GROUNDING", "GROUNDING_WRONG_LOCUS"]
+        closure["preserve_semantic_method"] = True
+        closure["preserve_patient"] = True
+        state.last_effect_closure = closure
+    except Exception:
+        pass
+    out.update(
+        {
+            "armed": True,
+            "commitment_id": getattr(c, "commitment_id", ""),
+            "patient_ref": patient or getattr(c, "patient_ref", ""),
+            "why": str(why or "")[:200],
+        }
+    )
+    return out
 
 
 def invalidate_grounding_hypothesis(

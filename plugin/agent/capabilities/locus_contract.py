@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, FrozenSet, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from plugin.agent.capabilities.action_area import (
     COMPOSER_KINDS,
@@ -19,6 +19,33 @@ from plugin.agent.capabilities.action_area import (
     label_looks_like_composer,
     label_looks_like_filter,
     validate_actuation_grounding,
+)
+
+# Semantic region kinds that are input loci — not patient/content actuation sites.
+_INPUT_REGION_KINDS: FrozenSet[str] = frozenset(
+    {
+        "composer",
+        "input",
+        "message_composer",
+        "chat_composer",
+        "message_input",
+        "textarea",
+        "search_field",
+        "filter_field",
+        "address_bar",
+        "terminal",
+    }
+)
+# Content / patient loci (message body, timeline, result list, etc.).
+_CONTENT_REGION_KINDS: FrozenSet[str] = frozenset(
+    {
+        "timeline",
+        "conversation",
+        "content",
+        "main_pane",
+        "result_list",
+        "message_list",
+    }
 )
 
 FILTER_FIELD_ROLES: FrozenSet[str] = frozenset(
@@ -79,6 +106,150 @@ class LocusRequirement:
 
 def _norm(s: Any) -> str:
     return str(s or "").strip().lower()
+
+
+def _as_xy(point: Any) -> Optional[Tuple[float, float]]:
+    if not isinstance(point, (list, tuple)) or len(point) < 2:
+        return None
+    try:
+        return float(point[0]), float(point[1])
+    except (TypeError, ValueError):
+        return None
+
+
+def _bounds_rect(bounds: Any) -> Optional[Tuple[float, float, float, float]]:
+    """Normalize bounds to ``(x0, y0, x1, y1)``.
+
+    Accepts xywh or x0y0x1y1. Does not invent geometry from Y-fraction heuristics.
+    """
+    if not isinstance(bounds, (list, tuple)) or len(bounds) < 4:
+        return None
+    try:
+        a, b, c, d = (
+            float(bounds[0]),
+            float(bounds[1]),
+            float(bounds[2]),
+            float(bounds[3]),
+        )
+    except (TypeError, ValueError):
+        return None
+    # x0y0x1y1 when c,d look like absolute corners past the origin.
+    if c > a and d > b and (c - a) >= 4 and (d - b) >= 4:
+        return (a, b, c, d)
+    # Otherwise xywh.
+    if c > 0 and d > 0:
+        return (a, b, a + c, b + d)
+    return None
+
+
+def _point_in_rect(point: Tuple[float, float], rect: Tuple[float, float, float, float]) -> bool:
+    x, y = point
+    x0, y0, x1, y1 = rect
+    return x0 <= x <= x1 and y0 <= y <= y1
+
+
+def _iter_scene_regions(scene_graph: Any) -> List[Dict[str, Any]]:
+    if isinstance(scene_graph, dict):
+        raw = scene_graph.get("regions") or []
+    elif isinstance(scene_graph, (list, tuple)):
+        raw = scene_graph
+    else:
+        return []
+    return [r for r in raw if isinstance(r, dict)]
+
+
+def semantic_region_at_point(
+    point: Any,
+    *,
+    scene_graph: Any = None,
+    objects: Optional[Sequence[Dict[str, Any]]] = None,
+) -> str:
+    """Return the semantic region kind containing ``point``, or ``\"\"``.
+
+    Authority order:
+    1. Explicit scene-graph region bounds (composer / timeline / …)
+    2. Perceived object kinds whose bounds contain the point (composer input, etc.)
+
+    Bare screen-Y heuristics are intentionally not used — a message near the
+    composer boundary must stay valid when it sits in a content/timeline region.
+    """
+    xy = _as_xy(point)
+    if xy is None:
+        return ""
+    # Prefer the most specific input match, else first content match.
+    hit_input = ""
+    hit_content = ""
+    hit_other = ""
+    for reg in _iter_scene_regions(scene_graph):
+        kind = _norm(reg.get("kind") or reg.get("role") or reg.get("region_kind"))
+        rect = _bounds_rect(reg.get("bounds") or reg.get("rect"))
+        if not kind or rect is None:
+            continue
+        if not _point_in_rect(xy, rect):
+            continue
+        if kind in _INPUT_REGION_KINDS or kind in COMPOSER_KINDS:
+            hit_input = kind
+            break
+        if kind in _CONTENT_REGION_KINDS and not hit_content:
+            hit_content = kind
+        elif not hit_other:
+            hit_other = kind
+    if hit_input:
+        return hit_input
+    for obj in objects or ():
+        if not isinstance(obj, dict):
+            continue
+        kind = _norm(obj.get("kind") or obj.get("role"))
+        if kind not in _INPUT_REGION_KINDS and kind not in COMPOSER_KINDS:
+            continue
+        rect = _bounds_rect(obj.get("bounds") or obj.get("rect"))
+        if rect is None:
+            continue
+        if _point_in_rect(xy, rect):
+            return kind or "composer"
+    if hit_content:
+        return hit_content
+    return hit_other
+
+
+def point_locus_forbidden_for_capability(
+    capability: str,
+    point: Any,
+    *,
+    scene_graph: Any = None,
+    objects: Optional[Sequence[Dict[str, Any]]] = None,
+    field_role: str = "",
+) -> Tuple[bool, str, Optional[LocusRequirement]]:
+    """Pre-motor: patient/content acts may not ground into input loci.
+
+    Returns ``(forbidden, why, requirement)``.
+    """
+    cap = _norm(capability).replace("-", "_")
+    if cap not in _PATIENT_CAPS and cap not in {"select_content"}:
+        return False, "ok", None
+    # Destination-picker invoke is not a content-patient reveal.
+    role = _norm(field_role)
+    if role in COMPOSER_FIELD_ROLES:
+        # Role already forbids; point check reinforces when role unset.
+        pass
+    region = semantic_region_at_point(
+        point, scene_graph=scene_graph, objects=objects
+    )
+    if not region:
+        return False, "ok", None
+    if region in _INPUT_REGION_KINDS or region in COMPOSER_KINDS:
+        r = LocusRequirement(
+            desired_effect="affordance_invoked",
+            required_locus="patient/content region",
+            forbidden_loci=("composer", "input"),
+            kind=LocusKind.PATIENT,
+        )
+        return (
+            True,
+            f"wrong_locus:patient:composer_point:{cap}:{region}",
+            r,
+        )
+    return False, "ok", None
 
 
 def requirement_for_capability(

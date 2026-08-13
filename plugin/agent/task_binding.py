@@ -27,6 +27,8 @@ class TaskBinding:
     constraints: Dict[str, Any] = field(default_factory=dict)
     candidate_entity_ids: List[int] = field(default_factory=list)
     resolved_entity_id: Optional[int] = None
+    # Identity label when semantic commit has no persistent entity handle yet.
+    resolved_label: str = ""
     confidence: float = 0.0
     status: BindingStatus = "unresolved"
     evidence: List[str] = field(default_factory=list)
@@ -43,14 +45,28 @@ class TaskBinding:
             resolved_entity_id=(
                 int(d["resolved_entity_id"]) if d.get("resolved_entity_id") is not None else None
             ),
+            resolved_label=str(d.get("resolved_label") or ""),
             confidence=float(d.get("confidence") or 0.0),
             status=str(d.get("status") or "unresolved"),  # type: ignore[arg-type]
             evidence=[str(x) for x in (d.get("evidence") or [])],
         )
 
     @property
+    def is_identity_established(self) -> bool:
+        """Semantic identity committed (entity handle and/or authoritative label)."""
+        if self.status not in {"provisional", "confirmed"}:
+            return False
+        return self.resolved_entity_id is not None or bool(
+            str(self.resolved_label or "").strip()
+        )
+
+    @property
     def is_grounded(self) -> bool:
-        return self.status in {"provisional", "confirmed"} and self.resolved_entity_id is not None
+        """Persistent/usable entity handle exists — required for irreversible acts."""
+        return (
+            self.status in {"provisional", "confirmed"}
+            and self.resolved_entity_id is not None
+        )
 
 
 @dataclass

@@ -1138,6 +1138,28 @@ def _grounded_from_objects(
     """
     from types import SimpleNamespace
 
+    from plugin.perception.coordinate_frame import (
+        FrameGraph,
+        resolve_frame_id_for_space,
+    )
+
+    graph = None
+    raw_graph = document.get("frame_graph")
+    if isinstance(raw_graph, FrameGraph):
+        graph = raw_graph
+    elif isinstance(raw_graph, dict):
+        try:
+            graph = FrameGraph.from_dict(raw_graph)
+        except Exception:
+            graph = None
+    if graph is None:
+        surface_meta = document.get("task_surface")
+        if isinstance(surface_meta, dict) and surface_meta.get("frame_graph"):
+            try:
+                graph = FrameGraph.from_dict(surface_meta.get("frame_graph"))
+            except Exception:
+                graph = None
+
     out: List[Any] = []
     for obj in _iter_document_objects(document):
         label = str(obj.get("text") or obj.get("label") or "").strip()
@@ -1163,6 +1185,28 @@ def _grounded_from_objects(
         owner = str(obj.get("owner_surface") or obj.get("surface") or "").strip()
         if owner:
             target["owner_surface"] = owner[:40]
+        cid = str(
+            obj.get("capture_id") or obj.get("grounding_capture_id") or ""
+        ).strip()
+        if cid:
+            target["capture_id"] = cid[:80]
+        # Document-level WHEN stamp when object row omitted it (same observe).
+        # Frame IDs are space-specific — never copy a generic document.frame_id.
+        if not target.get("capture_id"):
+            doc_cid = str(document.get("capture_id") or "").strip()
+            if doc_cid:
+                target["capture_id"] = doc_cid[:80]
+        if space in {"screen", "image"}:
+            raw_fid = str(
+                obj.get("frame_id") or obj.get("coordinate_frame_id") or ""
+            ).strip()
+            fid = resolve_frame_id_for_space(
+                frame_id=raw_fid,
+                coordinate_space=space,
+                graph=graph,
+            )
+            if fid:
+                target["frame_id"] = fid[:80]
         out.append(
             SimpleNamespace(
                 label=label,

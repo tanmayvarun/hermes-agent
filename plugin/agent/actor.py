@@ -738,6 +738,32 @@ def validate_brief(brief: ActorBrief) -> Tuple[bool, str]:
     )
     if locus_bad:
         return False, locus_why
+    # Point-in-region: reveal/select must not ground into input/composer loci
+    # (live 134636: semantic patient ok, point landed in composer).
+    try:
+        from plugin.agent.capabilities.locus_contract import (
+            point_locus_forbidden_for_capability,
+        )
+
+        pt = brief.point
+        if pt is None and brief.bounds is not None:
+            try:
+                b = brief.bounds
+                pt = (float(b[0]) + float(b[2]) / 2.0, float(b[1]) + float(b[3]) / 2.0)
+            except (TypeError, ValueError, IndexError):
+                pt = None
+        audit = brief.geometry_audit if isinstance(brief.geometry_audit, dict) else {}
+        point_bad, point_why, _ = point_locus_forbidden_for_capability(
+            str(brief.capability or ""),
+            pt,
+            scene_graph=audit.get("scene_graph") or audit.get("scene_regions"),
+            objects=audit.get("document_objects") or audit.get("objects"),
+            field_role=str(brief.field_role or ""),
+        )
+        if point_bad:
+            return False, point_why
+    except Exception:
+        pass
     return True, "ok"
 
 
@@ -1116,6 +1142,19 @@ def brief_from_brain_choice(
         "geometry_source",
         str(action.get("geometry_source") or winner_space or ""),
     )
+    # Stamp semantic regions / objects so validate_brief can refuse input-locus
+    # points without WhatsApp Y heuristics (live 134636). Keep the point so the
+    # refusal why carries composer_point (do not silent-drop → capability fallthrough).
+    try:
+        doc = world_document if isinstance(world_document, dict) else {}
+        sg = doc.get("scene_graph") or doc.get("regions")
+        if sg is not None:
+            geometry_audit.setdefault("scene_graph", sg)
+        objs = [o for o in (doc.get("objects") or []) if isinstance(o, dict)]
+        if objs:
+            geometry_audit.setdefault("document_objects", objs[:48])
+    except Exception:
+        pass
     if geometry_audit.get("grounding_uncertain"):
         # Fail closed: do not emit a clickable brief with invented coordinates.
         point = None

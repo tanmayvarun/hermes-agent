@@ -767,7 +767,7 @@ def run_forward_message_live(
                     app=APP,
                     execution_state=runtime.execution_state,
                 )
-                brief_ok, _why = validate_brief(brief)
+                brief_ok, brief_why = validate_brief(brief)
                 # Ranking / query-authorship are judgment capabilities — never
                 # shortcut them to a click brief (resolve_entity→click skipped
                 # fail_search_episode and re-entered SEARCH; live 212533).
@@ -784,6 +784,43 @@ def run_forward_message_live(
                     "locate_content",
                     "locatecontent",
                 }
+                # Bad point in input locus: invalidate grounding, keep method —
+                # do NOT fall through to capability motor with the same geometry.
+                if (not brief_ok) and "composer_point" in str(brief_why or ""):
+                    try:
+                        from plugin.agent.executive.affordance_commitment import (
+                            arm_wrong_point_grounding_recovery,
+                        )
+
+                        arm_wrong_point_grounding_recovery(
+                            runtime.execution_state,
+                            family=str(
+                                getattr(step, "action_family", None)
+                                or getattr(step, "action", None)
+                                or "reveal_actions"
+                            ),
+                            label=str(
+                                getattr(step, "semantic_target", None)
+                                or brief.label
+                                or ""
+                            ),
+                            patient_ref=str(
+                                (doc if isinstance(doc, dict) else {}).get(
+                                    "source_object_label"
+                                )
+                                or getattr(step, "semantic_target", None)
+                                or ""
+                            ),
+                            point=brief.point,
+                            why=str(brief_why or ""),
+                        )
+                    except Exception:
+                        pass
+                    return ExecResult(
+                        ok=False,
+                        backend="actor",
+                        message=str(brief_why or "wrong_locus:composer_point"),
+                    )
                 _use_actor = (
                     brief_ok
                     and brief.gesture

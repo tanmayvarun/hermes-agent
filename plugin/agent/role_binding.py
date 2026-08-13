@@ -1144,14 +1144,30 @@ class RoleBinder:
             return False, "identity_contract_unsatisfied", proposal
         return False, "no_valid_binding", None
 
+    def commit_effect(
+        self,
+        execution_state: Any,
+        *,
+        proposal: BindingProposal,
+        forward_task: Optional[Dict[str, Any]] = None,
+        evidence: str = "settled_destination_verified",
+    ) -> Optional[Dict[str, Any]]:
+        """Authoritative commit API for settled effect → role binding."""
+        return _commit_effect_binding(
+            execution_state,
+            proposal=proposal,
+            forward_task=forward_task,
+            evidence=evidence,
+        )
 
-def role_for_action_family(family: str, *, phase: str = "") -> str:
+
+def role_for_action_family(family: str, *, phase: str = "", **kwargs: Any) -> str:
     """DEPRECATED shim — import procedures.forward_message.role_for_action_family."""
     from plugin.agent.procedures.forward_message import (
         role_for_action_family as _proc_role,
     )
 
-    return _proc_role(family, phase=phase)
+    return _proc_role(family, phase=phase, **kwargs)
 
 
 def verify_bound_identity(
@@ -1186,10 +1202,19 @@ def record_negative_evidence(
     role: str,
     candidate_label: str,
     reason: str = REFERENT_MISMATCH,
+    attempt_id: str = "",
 ) -> None:
     if execution_state is None:
         return
+    aid = str(
+        attempt_id
+        or getattr(execution_state, "active_attempt_id", "")
+        or getattr(execution_state, "last_effect_attempt_id", "")
+        or ""
+    ).strip()
     key = f"{_norm(role)}|{_norm(candidate_label)}"
+    if aid:
+        key = f"{key}|{aid}"
     try:
         bag = getattr(execution_state, "binding_negative_evidence", None)
         if not isinstance(bag, dict):
@@ -1198,6 +1223,7 @@ def record_negative_evidence(
         entry["role"] = role
         entry["label"] = candidate_label
         entry["reason"] = reason
+        entry["attempt_id"] = aid
         entry["count"] = int(entry.get("count") or 0) + 1
         bag[key] = entry
         execution_state.binding_negative_evidence = bag
@@ -1212,6 +1238,8 @@ def record_negative_evidence(
         closure["modes"] = modes
         closure["referent_mismatch_role"] = role
         closure["referent_mismatch_label"] = str(candidate_label or "")[:160]
+        if aid:
+            closure["referent_mismatch_attempt_id"] = aid
         if _norm(role) in {"source_container", "destination"}:
             closure["referent_repair_owed"] = False
             closure["referent_search_needed"] = True
@@ -1241,9 +1269,13 @@ def apply_referent_mismatch(
     role: str,
     candidate_label: str,
     forward_task: Optional[Dict[str, Any]] = None,
+    attempt_id: str = "",
 ) -> Optional[Dict[str, Any]]:
     record_negative_evidence(
-        execution_state, role=role, candidate_label=candidate_label
+        execution_state,
+        role=role,
+        candidate_label=candidate_label,
+        attempt_id=attempt_id,
     )
     if not isinstance(forward_task, dict):
         return forward_task
@@ -1270,6 +1302,289 @@ def apply_referent_mismatch(
         return state.to_dict()
     except Exception:
         return forward_task
+
+
+def note_transition_pending(
+    execution_state: Any,
+    *,
+    establishes_roles: Optional[list] = None,
+    target_label: str = "",
+    reason: str = "expected_transition_not_settled_yet",
+    attempt_id: str = "",
+) -> None:
+    """Record a non-terminal early-frame miss for one navigation/open attempt.
+
+    Requires an explicit ``attempt_id`` from the Action — ambient ExecutionState
+    ids are never used (would reintroduce cross-attempt attribution).
+    Foreign mismatch debt for another attempt stays; same-attempt provisional
+    mismatch may be retracted (unsettled frame does not owe SEARCH).
+    """
+    if execution_state is None:
+        return
+    aid = str(attempt_id or "").strip()
+    if not aid:
+        return
+    try:
+        closure = dict(getattr(execution_state, "last_effect_closure", None) or {})
+        modes = list(closure.get("modes") or [])
+        if reason not in modes:
+            modes.append(reason)
+        closure["modes"] = modes
+        closure["transition_pending"] = True
+        closure["pending_attempt_id"] = aid
+        closure["pending_establishes_roles"] = [
+            str(r) for r in (establishes_roles or []) if str(r).strip()
+        ]
+        if target_label:
+            closure["pending_open_target"] = str(target_label)[:160]
+        try:
+            closure["pending_since_frame"] = int(
+                getattr(execution_state, "unified_frame", 0) or 0
+            )
+        except Exception:
+            closure["pending_since_frame"] = 0
+        # Retract only this attempt's own provisional mismatch — never foreign debt.
+        mismatch_aid = str(closure.get("referent_mismatch_attempt_id") or "").strip()
+        if mismatch_aid and mismatch_aid == aid:
+            modes = [
+                m
+                for m in list(closure.get("modes") or [])
+                if str(m) not in {REFERENT_MISMATCH, "referent_mismatch"}
+            ]
+            closure["modes"] = modes
+            closure.pop("referent_search_needed", None)
+            closure.pop("referent_mismatch_role", None)
+            closure.pop("referent_mismatch_label", None)
+            closure.pop("referent_mismatch_attempt_id", None)
+            closure["referent_repair_owed"] = False
+            # Negative evidence stays but is no longer terminal until settle.
+            try:
+                bag = getattr(execution_state, "binding_negative_evidence", None)
+                if isinstance(bag, dict):
+                    for entry in bag.values():
+                        if not isinstance(entry, dict):
+                            continue
+                        if str(entry.get("attempt_id") or "").strip() != aid:
+                            continue
+                        if str(entry.get("status") or "") == "superseded":
+                            continue
+                        entry["status"] = "pending_settle"
+            except Exception:
+                pass
+        execution_state.last_effect_closure = closure
+    except Exception:
+        pass
+
+
+def clear_referent_mismatch_debt(
+    execution_state: Any,
+    *,
+    role: str = "source_container",
+    verified_label: str = "",
+    attempt_id: str = "",
+) -> bool:
+    """Supersede pending / mismatch debt for one attempt only.
+
+    Requires explicit ``attempt_id`` (Action-scoped). Ambient ExecutionState
+    fallback is forbidden. Pending and mismatch ids checked independently.
+    """
+    if execution_state is None:
+        return False
+    role_n = _norm(role)
+    aid = str(attempt_id or "").strip()
+    if not aid:
+        return False
+    cleared = False
+    try:
+        closure = dict(getattr(execution_state, "last_effect_closure", None) or {})
+        pending_aid = str(closure.get("pending_attempt_id") or "").strip()
+        mismatch_aid = str(closure.get("referent_mismatch_attempt_id") or "").strip()
+        if not aid:
+            return False
+        if pending_aid == aid:
+            closure["transition_pending"] = False
+            closure.pop("pending_establishes_roles", None)
+            closure.pop("pending_open_target", None)
+            closure.pop("pending_attempt_id", None)
+            modes = [
+                m
+                for m in list(closure.get("modes") or [])
+                if str(m) != "expected_transition_not_settled_yet"
+            ]
+            closure["modes"] = modes
+            cleared = True
+        if mismatch_aid == aid:
+            if _norm(closure.get("referent_mismatch_role")) == role_n or not closure.get(
+                "referent_mismatch_role"
+            ):
+                closure.pop("referent_mismatch_role", None)
+                closure.pop("referent_mismatch_label", None)
+                closure.pop("referent_mismatch_attempt_id", None)
+                closure["referent_search_needed"] = False
+                closure["referent_repair_owed"] = False
+                modes = [
+                    m
+                    for m in list(closure.get("modes") or [])
+                    if str(m) not in {REFERENT_MISMATCH, "referent_mismatch"}
+                ]
+                closure["modes"] = modes
+                cleared = True
+        if not cleared:
+            return False
+        if verified_label:
+            closure["verified_container_label"] = str(verified_label)[:160]
+        execution_state.last_effect_closure = closure
+    except Exception:
+        return False
+    # Supersede (do not delete) negative evidence for this attempt_id + role.
+    try:
+        bag = getattr(execution_state, "binding_negative_evidence", None)
+        if isinstance(bag, dict) and aid:
+            for _key, entry in bag.items():
+                if not isinstance(entry, dict):
+                    continue
+                if _norm(entry.get("role")) != role_n:
+                    continue
+                if str(entry.get("attempt_id") or "").strip() != aid:
+                    continue
+                entry["status"] = "superseded"
+                entry["superseded_by"] = (
+                    f"verified:{verified_label[:80]}" if verified_label else aid
+                )
+            execution_state.binding_negative_evidence = bag
+    except Exception:
+        pass
+    return True
+
+
+def _commit_effect_binding(
+    execution_state: Any,
+    *,
+    proposal: BindingProposal,
+    forward_task: Optional[Dict[str, Any]] = None,
+    evidence: str = "settled_destination_verified",
+) -> Optional[Dict[str, Any]]:
+    """Internal implementation — production callers use ``RoleBinder.commit_effect``.
+
+    Writes a ``BindingRecord`` and syncs ``ForwardTaskState``. Never touches
+    ``source_object`` when committing ``source_container``. Confirmed status
+    requires ``resolved_entity_id`` or ``resolved_label``.
+    """
+    if proposal is None or not proposal.required_constraints_satisfied:
+        return forward_task
+    role = str(proposal.role or "").strip()
+    label = str(proposal.candidate_label or "").strip()
+    if not role or not label:
+        return forward_task
+    if _norm(role) == "source_object":
+        return forward_task
+    record = BindingRecord(
+        role=role,
+        entity_id=str(proposal.candidate_id or ""),
+        label=label,
+        status="confirmed",
+        confidence=max(float(proposal.confidence or 0.0), 0.9),
+        evidence=[e.detail for e in (proposal.supporting_evidence or []) if e.detail]
+        + [f"{evidence}:{label[:80]}"],
+    )
+    try:
+        bag = getattr(execution_state, "role_bindings", None)
+        if not isinstance(bag, dict):
+            bag = {}
+        bag[role] = record.to_dict() if hasattr(record, "to_dict") else {
+            "role": record.role,
+            "entity_id": record.entity_id,
+            "label": record.label,
+            "status": record.status,
+            "confidence": record.confidence,
+            "evidence": list(record.evidence or []),
+        }
+        if execution_state is not None:
+            execution_state.role_bindings = bag
+    except Exception:
+        pass
+    if not isinstance(forward_task, dict):
+        return forward_task
+    try:
+        from plugin.agent.task_binding import ForwardTaskState
+
+        state = ForwardTaskState.from_dict(forward_task)
+        slot = {
+            "source_container": "source_conversation",
+            "source_object": "source_object",
+            "destination": "destination",
+        }.get(role, role)
+        if slot == "source_object":
+            return forward_task
+        b = state.binding(slot)
+        eid = None
+        try:
+            if str(proposal.candidate_id or "").strip().isdigit():
+                eid = int(proposal.candidate_id)
+        except (TypeError, ValueError):
+            eid = None
+        b.resolved_entity_id = eid
+        b.resolved_label = label[:160]
+        b.status = "confirmed"
+        b.confidence = max(float(b.confidence or 0.0), float(record.confidence or 0.9))
+        b.evidence = list(b.evidence or []) + [f"{evidence}:{label[:80]}"]
+        if slot == "source_conversation":
+            state.predicates.source_conversation_open = True
+        state.binding_repair = False
+        state.derive_phase(leftover=False)
+        return state.to_dict()
+    except Exception:
+        return forward_task
+
+
+def commit_effect_binding(
+    execution_state: Any,
+    *,
+    proposal: BindingProposal,
+    forward_task: Optional[Dict[str, Any]] = None,
+    evidence: str = "settled_destination_verified",
+) -> Optional[Dict[str, Any]]:
+    """Deprecated compatibility shim — routes through ``RoleBinder.commit_effect``."""
+    return RoleBinder().commit_effect(
+        execution_state,
+        proposal=proposal,
+        forward_task=forward_task,
+        evidence=evidence,
+    )
+
+
+def confirm_established_role(
+    forward_task: Optional[Dict[str, Any]],
+    *,
+    role: str,
+    label: str,
+    evidence: str = "settled_destination_verified",
+    execution_state: Any = None,
+    proposal: Optional[BindingProposal] = None,
+) -> Optional[Dict[str, Any]]:
+    """Back-compat wrapper — prefer ``RoleBinder.commit_effect`` with a proposal."""
+    binder = RoleBinder()
+    if proposal is not None:
+        return binder.commit_effect(
+            execution_state,
+            proposal=proposal,
+            forward_task=forward_task,
+            evidence=evidence,
+        )
+    fake = BindingProposal(
+        role=role,
+        candidate_id="",
+        candidate_label=label,
+        confidence=0.9,
+        required_constraints_satisfied=True,
+        supporting_evidence=[],
+    )
+    return binder.commit_effect(
+        execution_state,
+        proposal=fake,
+        forward_task=forward_task,
+        evidence=evidence,
+    )
 
 
 # Back-compat aliases used by earlier wiring / tests.

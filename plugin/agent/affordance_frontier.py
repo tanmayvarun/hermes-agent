@@ -134,6 +134,9 @@ class Affordance:
     coordinate_space: str = ""
     geometry_source: str = ""
     owner_surface: str = ""
+    # Temporal provenance: WHEN the geometry was true (not current world time).
+    capture_id: str = ""
+    frame_id: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {
@@ -173,6 +176,10 @@ class Affordance:
             out["geometry_source"] = str(self.geometry_source)[:40]
         if self.owner_surface:
             out["owner_surface"] = str(self.owner_surface)[:40]
+        if self.capture_id:
+            out["capture_id"] = str(self.capture_id)[:80]
+        if self.frame_id:
+            out["frame_id"] = str(self.frame_id)[:80]
         return out
 
 
@@ -448,12 +455,60 @@ def _center(bounds: Any) -> Optional[Tuple[int, int]]:
 # --- observed ---------------------------------------------------------------
 
 
+def _temporal_from_item(
+    item: Optional[Dict[str, Any]],
+    *,
+    default_capture_id: str = "",
+) -> Tuple[str, str]:
+    """Producer capture/frame stamps — never invent current-world freshness.
+
+    ``frame_id`` is returned raw; callers must resolve it against
+    ``coordinate_space`` via :func:`resolve_frame_id_for_space`.
+    """
+    row = item if isinstance(item, dict) else {}
+    cid = str(
+        row.get("capture_id")
+        or row.get("grounding_capture_id")
+        or default_capture_id
+        or ""
+    ).strip()[:80]
+    fid = str(
+        row.get("frame_id") or row.get("coordinate_frame_id") or ""
+    ).strip()[:80]
+    return cid, fid
+
+
+def _coerce_frame_graph(raw: Any) -> Any:
+    if raw is None:
+        return None
+    try:
+        from plugin.perception.coordinate_frame import FrameGraph
+
+        if isinstance(raw, FrameGraph):
+            return raw
+        if isinstance(raw, dict):
+            return FrameGraph.from_dict(raw)
+    except Exception:
+        return None
+    return None
+
+
 def observed_from_ax(
     ax_evidence: Iterable[Dict[str, Any]],
     *,
     goal_kind: str = "forward_message",
+    capture_id: str = "",
+    frame_graph: Any = None,
 ) -> Tuple[List[Affordance], List[Dict[str, str]]]:
-    """Turn AX evidence into affordances that are true right now."""
+    """Turn AX evidence into affordances that are true right now.
+
+    ``capture_id`` / ``frame_graph`` are producer stamps for this observation.
+    AX geometry is screen-space: ``frame_id`` is always the graph's screen
+    frame (never a generic document frame / image frame).
+    """
+    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
+
+    graph = _coerce_frame_graph(frame_graph)
     found: List[Affordance] = []
     excluded: List[Dict[str, str]] = []
     for item in ax_evidence:
@@ -483,6 +538,13 @@ def observed_from_ax(
         if actions:
             evidence.insert(0, Evidence(SOURCE_AX_ACTION, ",".join(actions[:3])))
         reversible = family != "commit_irreversible"
+        cid, raw_fid = _temporal_from_item(item, default_capture_id=capture_id)
+        # Screen space only — never inherit an image/document frame id.
+        fid = resolve_frame_id_for_space(
+            frame_id=raw_fid,
+            coordinate_space="screen",
+            graph=graph,
+        )
         found.append(
             Affordance(
                 id=f"ax_{entity_id if entity_id is not None else len(found)}_{family}",
@@ -495,12 +557,14 @@ def observed_from_ax(
                 risk=0.4 if not reversible else 0.05,
                 reversible=reversible,
                 evidence=evidence,
-                # AX measured bounds are pointer/screen space by producer contract.
-                coordinate_space="screen" if point is not None else "",
+                # AX measured geometry is screen-space by producer contract.
+                coordinate_space="screen",
                 geometry_source="ax_action" if actions else "ax_role",
                 owner_surface=str(item.get("owner_surface") or item.get("surface") or "")[
                     :40
                 ],
+                capture_id=cid,
+                frame_id=fid,
             )
         )
     return found, excluded
@@ -512,6 +576,7 @@ def observed_from_objects(
     goal_kind: str = "forward_message",
     point_scale: float = 1.0,
     point_origin: Tuple[float, float] = (0.0, 0.0),
+    frame_graph: Any = None,
 ) -> List[Affordance]:
     """Affordances on things only the model can see.
 
@@ -519,6 +584,9 @@ def observed_from_objects(
     without this the frontier would claim the only actionable things on a
     conversation are the window's chrome buttons.
     """
+    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
+
+    graph = _coerce_frame_graph(frame_graph)
     found: List[Affordance] = []
     for index, item in enumerate(objects):
         if not isinstance(item, dict):
@@ -559,6 +627,14 @@ def observed_from_objects(
         # Keep untagged objects for probe/latent discovery. Executable publish
         # requires stamped coordinate_space — never invent it here.
         # matches_goal is recall-only; do not let it dominate affordance rank.
+        cid, raw_fid = _temporal_from_item(item)
+        fid = ""
+        if space in {"screen", "image"}:
+            fid = resolve_frame_id_for_space(
+                frame_id=raw_fid,
+                coordinate_space=space,
+                graph=graph,
+            )
         found.append(
             Affordance(
                 id=f"obj_{index}_{family}",
@@ -579,6 +655,8 @@ def observed_from_objects(
                 coordinate_space=space if space in {"screen", "image"} else "",
                 geometry_source=geo_src[:40],
                 owner_surface=owner[:40],
+                capture_id=cid,
+                frame_id=fid,
             )
         )
     return found
@@ -841,8 +919,10 @@ def _best_per_label(latents: Sequence[Affordance]) -> List[Affordance]:
     return sorted(best.values(), key=lambda a: -float(a.confidence))
 
 
-def _provenance_from_grounded(match: Any) -> Tuple[str, str, str]:
-    """Copy producer stamps from a reveal Action target — never invent space."""
+def _provenance_from_grounded(match: Any) -> Tuple[str, str, str, str, str]:
+    """Copy producer stamps from a reveal Action target — never invent space/time."""
+    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
+
     target = getattr(match, "target", None) or {}
     if not isinstance(target, dict):
         target = {}
@@ -851,7 +931,15 @@ def _provenance_from_grounded(match: Any) -> Tuple[str, str, str]:
         space = ""
     geo = str(target.get("geometry_source") or "").strip()[:40]
     owner = str(target.get("owner_surface") or target.get("surface") or "").strip()[:40]
-    return space, geo, owner
+    cid, raw_fid = _temporal_from_item(target)
+    fid = ""
+    if space:
+        fid = resolve_frame_id_for_space(
+            frame_id=raw_fid,
+            coordinate_space=space,
+            graph=None,
+        )
+    return space, geo, owner, cid, fid
 
 
 def _actuators_from_grounded(match: Any) -> Tuple[List[Dict[str, Any]], Optional[int]]:
@@ -911,7 +999,7 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
         if not actuators:
             still_latent.append(latent)
             continue
-        space, geo, owner = _provenance_from_grounded(match)
+        space, geo, owner, cid, fid = _provenance_from_grounded(match)
         promoted.append(
             Affordance(
                 id=f"revealed_{_norm(latent.target_label)}",
@@ -928,6 +1016,8 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
                 coordinate_space=space,
                 geometry_source=geo,
                 owner_surface=owner,
+                capture_id=cid,
+                frame_id=fid,
             )
         )
         grounded.pop(_norm(latent.target_label), None)
@@ -942,7 +1032,7 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
             continue
         label = str(getattr(match, "label", "") or key)
         irreversible = is_irreversible_affordance(label)
-        space, geo, owner = _provenance_from_grounded(match)
+        space, geo, owner, cid, fid = _provenance_from_grounded(match)
         promoted.append(
             Affordance(
                 id=f"revealed_{key}",
@@ -958,6 +1048,8 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
                 coordinate_space=space,
                 geometry_source=geo,
                 owner_surface=owner,
+                capture_id=cid,
+                frame_id=fid,
             )
         )
     frontier.observed_actions = frontier.observed_actions + promoted
@@ -973,12 +1065,24 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
 def publish_grounded_affordance_set(
     execution_state: Any, frontier: Optional[AffordanceFrontier]
 ) -> List[Dict[str, Any]]:
-    """Persist grounded menu controls as the affordance_set substrate.
+    """Persist *currently executable* grounded controls.
 
-    Preserves producer provenance only. Unknown coordinate_space → not
-    executable (skipped). May stamp capture_id for freshness, never invent
-    coordinate_space or owner_surface.
+    Frontier / historical observed rows may retain stale capture provenance.
+    This set means controls executable **now**, so publication requires:
+
+    * actionable actuators
+    * known coordinate_space (screen|image)
+    * known current capture
+    * affordance.capture_id == current capture
+    * authoritative FrameGraph
+    * frame_id that resolves for that coordinate_space
+
+    Unknown freshness / missing graph → fail closed (empty executable set).
+    Never invents or restamps coordinate_space / owner_surface / capture_id /
+    frame_id onto older geometry.
     """
+    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
+
     out: List[Dict[str, Any]] = []
     if frontier is None:
         if execution_state is not None:
@@ -987,21 +1091,23 @@ def publish_grounded_affordance_set(
             except Exception:
                 pass
         return out
-    capture_id = ""
+    active_cid = ""
+    graph = None
     if execution_state is not None:
         try:
-            from plugin.agent.grounding_validity import current_capture_id_from_state
+            from plugin.agent.grounding_validity import resolve_active_frame_graph
 
-            capture_id = current_capture_id_from_state(execution_state)
+            graph, _, active_cid = resolve_active_frame_graph(execution_state)
         except Exception:
-            capture_id = ""
-        doc = getattr(execution_state, "unified_world_document", None) or {}
-        if isinstance(doc, dict):
-            if not capture_id:
-                capture_id = str(doc.get("capture_id") or "").strip()
-            ts = doc.get("task_surface")
-            if not capture_id and isinstance(ts, dict):
-                capture_id = str(ts.get("capture_id") or "").strip()
+            graph, active_cid = None, ""
+    # Cannot establish "now" → nothing is currently executable.
+    if not active_cid or graph is None:
+        if execution_state is not None:
+            try:
+                execution_state.last_grounded_affordance_set = []
+            except Exception:
+                pass
+        return out
     for aff in frontier.observed_actions:
         if aff.family not in {"invoke_affordance", "commit_irreversible"}:
             continue
@@ -1012,8 +1118,21 @@ def publish_grounded_affordance_set(
         if space not in {"screen", "image"}:
             # Unknown provenance stays ungrounded — publisher never invents space.
             continue
-        if capture_id:
-            row["capture_id"] = capture_id
+        row_cid = str(row.get("capture_id") or "").strip()
+        # Preserve stale evidence in the frontier; do not expose it as executable.
+        if not row_cid or row_cid != active_cid:
+            continue
+        row_fid = str(row.get("frame_id") or "").strip()
+        if not row_fid:
+            continue
+        resolved = resolve_frame_id_for_space(
+            frame_id=row_fid,
+            coordinate_space=space,
+            graph=graph,
+        )
+        # Fail closed: do not restamp expected frame into the published row.
+        if resolved != row_fid:
+            continue
         out.append(row)
     if execution_state is not None:
         try:
@@ -1209,17 +1328,33 @@ def build_affordance_frontier(
     memory: Optional[TransitionMemory] = None,
     point_scale: float = 1.0,
     point_origin: Tuple[float, float] = (0.0, 0.0),
+    capture_id: str = "",
+    frame_graph: Any = None,
 ) -> AffordanceFrontier:
     """Assemble the frontier for the active surface and one action beyond it.
 
     Scope is the point of the signature: the current surface, what is on it,
     and what one interaction reaches. Shipping the whole application's action
     space is what produced the polluted graphs this replaces.
+
+    ``capture_id`` / ``frame_graph`` are producer stamps for this observation.
+    Frame IDs are derived per ``coordinate_space`` from the graph — never from
+    a generic document ``frame_id``.
     """
     surface = _norm(surface)
-    ax_actions, excluded = observed_from_ax(ax_evidence or (), goal_kind=goal_kind)
+    graph = _coerce_frame_graph(frame_graph)
+    ax_actions, excluded = observed_from_ax(
+        ax_evidence or (),
+        goal_kind=goal_kind,
+        capture_id=capture_id,
+        frame_graph=graph,
+    )
     object_actions = observed_from_objects(
-        objects or (), goal_kind=goal_kind, point_scale=point_scale, point_origin=point_origin
+        objects or (),
+        goal_kind=goal_kind,
+        point_scale=point_scale,
+        point_origin=point_origin,
+        frame_graph=graph,
     )
     observed = object_actions + ax_actions
 

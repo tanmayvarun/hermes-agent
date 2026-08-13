@@ -197,20 +197,43 @@ def grounding_is_executable(
 
 
 def grounding_repair_satisfied(state: Any) -> bool:
-    """True only when the named reground target is fresh + executable now."""
+    """True only when the named reground target is fresh + executable now.
+
+    When a commitment_id is armed, same label on a different patient must not
+    satisfy the debt (commitment-scoped identity).
+    """
     target = str(getattr(state, "grounding_reground_target", "") or "").strip().lower()
     if not target:
         return False
+    patient = str(
+        getattr(state, "grounding_reground_patient_ref", "") or ""
+    ).strip().lower()
+    cid = str(getattr(state, "grounding_reground_commitment_id", "") or "").strip()
     doc = getattr(state, "unified_world_document", None) or {}
     if not isinstance(doc, dict):
         return False
     active_surface = str(doc.get("surface") or "").strip().lower()
     graph, surface, current_capture_id = resolve_active_frame_graph(state)
 
+    def _patient_ok(item: Dict[str, Any]) -> bool:
+        if not patient:
+            return True
+        blob = " ".join(
+            str(item.get(k) or "").lower()
+            for k in ("patient_ref", "patient", "source", "owner", "belongs_to")
+        )
+        if not any(item.get(k) for k in ("patient_ref", "patient", "source", "owner", "belongs_to")):
+            # No patient metadata on item — accept only when commitment has no
+            # patient either (already handled) or when cid unset.
+            return not cid
+        return patient in blob or blob in patient
+
     for obj in doc.get("objects") or []:
         if not isinstance(obj, dict):
             continue
         if not _label_exact(str(obj.get("text") or obj.get("label") or ""), target):
+            continue
+        if not _patient_ok(obj):
             continue
         if not belongs_to_active_surface(
             obj, active_surface=active_surface, require_owner=True
@@ -231,6 +254,8 @@ def grounding_repair_satisfied(state: Any) -> bool:
             str(aff.get("target_label") or aff.get("label") or ""), target
         ):
             continue
+        if not _patient_ok(aff):
+            continue
         if not (aff.get("actuators") or []):
             continue
         if not belongs_to_active_surface(
@@ -249,6 +274,9 @@ def grounding_repair_satisfied(state: Any) -> bool:
 
 
 def current_capture_id_from_state(state: Any) -> str:
-    """Capture id for stamping affordance sets at publish time."""
+    """Active FrameGraph / document capture id (freshness comparison only).
+
+    Must not be used to restamp older affordance geometry as current.
+    """
     _graph, _surface, cid = resolve_active_frame_graph(state)
     return cid
