@@ -442,7 +442,12 @@ def advance_search_with_candidates(
         tokens.append(q)
 
     filtered = filter_search_candidates(
-        rows, referent=ref, query=q, evidence_tokens=tokens, episode=ep
+        rows,
+        referent=ref,
+        query=q,
+        evidence_tokens=tokens,
+        episode=ep,
+        role=str(ep.get("role") or ""),
     )
     unique = unique_fitting_candidate(
         filtered, referent=ref, evidence_tokens=tokens, query=q
@@ -460,9 +465,19 @@ def advance_search_with_candidates(
     ][:24]
     just_rejected_unique = False
     if unique is not None and len(filtered) == 1:
-        gm = unique.get("goal_match")
-        if isinstance(gm, dict) and not bool(gm.get("binding_eligible")):
-            # Retrieval can finish; role must not resolve on a hard reject.
+        gm = unique.get("goal_match") if isinstance(unique.get("goal_match"), dict) else {}
+        interp = unique.get("interpretation") if isinstance(unique.get("interpretation"), dict) else {}
+        contras = [str(c) for c in list(interp.get("contradictions") or [])]
+        # unknown ≠ negative: missing sender stays explorable. Hard reject only
+        # on explicit impossibility (self vs required sender, distractor host).
+        hard_role_reject = bool(gm) and not bool(gm.get("binding_eligible")) and (
+            "explicit_self_vs_required_sender" in contras
+            or "url_host_contradicts_query" in contras
+            or any(
+                "originator_mismatch" in c and "self" in c.lower() for c in contras
+            )
+        )
+        if hard_role_reject:
             just_rejected_unique = True
             status = "ranking"
             chosen_label = str(unique.get("label") or unique.get("text") or "")
@@ -472,6 +487,7 @@ def advance_search_with_candidates(
             if chosen_label and chosen_label not in role_rejected_labels:
                 role_rejected_labels.append(chosen_label)
         else:
+            # May be commit-ready or only explore-ready (unknown evidence).
             status = "complete"
             chosen_label = str(unique.get("label") or unique.get("text") or "")
             chosen_id = unique.get("id")
@@ -494,6 +510,28 @@ def advance_search_with_candidates(
     scope = _space_to_scope(str(ep.get("space") or "ui_filter"))
     if scope and scope not in explored:
         explored = explored + [scope]
+    from plugin.agent.capabilities.search_hypothesis import hypothesis_ledger_entries
+
+    ledger = hypothesis_ledger_entries(filtered or rows)
+    if ledger and status in {"complete", "ranking"} and not chosen_label:
+        # Exploration pointer: top hypothesis without forcing commit.
+        top = (filtered or rows)[0] if (filtered or rows) else None
+        if isinstance(top, dict):
+            ep_explore_label = str(top.get("label") or top.get("text") or "")
+        else:
+            ep_explore_label = ""
+    else:
+        ep_explore_label = chosen_label
+    for entry in ledger:
+        if chosen_label and str(entry.get("label") or "") == chosen_label:
+            entry["selected_for_exploration"] = True
+        elif (
+            not chosen_label
+            and ep_explore_label
+            and str(entry.get("label") or "") == ep_explore_label
+        ):
+            entry["selected_for_exploration"] = True
+
     ep = {
         **ep,
         "status": status,
@@ -504,11 +542,13 @@ def advance_search_with_candidates(
         "candidate_fingerprint": _fingerprint(filtered or rows),
         "chosen_label": chosen_label,
         "chosen_id": chosen_id,
+        "explore_label": ep_explore_label or chosen_label,
         "filtered_count": len(filtered),
         "raw_count": len(rows),
         "explored_scopes": explored,
         "role_rejected_ids": role_rejected_ids,
         "role_rejected_labels": role_rejected_labels,
+        "hypothesis_ledger": ledger[:16],
     }
     if just_rejected_unique:
         gm = unique.get("goal_match") if isinstance(unique, dict) else None
@@ -543,10 +583,15 @@ def advance_search_with_candidates(
             {
                 "label": str(c.get("label") or c.get("text") or "")[:120],
                 "id": c.get("id"),
+                "rank_position": (c.get("interpretation") or {}).get("rank_position"),
+                "rank_reason": str(
+                    (c.get("interpretation") or {}).get("rank_reason") or ""
+                )[:120],
             }
             for c in (filtered or rows)[:12]
             if isinstance(c, dict)
         ]
+        ep["result"]["hypothesis_ledger"] = list(ep.get("hypothesis_ledger") or [])[:16]
     try:
         execution_state.search_episode = ep
         if status == "failed":
@@ -1046,8 +1091,17 @@ def filter_search_candidates(
     query: str = "",
     evidence_tokens: Optional[Sequence[str]] = None,
     episode: Optional[Dict[str, Any]] = None,
+    expected_originator: str = "",
+    expected_container: str = "",
+    role: str = "",
 ) -> List[Dict[str, Any]]:
-    """Filter + soft-rank: demote query echoes when better fits exist."""
+    """Filter + hypothesis-rank using role-conditioned interpretation.
+
+    Replaces the old 4-feature arithmetic soft-rank. Echoes are demoted when
+    better fits exist. ``unknown`` originator is not treated as negative.
+    """
+    from plugin.agent.capabilities.search_hypothesis import rank_search_hypotheses
+
     tokens = [_norm(t) for t in (evidence_tokens or []) if _norm(t)]
     ref_n = _norm(referent)
     if ref_n and ref_n not in tokens:
@@ -1056,40 +1110,30 @@ def filter_search_candidates(
     if not rows:
         return []
 
-    scored: List[Tuple[float, Dict[str, Any]]] = []
-    for row in rows:
-        label = str(row.get("label") or row.get("text") or "")
-        blob = f"{label} {row.get('id') or ''}"
-        score = 0.0
-        fits = False
-        if tokens:
-            fits = content_target_fits_referents(
-                target_label=label, object_blob=blob, goal_referents=tokens
-            ) or _text_matches_goal(blob, tokens)
-            if fits:
-                score += 10.0
-        if row.get("matches_goal"):
-            score += 3.0
-        low = _norm(label)
-        if "http://" in low or "https://" in low or "www." in low or ".com" in low:
-            score += 4.0
-        if query and _is_query_echo(label, query):
-            score -= 8.0
-            row = dict(row)
-            row["_echo"] = True
-        else:
-            row = dict(row)
-        row["_search_score"] = score
-        scored.append((score, row))
+    ep = episode if isinstance(episode, dict) else {}
+    role_s = str(role or ep.get("role") or "content").strip().lower() or "content"
+    # Content hunts: originator/container from episode referent / tokens.
+    origin = str(expected_originator or "").strip()
+    container = str(expected_container or "").strip()
+    if not origin:
+        # Prefer a person-like token distinct from the query string.
+        qn = _norm(query or ep.get("query") or "")
+        for t in tokens:
+            tn = _norm(t)
+            if tn and tn != qn and "http" not in tn and "." not in tn:
+                origin = str(t).strip()
+                break
+    if not container:
+        container = origin
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    has_fit = any(s > 0 for s, _ in scored)
-    out: List[Dict[str, Any]] = []
-    for s, row in scored:
-        if has_fit and (s < 0 or row.get("_echo")):
-            continue
-        out.append(row)
-    return out or [r for _, r in scored[:8]]
+    ranked = rank_search_hypotheses(
+        rows,
+        query=str(query or ep.get("query") or referent or "").strip(),
+        expected_container=container,
+        expected_originator=origin,
+        role=role_s,
+    )
+    return ranked
 
 
 def unique_fitting_candidate(
@@ -1145,9 +1189,15 @@ def candidates_from_world_document(document: Optional[Dict[str, Any]]) -> List[D
             "point": obj.get("point"),
             "matches_goal": bool(obj.get("matches_goal")),
         }
+        for key in ("sender", "originator", "role", "field_role"):
+            if obj.get(key) not in (None, ""):
+                row[key] = obj.get(key)
         gm = obj.get("goal_match")
         if isinstance(gm, dict):
             row["goal_match"] = gm
+        interp = obj.get("interpretation")
+        if isinstance(interp, dict):
+            row["interpretation"] = interp
         rows.append(row)
     return rows
 

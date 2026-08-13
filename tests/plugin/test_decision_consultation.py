@@ -673,14 +673,15 @@ def test_reveal_on_search_rewrites_to_open_entity_not_observe():
             {
                 "id": "obj_msg_link_1",
                 "kind": "chat_row",
-                "text": "You: https://www.zarooratwala.com/?...",
+                "text": "Pallavi https://www.zarooratwala.com/?...",
                 "point": [308, 355],
                 "matches_goal": True,
+                "sender": "Pallavi",
             },
             {
                 "id": "obj_msg_link_2",
                 "kind": "chat_row",
-                "text": "You: https://www.instagram.com/zarooratwala?...",
+                "text": "https://www.instagram.com/zarooratwala?...",
                 "point": [308, 630],
                 "matches_goal": False,
             },
@@ -702,7 +703,7 @@ def test_reveal_on_search_rewrites_to_open_entity_not_observe():
         def choose(self, system: str, packet: dict) -> dict:
             return {
                 "capability": "reveal_actions",
-                "target": "You: https://www.zarooratwala.com/?...",
+                "target": "Pallavi https://www.zarooratwala.com/?...",
                 "why": "right-click for Forward",
                 "confidence": 0.95,
             }
@@ -751,6 +752,7 @@ def test_observe_on_search_results_promotes_to_open_entity():
                 "text": "Pallavi - https://www.zarooratwala.com/",
                 "point": [207, 360],
                 "matches_goal": True,
+                "sender": "Pallavi",
             }
         ],
     }
@@ -773,7 +775,7 @@ def test_observe_on_search_results_promotes_to_open_entity():
     trace = apply_decision_consultation(
         proposal,
         _goal(),
-        features=_features(wa_screen="SEARCH"),
+        features=_features(wa_screen="SEARCH", search_query="zarooratwala"),
         chooser=_ObserveChooser(),
     )
     assert proposal.next_action.get("family") == "open_entity", proposal.next_action

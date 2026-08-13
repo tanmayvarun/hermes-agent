@@ -1047,11 +1047,25 @@ def build_decision_brief(
             "focused_field_role": str(doc.get("focused_field_role") or ""),
             "objects": [
                 {
-                    "id": o.get("id"),
-                    "text": str(o.get("text") or ""),
-                    "kind": str(o.get("kind") or ""),
-                    "matches_goal": bool(o.get("matches_goal")),
-                    "point": o.get("point"),
+                    **{
+                        "id": o.get("id"),
+                        "text": str(o.get("text") or ""),
+                        "kind": str(o.get("kind") or ""),
+                        "matches_goal": bool(o.get("matches_goal")),
+                        "point": o.get("point"),
+                    },
+                    **{
+                        k: o.get(k)
+                        for k in (
+                            "sender",
+                            "originator",
+                            "role",
+                            "field_role",
+                            "goal_match",
+                            "interpretation",
+                        )
+                        if o.get(k) not in (None, "", [], {})
+                    },
                 }
                 for o in (doc.get("objects") or [])[:16]
                 if isinstance(o, dict)
@@ -2164,35 +2178,50 @@ def _canonical_capability(raw: Any) -> str:
 
 
 def _open_entity_target_from_brief(brief: "DecisionBrief") -> str:
-    """Best search-result / chat-row label to open when sanitize demands open_entity."""
+    """Resolve open target — SEARCH owns semantic choice; ACT does not re-rank.
+
+    Merge-blocker contract: if the search episode already chose a hypothesis
+    (``chosen_label`` / ``explore_label``), return that. Never silently
+    substitute a different row via a second coarse scorer.
+    """
     goal = brief.goal if isinstance(brief.goal, dict) else {}
     contact = str(goal.get("source_conversation") or "").strip()
-    link_q = str(goal.get("source_query") or "").strip().lower()
+    ep = brief.search_episode if isinstance(brief.search_episode, dict) else {}
+    chosen = str(
+        ep.get("chosen_label") or ep.get("explore_label") or ""
+    ).strip()
+    if chosen:
+        return chosen
+    # No SEARCH choice yet — fall back to top interpreted hypothesis if present.
     doc = brief.world if isinstance(brief.world, dict) else {}
-    best: Optional[Tuple[float, str]] = None
-    for obj in doc.get("objects") or []:
-        if not isinstance(obj, dict):
-            continue
-        text = str(obj.get("text") or obj.get("label") or obj.get("id") or "").strip()
-        if not text:
-            continue
-        kind = str(obj.get("kind") or "").strip().lower()
-        score = 0.0
-        if obj.get("matches_goal"):
-            score += 10.0
-        if kind in {"search_result", "chat_row", "row", "list_row", "result"}:
-            score += 2.0
-        low = text.lower()
-        if link_q and link_q in low:
-            score += 5.0
-        if contact and contact.lower() in low:
-            score += 3.0
-        if "http://" in low or "https://" in low or "www." in low:
-            score += 2.0
-        if score > 0.0 and (best is None or score > best[0]):
-            best = (score, text)
-    if best is not None:
-        return best[1]
+    link_q = str(goal.get("source_query") or goal.get("link_query") or "").strip()
+    try:
+        from plugin.agent.capabilities.search_hypothesis import rank_search_hypotheses
+
+        ranked = rank_search_hypotheses(
+            [
+                {
+                    "id": o.get("id"),
+                    "label": str(o.get("text") or o.get("label") or ""),
+                    "kind": o.get("kind"),
+                    "matches_goal": bool(o.get("matches_goal")),
+                    "sender": o.get("sender") or o.get("originator"),
+                    "role": o.get("role") or o.get("field_role"),
+                    "goal_match": o.get("goal_match"),
+                }
+                for o in (doc.get("objects") or [])
+                if isinstance(o, dict)
+                and str(o.get("text") or o.get("label") or "").strip()
+            ],
+            query=link_q,
+            expected_container=contact,
+            expected_originator=contact,
+            role="content" if link_q else "source",
+        )
+        if ranked:
+            return str(ranked[0].get("label") or ranked[0].get("text") or contact)
+    except Exception:
+        pass
     return contact
 
 

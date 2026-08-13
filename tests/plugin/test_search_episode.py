@@ -51,8 +51,9 @@ def test_unique_fit_completes_and_opens():
                 {
                     "id": "row1",
                     "kind": "chat_row",
-                    "text": "You: https://www.zarooratwala.com/?x=1",
+                    "text": "Pallavi https://www.zarooratwala.com/?x=1",
                     "matches_goal": True,
+                    "sender": "Pallavi",
                 }
             ],
         },
@@ -67,6 +68,37 @@ def test_unique_fit_completes_and_opens():
     assert cap == "open_entity"
     assert "zarooratwala.com" in tgt.lower()
     assert state.search_episode and state.search_episode.get("status") == "complete"
+
+
+def test_unique_self_authored_vs_required_sender_does_not_auto_commit():
+    """You: URL with required Pallavi originator is a hard relation contradiction."""
+    state = ExecutionState()
+    brief = DecisionBrief(
+        goal={
+            "source_conversation": "Pallavi",
+            "source_query": "zarooratwala",
+        },
+        world={
+            "surface": "search",
+            "objects": [
+                {
+                    "id": "row1",
+                    "kind": "chat_row",
+                    "text": "You: https://www.zarooratwala.com/?x=1",
+                    "matches_goal": True,
+                }
+            ],
+        },
+        task_state=TaskState(
+            phase="reach_source",
+            search_query="zarooratwala",
+        ),
+        capabilities=["open_entity", "resolve_entity", "observe", "search"],
+    )
+    cap, tgt, why = search_continue_capability(state, brief)
+    assert cap != "open_entity" or "you:" not in (tgt or "").lower()
+    assert state.search_episode
+    assert state.search_episode.get("status") in {"exhausted", "ranking", "failed"}
 
 
 def test_multi_candidate_does_not_open_echo():
@@ -121,9 +153,10 @@ def test_observe_on_search_promotes_ranked_not_thrash():
             {
                 "id": "row1",
                 "kind": "chat_row",
-                "text": "You: https://www.zarooratwala.com/?...",
+                "text": "Pallavi https://www.zarooratwala.com/?...",
                 "point": [308, 355],
                 "matches_goal": True,
+                "sender": "Pallavi",
             }
         ],
     }

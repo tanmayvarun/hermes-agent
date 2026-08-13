@@ -4645,6 +4645,73 @@ def _wrong_field_locus_forbids_type_when_composer_focused() -> Tuple[bool, str]:
     return True, "wrong field locus forbids type/locate on composer"
 
 
+def _search_hypothesis_ranking_contracts() -> Tuple[bool, str]:
+    """Role-conditioned SEARCH explore-order; ACT must not re-rank SEARCH choice."""
+    from plugin.agent.capabilities.search_hypothesis import (
+        hypothesis_ledger_entries,
+        legacy_soft_rank_scores,
+        rank_search_hypotheses,
+    )
+    from plugin.agent.decision_consultation import DecisionBrief, _open_entity_target_from_brief
+
+    inv = [
+        {
+            "id": "direct",
+            "label": "Alice https://www.acme.com/invoice.pdf",
+            "matches_goal": True,
+            "sender": "Alice",
+        },
+        {
+            "id": "related",
+            "label": "Alice https://www.instagram.com/acme",
+            "matches_goal": True,
+            "sender": "Alice",
+        },
+        {
+            "id": "you",
+            "label": "You: https://www.acme.com/invoice.pdf",
+            "matches_goal": True,
+            "sender": "You",
+        },
+        {
+            "id": "unk",
+            "label": "https://www.acme.com/invoice.pdf",
+            "matches_goal": True,
+        },
+    ]
+    ranked = rank_search_hypotheses(
+        inv,
+        query="acme",
+        expected_container="Alice",
+        expected_originator="Alice",
+        role="content",
+    )
+    ids = [r["id"] for r in ranked]
+    if not ids or ids[0] != "direct":
+        return False, f"direct object must rank first, got {ids}"
+    if ids.index("direct") > ids.index("related"):
+        return False, "related must not outrank direct"
+    if ids.index("unk") > ids.index("you"):
+        return False, "unknown must remain explorable above self contradiction"
+    legacy = legacy_soft_rank_scores(inv, query="acme", evidence_tokens=["Alice", "acme"])
+    if len({int(s) for s, _ in legacy[:3]}) > 2:
+        pass  # legacy may or may not tie; new ranker must still separate
+    ledger = hypothesis_ledger_entries(ranked)
+    if not ledger or "rank_position" not in ledger[0]:
+        return False, "hypothesis ledger missing"
+    brief = DecisionBrief(
+        goal={"source_conversation": "Alice", "source_query": "acme"},
+        world={"surface": "search", "objects": inv},
+        search_episode={
+            "status": "complete",
+            "chosen_label": "Alice https://www.acme.com/invoice.pdf",
+        },
+    )
+    if _open_entity_target_from_brief(brief) != "Alice https://www.acme.com/invoice.pdf":
+        return False, "ACT must preserve SEARCH chosen_label"
+    return True, "search hypothesis ranking contracts ok"
+
+
 def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
     """185549: blind locate → UNKNOWN; trustworthy negative → NOT_ACHIEVED.
 
@@ -5701,6 +5768,11 @@ GATES: Tuple[Gate, ...] = (
         "wrong_field_locus_forbids_type_when_composer_focused",
         "Can locate/type still run when composer is the focused locus?",
         _wrong_field_locus_forbids_type_when_composer_focused,
+    ),
+    Gate(
+        "search_hypothesis_ranking_contracts",
+        "Does SEARCH still tie direct/related/self URL hits and let ACT re-rank chosen_label?",
+        _search_hypothesis_ranking_contracts,
     ),
     Gate(
         "locate_effect_unknown_contracts",

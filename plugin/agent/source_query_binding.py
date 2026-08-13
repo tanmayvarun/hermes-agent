@@ -193,13 +193,13 @@ def host_contradicts_query(text: str, query: str) -> bool:
         host = url_host(url)
         if not host:
             continue
-        # Explicit distractor platforms with no query token in host/path.
+        # Explicit distractor platforms are never the direct content object,
+        # even when the query appears as an account/path token.
         path_blob = _norm(url)
         if host in _DISTRACTOR_HOSTS or any(
             host.endswith("." + d) for d in _DISTRACTOR_HOSTS if "." in d
         ):
-            if not query_supported_by_text(path_blob, query):
-                return True
+            return True
         # Brand/domain query: host must contain the brand token.
         if q and ("." in q or len(tokens) == 1):
             brand = tokens[0]
