@@ -387,6 +387,7 @@ def start_search_episode(
     evidence_tokens: Optional[Sequence[str]] = None,
     expected_originator: str = "",
     expected_container: str = "",
+    sought_object: str = "",
     space: str = "ui_filter",
     reason: str = "",
     status: str = "querying",
@@ -406,6 +407,7 @@ def start_search_episode(
         # Typed goal/referent roles only — never inferred from evidence_tokens.
         "expected_originator": str(expected_originator or "").strip(),
         "expected_container": str(expected_container or "").strip(),
+        "sought_object": str(sought_object or "").strip(),
         "query": str(query or "").strip(),
         "candidate_count": 0,
         "candidate_fingerprint": "",
@@ -1135,20 +1137,24 @@ def filter_search_candidates(
     role_s = str(role or ep.get("role") or "content").strip().lower() or "content"
     # Typed goal/referent state only. evidence_tokens are an unordered bag —
     # never promote a token into expected_originator / expected_container.
+    # originator and container stay independent — never alias one to the other.
     origin = str(
         expected_originator or ep.get("expected_originator") or ""
     ).strip()
     container = str(
         expected_container or ep.get("expected_container") or ""
     ).strip()
-    sought = str(query or ep.get("query") or referent or "").strip()
+    query_s = str(query or ep.get("query") or referent or "").strip()
+    # Typed sought-object semantics only; free-form query must not invent
+    # platform object type (instagram acquisition notes ≠ Instagram URL).
+    sought_object = str(ep.get("sought_object") or "").strip()
 
     ranked = rank_search_hypotheses(
         rows,
-        query=sought,
+        query=query_s,
         expected_container=container,
         expected_originator=origin,
-        sought_object=sought,
+        sought_object=sought_object,
         role=role_s,
     )
     return ranked
@@ -1282,9 +1288,23 @@ def ensure_search_episode_from_brief(
 
     tokens = [t for t in (referent, contact, link_q, query, dest) if t]
     tokens = list(dict.fromkeys(tokens))
-    # Typed semantic roles from the goal — not from unordered evidence_tokens.
-    typed_originator = contact if role == "content" else ""
+    # Typed semantic roles from the goal — independent relations.
+    # container ← conversation/contact; originator ← sent_by / "from X" / "I sent".
+    # Never: expected_originator = contact/source_conversation.
     typed_container = contact
+    typed_originator = str(
+        goal.get("originator")
+        or goal.get("expected_originator")
+        or goal.get("sent_by")
+        or ""
+    ).strip()
+    # Platform/object type only when the goal explicitly typed it — not query text.
+    typed_sought_object = str(
+        goal.get("sought_object")
+        or goal.get("object_platform")
+        or goal.get("sought_platform")
+        or ""
+    ).strip()
     cands = candidates_from_world_document(doc)
     ep = search_episode_of(holder)
     # Arm only when search has material evidence — not on chat_list previews
@@ -1314,18 +1334,22 @@ def ensure_search_episode_from_brief(
             evidence_tokens=tokens,
             expected_originator=typed_originator,
             expected_container=typed_container,
+            sought_object=typed_sought_object,
             space=space_for_surface(surface),
             reason="ensure_from_brief",
             status=start_status,
         )
     else:
-        # Refresh typed roles when goal contact is known; never invent from tokens.
+        # Refresh typed roles when goal fields are known; never invent from tokens
+        # or alias originator ← container.
         try:
             ep = dict(ep)
             if typed_originator and not str(ep.get("expected_originator") or "").strip():
                 ep["expected_originator"] = typed_originator
             if typed_container and not str(ep.get("expected_container") or "").strip():
                 ep["expected_container"] = typed_container
+            if typed_sought_object and not str(ep.get("sought_object") or "").strip():
+                ep["sought_object"] = typed_sought_object
             if query and not str(ep.get("query") or "").strip():
                 ep["query"] = query
             holder.search_episode = ep
@@ -1455,12 +1479,13 @@ def search_continue_capability(
     if status == "complete" and ep.get("chosen_label"):
         if meta == "search":
             # Ranking done — do not re-resolve or open under SEARCH; next meta ACT.
+            # status=complete is retrieval/choice complete, not RoleBinder resolved.
             return "", "", "search complete; await ACT open"
         if "open_entity" in allowed:
             return (
                 "open_entity",
                 str(ep.get("chosen_label") or ""),
-                "search complete; commit chosen candidate",
+                "search complete; explore/open chosen hypothesis (not role bind)",
             )
         return "", "", ""
     if status in _STATUS_INCOMPLETE:

@@ -4726,9 +4726,8 @@ def persist_world_document(execution_state: Any, proposal: Optional[UnifiedPropo
             goal = getattr(execution_state, "goal", None)
             link_q = str(getattr(goal, "link_query", "") or "").strip()
             contact = str(getattr(goal, "contact", "") or "").strip()
-            originator = str(
-                getattr(goal, "originator", "") or contact or ""
-            ).strip()
+            # Authorship only when the goal expressed it — never alias from contact.
+            originator = str(getattr(goal, "originator", "") or "").strip()
             if link_q or originator:
                 accepted = scrub_matches_goal_flags(
                     accepted,
@@ -5179,9 +5178,8 @@ def _goal_matched_object(world: WorldModel, *, prefer_url: bool = False) -> Any:
             or getattr(goal, "source_conversation", None)
             or ""
         ).strip()
-        expected_originator = str(
-            getattr(goal, "originator", None) or expected_container or ""
-        ).strip()
+        # Typed sender relation only — container must not imply originator.
+        expected_originator = str(getattr(goal, "originator", None) or "").strip()
     open_c = str(getattr(world, "open_conversation", "") or "")
 
     matched = []

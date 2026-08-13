@@ -342,14 +342,146 @@ def test_instagram_can_be_direct_object_when_sought():
                 "sender": "Alice",
             },
         ],
-        query="zarooratwala instagram",
+        query="zarooratwala",
         expected_container="Alice",
         expected_originator="Alice",
-        sought_object="zarooratwala Instagram page",
+        # Typed sought platform — not inferred from free-form query text.
+        sought_object="instagram",
         role="content",
     )
     assert ranked[0]["id"] == "ig"
     assert ranked[0]["interpretation"]["relevance"]["url_reason"] == "sought_platform_host"
+
+
+def test_platform_word_in_query_does_not_imply_platform_object_type():
+    ranked = rank_search_hypotheses(
+        [
+            {
+                "id": "ig",
+                "label": "Alice https://www.instagram.com/acme",
+                "matches_goal": True,
+                "sender": "Alice",
+            }
+        ],
+        # Free-form query may mention a platform as topic without seeking that
+        # platform as the object type.
+        query="report about Instagram growth",
+        expected_container="Alice",
+        expected_originator="Alice",
+        sought_object="",  # UNKNOWN object semantics
+        role="content",
+    )
+    assert ranked[0]["interpretation"]["relevance"]["url_reason"] != (
+        "sought_platform_host"
+    )
+    # Contrast: typed sought_object unlocks platform directness.
+    sought = rank_search_hypotheses(
+        ranked,
+        query="report about Instagram growth",
+        expected_container="Alice",
+        expected_originator="Alice",
+        sought_object="instagram",
+        role="content",
+    )
+    assert sought[0]["interpretation"]["relevance"]["url_reason"] == (
+        "sought_platform_host"
+    )
+
+
+def test_in_Alice_chat_does_not_imply_originator_Alice():
+    """Container from source_conversation must not become expected_originator."""
+    state = ExecutionState()
+    brief = DecisionBrief(
+        goal={
+            "source_conversation": "Alice",
+            "source_query": "invoice",
+            # No typed originator — invoice may be self-sent or from another party.
+        },
+        world={
+            "surface": "search",
+            "objects": [
+                {
+                    "id": "you",
+                    "kind": "search_result",
+                    "text": "You: https://files.example/invoice.pdf",
+                    "matches_goal": True,
+                }
+            ],
+        },
+        task_state=TaskState(phase="reach_source", search_query="invoice"),
+        capabilities=["open_entity", "resolve_entity", "observe", "search"],
+    )
+    from plugin.agent.capabilities.search_episode import (
+        ensure_search_episode_from_brief,
+        search_episode_of,
+    )
+
+    ensure_search_episode_from_brief(state, brief)
+    ep = search_episode_of(state) or {}
+    assert ep.get("expected_container") == "Alice"
+    assert ep.get("expected_originator") in ("", None)
+    # Self-authored hit is explorable when originator is UNKNOWN (not contradicted).
+    assert ep.get("status") in {"complete", "ranking"}
+    if ep.get("status") == "complete":
+        assert ep.get("role_resolved") is False
+
+
+def test_self_sent_to_John_sets_container_John_originator_self():
+    state = ExecutionState()
+    brief = DecisionBrief(
+        goal={
+            "source_conversation": "John",
+            "source_query": "link",
+            "originator": "self",
+        },
+        world={
+            "surface": "search",
+            "objects": [
+                {
+                    "id": "you",
+                    "kind": "search_result",
+                    "text": "You: https://example.com/note",
+                    "matches_goal": True,
+                    "sender": "You",
+                },
+                {
+                    "id": "john",
+                    "kind": "search_result",
+                    "text": "John: https://example.com/other",
+                    "matches_goal": True,
+                    "sender": "John",
+                },
+            ],
+        },
+        task_state=TaskState(phase="reach_source", search_query="link"),
+        capabilities=["open_entity", "resolve_entity", "observe", "search"],
+    )
+    from plugin.agent.capabilities.search_episode import ensure_search_episode_from_brief
+
+    ep = ensure_search_episode_from_brief(state, brief) or {}
+    assert ep.get("expected_container") == "John"
+    assert ep.get("expected_originator") == "self"
+    ranked = rank_search_hypotheses(
+        [
+            {
+                "id": "you",
+                "label": "You: https://example.com/note",
+                "matches_goal": True,
+                "sender": "You",
+            },
+            {
+                "id": "john",
+                "label": "John: https://example.com/other",
+                "matches_goal": True,
+                "sender": "John",
+            },
+        ],
+        query="link",
+        expected_container="John",
+        expected_originator="self",
+        role="content",
+    )
+    assert ranked[0]["id"] == "you"
 
 
 def test_strong_unknown_outranks_weaker_commit_ready():

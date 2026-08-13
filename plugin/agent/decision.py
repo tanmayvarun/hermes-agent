@@ -1281,8 +1281,8 @@ class DecisionEngine:
                     text=chosen,
                     semantic_target=chosen,
                     rationale=(
-                        "search_complete_open_chosen: entity resolved; "
-                        "open conversation from search_results (not Observe)"
+                        "search_complete_open_chosen: SEARCH chose a hypothesis; "
+                        "open it from search_results (retrieval≠role resolution)"
                     ),
                     expected_predicate="conversation",
                     reversible=True,

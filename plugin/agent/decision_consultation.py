@@ -528,7 +528,19 @@ def task_state_from_context(
             content_located = False
             if query_visible:
                 open_c = str(doc.get("open_conversation") or "")
-                source = str(getattr(goal, "contact", "") or "")
+                source = str(
+                    getattr(goal, "contact", None)
+                    or getattr(goal, "source_conversation", None)
+                    or (goal.get("source_conversation") if isinstance(goal, dict) else "")
+                    or (goal.get("contact") if isinstance(goal, dict) else "")
+                    or ""
+                ).strip()
+                # Originator only from typed goal relation — never alias to container.
+                want_origin = str(
+                    getattr(goal, "originator", None)
+                    or (goal.get("originator") if isinstance(goal, dict) else "")
+                    or ""
+                ).strip()
                 for obj in doc.get("objects") or []:
                     if not isinstance(obj, dict):
                         continue
@@ -538,7 +550,7 @@ def task_state_from_context(
                         query=link_q,
                         container_open=open_c,
                         expected_container=source,
-                        expected_originator=source,
+                        expected_originator=want_origin,
                         sender=obj.get("sender") or obj.get("originator"),
                         perception_matches_goal=bool(obj.get("matches_goal")),
                         role=str(obj.get("role") or obj.get("field_role") or ""),

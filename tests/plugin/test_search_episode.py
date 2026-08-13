@@ -77,6 +77,8 @@ def test_unique_self_authored_vs_required_sender_does_not_auto_commit():
         goal={
             "source_conversation": "Pallavi",
             "source_query": "zarooratwala",
+            # Typed sent_by — must not be invented from source_conversation alone.
+            "originator": "Pallavi",
         },
         world={
             "surface": "search",

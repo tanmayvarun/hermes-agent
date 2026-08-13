@@ -4717,7 +4717,11 @@ def _search_hypothesis_ranking_contracts() -> Tuple[bool, str]:
     if _open_entity_target_from_brief(empty_choice) != "":
         return False, "ACT must not invent a hypothesis when SEARCH has no choice"
     # Untyped tokens must not become expected_originator.
-    from plugin.agent.capabilities.search_episode import filter_search_candidates
+    from plugin.agent.capabilities.search_episode import (
+        ensure_search_episode_from_brief,
+        filter_search_candidates,
+    )
+    from plugin.agent.runtime.state import ExecutionState
 
     filtered = filter_search_candidates(
         [{"id": "h", "label": "forecast notes", "matches_goal": True}],
@@ -4731,6 +4735,45 @@ def _search_hypothesis_ranking_contracts() -> Tuple[bool, str]:
     rel = (filtered[0].get("interpretation") or {}).get("relation_evidence") or {}
     if rel.get("container"):
         return False, "evidence_tokens must not invent expected_container"
+    # Container ≠ originator: source_conversation alone must not set originator.
+    from plugin.agent.decision_consultation import TaskState as _TaskState
+
+    st = ExecutionState()
+    ensure_search_episode_from_brief(
+        st,
+        DecisionBrief(
+            goal={"source_conversation": "Alice", "source_query": "invoice"},
+            world={
+                "surface": "search",
+                "objects": [
+                    {"id": "1", "text": "You: invoice.pdf", "matches_goal": True}
+                ],
+            },
+            task_state=_TaskState(phase="reach_source", search_query="invoice"),
+        ),
+    )
+    ep = getattr(st, "search_episode", None) or {}
+    if ep.get("expected_container") != "Alice":
+        return False, "expected_container should be Alice"
+    if ep.get("expected_originator"):
+        return False, "contact must not imply expected_originator"
+    # Platform word in query alone must not yield sought_platform_host.
+    plat = rank_search_hypotheses(
+        [
+            {
+                "id": "ig",
+                "label": "https://www.instagram.com/acme",
+                "matches_goal": True,
+            }
+        ],
+        query="report about Instagram growth",
+        sought_object="",
+        role="content",
+    )
+    if plat and (plat[0].get("interpretation") or {}).get("relevance", {}).get(
+        "url_reason"
+    ) == "sought_platform_host":
+        return False, "query platform word must not invent sought_platform_host"
     return True, "search hypothesis ranking contracts ok"
 
 

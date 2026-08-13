@@ -34,7 +34,8 @@ class Goal:
     target_contact: str = ""  # e.g. forward destination
     link_query: str = ""  # e.g. link/text to find
     # Message/file author/sender ("from Pallavi" / "I sent"). Distinct from
-    # container (conversation_with). Empty → fall back to contact for "from X".
+    # container (conversation_with / source_conversation). Empty means UNKNOWN —
+    # never alias to contact.
     originator: str = ""
     procedure_id: str = ""
     procedure_score: float = 0.0

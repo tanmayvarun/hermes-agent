@@ -65,9 +65,15 @@ def _is_query_echo(label: str, query: str) -> bool:
     return False
 
 
-def _sought_platform_hosts(query: str, sought_object: str = "") -> List[str]:
-    """Hosts that are *direct* because the goal/query seeks that platform."""
-    blob = f"{_norm(query)} {_norm(sought_object)}"
+def _sought_platform_hosts(sought_object: str = "") -> List[str]:
+    """Hosts that are *direct* because typed sought_object names that platform.
+
+    Free-form query text is intentionally ignored — a query like
+    ``instagram acquisition notes`` must not invent platform object semantics.
+    """
+    blob = _norm(sought_object)
+    if not blob:
+        return []
     hosts: List[str] = []
     for needle, host_list in _PLATFORM_SEEK_HINTS:
         if needle in blob:
@@ -83,8 +89,8 @@ def _url_relevance_tier(
 ) -> Tuple[int, str]:
     """3=direct object URL, 2=related entity URL, 1=non-URL content, 0=none.
 
-    Directness is goal-conditioned (sought platform / brand-in-host), never a
-    global host denylist.
+    Directness is goal-conditioned (typed sought platform / brand-in-host),
+    never a global host denylist and never inferred from query lexical alone.
     """
     q = _norm(query)
     blob = _norm(text)
@@ -95,7 +101,7 @@ def _url_relevance_tier(
         return 0, "no_query_support"
     brand_tokens = [t for t in re.split(r"\W+", q) if len(t) >= 4]
     brand = brand_tokens[0] if brand_tokens else (q.split() or [""])[0]
-    sought_hosts = _sought_platform_hosts(query, sought_object)
+    sought_hosts = _sought_platform_hosts(sought_object)
     best = 0
     reason = "url_present"
     for url in urls:
@@ -142,7 +148,7 @@ def interpret_search_candidate(
     gm = None
     echo = bool(query and _is_query_echo(label, query))
     url_tier, url_reason = _url_relevance_tier(
-        label, query, sought_object=sought_object or query
+        label, query, sought_object=sought_object
     )
     origin = infer_message_originator(label, sender=sender, kind=kind)
 
@@ -217,7 +223,7 @@ def interpret_search_candidate(
             query=query,
             container_open=expected_container,
             expected_container=expected_container,
-            expected_originator=expected_originator or expected_container,
+            expected_originator=expected_originator,
             sender=sender,
             perception_matches_goal=bool(candidate.get("matches_goal")),
             role=str(candidate.get("role") or ""),
@@ -370,7 +376,8 @@ def rank_search_hypotheses(
         query=query,
         expected_container=expected_container,
         expected_originator=expected_originator,
-        sought_object=sought_object or query,
+        # No query fallback: unknown sought_object ⇒ no platform directness boost.
+        sought_object=sought_object,
         role=role,
     )
     if not rows:
