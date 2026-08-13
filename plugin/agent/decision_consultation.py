@@ -3052,6 +3052,38 @@ def _entity_resolution_type_query_outcome(
     )
 
 
+
+
+def _patient_content_established(brief: "DecisionBrief") -> bool:
+    """True when source-query patient is already on-screen / soft-located.
+
+    Interaction-affordance failures must not erase this fact and restart
+    retrieval (live 113806: reveal miss → locate_content found=False).
+    """
+    task = brief.task_state
+    if bool(getattr(task, "content_located", False)):
+        return True
+    link_q = str(
+        (brief.goal or {}).get("source_query")
+        or (brief.goal or {}).get("link_query")
+        or ""
+    ).strip()
+    if not link_q:
+        return False
+    doc = brief.world if isinstance(brief.world, dict) else {}
+    try:
+        from plugin.agent.source_query_binding import document_locates_source_query
+
+        if document_locates_source_query(doc, link_q):
+            return True
+    except Exception:
+        pass
+    # Soft extras / phase already acknowledging patient presence.
+    if str(getattr(task, "phase", "") or "").strip().lower() == "act_on_content":
+        return True
+    return False
+
+
 def _content_search_locate_outcome(
     brief: "DecisionBrief",
     *,
@@ -3065,6 +3097,9 @@ def _content_search_locate_outcome(
 
     Live 185549: AX-blind locate left EffectStatus UNKNOWN; identical locate must
     not reseal while verification is pending / method still unresolved.
+
+    Live 113806: do **not** reseal when the patient is already established —
+    reveal/select failures repair affordances, they do not restart retrieval.
     """
     meta_now = str(getattr(brief, "meta_action", "") or "").strip().lower()
     if meta_now != "search":
@@ -3073,6 +3108,8 @@ def _content_search_locate_outcome(
     if not bool(getattr(task, "source_chat_open", False)):
         return None
     if bool(getattr(task, "content_located", False)):
+        return None
+    if _patient_content_established(brief):
         return None
     link_q = str(
         (brief.goal or {}).get("source_query")
@@ -3089,6 +3126,9 @@ def _content_search_locate_outcome(
         return None
     prior_cap = str(getattr(prior, "capability", "") or "").strip().lower()
     if prior_cap == "locate_content" and str(getattr(prior, "target", "") or "").strip():
+        return None
+    # Affordance repair: never overwrite reveal/select with locate while patient known.
+    if prior_cap in {"reveal_actions", "select_content"}:
         return None
     if prior_cap in {"type_query", "compose_search_query", "resolve_entity"}:
         # Prefer locate inside an open chat over sidebar compose.
@@ -3530,22 +3570,28 @@ def apply_decision_consultation(
 
     # SEARCH with open source chat + unpaid link query → locate_content
     # (live 225807 Observe thrash after correct YouTube reject).
+    # Live 113806: do not override reveal/select when the patient is already
+    # established — that is affordance repair, not retrieval restart.
     _content_seal = _content_search_locate_outcome(
         brief, prior=outcome, execution_state=execution_state
     )
+    _cap_now = str(outcome.capability or "").strip().lower()
+    _patient_known = _patient_content_established(brief)
+    _affordance_caps = {"reveal_actions", "select_content"}
     if _content_seal is not None and (
         not outcome.ok
-        or str(outcome.capability or "").strip().lower()
-        in {
-            "",
-            "observe",
-            "request_more_evidence",
-            "invoke_affordance",
-            "reveal_actions",
-            "select_content",
-            "open_entity",
-            "commit_irreversible",
-        }
+        or (
+            _cap_now
+            in {
+                "",
+                "observe",
+                "request_more_evidence",
+                "invoke_affordance",
+                "open_entity",
+                "commit_irreversible",
+            }
+            or (_cap_now in _affordance_caps and not _patient_known)
+        )
     ):
         outcome = _content_seal
 

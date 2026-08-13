@@ -616,6 +616,45 @@ def sanitize_meta_choice(
                 "source": "llm_contract",
             },
         )
+    # Patient already established (SEARCH debt cleared) + reveal/select failure:
+    # repair interaction affordance on the same patient — do not re-enter SEARCH
+    # (live 113806: context_menu miss → locate_content found=False).
+    if (
+        reveal_failed
+        and bool(getattr(ctx, "address_known", False))
+        and not content_search_owed
+        and not bool(getattr(ctx, "role_identity_search_owed", False))
+        and not destination_search
+        and action is MetaAction.SEARCH
+    ):
+        prefer_select = str(
+            getattr(ctx, "reveal_prefer_capability", "") or ""
+        ).strip().lower() in {"select_content", "select"}
+        if prefer_select:
+            return MetaChoice(
+                MetaAction.ACT,
+                "contract: patient established — repair affordance via select, not re-search",
+                {
+                    "act": 1.0,
+                    "affordance_repair": 1.0,
+                    "reveal_episode_failed": 1.0,
+                    "forbid_search": 1.0,
+                    "llm_proposed": action.value,
+                    "source": "llm_contract",
+                },
+            )
+        return MetaChoice(
+            MetaAction.EXPLORE,
+            "contract: patient established — repair affordance, not re-search",
+            {
+                "explore": 1.0,
+                "affordance_repair": 1.0,
+                "reveal_episode_failed": 1.0,
+                "forbid_search": 1.0,
+                "llm_proposed": action.value,
+                "source": "llm_contract",
+            },
+        )
     # Active EXPLORE intention with methods left → keep EXPLORE (intent retry).
     # Exception: reveal already failed with select recovery — that is ACT.
     intention_active = bool(getattr(ctx, "intention_explore_active", False))

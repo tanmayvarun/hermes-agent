@@ -5442,6 +5442,19 @@ def proposal_to_action(
             )
 
             cand = text or semantic_target
+            cand_l = str(cand or "").strip().lower()
+            # Perception object ids (msg_link_*) must never become locate queries
+            # (live 113806: locate "msg_link_zarooratwala" → found=False).
+            object_id_query = bool(
+                cand_l.startswith("msg_")
+                or cand_l.startswith("obj_")
+                or (
+                    bool(re.match(r"^[a-z]+_[a-z0-9_]+$", cand_l))
+                    and "http" not in cand_l
+                    and " " not in cand_l
+                    and len(cand_l) > len(link_q) + 2
+                )
+            )
             distractor = bool(cand) and (
                 host_contradicts_query(cand, link_q)
                 or (
@@ -5450,12 +5463,16 @@ def proposal_to_action(
                 )
             )
             if family == "locate_content" and (
-                not cand or distractor or not query_supported_by_text(cand, link_q)
+                not cand
+                or distractor
+                or object_id_query
+                or not query_supported_by_text(cand, link_q)
             ):
                 text = link_q
                 semantic_target = link_q
             elif distractor:
                 text = link_q
+
         except Exception:
             if family == "locate_content":
                 text = link_q

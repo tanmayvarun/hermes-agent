@@ -1493,11 +1493,23 @@ def search_continue_capability(
     ).strip()
     # Open conversation + unpaid content query under SEARCH → locate in-chat
     # (live 225807: SEARCH meta kept falling through to Observe).
+    # Live 113806: skip when patient content is already established on-screen —
+    # affordance repair must not regress into retrieval.
+    patient_known = False
+    if link_q and surface == "conversation":
+        try:
+            from plugin.agent.source_query_binding import document_locates_source_query
+
+            doc = brief.world if isinstance(getattr(brief, "world", None), dict) else {}
+            patient_known = bool(document_locates_source_query(doc, link_q))
+        except Exception:
+            patient_known = False
     if (
         surface == "conversation"
         and meta == "search"
         and bool(getattr(task, "source_chat_open", False))
         and not bool(getattr(task, "content_located", False))
+        and not patient_known
         and link_q
         and "locate_content" in allowed
     ):
@@ -1850,13 +1862,23 @@ def meta_referent_search_signals(
     # (live 214626: false/true source open + ACT on unrelated visible row).
     role = str(ep.get("role") or "").strip().lower()
     content_episode_done = bool(complete and role == "content")
+    # Soft on-screen patient clears SEARCH debt without RoleBinder commit
+    # (live 113806: visible URL + reveal miss must not re-arm locate).
+    patient_on_screen = bool(content_located)
+    if not patient_on_screen and link_q and isinstance(document, dict):
+        try:
+            from plugin.agent.source_query_binding import document_locates_source_query
+
+            patient_on_screen = bool(document_locates_source_query(document, link_q))
+        except Exception:
+            patient_on_screen = False
     # Content SEARCH debt only after the container is open. A completed *source*
     # episode (Pallavi row chosen) must not clear it (live 214025).
     need_content = (
         bool(link_q)
         and bool(source_chat_open)
         and not failed
-        and not content_located
+        and not patient_on_screen
         and not content_episode_done
     )
     need_dest = surf == "forward_picker" and bool(dest) and not complete
