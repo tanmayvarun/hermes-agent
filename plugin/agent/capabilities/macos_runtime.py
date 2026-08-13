@@ -80,6 +80,40 @@ class MacLocatorRuntime(LocatorRuntime):
             logger.debug("focus probe failed for %s: %s", self.app, exc)
             return False
 
+    def filter_field_ready(self) -> bool:
+        """True only when a search/find field (not composer) is grounded."""
+        try:
+            from plugin.agent.capabilities.action_area import (
+                label_looks_like_composer,
+                label_looks_like_filter,
+            )
+            from plugin.executor.ax_action import _find_search_text_field
+
+            field, label = _find_search_text_field(self.app)
+            if field is None:
+                return False
+            lab = str(label or "").strip()
+            if label_looks_like_composer(lab):
+                return False
+            # Prefer explicit filter tokens; AXSearchField without label also ok.
+            if label_looks_like_filter(lab):
+                return True
+            try:
+                from plugin.executor.ax_action import _ax_attr
+
+                role = str(_ax_attr(field, "AXRole") or "")
+                if role == "AXSearchField":
+                    return True
+                focused = bool(_ax_attr(field, "AXFocused"))
+            except Exception:
+                focused = False
+            # Focused editable with search-scored label from _find_search_text_field
+            # already beat the composer penalty — accept when focused.
+            return bool(focused and lab)
+        except Exception as exc:
+            logger.debug("filter-field probe failed for %s: %s", self.app, exc)
+            return False
+
     def _invalidate(self) -> None:
         self._nodes = None
 

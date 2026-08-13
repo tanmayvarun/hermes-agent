@@ -716,8 +716,10 @@ def validate_brief(brief: ActorBrief) -> Tuple[bool, str]:
     if gesture == "scroll":
         if not str(brief.scroll_direction or "").strip():
             return False, "scroll_without_direction"
-    # High-cost wrong-area latch: refuse before the motor (095344 composer mistype).
+    # High-cost wrong-area / wrong-locus latch: refuse before the motor
+    # (095344 composer mistype; empty role/kind fail-closed for filter writes).
     from plugin.agent.capabilities.action_area import validate_actuation_grounding
+    from plugin.agent.capabilities.locus_contract import wrong_locus_forbidden
 
     area_ok, area_why = validate_actuation_grounding(
         capability=str(brief.capability or ""),
@@ -727,6 +729,15 @@ def validate_brief(brief: ActorBrief) -> Tuple[bool, str]:
     )
     if not area_ok:
         return False, area_why
+    locus_bad, locus_why, _ = wrong_locus_forbidden(
+        str(brief.capability or ""),
+        field_role=str(brief.field_role or ""),
+        label=str(brief.label or ""),
+        target_kind=str(brief.target_kind or ""),
+        require_field_evidence=True,
+    )
+    if locus_bad:
+        return False, locus_why
     return True, "ok"
 
 
@@ -1170,6 +1181,9 @@ def brief_from_plan_step(
         "geometry_source": getattr(step, "geometry_source", None),
         "direction": getattr(step, "scroll_direction", None),
         "amount": getattr(step, "scroll_amount", None),
+        "target_kind": str(getattr(step, "target_kind", "") or ""),
+        "establishes_roles": list(getattr(step, "establishes_roles", None) or []),
+        "action_is_navigation": bool(getattr(step, "action_is_navigation", False)),
     }
     # Live 153213: honor rotated reveal probe mode from execution_state so the
     # actor path does not hardcode context_click after a failed incomplete reveal.

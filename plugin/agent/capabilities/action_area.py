@@ -118,14 +118,21 @@ _CONTRACTS: Dict[str, ActionAreaContract] = {
         error_cost=ErrorCost.MEDIUM,
         exclusive=False,
         allowed_kinds=CONTENT_KINDS,
-        forbidden_kinds=frozenset({"search_result_row", "search_panel", "chat_row"}),
+        # Composer / draft text is not a message patient (live 181132 spellcheck).
+        forbidden_kinds=frozenset(
+            {"search_result_row", "search_panel", "chat_row"}
+        )
+        | COMPOSER_KINDS,
     ),
     "select_content": ActionAreaContract(
         area=ActionArea.CONTENT_OBJECT,
         error_cost=ErrorCost.MEDIUM,
         exclusive=False,
         allowed_kinds=CONTENT_KINDS,
-        forbidden_kinds=frozenset({"search_result_row", "search_panel", "chat_row"}),
+        forbidden_kinds=frozenset(
+            {"search_result_row", "search_panel", "chat_row"}
+        )
+        | COMPOSER_KINDS,
     ),
     "resolve_entity": ActionAreaContract(
         area=ActionArea.CANDIDATE_ROW,
@@ -275,7 +282,22 @@ def validate_actuation_grounding(
                 return False, f"wrong_action_area:{c.area.value}:kind={kind}"
             return False, f"wrong_action_area:{c.area.value}:kind={kind}"
 
+    if role in {"composer", "message_composer", "chat_composer", "message_input"}:
+        if c.area in {ActionArea.FILTER_INPUT, ActionArea.CONTENT_OBJECT}:
+            return False, f"wrong_action_area:{c.area.value}:focused_composer"
+
     if c.area == ActionArea.FILTER_INPUT:
+        # HIGH-cost filter families: empty role+kind with no filter label must
+        # not reach the host (fail closed — live composer mistype class).
+        if c.error_cost in {ErrorCost.HIGH, ErrorCost.IRREVERSIBLE}:
+            filter_roles = {"in_chat_find", "sidebar_search", "destination_filter"}
+            role_ok = role in filter_roles
+            if (
+                not role_ok
+                and not kind
+                and not label_looks_like_filter(lab)
+            ):
+                return False, f"wrong_action_area:{c.area.value}:empty_kind"
         if label_looks_like_composer(lab):
             return False, f"wrong_action_area:{c.area.value}:composer_label"
         # Contact / entity name as the field label — not a filter control.
@@ -287,6 +309,16 @@ def validate_actuation_grounding(
                     return False, f"wrong_action_area:{c.area.value}:entity_label"
                 if kind:
                     return False, f"wrong_action_area:{c.area.value}:label={lab!r}"
+
+    if c.area == ActionArea.CONTENT_OBJECT:
+        if label_looks_like_composer(lab) or kind in COMPOSER_KINDS:
+            return False, f"wrong_action_area:{c.area.value}:composer"
+        # Plain query echo in the message box is not a content patient
+        # (live 181132: context-click 'zarooratwala lasawel' → spellcheck).
+        if lab and kind in {"", "text", "static", "label", "unknown"}:
+            low = lab.lower()
+            if any(tok in low for tok in _COMPOSER_LABEL_TOKENS):
+                return False, f"wrong_action_area:{c.area.value}:composer_label"
 
     return True, "ok"
 

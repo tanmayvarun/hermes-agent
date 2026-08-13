@@ -69,7 +69,9 @@ _CATALOG: Tuple[CapabilitySpec, ...] = (
         required_arg="text",
         status=CapabilityStatus.REALIZED,
         motor_approximation=("scroll",),
-        requires_geometry=True,
+        # Runtime supplies find/scroll mechanism; actor must not invent a field
+        # point. NativeFind fail-closes until a filter field is evidenced.
+        requires_geometry=False,
     ),
     CapabilitySpec(
         name="open_entity",
