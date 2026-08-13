@@ -3738,7 +3738,28 @@ def apply_decision_consultation(
         "establishes_roles": list(getattr(outcome, "establishes_roles", None) or []),
         "action_is_navigation": bool(getattr(outcome, "action_is_navigation", False)),
         "legacy_semantics": bool(getattr(outcome, "legacy_semantics", False)),
+        "realization": str(getattr(outcome, "realization", "") or ""),
     }
+    # MethodFrontier preferred locate realization (information-gain).
+    if str(outcome.capability or "").strip().lower() == "locate_content":
+        prefer_r = ""
+        why_r = str(getattr(outcome, "realization", "") or "")
+        if "content_search_locate_" in why_r:
+            prefer_r = why_r.rsplit("content_search_locate_", 1)[-1].strip().lower()
+            prefer_r = prefer_r.split("+")[0].split()[0]
+        if prefer_r in {"native_find", "scroll_scan"}:
+            next_action["prefer_realization"] = prefer_r
+        elif execution_state is not None:
+            try:
+                from plugin.agent.capabilities.locate_content import (
+                    prefer_next_locate_realization,
+                )
+
+                nxt = prefer_next_locate_realization(execution_state)
+                if nxt:
+                    next_action["prefer_realization"] = nxt
+            except Exception:
+                pass
     if outcome.ok and outcome.capability:
         pointer_caps = _pointer_capabilities()
         if outcome.capability in pointer_caps:

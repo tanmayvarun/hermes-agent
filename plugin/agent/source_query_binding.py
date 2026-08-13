@@ -517,6 +517,51 @@ def document_locates_source_query(document: Optional[Dict[str, Any]], query: str
     return False
 
 
+def text_establishes_locate_patient(text: str, query: str) -> bool:
+    """Stronger than soft locate: related platform path hits do not earn the patient.
+
+    Soft ``text_locates_source_query`` may be true for an Instagram URL whose
+    path mentions the brand. Locate *verification* must not treat that as
+    establishing the desired patient — only a direct brand-host URL or
+    non-URL query support does.
+    """
+    if not query_supported_by_text(text, query):
+        return False
+    if host_contradicts_query(text, query) and not query_supported_by_text(text, query):
+        return False
+    urls = extract_urls(text)
+    if not urls:
+        return True
+    tokens = _query_tokens(query)
+    if not tokens:
+        return False
+    brand = tokens[0]
+    for url in urls:
+        host = url_host(url)
+        if brand and brand in host:
+            return True
+        # Goal names the platform itself (e.g. query "instagram").
+        q = _norm(query).replace(" ", "")
+        if q and q in host:
+            return True
+    return False
+
+
+def document_establishes_locate_patient(
+    document: Optional[Dict[str, Any]], query: str
+) -> bool:
+    """True when perception establishes the desired locate patient (not mere relevance)."""
+    if not isinstance(document, dict) or not _norm(query):
+        return False
+    for obj in document.get("objects") or []:
+        if not isinstance(obj, dict):
+            continue
+        text = str(obj.get("text") or obj.get("label") or "")
+        if text_establishes_locate_patient(text, query):
+            return True
+    return False
+
+
 def source_object_unresolved(task_state: Any) -> bool:
     status = str(getattr(task_state, "referent_binding_status", "") or "").strip().lower()
     selected = bool(getattr(task_state, "referent_selected", False))

@@ -1944,14 +1944,17 @@ def _multimodal_look(
             from plugin.agent.capabilities.locate_content import (
                 resolve_locate_effect_after_visual_verify,
             )
-            from plugin.agent.source_query_binding import document_locates_source_query
+            from plugin.agent.source_query_binding import (
+                document_establishes_locate_patient,
+            )
 
             doc = getattr(state, "unified_world_document", None)
             q = str(getattr(state, "last_locate_query", "") or "").strip()
+            # Related platform hits (e.g. Instagram path) must not satisfy patient.
             visible = bool(
                 q
                 and isinstance(doc, dict)
-                and document_locates_source_query(doc, q)
+                and document_establishes_locate_patient(doc, q)
             )
             resolve_locate_effect_after_visual_verify(
                 state,

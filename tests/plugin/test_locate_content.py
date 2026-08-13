@@ -77,6 +77,9 @@ class FakeSurface:
     def text_input_focused(self) -> bool:
         return self.find_field_open
 
+    def filter_field_ready(self) -> bool:
+        return self.find_field_open
+
 
 def _request(query: str = "zarooratwala", app: str = "SomeChatApp", budget: int = 12) -> LocateRequest:
     return LocateRequest(query=query, app=app, budget=budget)
@@ -157,10 +160,33 @@ def test_a_dead_find_chord_falls_through_to_scanning():
     assert surface.typed == []
 
 
-def test_a_find_bar_that_opens_without_reporting_focus_is_still_used():
+def test_prefer_and_skip_honor_method_frontier_without_repeating_native_find():
+    """Information-exhausted native_find must not reseal ahead of scroll_scan."""
+    screens = ["a", "b", "the zarooratwala link"]
+    surface = FakeSurface(screens, find_opens=True, find_jumps_to=2)
+    capability = LocateContent(realizations=default_realizations(find=MACOS_FIND))
+
+    outcome = capability.locate(
+        LocateRequest(
+            query="zarooratwala",
+            app="SomeChatApp",
+            prefer_realization="scroll_scan",
+            skip_realizations=("native_find",),
+        ),
+        surface,
+    )
+
+    assert outcome.realization == "scroll_scan"
+    assert outcome.found
+    assert surface.typed == []
+    assert surface.scrolls >= 1
+
+
+def test_signature_change_alone_does_not_authorize_typing():
+    """Fail closed: chrome churn / Cmd+F no-op must not type into composer."""
     surface = FakeSurface(["a", "the zarooratwala link"])
 
-    # Opens the bar (surface changes) but never reports a focused field.
+    # Surface changes but never reports a find/filter field.
     def key(chord: KeyChord) -> None:
         surface.keys.append(chord)
         if chord == MACOS_FIND.open_find:
@@ -170,8 +196,27 @@ def test_a_find_bar_that_opens_without_reporting_focus_is_still_used():
 
     outcome = NativeFind(MACOS_FIND).locate(_request(), surface)
 
-    assert outcome.ok
-    assert surface.typed == ["zarooratwala"]
+    assert not outcome.ok
+    assert surface.typed == []
+
+
+def test_native_find_does_not_type_when_only_composer_focused():
+    """Cmd+F no-op + composer-like focus ⇒ refuse type (wrong-locus field)."""
+    surface = FakeSurface(["composer draft"], find_opens=False)
+
+    def text_input_focused() -> bool:
+        return True  # composer holds focus
+
+    def filter_field_ready() -> bool:
+        return False
+
+    surface.text_input_focused = text_input_focused  # type: ignore[method-assign]
+    surface.filter_field_ready = filter_field_ready  # type: ignore[method-assign]
+
+    outcome = NativeFind(MACOS_FIND).locate(_request(), surface)
+
+    assert not outcome.ok
+    assert surface.typed == []
 
 
 # --- the scan terminates -------------------------------------------------

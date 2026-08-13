@@ -38,6 +38,17 @@ class Action:
     frontier_label: str = ""
     frontier_score: float = 0.0
     prediction: dict = field(default_factory=dict)
+    # Navigation / role-effect semantics (survive decision → execution).
+    target_kind: str = ""
+    establishes_roles: list = field(default_factory=list)
+    action_is_navigation: bool = False
+    # Immutable attempt identity for effect verification (not ambient runtime).
+    attempt_id: str = ""
+    # True when open semantics were reconstructed without authoritative typing.
+    # Legacy opens must not use the typed navigation establish/bypass path.
+    legacy_semantics: bool = False
+    # locate_content MethodFrontier preference (native_find / scroll_scan).
+    prefer_realization: str = ""
 
 
 # Backward-compatible alias for one release

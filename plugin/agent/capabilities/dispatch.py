@@ -35,7 +35,9 @@ from plugin.agent.capabilities.locate_content import (
     LocateContent,
     LocateRequest,
     default_realizations,
+    locate_skip_realizations,
     note_locate_outcome,
+    prefer_next_locate_realization,
 )
 from plugin.agent.capabilities.open_entity import open_entity, resolve_addressable
 from plugin.agent.capabilities.pointer_runtime import MacPointerRuntime
@@ -380,8 +382,30 @@ def _execute_locate(request: CapabilityRequest, overlay: Any) -> CapabilityOutco
 
     surface = searchable_surface(overlay, app=request.app, surface=request.surface)
     capability = LocateContent(realizations=locators_for_overlay(overlay))
+    extras = request.extras or {}
+    exec_state = extras.get("execution_state")
+    prefer = str(
+        extras.get("prefer_realization")
+        or getattr(request, "prefer_realization", "")
+        or ""
+    ).strip().lower()
+    skip: list = []
+    if exec_state is not None:
+        try:
+            next_r = prefer_next_locate_realization(exec_state)
+            if next_r and not prefer:
+                prefer = str(next_r).strip().lower()
+            skip = list(locate_skip_realizations(exec_state, query=query) or [])
+        except Exception:
+            skip = []
     outcome = capability.locate(
-        LocateRequest(query=query, app=request.app, surface=surface.surface),
+        LocateRequest(
+            query=query,
+            app=request.app,
+            surface=surface.surface,
+            prefer_realization=prefer,
+            skip_realizations=tuple(skip),
+        ),
         MacLocatorRuntime(request.app),
     )
     evidence = outcome.as_evidence()
@@ -704,6 +728,13 @@ def dispatch_from_step(
     entity_id = getattr(step, "target_entity_id", None)
     if entity_id is not None:
         extras["entity_id"] = entity_id
+    prefer = str(
+        getattr(step, "prefer_realization", "")
+        or (getattr(step, "prediction", None) or {}).get("prefer_realization")
+        or ""
+    ).strip()
+    if prefer:
+        extras["prefer_realization"] = prefer
 
     return dispatch(
         CapabilityRequest(name=name, app=app, arg=arg, extras=extras),

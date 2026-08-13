@@ -5737,6 +5737,7 @@ def proposal_to_action(
         action_is_navigation=bool(na.get("action_is_navigation")),
         attempt_id=str(na.get("attempt_id") or "").strip(),
         legacy_semantics=bool(na.get("legacy_semantics")),
+        prefer_realization=str(na.get("prefer_realization") or "").strip(),
     )
     # The prediction, in the shape the transition and experience layers read. It
     # was empty on every model-chosen action, so record_outcome() compared each

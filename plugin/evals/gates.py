@@ -4922,7 +4922,8 @@ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
     if seal is None or "scroll_scan" not in (seal.why + seal.realization):
         return False, f"after failed verify must reseal next frontier method, got {seal}"
 
-    # High coverage without explicit negative → remains UNKNOWN.
+    # High coverage without explicit negative → no world-level NOT_ACHIEVED,
+    # but the attempt is verified_no_progress / locally exhausted.
     cov = ExecutionState()
     note_locate_outcome(
         cov,
@@ -4952,6 +4953,15 @@ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
     )
     if cov_out.get("effect_status") != "unknown":
         return False, f"coverage-without-explicit-negative must remain UNKNOWN, got {cov_out}"
+    if cov_out.get("verification") != "verified_no_progress":
+        return False, f"paid verify without patient must be verified_no_progress, got {cov_out}"
+    cov_frame = active_intention_frame(cov)
+    if cov_frame is None or cov_frame.method_frontier.status_of(
+        "locate_native_find"
+    ) != MethodStatus.INEFFECTIVE.value:
+        return False, "verified_no_progress must exhaust native_find in context"
+    if prefer_next_locate_realization(cov) != "scroll_scan":
+        return False, "after verified_no_progress MethodFrontier must prefer scroll_scan"
 
     # Explicit locate negative + good evidence → NOT_ACHIEVED.
     hq = ExecutionState()
