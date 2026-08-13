@@ -211,8 +211,38 @@ class ExecutionState:
     consecutive_stale_aborts: int = 0
     # Semantic target still valid; only geometry/frame is stale. Next meta must
     # PERCEIVE(reground) — do not treat as generic no_progress_replan / SEARCH.
+    # Scoped by commitment_id/patient when AffordanceCommitment drives recovery.
     grounding_reground_only: bool = False
     grounding_reground_target: str = ""
+    grounding_reground_commitment_id: str = ""
+    grounding_reground_patient_ref: str = ""
+    grounding_reground_method_id: str = ""
+    grounding_reground_owner_surface: str = ""
+    # reach_source: foreign open conversation ≠ source — leave/list before compose.
+    leave_wrong_conversation_owed: bool = False
+    leave_wrong_conversation_open: str = ""
+    leave_wrong_conversation_source: str = ""
+    # Visible actuatable source contact row ready to open (child of leave/open).
+    source_contact_open_ready: bool = False
+    source_contact_open_label: str = ""
+    # Wrong-locus recovery debt (field|container|patient) — meta must ACT/PERCEIVE
+    # recovery, not SEARCH/compose into the forbidden locus.
+    wrong_locus_recovery_owed: bool = False
+    wrong_locus_kind: str = ""
+    wrong_locus_forbidden: str = ""
+    wrong_locus_required: str = ""
+    wrong_locus_why: str = ""
+    # locate_content effect contract: execution_ok ≠ desired effect established.
+    last_locate_query: str = ""
+    last_locate_realization: str = ""
+    last_locate_found: bool = False
+    last_locate_effect_status: str = ""  # achieved|not_achieved|unknown|""
+    locate_effect_verify_owed: bool = False
+    # Epistemic SEARCH memory: prior locate/retrieval attempts + verify outcomes.
+    locate_attempt_ledger: List[Dict[str, Any]] = field(default_factory=list)
+    # Thin executive stickiness for known semantic affordances (refs + recovery
+    # state only). Stages/availability are derived — see affordance_commitment.py.
+    affordance_commitments: List[Dict[str, Any]] = field(default_factory=list)
     # Times the agent took the foreground back from another app mid-task. Purely
     # diagnostic — the reclaim itself is unconditional and uncapped, because the
     # interruptions it answers (a call, a notification) recur by nature.

@@ -37,6 +37,51 @@ DEFAULT_SEARCH_SCOPES = (
     "older_history",
 )
 
+# Generic fallback when RoleBinder / goal_match did not supply a constraint name.
+# Search must never invent domain-specific reasons like "originator mismatch".
+DEFAULT_ROLE_CONSTRAINT_MISMATCH = "required_role_constraint_mismatch"
+
+
+def role_rejection_reason_from_assessment(
+    assessment: Optional[Dict[str, Any]] = None,
+    *,
+    fallback: str = DEFAULT_ROLE_CONSTRAINT_MISMATCH,
+) -> str:
+    """Preserve structured role-failure evidence; never invent a domain reason.
+
+    Accepts ``goal_match`` / RoleAssessment-shaped dicts with ``constraints``,
+    ``missing_required``, or ``contradictions``.
+    """
+    gm = assessment if isinstance(assessment, dict) else {}
+    for cons in gm.get("constraints") or []:
+        if not isinstance(cons, dict):
+            continue
+        status = str(cons.get("status") or "").strip().lower()
+        if status not in {"mismatch", "missing", "failed", "unsatisfied"}:
+            continue
+        if cons.get("required") is False:
+            continue
+        name = str(cons.get("name") or cons.get("constraint") or "").strip()
+        if not name:
+            continue
+        if status == "missing":
+            return f"{name} missing"[:160]
+        return f"{name} mismatch"[:160]
+    for miss in gm.get("missing_required") or []:
+        name = str(miss or "").strip()
+        if name:
+            # "same_originator" / "originator" → human-readable mismatch token.
+            token = name.replace("same_", "").replace("_", " ")
+            return f"{token} mismatch"[:160]
+    for raw in gm.get("contradictions") or []:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        head = text.split(":", 1)[0].strip().replace("_", " ")
+        if head:
+            return head[:160]
+    return str(fallback or DEFAULT_ROLE_CONSTRAINT_MISMATCH)[:160]
+
 
 @dataclass
 class SearchIntent:
@@ -466,20 +511,24 @@ def advance_search_with_candidates(
         "role_rejected_labels": role_rejected_labels,
     }
     if just_rejected_unique:
+        gm = unique.get("goal_match") if isinstance(unique, dict) else None
+        reject_reason = role_rejection_reason_from_assessment(
+            gm if isinstance(gm, dict) else None
+        )
         ep["retrieval_complete"] = True
         ep["role_resolved"] = False
-        ep["role_unresolved_reason"] = "originator mismatch"
+        ep["role_unresolved_reason"] = reject_reason
         reasons = [
             str(x).strip()
             for x in list(ep.get("role_rejected_reasons") or [])
             if str(x).strip()
         ][:24]
-        if "originator mismatch" not in reasons:
-            reasons.append("originator mismatch")
+        if reject_reason and reject_reason not in reasons:
+            reasons.append(reject_reason)
         ep["role_rejected_reasons"] = reasons
         # Frontier produced a hit but no role-valid candidate — not a mechanism failure.
         ep["status"] = "exhausted"
-        ep["fail_reason"] = "originator mismatch"
+        ep["fail_reason"] = reject_reason
         status = "exhausted"
     if status == "failed" and rows and not filtered:
         ep["fail_reason"] = "no_candidate_fits_referent"
@@ -556,9 +605,9 @@ def note_retrieval_complete(
         for x in list(ep.get("role_rejected_reasons") or [])
         if str(x).strip()
     ][:24]
-    reason = str(role_unresolved_reason or "required identity constraint failed").strip()[
-        :160
-    ]
+    reason = str(
+        role_unresolved_reason or DEFAULT_ROLE_CONSTRAINT_MISMATCH
+    ).strip()[:160]
     if not role_resolved:
         if chosen_id is not None and chosen_id not in rejected_ids:
             rejected_ids.append(chosen_id)
@@ -625,6 +674,72 @@ def complete_search_choice(
     )
 
 
+def maybe_complete_source_contact_from_visible_row(
+    execution_state: Any,
+    *,
+    document: Optional[Dict[str, Any]] = None,
+    contact: str = "",
+    source_chat_open: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Mark source-role episode complete when an actuatable contact row is grounded.
+
+    Opening the source container is a different commitment than ranking
+    message/URL rows — do not require a typed link-query episode first
+    (live 145943: Pallavi chat_row visible under foreign open).
+    """
+    if execution_state is None or source_chat_open:
+        return None
+    src = str(contact or "").strip()
+    if not src:
+        return None
+    from plugin.agent.capabilities.resolve_entity import actuatable_source_contact_row
+
+    row = actuatable_source_contact_row(document, src)
+    if not isinstance(row, dict):
+        return None
+    label = str(row.get("text") or row.get("label") or row.get("name") or src).strip()
+    if not label:
+        return None
+    ep = search_episode_of(execution_state) or {}
+    status = str(ep.get("status") or "")
+    if status == "complete" and str(ep.get("chosen_label") or "").strip():
+        # Already chose something — keep when source-role choice still matches.
+        role = str(ep.get("role") or "").strip().lower()
+        chosen_n = _norm(ep.get("chosen_label"))
+        if role in {"", "source"} and (
+            chosen_n == _norm(label)
+            or chosen_n == _norm(src)
+            or _norm(src) in chosen_n
+            or chosen_n in _norm(label)
+        ):
+            return ep
+    if not ep or status in {"cleared", "inactive", "", "failed"}:
+        start_search_episode(
+            execution_state,
+            role="source",
+            referent=src,
+            query="",
+            evidence_tokens=[src],
+            space=space_for_surface(str((document or {}).get("surface") or "chat_list")),
+            reason="visible_source_contact_row",
+            status="ranking",
+        )
+    else:
+        try:
+            ep = dict(ep)
+            ep["role"] = "source"
+            ep["referent"] = src
+            execution_state.search_episode = ep
+        except Exception:
+            pass
+    return complete_search_choice(
+        execution_state,
+        chosen_label=label,
+        chosen_id=row.get("id"),
+        scores=[1.0],
+    )
+
+
 def fail_search_episode(
     execution_state: Any,
     *,
@@ -665,12 +780,14 @@ def fail_search_episode(
 def exhaust_search_episode(
     execution_state: Any,
     *,
-    reason: str = "originator mismatch",
+    reason: str = DEFAULT_ROLE_CONSTRAINT_MISMATCH,
 ) -> Dict[str, Any]:
     """Frontier exhausted: retrieval found hits but none are role-valid.
 
-    Distinct from ``failed`` (mechanism / empty find). Executive should broaden
-    or change search strategy, not treat this as a capability crash.
+    Distinct from ``failed`` (mechanism / empty find). Marks the *current*
+    search frontier exhausted; executive may still broaden query/scope or
+    change strategy. ``reason`` must come from role-authority evidence when
+    available — never a hardcoded domain relation.
     """
     if execution_state is None:
         return {}
@@ -679,7 +796,7 @@ def exhaust_search_episode(
     scope = _space_to_scope(str(ep.get("space") or "ui_filter"))
     if scope and scope not in explored:
         explored = explored + [scope]
-    reason_s = str(reason or "originator mismatch")[:160]
+    reason_s = str(reason or DEFAULT_ROLE_CONSTRAINT_MISMATCH)[:160]
     reasons = [
         str(x).strip()
         for x in list(ep.get("role_rejected_reasons") or [])
@@ -760,6 +877,8 @@ _FIND_STAGE_FAMILIES = frozenset(
         "type_query",
         "typequery",
         "search",
+        "locate_content",
+        "locatecontent",
     }
 )
 
@@ -808,11 +927,13 @@ def note_find_stage_outcome(
         "composesearchquery",
         "typequery",
         "search",
+        "locatecontent",
     }:
         return
     ep = search_episode_of(execution_state) or {}
     status = str(ep.get("status") or "")
     is_resolve = fam in {"resolve_entity", "resolveentity"} or compact == "resolveentity"
+    is_locate = fam in {"locate_content", "locatecontent"} or compact == "locatecontent"
     if ok:
         if status == "complete" and ep.get("chosen_label"):
             clear_search_retreat(execution_state)
@@ -823,6 +944,10 @@ def note_find_stage_outcome(
                 execution_state,
                 reason=str(message or "resolve_ok_without_choice")[:120],
             )
+        # locate ok≠effect: bookkeeping lives in note_locate_outcome; do not
+        # complete/fail the entity-resolution episode on AX-blind find.
+        if is_locate:
+            return
         return
     # Motor never fired — do not treat as a failed find / arm retreat.
     if _is_non_execution_find_refusal(message):
@@ -843,6 +968,10 @@ def note_find_stage_outcome(
     if status == "complete" and ep.get("chosen_label"):
         return
     if status == "failed" and bool(getattr(execution_state, "search_retreat_owed", False)):
+        return
+    # Content locate failures are method-ledger / effect-verify concerns, not
+    # entity-resolution episode failure (would wrongly arm search_retreat).
+    if is_locate:
         return
     fail_search_episode(
         execution_state,
@@ -1274,7 +1403,7 @@ def search_continue_capability(
                 holder,
                 reason=str(
                     ep.get("role_unresolved_reason")
-                    or "originator mismatch"
+                    or DEFAULT_ROLE_CONSTRAINT_MISMATCH
                 ),
             )
             try:
@@ -1326,12 +1455,15 @@ def search_continue_capability(
                             "search unique fit; commit binding-eligible candidate",
                         )
             else:
+                reject_reason = role_rejection_reason_from_assessment(
+                    gm if isinstance(gm, dict) else None
+                )
                 note_retrieval_complete(
                     holder,
                     chosen_label=label,
                     chosen_id=unique.get("id"),
                     role_resolved=False,
-                    role_unresolved_reason="originator mismatch",
+                    role_unresolved_reason=reject_reason,
                     candidate_count=1,
                 )
                 try:
@@ -1339,7 +1471,7 @@ def search_continue_capability(
                 except Exception:
                     pass
                 # Hard reject recorded — do not immediately reselect same candidate.
-                exhaust_search_episode(holder, reason="originator mismatch")
+                exhaust_search_episode(holder, reason=reject_reason)
                 try:
                     brief.search_episode = search_episode_of(holder)
                 except Exception:
@@ -1393,13 +1525,16 @@ def search_continue_capability(
                             label,
                             "search ranked; commit binding-eligible candidate",
                         )
+                reject_reason = role_rejection_reason_from_assessment(
+                    gm_top if isinstance(gm_top, dict) else None
+                )
                 note_retrieval_complete(
                     holder,
                     chosen_label=label,
                     chosen_id=top.get("id"),
                     scores=scores,
                     role_resolved=False,
-                    role_unresolved_reason="originator mismatch",
+                    role_unresolved_reason=reject_reason,
                     candidate_count=len(filtered),
                 )
                 try:
@@ -1410,7 +1545,7 @@ def search_continue_capability(
                 # Course-correct: drop the reject and pick another candidate.
                 remaining = exclude_role_rejected_candidates(filtered, ep)
                 if not remaining:
-                    exhaust_search_episode(holder, reason="originator mismatch")
+                    exhaust_search_episode(holder, reason=reject_reason)
                     try:
                         brief.search_episode = search_episode_of(holder)
                     except Exception:
@@ -1491,6 +1626,7 @@ def meta_referent_search_signals(
     surface: str = "",
     goal: Any = None,
     content_located: bool = False,
+    document: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Signals for MetaContext / meta packet about find-among-many."""
     from plugin.agent.executive.meta_action import SEARCH_STREAK_CAP
@@ -1523,10 +1659,44 @@ def meta_referent_search_signals(
         "verified",
         "commit",
     }
+    source_contact_open_ready = False
+    source_contact_open_label = ""
+    if contact and not source_chat_open and pre_source:
+        doc = document
+        if doc is None and execution_state is not None:
+            raw = getattr(execution_state, "unified_world_document", None)
+            doc = dict(raw) if isinstance(raw, dict) else {}
+        completed = maybe_complete_source_contact_from_visible_row(
+            execution_state,
+            document=doc if isinstance(doc, dict) else None,
+            contact=contact,
+            source_chat_open=source_chat_open,
+        )
+        if completed:
+            ep = completed
+            status = str(ep.get("status") or "")
+            incomplete = status in _STATUS_INCOMPLETE
+            complete = status == "complete" and bool(ep.get("chosen_label"))
+            source_contact_open_ready = True
+            source_contact_open_label = str(ep.get("chosen_label") or contact)
+        else:
+            from plugin.agent.capabilities.resolve_entity import (
+                actuatable_source_contact_row,
+            )
+
+            row = actuatable_source_contact_row(
+                doc if isinstance(doc, dict) else None, contact
+            )
+            if isinstance(row, dict):
+                source_contact_open_ready = True
+                source_contact_open_label = str(
+                    row.get("text") or row.get("label") or contact
+                ).strip()
     need_source = (
         (pre_source or (criteria and not post_source))
         and not source_chat_open
         and bool(contact or link_q)
+        and not source_contact_open_ready
     )
     # Container open ≠ content found: unpaid link/query still owes SEARCH
     # (live 214626: false/true source open + ACT on unrelated visible row).
@@ -1600,6 +1770,12 @@ def meta_referent_search_signals(
                 or (address_known and not need_source and not need_dest)
             )
         )
+    # Visible source contact row: ACT open_entity, not another compose SEARCH.
+    if source_contact_open_ready and not source_chat_open and not incomplete and not failed:
+        retrieve_ready = True
+        needed = False
+        if source_contact_open_label:
+            complete = True
     if retrieve_ready and not incomplete and not failed and not need_content:
         # Do not keep SEARCH owed when the referent address is already open
         # and unpaid content debt is cleared.
@@ -1625,7 +1801,7 @@ def meta_referent_search_signals(
         "role": str(ep.get("role") or ""),
         "referent": str(ep.get("referent") or contact or link_q or ""),
         "query": str(ep.get("query") or link_q or ""),
-        "chosen_label": str(ep.get("chosen_label") or ""),
+        "chosen_label": str(ep.get("chosen_label") or source_contact_open_label or ""),
         "candidate_count": int(ep.get("candidate_count") or 0),
         "space": str(ep.get("space") or ""),
         "contact": contact,
@@ -1633,6 +1809,8 @@ def meta_referent_search_signals(
         "content_located": bool(content_located),
         "address_known": address_known,
         "retrieve_ready": retrieve_ready,
+        "source_contact_open_ready": source_contact_open_ready,
+        "source_contact_open_label": source_contact_open_label,
         "has_criteria": has_search_criteria(
             episode=ep, goal=goal, referent=contact or link_q, query=link_q
         ),

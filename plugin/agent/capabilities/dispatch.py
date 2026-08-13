@@ -35,6 +35,7 @@ from plugin.agent.capabilities.locate_content import (
     LocateContent,
     LocateRequest,
     default_realizations,
+    note_locate_outcome,
 )
 from plugin.agent.capabilities.open_entity import open_entity, resolve_addressable
 from plugin.agent.capabilities.pointer_runtime import MacPointerRuntime
@@ -386,11 +387,42 @@ def _execute_locate(request: CapabilityRequest, overlay: Any) -> CapabilityOutco
     evidence = outcome.as_evidence()
     evidence["substrate"] = "searchable_surface"
     evidence["find_declared"] = surface.find_declared
+    # Compact evidence into message so live ExecResult (ok+message only) still
+    # carries EffectStatus UNKNOWN signals after AX-blind locate.
+    msg = (
+        f"realization={outcome.realization} steps={outcome.steps} "
+        f"text_match_reachable={outcome.found} "
+        f"surface_exhausted={outcome.exhausted} "
+        f"surface_changed={outcome.surface_changed} "
+        f"message={outcome.message}"
+    )
+    extras = request.extras or {}
+    exec_state = extras.get("execution_state")
+    if exec_state is not None:
+        try:
+            note_locate_outcome(
+                exec_state,
+                query=query,
+                ok=bool(outcome.ok),
+                found=bool(outcome.found),
+                realization=str(outcome.realization or ""),
+                message=str(outcome.message or ""),
+                surface_changed=bool(outcome.surface_changed),
+                exhausted=bool(outcome.exhausted),
+            )
+            evidence["effect_status"] = str(
+                getattr(exec_state, "last_locate_effect_status", "") or ""
+            )
+            evidence["locate_effect_verify_owed"] = bool(
+                getattr(exec_state, "locate_effect_verify_owed", False)
+            )
+        except Exception:
+            pass
     return CapabilityOutcome(
         ok=outcome.ok,
         capability="locate_content",
         realization=outcome.realization,
-        message=outcome.message,
+        message=msg,
         evidence=evidence,
     )
 

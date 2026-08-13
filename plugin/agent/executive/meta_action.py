@@ -182,6 +182,15 @@ class MetaContext:
     address_known: bool = False
     # Address known + unpaid content cleared → ACT/RETRIEVE, not SEARCH.
     retrieve_ready: bool = False
+    # Actuatable source contact row grounded → ACT open_entity, not compose SEARCH.
+    source_contact_open_ready: bool = False
+    # Foreign open conversation ≠ source → ACT leave/list before compose.
+    leave_wrong_conversation_owed: bool = False
+    # Wrong-locus recovery (field|container|patient) — ACT/PERCEIVE, not SEARCH.
+    wrong_locus_recovery_owed: bool = False
+    wrong_locus_kind: str = ""
+    # locate_content EffectStatus UNKNOWN — PERCEIVE verify before SEARCH replay.
+    locate_effect_verify_owed: bool = False
     # SEARCH admissibility: criteria known (sought/query). False → EXPLORE.
     search_has_criteria: bool = True
     # Content/referent known but goal affordance still latent → EXPLORE (route),
@@ -296,6 +305,89 @@ def select_meta_action(ctx: MetaContext) -> MetaChoice:
             {
                 "perceive": 1.0,
                 "grounding_reground_only": 1.0,
+                "forbid_search": 1.0,
+            },
+        )
+
+    # Visible source contact / leave-wrong-conversation: ACT before SEARCH compose
+    # (live 145943: foreign CoE open + Pallavi row → open, not compose_search).
+    if bool(getattr(ctx, "source_contact_open_ready", False)) and not bool(
+        getattr(ctx, "post_action_look_owed", False)
+    ):
+        return MetaChoice(
+            MetaAction.ACT,
+            "source contact row grounded — open_entity, not compose search",
+            {
+                "act": 1.0,
+                "source_contact_open_ready": 1.0,
+                "forbid_search": 1.0,
+            },
+        )
+    if (
+        bool(getattr(ctx, "leave_wrong_conversation_owed", False))
+        and not bool(getattr(ctx, "source_contact_open_ready", False))
+        and not bool(getattr(ctx, "post_action_look_owed", False))
+        and not bool(getattr(ctx, "last_action_surprised", False))
+    ):
+        return MetaChoice(
+            MetaAction.ACT,
+            "foreign conversation open — leave/list before compose search",
+            {
+                "act": 1.0,
+                "leave_wrong_conversation": 1.0,
+                "forbid_search": 1.0,
+            },
+        )
+    # Wrong-locus recovery (generalize leave-wrong): restore required locus
+    # before SEARCH/compose into the forbidden field/container/patient.
+    if (
+        bool(getattr(ctx, "wrong_locus_recovery_owed", False))
+        and not bool(getattr(ctx, "post_action_look_owed", False))
+        and not bool(getattr(ctx, "last_action_surprised", False))
+    ):
+        kind = str(getattr(ctx, "wrong_locus_kind", "") or "").strip().lower()
+        if kind == "field":
+            return MetaChoice(
+                MetaAction.ACT,
+                "wrong field locus — dismiss composer / open find, not compose",
+                {
+                    "act": 1.0,
+                    "wrong_locus_recovery": 1.0,
+                    "forbid_search": 1.0,
+                    "capability_hint": "dismiss_transient",
+                },
+                capability="dismiss_transient",
+            )
+        if kind == "patient":
+            return MetaChoice(
+                MetaAction.PERCEIVE,
+                "wrong patient locus — reground committed affordance",
+                {
+                    "perceive": 1.0,
+                    "wrong_locus_recovery": 1.0,
+                    "forbid_search": 1.0,
+                },
+            )
+        return MetaChoice(
+            MetaAction.ACT,
+            "wrong locus — restore required container/field before search",
+            {
+                "act": 1.0,
+                "wrong_locus_recovery": 1.0,
+                "forbid_search": 1.0,
+            },
+        )
+
+    # locate EffectStatus UNKNOWN: visually verify before SEARCH reseals locate.
+    if bool(getattr(ctx, "locate_effect_verify_owed", False)) and not bool(
+        getattr(ctx, "post_action_look_owed", False)
+    ):
+        return MetaChoice(
+            MetaAction.PERCEIVE,
+            "locate effect unknown — perceive verify before same-method SEARCH",
+            {
+                "perceive": 1.0,
+                "locate_effect_verify": 1.0,
                 "forbid_search": 1.0,
             },
         )

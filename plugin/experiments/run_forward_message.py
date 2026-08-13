@@ -361,12 +361,27 @@ def run_forward_message_live(
     source_l = source_contact.strip().lower()
     preclear_signature = view_ready.world_signature or ""
     preclear_repeat_count = 0
-    for preclear_attempt in range(1, 3):
-        open_c = (view_ready.open_conversation or "").lower()
-        on_source = bool(source_l) and (
-            source_l in open_c or any(t in open_c for t in source_l.split() if len(t) > 2)
+    for preclear_attempt in range(1, 5):
+        open_c = (view_ready.open_conversation or "").strip()
+        open_l = open_c.lower()
+        on_source = False
+        if source_l and open_l:
+            try:
+                from plugin.agent.capabilities.resolve_entity import open_matches_referent
+
+                on_source = open_matches_referent(open_c, source_contact)
+            except Exception:
+                on_source = bool(
+                    source_l in open_l
+                    or any(t in open_l for t in source_l.split() if len(t) > 2)
+                )
+        # WhatsApp split view can report LIST/SEARCH while a foreign conversation
+        # pane remains open (live 145943). Do not skip leave on screen alone.
+        foreign_pane = bool(open_c) and not on_source
+        list_clean = (
+            view_ready.screen in {"LIST", "SEARCH", "SEARCH_RESULTS"} and not foreign_pane
         )
-        if view_ready.screen in {"LIST", "SEARCH", "SEARCH_RESULTS"} or on_source:
+        if list_clean or on_source:
             break
         preclear_repeat_count, stalled = _note_preclear_signature(
             preclear_signature,
@@ -763,6 +778,12 @@ def run_forward_message_live(
                     "compose_search_query",
                     "composesearchquery",
                 }
+                # locate_content must hit capability dispatch (native find /
+                # scroll_scan + EffectStatus UNKNOWN latch) — never a bare type.
+                _dispatch_only_caps = {
+                    "locate_content",
+                    "locatecontent",
+                }
                 _use_actor = (
                     brief_ok
                     and brief.gesture
@@ -774,6 +795,7 @@ def run_forward_message_live(
                         "press_escape",
                     }
                     and _cap_name not in _judgment_caps
+                    and _cap_name not in _dispatch_only_caps
                 )
                 if _use_actor:
                     result = execute_actor(brief)

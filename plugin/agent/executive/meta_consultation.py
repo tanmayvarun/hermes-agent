@@ -64,6 +64,13 @@ Hard contract (runtime-enforced if you violate it):
   retreat_owed/failed as above.
 - If search.referent_search.retrieve_ready and NOT route_discovery_owed,
   choose act — not search (commit/open known address).
+- If search.referent_search.source_contact_open_ready, choose act open_entity —
+  not search/compose (visible source contact row already grounded).
+- If leave_wrong_conversation_owed and NOT source_contact_open_ready, choose act
+  leave/list (dismiss / Chats) — not search/compose into the foreign pane.
+- If wrong_locus_recovery_owed, choose act/perceive recovery for the required
+  locus (dismiss composer / leave foreign / reground patient) — never search
+  or compose into the forbidden locus.
 - If route_discovery_owed (content known, goal affordance latent) or
   incomplete_reveal / expected_overlay_missing after the look is paid,
   choose explore — not act on the same content. Route discovery is EXPLORE.
@@ -274,6 +281,21 @@ def meta_context_packet(
                 ),
                 "address_known": bool(getattr(ctx, "address_known", False)),
                 "retrieve_ready": bool(getattr(ctx, "retrieve_ready", False)),
+                "source_contact_open_ready": bool(
+                    getattr(ctx, "source_contact_open_ready", False)
+                ),
+                "leave_wrong_conversation_owed": bool(
+                    getattr(ctx, "leave_wrong_conversation_owed", False)
+                ),
+                "wrong_locus_recovery_owed": bool(
+                    getattr(ctx, "wrong_locus_recovery_owed", False)
+                ),
+                "wrong_locus_kind": str(
+                    getattr(ctx, "wrong_locus_kind", "") or ""
+                ),
+                "locate_effect_verify_owed": bool(
+                    getattr(ctx, "locate_effect_verify_owed", False)
+                ),
                 "has_criteria": bool(getattr(ctx, "search_has_criteria", True)),
                 "route_discovery_owed": bool(
                     getattr(ctx, "route_discovery_owed", False)
@@ -704,16 +726,82 @@ def sanitize_meta_choice(
 
     # Address known → RETRIEVE/ACT, not SEARCH — unless route discovery still owed.
     retrieve_ready = bool(getattr(ctx, "retrieve_ready", False))
-    if retrieve_ready and action is MetaAction.SEARCH and not route_owed:
+    source_contact_ready = bool(getattr(ctx, "source_contact_open_ready", False))
+    leave_wrong = bool(getattr(ctx, "leave_wrong_conversation_owed", False))
+    wrong_locus = bool(getattr(ctx, "wrong_locus_recovery_owed", False))
+    wrong_locus_kind = str(getattr(ctx, "wrong_locus_kind", "") or "").strip().lower()
+    if (
+        (retrieve_ready or source_contact_ready)
+        and action is MetaAction.SEARCH
+        and not route_owed
+    ):
         return MetaChoice(
             MetaAction.ACT,
-            "contract: address known — retrieve/act, not search",
+            (
+                "contract: source contact row grounded — open, not search"
+                if source_contact_ready
+                else "contract: address known — retrieve/act, not search"
+            ),
             {
                 "act": 1.0,
                 "retrieve": 1.0,
+                "source_contact_open_ready": 1.0 if source_contact_ready else 0.0,
                 "llm_proposed": action.value,
                 "source": "llm_contract",
             },
+        )
+    if (
+        leave_wrong
+        and not source_contact_ready
+        and action is MetaAction.SEARCH
+        and not route_owed
+    ):
+        return MetaChoice(
+            MetaAction.ACT,
+            "contract: foreign conversation open — leave/list, not search",
+            {
+                "act": 1.0,
+                "leave_wrong_conversation": 1.0,
+                "llm_proposed": action.value,
+                "source": "llm_contract",
+            },
+        )
+    locate_verify = bool(getattr(ctx, "locate_effect_verify_owed", False))
+    if locate_verify and action is MetaAction.SEARCH and not route_owed:
+        return MetaChoice(
+            MetaAction.PERCEIVE,
+            "contract: locate effect unknown — perceive verify, not same SEARCH",
+            {
+                "perceive": 1.0,
+                "locate_effect_verify": 1.0,
+                "llm_proposed": action.value,
+                "source": "llm_contract",
+            },
+        )
+    if wrong_locus and action is MetaAction.SEARCH and not route_owed:
+        if wrong_locus_kind == "patient":
+            return MetaChoice(
+                MetaAction.PERCEIVE,
+                "contract: wrong patient locus — perceive reground, not search",
+                {
+                    "perceive": 1.0,
+                    "wrong_locus_recovery": 1.0,
+                    "llm_proposed": action.value,
+                    "source": "llm_contract",
+                },
+            )
+        return MetaChoice(
+            MetaAction.ACT,
+            "contract: wrong locus — restore required locus, not search/compose",
+            {
+                "act": 1.0,
+                "wrong_locus_recovery": 1.0,
+                "llm_proposed": action.value,
+                "source": "llm_contract",
+            },
+            capability=(
+                "dismiss_transient" if wrong_locus_kind == "field" else ""
+            ),
         )
 
     # SEARCH requires criteria; without criteria → EXPLORE (affordance discovery).
@@ -733,6 +821,7 @@ def sanitize_meta_choice(
     # Find-among-many incomplete ⇒ SEARCH, not ACT commit (unless housekeeping).
     # Do not force SEARCH while retreat is owed — that re-enters a dead episode.
     # Do not force SEARCH when address is known (retrieve path).
+    # Do not force SEARCH when source contact row is open-ready or leave is owed.
     search_owed = (
         bool(
             getattr(ctx, "referent_search_needed", False)
@@ -741,6 +830,9 @@ def sanitize_meta_choice(
         and not bool(getattr(ctx, "search_episode_complete", False))
         and not retreat_owed
         and not retrieve_ready
+        and not source_contact_ready
+        and not leave_wrong
+        and not wrong_locus
     )
     if (
         search_owed

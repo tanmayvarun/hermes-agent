@@ -334,6 +334,7 @@ def _route_discovery_meta_kwargs(
         "reveal_prefer_capability": "",
         "intention_explore_active": False,
         "intention_locally_exhausted": False,
+        "locate_effect_verify_owed": False,
     }
     if execution_state is None:
         return out
@@ -369,8 +370,16 @@ def _route_discovery_meta_kwargs(
                     out["reveal_episode_failed"] = True
                 elif out["intention_explore_active"]:
                     out["reveal_episode_failed"] = False
+            elif pred in {"source_query_located", "content_located"}:
+                exhausted = is_local_route_exhausted(iframe) or iframe.status in {
+                    IntentionStatus.EXHAUSTED.value,
+                    IntentionStatus.BLOCKED.value,
+                }
+                out["intention_locally_exhausted"] = bool(exhausted)
     except Exception:
         pass
+    if bool(getattr(execution_state, "locate_effect_verify_owed", False)):
+        out["locate_effect_verify_owed"] = True
     handoff = getattr(execution_state, "reveal_handoff", None)
     handoff_failed = False
     handoff_pending = False
@@ -846,6 +855,9 @@ def assess_executive_judgement(
             source_open = bool(open_matches_referent(open_c, contact))
         else:
             source_open = False
+        # Settle verify + debt clear belong to the controller transition path
+        # (attempt-scoped). Sync must not erase mismatch debt merely because
+        # the correct conversation happens to be open.
         content_located = False
         try:
             extras = {}
@@ -870,16 +882,123 @@ def assess_executive_judgement(
             surface=surf,
             goal=goal_obj,
             content_located=content_located,
+            document=doc if isinstance(doc, dict) else None,
         )
         if search_exhausted:
             referent_signals["exhausted"] = True
+        # In-loop leave-wrong-conversation debt (live 145943): foreign open
+        # pane must not be treated as "already in a chat → hunt / compose".
+        ph_l = str(phase or contract.get("phase") or "").strip().lower().replace("-", "_")
+        leave_phases = {
+            "",
+            "reach_source",
+            "open_source",
+            "preclear",
+        }
+        source_row_ready = bool(referent_signals.get("source_contact_open_ready"))
+        if (
+            execution_state is not None
+            and ph_l in leave_phases
+            and open_c
+            and contact
+            and not source_open
+        ):
+            execution_state.leave_wrong_conversation_owed = True
+            execution_state.leave_wrong_conversation_open = open_c
+            execution_state.leave_wrong_conversation_source = contact
+            execution_state.source_contact_open_ready = source_row_ready
+            execution_state.source_contact_open_label = str(
+                referent_signals.get("source_contact_open_label") or ""
+            )
+            try:
+                from plugin.agent.capabilities.locus_contract import (
+                    stamp_wrong_locus_debt,
+                )
+
+                stamp_wrong_locus_debt(
+                    execution_state,
+                    kind="container",
+                    forbidden="foreign_container",
+                    required="open_matches_referent(source)",
+                    why=f"foreign_open:{open_c!r}!={contact!r}",
+                )
+            except Exception:
+                pass
+            # Drop stale reveal predictions while the source container is wrong.
+            exp = getattr(execution_state, "unified_last_expectation", None)
+            if (
+                isinstance(exp, dict)
+                and str(exp.get("surface") or "").strip().lower()
+                in {"context_menu", "action_menu", "selection_mode", "message_actions"}
+                and surf in {"search", "search_results", "chat_list", "conversation"}
+            ):
+                try:
+                    execution_state.unified_last_expectation = None
+                    execution_state.act_intention_pending = False
+                except Exception:
+                    pass
+        elif execution_state is not None:
+            execution_state.leave_wrong_conversation_owed = False
+            execution_state.leave_wrong_conversation_open = ""
+            execution_state.leave_wrong_conversation_source = ""
+            execution_state.source_contact_open_ready = source_row_ready and not source_open
+            execution_state.source_contact_open_label = (
+                str(referent_signals.get("source_contact_open_label") or "")
+                if (source_row_ready and not source_open)
+                else ""
+            )
+            # Clear container wrong-locus debt once source is open / leave resolved.
+            if str(getattr(execution_state, "wrong_locus_kind", "") or "") in {
+                "",
+                "container",
+            }:
+                try:
+                    from plugin.agent.capabilities.locus_contract import (
+                        clear_wrong_locus_debt,
+                    )
+
+                    clear_wrong_locus_debt(execution_state)
+                except Exception:
+                    pass
+        # Field wrong-locus: composer focused while hunting content.
+        if execution_state is not None:
+            role = str(
+                (doc or {}).get("focused_field_role")
+                or getattr(execution_state, "focused_field_role", "")
+                or ""
+            ).strip().lower()
+            from plugin.agent.capabilities.locus_contract import (
+                COMPOSER_FIELD_ROLES,
+                FILTER_FIELD_ROLES,
+                clear_wrong_locus_debt,
+                stamp_wrong_locus_debt,
+            )
+
+            if role in COMPOSER_FIELD_ROLES and source_open:
+                # Past container-open: composer focus must not become type locus.
+                stamp_wrong_locus_debt(
+                    execution_state,
+                    kind="field",
+                    forbidden="composer",
+                    required="filter_field",
+                    why=f"composer_focused:{role}",
+                )
+            elif role in FILTER_FIELD_ROLES and str(
+                getattr(execution_state, "wrong_locus_kind", "") or ""
+            ) == "field":
+                clear_wrong_locus_debt(execution_state)
     except Exception:
         referent_signals = {}
 
+    locate_verify_owed = bool(
+        getattr(execution_state, "locate_effect_verify_owed", False)
+    )
     meta_ctx = MetaContext(
         sufficiency=sufficiency,
         has_grounded_action=bool(has_grounded_action),
-        awaiting_verification=bool(awaiting_verification) or post_action_look_owed,
+        awaiting_verification=(
+            bool(awaiting_verification) or post_action_look_owed or locate_verify_owed
+        ),
         last_action_surprised=bool(last_action_surprised),
         post_action_look_owed=post_action_look_owed,
         branch_stale=branch_stale,
@@ -913,6 +1032,18 @@ def assess_executive_judgement(
         else None,
         address_known=bool(referent_signals.get("address_known")),
         retrieve_ready=bool(referent_signals.get("retrieve_ready")),
+        source_contact_open_ready=bool(
+            referent_signals.get("source_contact_open_ready")
+        ),
+        leave_wrong_conversation_owed=bool(
+            getattr(execution_state, "leave_wrong_conversation_owed", False)
+        ),
+        wrong_locus_recovery_owed=bool(
+            getattr(execution_state, "wrong_locus_recovery_owed", False)
+        ),
+        wrong_locus_kind=str(
+            getattr(execution_state, "wrong_locus_kind", "") or ""
+        ),
         search_has_criteria=bool(
             referent_signals.get("has_criteria")
             if "has_criteria" in referent_signals

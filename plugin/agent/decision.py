@@ -703,7 +703,11 @@ class DecisionEngine:
             )
             publish_brain_choice(features, proposal, brain_trace)
             cand_action, cand_reason = proposal_to_action(
-                proposal, goal, world, features
+                proposal,
+                goal,
+                world,
+                features,
+                execution_state=execution_state,
             )
             if cand_action is not None:
                 action, reason, action_rank = cand_action, cand_reason, 0
@@ -1445,6 +1449,15 @@ class DecisionEngine:
             features.extras["last_locate_query"] = locate_q
             features.extras["last_locate_realization"] = str(
                 getattr(execution_state, "last_locate_realization", "") or ""
+            )
+            features.extras["last_locate_found"] = bool(
+                getattr(execution_state, "last_locate_found", False)
+            )
+            features.extras["last_locate_effect_status"] = str(
+                getattr(execution_state, "last_locate_effect_status", "") or ""
+            )
+            features.extras["locate_effect_verify_owed"] = bool(
+                getattr(execution_state, "locate_effect_verify_owed", False)
             )
         doc = getattr(execution_state, "unified_world_document", None)
         if isinstance(doc, dict) and doc:

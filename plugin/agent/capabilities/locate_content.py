@@ -46,7 +46,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +151,12 @@ class LocatorRuntime(Protocol):
     def text_input_focused(self) -> bool:
         """Whether a text field is focused and ready to receive the query."""
 
+    def filter_field_ready(self) -> bool:
+        """Whether a *filter/find* field (not a message composer) is ready.
+
+        Optional for older fakes: NativeFind uses getattr and fails closed.
+        """
+
 
 @runtime_checkable
 class ContentLocator(Protocol):
@@ -201,15 +207,25 @@ class NativeFind:
         return bool(request.query.strip())
 
     def _find_opened(self, runtime: LocatorRuntime, before: str) -> bool:
+        """Fail closed: only type when a filter/find field is evidenced.
+
+        Bare ``text_input_focused()`` is insufficient (composer often holds
+        focus). Surface-signature change alone is also insufficient (Cmd+F
+        no-op can still churn chrome while the composer stays focused).
+        """
         for _ in range(self._CONFIRM_ATTEMPTS):
-            if runtime.text_input_focused():
+            ready = getattr(runtime, "filter_field_ready", None)
+            if callable(ready) and bool(ready()):
                 return True
-            # A surface that visibly changed also counts: some apps expose the
-            # find bar without marking it focused, and refusing those would
-            # discard the affordance over a reporting quirk.
-            if runtime.surface_signature() != before:
+            # Legacy fakes that only expose text_input_focused + find_field_open:
+            # accept focused input only when they also claim filter readiness via
+            # attribute, never on composer-only focus.
+            if bool(getattr(runtime, "find_field_open", False)) and runtime.text_input_focused():
                 return True
             time.sleep(self._CONFIRM_INTERVAL)
+            # `before` kept for call-site compatibility; signature change alone
+            # must not authorize typing.
+            _ = before
         return False
 
     def locate(self, request: LocateRequest, runtime: LocatorRuntime) -> LocateOutcome:
@@ -404,3 +420,525 @@ MACOS_FIND = FindAffordance(
     next_match=KeyChord(code=36),  # Return steps to the first/next hit
     dismiss=KeyChord(code=53),  # Escape
 )
+
+
+# --- EffectStatus UNKNOWN contract (execution_ok ≠ effect established) --------
+
+_LOCATE_METHOD_IDS = {
+    "native_find": "locate_native_find",
+    "scroll_scan": "locate_scroll_scan",
+}
+_LOCATE_REALIZATION_FROM_METHOD = {v: k for k, v in _LOCATE_METHOD_IDS.items()}
+
+# Observation substrate cannot answer found/not-found → EffectStatus UNKNOWN.
+_BLIND_OBSERVATION_NEEDLES = (
+    "accessibility text unavailable",
+    "screen must be read",
+    "ax_probe_blind",
+    "ax blind",
+    "too blind",
+    "must be read",
+)
+# Reliable probe saw the surface and reported absence → NOT_ACHIEVED (not UNKNOWN).
+_RELIABLE_NEGATIVE_NEEDLES = (
+    "without a match",
+    "no match",
+    "budget reached",
+    "stopped changing",
+    "surface stopped changing",
+)
+
+
+def locate_method_id(realization: str = "") -> str:
+    r = str(realization or "").strip().lower()
+    return _LOCATE_METHOD_IDS.get(r, f"locate_{r or 'unknown'}")
+
+
+def classify_locate_effect_status(
+    *,
+    ok: bool,
+    found: bool,
+    message: str = "",
+    exhausted: bool = False,
+) -> Dict[str, Any]:
+    """Map locate evidence → EffectStatus + observation quality.
+
+    ``ok && !found`` is **not** universally UNKNOWN:
+
+    - blind / insufficient observation substrate → UNKNOWN (verify owed)
+    - trustworthy negative or exhausted searchable domain → NOT_ACHIEVED
+    """
+    msg = str(message or "").lower()
+    if not ok:
+        return {
+            "effect_status": "not_achieved",
+            "observation_quality": 0.7,
+            "reason": "execution_failed",
+        }
+    if found:
+        return {
+            "effect_status": "achieved",
+            "observation_quality": 0.85,
+            "reason": "text_match_reachable",
+        }
+    blind = any(n in msg for n in _BLIND_OBSERVATION_NEEDLES)
+    if blind:
+        return {
+            "effect_status": "unknown",
+            "observation_quality": 0.35,
+            "reason": "observation_substrate_blind",
+        }
+    if exhausted:
+        return {
+            "effect_status": "not_achieved",
+            "observation_quality": 0.8,
+            "reason": "search_domain_exhausted",
+        }
+    if any(n in msg for n in _RELIABLE_NEGATIVE_NEEDLES):
+        return {
+            "effect_status": "not_achieved",
+            "observation_quality": 0.75,
+            "reason": "reliable_negative_observation",
+        }
+    # Probe completed without a blindness claim → treat as negative evidence.
+    return {
+        "effect_status": "not_achieved",
+        "observation_quality": 0.7,
+        "reason": "reliable_negative_default",
+    }
+
+
+def same_locate_unresolved(execution_state: Any, *, query: str = "") -> bool:
+    """True when an identical locate must not be replayed (effect still UNKNOWN).
+
+    While verify is pending, block. After resolve, MethodFrontier may advance —
+    this helper only forbids *same-method* reseal, not frontier advancement.
+    """
+    if execution_state is None:
+        return False
+    q = str(query or getattr(execution_state, "last_locate_query", "") or "").strip()
+    last_q = str(getattr(execution_state, "last_locate_query", "") or "").strip()
+    if q and last_q and q.lower() != last_q.lower():
+        return False
+    if bool(getattr(execution_state, "locate_effect_verify_owed", False)):
+        return True
+    try:
+        from plugin.agent.executive.intention_frame import active_intention_frame
+
+        iframe = active_intention_frame(execution_state)
+        if iframe is not None and bool(iframe.pending_effect_verification):
+            pred = str(getattr(iframe.intention, "success_predicate", "") or "")
+            if "located" in pred or "source_query" in pred:
+                return True
+    except Exception:
+        pass
+    # Frontier has another eligible SEARCH method → not same-method unresolved.
+    if prefer_next_locate_realization(execution_state):
+        return False
+    status = str(getattr(execution_state, "last_locate_effect_status", "") or "").lower()
+    if status in {"not_achieved", "unknown"} and last_q:
+        return True
+    return False
+
+
+def _ensure_locate_search_frame(execution_state: Any, *, query: str):
+    """Open/reuse SEARCH IntentionFrame with a MethodFrontier of locate methods."""
+    from plugin.agent.executive.intention_frame import (
+        EffectSpec,
+        Intention,
+        IntentionBudget,
+        IntentionFrame,
+        IntentionOrigin,
+        MethodFrontier,
+        MethodProvenance,
+        MethodSpec,
+        RetryPolicy,
+        RetrySafety,
+        ScoringPolicy,
+        active_intention_frame,
+        new_intention_id,
+        push_intention_frame,
+    )
+
+    iframe = active_intention_frame(execution_state)
+    want_pred = "source_query_located"
+    if iframe is not None and str(
+        getattr(iframe.intention, "success_predicate", "") or ""
+    ) in {want_pred, "content_located", "source_query_located"}:
+        # Ensure catalog knows both generic locate methods.
+        cat = iframe.method_frontier.catalog
+        if "locate_native_find" not in cat or "locate_scroll_scan" not in cat:
+            for mid, settle in (
+                ("locate_native_find", 800),
+                ("locate_scroll_scan", 1200),
+            ):
+                if mid not in cat:
+                    cat[mid] = MethodSpec(
+                        id=mid,
+                        capability="locate_content",
+                        expected_effect=EffectSpec(
+                            success_any=["source_query_located", "text_match_reachable"],
+                            settle_window_ms=settle,
+                        ),
+                        retry_safety=(
+                            RetrySafety.VERIFY_BEFORE_RETRY.value
+                            if mid == "locate_native_find"
+                            else RetrySafety.SAFE_TO_RETRY.value
+                        ),
+                        provenance=MethodProvenance.GENERIC_PRIOR.value,
+                        reversibility=0.95 if mid == "locate_native_find" else 0.9,
+                        risk=0.1 if mid == "locate_native_find" else 0.15,
+                    )
+                    if mid not in iframe.method_frontier.known_untried:
+                        iframe.method_frontier.known_untried.append(mid)
+        return iframe
+
+    catalog = {
+        "locate_native_find": MethodSpec(
+            id="locate_native_find",
+            capability="locate_content",
+            expected_effect=EffectSpec(
+                success_any=["source_query_located", "text_match_reachable"],
+                settle_window_ms=800,
+            ),
+            retry_safety=RetrySafety.VERIFY_BEFORE_RETRY.value,
+            provenance=MethodProvenance.GENERIC_PRIOR.value,
+            reversibility=0.95,
+            risk=0.1,
+        ),
+        "locate_scroll_scan": MethodSpec(
+            id="locate_scroll_scan",
+            capability="locate_content",
+            expected_effect=EffectSpec(
+                success_any=["source_query_located", "text_match_reachable"],
+                settle_window_ms=1200,
+            ),
+            retry_safety=RetrySafety.SAFE_TO_RETRY.value,
+            provenance=MethodProvenance.GENERIC_PRIOR.value,
+            reversibility=0.9,
+            risk=0.15,
+        ),
+    }
+    iframe = IntentionFrame(
+        intention=Intention(
+            id=new_intention_id(),
+            objective=f"Locate content matching {query!r} on the open surface",
+            success_predicate=want_pred,
+            scope="current_searchable_surface",
+            created_from=IntentionOrigin(
+                kind="executive_decision",
+                triggering_uncertainty="source_query_unlocated",
+            ),
+        ),
+        originating_meta_action="search",
+        scoring_policy=ScoringPolicy.for_meta("search"),
+        method_frontier=MethodFrontier(
+            known_untried=list(catalog.keys()),
+            catalog=catalog,
+        ),
+        retry_policy=RetryPolicy(same_method_max=1, try_alternatives=True),
+        budget=IntentionBudget(
+            max_methods=4, max_wall_time_s=60.0, max_perception_calls=8
+        ),
+    )
+    push_intention_frame(execution_state, iframe)
+    return iframe
+
+
+def note_locate_outcome(
+    execution_state: Any,
+    *,
+    query: str,
+    ok: bool,
+    found: bool,
+    realization: str = "",
+    message: str = "",
+    surface_changed: bool = False,
+    exhausted: bool = False,
+) -> Dict[str, Any]:
+    """Latch locate evidence into ExecutionState + IntentionFrame.
+
+    Mirror of ``note_reveal_probe_handoff`` for searchable-surface locate:
+
+    - ACHIEVED when match reachable
+    - UNKNOWN only when observation/verification quality is insufficient
+    - NOT_ACHIEVED for trustworthy negatives / exhausted search (no PERCEIVE debt)
+    """
+    out: Dict[str, Any] = {}
+    if execution_state is None:
+        return out
+    q = str(query or "").strip()
+    mid = locate_method_id(realization)
+    classified = classify_locate_effect_status(
+        ok=ok, found=found, message=message, exhausted=exhausted
+    )
+    effect_status = str(classified["effect_status"])
+    obs_q = float(classified["observation_quality"])
+    reason = str(classified["reason"])
+    try:
+        execution_state.last_locate_query = q
+        execution_state.last_locate_realization = str(realization or "")[:40]
+        execution_state.last_locate_found = bool(found)
+        execution_state.last_locate_effect_status = effect_status
+    except Exception:
+        pass
+
+    ledger = list(getattr(execution_state, "locate_attempt_ledger", None) or [])
+    entry = {
+        "query": q[:80],
+        "realization": str(realization or "")[:40],
+        "method_id": mid,
+        "execution_ok": bool(ok),
+        "found": bool(found),
+        "surface_changed": bool(surface_changed),
+        "surface_exhausted": bool(exhausted),
+        "effect_status": effect_status,
+        "classify_reason": reason,
+        "message": str(message or "")[:160],
+    }
+    ledger.append(entry)
+    execution_state.locate_attempt_ledger = ledger[-12:]
+    out["ledger_entry"] = entry
+    out["classify_reason"] = reason
+
+    try:
+        from plugin.agent.executive.intention_frame import (
+            AttemptRecord,
+            AttemptValidity,
+            FailureClass,
+            MethodOutcome,
+            MethodStatus,
+            apply_derived_status,
+            mark_method_attempted,
+            mark_method_ineligible,
+            motivated_perceive_packet,
+            record_method_status,
+        )
+
+        iframe = _ensure_locate_search_frame(execution_state, query=q)
+        mark_method_attempted(iframe, mid)
+        if effect_status == "achieved":
+            record_method_status(iframe, mid, MethodStatus.SUCCEEDED.value)
+            iframe.pending_effect_verification = False
+            execution_state.locate_effect_verify_owed = False
+            iframe.attempts.append(
+                AttemptRecord(
+                    method_id=mid,
+                    execution_status="motor_ok",
+                    observation_quality=obs_q,
+                    method_outcome=MethodOutcome.EFFECT_OBSERVED.value,
+                    attempt_validity=AttemptValidity.VALID.value,
+                    method_status=MethodStatus.SUCCEEDED.value,
+                    evidence_refs=["text_match_reachable", reason],
+                )
+            )
+        elif effect_status == "unknown":
+            # Insufficient observation — arm verify. Method not semantically
+            # disproven: UNTRIED + currently_ineligible until verify resolves.
+            mark_method_ineligible(iframe, mid)
+            iframe.pending_effect_verification = True
+            execution_state.locate_effect_verify_owed = True
+            motivated_perceive_packet(
+                iframe,
+                purpose="effect_verification",
+                question=(
+                    f"Did locate({q!r} via {realization or 'find'}) surface a "
+                    "binding-eligible content patient for the source query?"
+                ),
+                focus="searchable_surface_content",
+            )
+            iframe.attempts.append(
+                AttemptRecord(
+                    method_id=mid,
+                    execution_status="motor_ok",
+                    observation_quality=obs_q,
+                    method_outcome=MethodOutcome.EFFECT_UNCERTAIN.value,
+                    failure_class=FailureClass.EFFECT_UNCERTAIN.value,
+                    attempt_validity=AttemptValidity.EFFECT_UNCERTAIN.value,
+                    method_status=MethodStatus.UNTRIED.value,
+                    evidence_refs=[reason, "effect_unknown"],
+                )
+            )
+            out["pending_effect_verification"] = True
+        else:
+            # Trustworthy negative / exhausted / execution fail — method ineffective
+            # in this MethodContext; no visual-verify debt.
+            record_method_status(iframe, mid, MethodStatus.INEFFECTIVE.value)
+            mark_method_ineligible(iframe, mid)
+            iframe.pending_effect_verification = False
+            execution_state.locate_effect_verify_owed = False
+            iframe.attempts.append(
+                AttemptRecord(
+                    method_id=mid,
+                    execution_status="motor_fail" if not ok else "motor_ok",
+                    observation_quality=obs_q,
+                    method_outcome=MethodOutcome.EFFECT_ABSENT.value,
+                    failure_class=FailureClass.METHOD_INEFFECTIVE.value,
+                    attempt_validity=AttemptValidity.VALID.value,
+                    method_status=MethodStatus.INEFFECTIVE.value,
+                    evidence_refs=[reason, str(message or "locate_failed")[:80]],
+                )
+            )
+        apply_derived_status(iframe)
+        out["intention_id"] = iframe.intention.id
+        out["effect_status"] = effect_status
+        out["method_id"] = mid
+        out["eligible_methods"] = list(iframe.method_frontier.eligible_methods())
+    except Exception as exc:
+        logger.debug("note_locate_outcome intention bookkeeping failed: %s", exc)
+        if effect_status == "unknown":
+            try:
+                execution_state.locate_effect_verify_owed = True
+            except Exception:
+                pass
+    return out
+
+
+def resolve_locate_effect_verification(
+    execution_state: Any,
+    *,
+    content_located: bool = False,
+    query_visible: bool = False,
+    still_unobservable: bool = False,
+) -> Dict[str, Any]:
+    """Close locate EffectStatus UNKNOWN after a verify PERCEIVE.
+
+    ACHIEVED → clear debt; method succeeded.
+    NOT_ACHIEVED (observed absence) → METHOD_INEFFECTIVE in this context.
+    STILL_UNOBSERVABLE → clear verify debt; method stays *currently ineligible*
+    but is **not** semantically INEFFECTIVE (lack of observability ≠ doesn't work).
+    """
+    out: Dict[str, Any] = {"resolved": False}
+    if execution_state is None:
+        return out
+    if not bool(getattr(execution_state, "locate_effect_verify_owed", False)):
+        try:
+            from plugin.agent.executive.intention_frame import active_intention_frame
+
+            iframe = active_intention_frame(execution_state)
+            if iframe is None or not iframe.pending_effect_verification:
+                return out
+        except Exception:
+            return out
+
+    mid = locate_method_id(str(getattr(execution_state, "last_locate_realization", "") or ""))
+    try:
+        from plugin.agent.executive.intention_frame import (
+            AttemptRecord,
+            AttemptValidity,
+            FailureClass,
+            MethodOutcome,
+            MethodStatus,
+            active_intention_frame,
+            apply_derived_status,
+            mark_method_ineligible,
+            record_method_status,
+        )
+
+        iframe = active_intention_frame(execution_state)
+        if content_located or query_visible:
+            execution_state.locate_effect_verify_owed = False
+            execution_state.last_locate_effect_status = "achieved"
+            execution_state.last_locate_found = True
+            if iframe is not None:
+                iframe.pending_effect_verification = False
+                record_method_status(iframe, mid, MethodStatus.SUCCEEDED.value)
+                apply_derived_status(iframe)
+            out.update({"resolved": True, "effect_status": "achieved"})
+            return out
+
+        execution_state.locate_effect_verify_owed = False
+        if still_unobservable:
+            # Epistemically unresolved: do not accumulate false "method fails".
+            execution_state.last_locate_effect_status = "unknown"
+            if iframe is not None:
+                iframe.pending_effect_verification = False
+                mark_method_ineligible(iframe, mid)
+                # Keep MethodStatus UNTRIED — currently_ineligible blocks replay.
+                iframe.attempts.append(
+                    AttemptRecord(
+                        method_id=mid,
+                        execution_status="motor_ok",
+                        observation_quality=0.3,
+                        method_outcome=MethodOutcome.EFFECT_UNCERTAIN.value,
+                        failure_class=FailureClass.EFFECT_UNCERTAIN.value,
+                        attempt_validity=AttemptValidity.EFFECT_UNCERTAIN.value,
+                        method_status=MethodStatus.UNTRIED.value,
+                        evidence_refs=["visual_still_unobservable"],
+                    )
+                )
+                apply_derived_status(iframe)
+                out["eligible_methods"] = list(iframe.method_frontier.eligible_methods())
+        else:
+            execution_state.last_locate_effect_status = "not_achieved"
+            if iframe is not None:
+                iframe.pending_effect_verification = False
+                record_method_status(iframe, mid, MethodStatus.INEFFECTIVE.value)
+                mark_method_ineligible(iframe, mid)
+                iframe.attempts.append(
+                    AttemptRecord(
+                        method_id=mid,
+                        execution_status="motor_ok",
+                        observation_quality=0.6,
+                        method_outcome=MethodOutcome.EFFECT_ABSENT.value,
+                        failure_class=FailureClass.METHOD_INEFFECTIVE.value,
+                        attempt_validity=AttemptValidity.VALID.value,
+                        method_status=MethodStatus.INEFFECTIVE.value,
+                        evidence_refs=["visual_verify_no_query_patient"],
+                    )
+                )
+                apply_derived_status(iframe)
+                out["eligible_methods"] = list(iframe.method_frontier.eligible_methods())
+        ledger = list(getattr(execution_state, "locate_attempt_ledger", None) or [])
+        if ledger:
+            last = dict(ledger[-1])
+            last["verification"] = (
+                "still_unobservable" if still_unobservable else "not_achieved"
+            )
+            ledger[-1] = last
+            execution_state.locate_attempt_ledger = ledger
+        out.update(
+            {
+                "resolved": True,
+                "effect_status": execution_state.last_locate_effect_status,
+                "advance_method": True,
+            }
+        )
+    except Exception as exc:
+        logger.debug("resolve_locate_effect_verification failed: %s", exc)
+        try:
+            execution_state.locate_effect_verify_owed = False
+        except Exception:
+            pass
+    return out
+
+
+def prefer_next_locate_realization(execution_state: Any) -> str:
+    """Next locate realization from MethodFrontier.eligible_methods() — not a ladder.
+
+    ``scroll_scan`` is one registered MethodSpec; the frontier ranks what remains
+    eligible after the current method route is ineligible / ineffective.
+    """
+    if execution_state is None:
+        return ""
+    if bool(getattr(execution_state, "locate_effect_verify_owed", False)):
+        return ""
+    try:
+        from plugin.agent.executive.intention_frame import active_intention_frame
+
+        iframe = active_intention_frame(execution_state)
+        if iframe is None:
+            return ""
+        current = locate_method_id(
+            str(getattr(execution_state, "last_locate_realization", "") or "")
+        )
+        for mid in iframe.method_frontier.eligible_methods():
+            if mid == current:
+                continue
+            if mid in _LOCATE_REALIZATION_FROM_METHOD:
+                return _LOCATE_REALIZATION_FROM_METHOD[mid]
+            if str(mid).startswith("locate_"):
+                return str(mid)[len("locate_") :]
+        return ""
+    except Exception:
+        return ""
