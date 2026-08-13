@@ -986,6 +986,21 @@ _SEARCH_SCOPE_FAMILIES: Set[str] = {
     "search",
 }
 
+# open_entity / open_contact navigate into a container. A look may wish for a
+# message-action surface (context_menu) because the *goal* is forward — that
+# wish must not become the open act's prediction (live 131030: OpenEntity +
+# context_menu → motor OK, effect missing, retry thrash).
+_OPEN_NAV_FAMILIES: Set[str] = {
+    "open_entity",
+    "open_contact",
+}
+_REVEAL_EFFECT_SURFACES: Set[str] = {
+    "context_menu",
+    "action_menu",
+    "selection_mode",
+    "message_actions",
+}
+
 
 def intention_expectation_from_decision(decision: Any) -> Dict[str, Any]:
     """What this ACT claims the next perceive should show.
@@ -1047,6 +1062,14 @@ def intention_expectation_from_decision(decision: Any) -> Dict[str, Any]:
             if str(c).strip().lower()
             not in {"message_bubbles", "input_field", "header_info", "composer"}
         ]
+    elif fam in _OPEN_NAV_FAMILIES and (
+        not surface or surface in _REVEAL_EFFECT_SURFACES
+    ):
+        # Desired-effect coherence: OpenEntity claims container open, never
+        # reveal/select surfaces. Reveal-shaped wishes belong to reveal_actions.
+        default = _FAMILY_ACT_INTENTION.get(fam) or ("conversation", [])
+        surface, default_controls = default
+        controls = list(default_controls)
     elif not surface:
         if fam == "invoke_affordance" and target.lower() in {"forward", "share"}:
             surface, controls = "forward_picker", ["search contacts", "cancel", "Tanmay"]
@@ -1094,6 +1117,18 @@ def stamp_act_intention(execution_state: Any, decision: Any) -> Dict[str, Any]:
         execution_state.unified_last_expectation = dict(expectation)
         execution_state.act_intention_pending = True
         execution_state.active_attempt_id = attempt_id
+        # Immutable causal stamp on the Action / plan step (not ambient-only).
+        try:
+            if decision is not None and hasattr(decision, "attempt_id"):
+                decision.attempt_id = attempt_id
+        except Exception:
+            pass
+        try:
+            step = getattr(execution_state, "last_plan_step", None)
+            if step is not None and hasattr(step, "attempt_id"):
+                step.attempt_id = attempt_id
+        except Exception:
+            pass
         fam = str(expectation.get("action_family") or "").strip().lower()
         if fam and fam not in {"observe", "perceive", "look"}:
             execution_state.last_instrumental_family = fam
@@ -1714,6 +1749,59 @@ def build_decision_packet(
             "active_interaction_surface"
         )
 
+    # Locate effect verification: answer the named YES/NO/UNKNOWN question —
+    # do not invent absence from a capped object inventory.
+    if execution_state is not None and bool(
+        getattr(execution_state, "locate_effect_verify_owed", False)
+    ):
+        link_q = str(getattr(execution_state, "last_locate_query", "") or "").strip()
+        realize = str(
+            getattr(execution_state, "last_locate_realization", "") or ""
+        ).strip()
+        verify_q = (
+            f"Did locate({link_q!r} via {realize or 'find'}) surface a "
+            "binding-eligible content patient for the source query?"
+        )
+        try:
+            from plugin.agent.executive.intention_frame import active_intention_frame
+
+            iframe = active_intention_frame(execution_state)
+            pkt = getattr(iframe, "last_motivated_perceive", None) if iframe else None
+            if isinstance(pkt, dict) and str(pkt.get("question") or "").strip():
+                verify_q = str(pkt.get("question")).strip()
+        except Exception:
+            pass
+        locate_obj = {
+            "questions": [verify_q],
+            "focus": "searchable_surface_content",
+            "depth": "deep",
+            "objective": "locate_effect_verification",
+            "completion_condition": (
+                "Answer the locate-effect question explicitly: set "
+                "world_model.locate_effect_answer to yes|no|unknown. "
+                "If no and you can establish absence of the query patient, "
+                "also set world_model.source_query_not_surfaced=true. "
+                "Missing from the top-10 objects inventory alone is not enough "
+                "for no — use unknown when unsure."
+            ),
+        }
+        prior = packet.get("perception_objective")
+        if isinstance(prior, dict) and (prior.get("questions") or prior.get("objective")):
+            merged_q = list(prior.get("questions") or [])
+            for q in locate_obj["questions"]:
+                if q not in merged_q:
+                    merged_q.insert(0, q)
+            packet["perception_objective"] = {
+                **prior,
+                "questions": merged_q[:8],
+                "focus": str(prior.get("focus") or locate_obj["focus"]),
+                "depth": "deep",
+                "objective": "locate_effect_verification",
+                "completion_condition": locate_obj["completion_condition"],
+            }
+        else:
+            packet["perception_objective"] = locate_obj
+
     reflect = _reflect_packet(execution_state)
     if reflect:
         packet["reflect"] = reflect
@@ -2063,6 +2151,17 @@ def _frontier_for_packet(
     except Exception:
         overlay = None
     try:
+        frame_graph = document.get("frame_graph")
+        if frame_graph is None:
+            surface_meta = document.get("task_surface")
+            if isinstance(surface_meta, dict):
+                frame_graph = surface_meta.get("frame_graph")
+            elif execution_state is not None:
+                surface_meta = getattr(execution_state, "task_surface", None)
+                if isinstance(surface_meta, dict):
+                    frame_graph = surface_meta.get("frame_graph")
+                elif surface_meta is not None:
+                    frame_graph = getattr(surface_meta, "frame_graph", None)
         frontier = build_affordance_frontier(
             surface=str(document.get("surface") or ""),
             goal_kind=str(goal.kind or ""),
@@ -2070,6 +2169,9 @@ def _frontier_for_packet(
             objects=[o for o in (document.get("objects") or []) if isinstance(o, dict)],
             overlay=overlay,
             memory=memory_for(execution_state) if execution_state is not None else None,
+            # Producer stamps — frame_id comes from FrameGraph per coordinate_space.
+            capture_id=str(document.get("capture_id") or "").strip(),
+            frame_graph=frame_graph,
         )
     except Exception:
         # A missing frontier costs the model context; a raised one costs the run.
@@ -3344,14 +3446,75 @@ def _goal_control_from_inventory(
     return None
 
 
+def _commit_known_menu_affordance(
+    proposal: "UnifiedProposal", *, goal: Any = None, state: Any = None
+) -> None:
+    """Stick thin AffordanceCommitment when a goal menu verb is observed."""
+    if state is None:
+        return
+    raw = getattr(proposal, "raw", None) or {}
+    label = str(raw.get("goal_control_label_only") or "").strip()
+    if not label:
+        # Also commit when control is grounded — still executive stickiness.
+        control = _goal_control_from_inventory(proposal, goal=goal)
+        if isinstance(control, dict):
+            label = str(control.get("text") or control.get("label") or "").strip()
+    if not label:
+        return
+    try:
+        from plugin.agent.executive.affordance_commitment import (
+            ensure_commitment_from_menu_observation,
+        )
+
+        patient = str(
+            getattr(state, "grounding_reground_patient_ref", "") or ""
+        )
+        if not patient:
+            doc = getattr(state, "unified_world_document", None) or {}
+            if isinstance(doc, dict):
+                patient = str(
+                    doc.get("source_object_label")
+                    or doc.get("open_conversation")
+                    or ""
+                )
+            feats = getattr(state, "last_features", None)
+            extras = getattr(feats, "extras", None) if feats is not None else None
+            if not patient and isinstance(extras, dict):
+                ft = extras.get("forward_task") or {}
+                if isinstance(ft, dict):
+                    patient = str(
+                        (ft.get("bindings") or {})
+                        .get("source_object", {})
+                        .get("resolved_label")
+                        or ft.get("source_object_label")
+                        or ""
+                    )
+        ensure_commitment_from_menu_observation(
+            state,
+            label=label,
+            patient_ref=patient,
+            owner_surface=str(
+                _proposal_surface(proposal) or "context_menu"
+            ),
+            desired_effect=(
+                "forward_picker"
+                if label.strip().lower() in {"forward", "share"}
+                else ""
+            ),
+        )
+    except Exception:
+        return
+
+
 def apply_affordance_stance(
-    proposal: "UnifiedProposal", *, goal: Any = None
+    proposal: "UnifiedProposal", *, goal: Any = None, state: Any = None
 ) -> "UnifiedProposal":
     """Coerce stance + suggestions when the goal act is already actuatable.
 
     Perception still owns affordance coverage; this is a deterministic safety net
     so an open menu with a *clickable* goal control cannot keep advising
-    reveal/explore. Label-only verbs without geometry stay explore_needed.
+    reveal/explore. Label-only verbs without geometry stay explore_needed /
+    grounding recovery (not patient substitute).
     """
     stance = _normalize_affordance_stance(
         getattr(proposal, "affordance_stance", None)
@@ -3365,6 +3528,8 @@ def apply_affordance_stance(
         for g in (proposal.evidence_gaps or [])
         if str(g).strip()
     ]
+    # Stick commitment for observed menu verbs (label-only or grounded).
+    _commit_known_menu_affordance(proposal, goal=goal, state=state)
 
     if control is not None:
         stance = "act_clear"
@@ -3375,6 +3540,8 @@ def apply_affordance_stance(
             gaps.append(
                 "goal control label seen but lacking actuatable geometry (point/bounds)"
             )
+            if str((proposal.raw or {}).get("goal_control_label_only") or "").strip():
+                gaps.append("grounding_recovery_owed_for_known_affordance")
         elif not stance:
             if qc.get("expected_found") is False or list(
                 proposal.missing_affordance_information or []
@@ -3782,7 +3949,9 @@ def _try_unified_phash_reuse(
     # absent transition. Idle (non post-act) looks may fully reuse belief.
     if post_act:
         proposal = apply_affordance_stance(
-            _parse_proposal(dict(raw), frame=frame), goal=goal
+            _parse_proposal(dict(raw), frame=frame),
+            goal=goal,
+            state=execution_state,
         )
         proposal.model = "no_visible_change"
         proposal.latency_s = 0.0
@@ -3803,7 +3972,9 @@ def _try_unified_phash_reuse(
             phash_max,
         )
         return proposal
-    proposal = apply_affordance_stance(_parse_proposal(raw, frame=frame), goal=goal)
+    proposal = apply_affordance_stance(
+        _parse_proposal(raw, frame=frame), goal=goal, state=execution_state
+    )
     proposal.model = str(cache.get("model") or "phash_reuse")
     proposal.latency_s = 0.0
     proposal.point_scale = float(cache.get("point_scale") or point_scale)
@@ -4065,7 +4236,9 @@ def consult_unified_cognition(
             else parsed_raw
         )
         proposal = apply_affordance_stance(
-            _parse_proposal(parsed, frame=frame), goal=goal
+            _parse_proposal(parsed, frame=frame),
+            goal=goal,
+            state=execution_state,
         )
 
         proposal.model = str(target.get("model") or "")
@@ -5194,6 +5367,7 @@ def proposal_to_action(
     goal: Goal,
     world: WorldModel,
     features: Optional[StateFeatures] = None,
+    execution_state: Any = None,
 ) -> Tuple[Optional[Action], str]:
     """Validate a proposal and convert it into an executable Action.
 
@@ -5223,6 +5397,25 @@ def proposal_to_action(
         verb = _family_verb(family)
     if not verb:
         return None, f"no_verb_for_family:{family}"
+
+    # Desired-effect coherence (live 131030): open_entity + context_menu means
+    # the model wanted reveal/select effects but named the open family.
+    # On an open conversation → rewrite to reveal_actions. Elsewhere → keep
+    # open but the prediction attach below forces the open-nav contract.
+    exp_surface = str(
+        (proposal.expected_transition or {}).get("surface") or ""
+    ).strip().lower()
+    obs_surface = str(
+        (proposal.observed_state or {}).get("surface") or ""
+    ).strip().lower()
+    if (
+        family in _OPEN_NAV_FAMILIES
+        and exp_surface in _REVEAL_EFFECT_SURFACES
+        and obs_surface == "conversation"
+    ):
+        family = "reveal_actions"
+        verb = _VERB_TO_RUNTIME.get("reveal_actions") or "RevealActions"
+        raw_family = "reveal_actions"
 
     text = str(proposal.next_action.get("text") or "").strip()
     entity = _resolve_target_entity(world, proposal.next_action.get("target_id"))
@@ -5314,7 +5507,32 @@ def proposal_to_action(
             except (TypeError, ValueError):
                 overlay_action_point = None
     if family in content_families and not verb_on_overlay:
-        bound = _forward_source_object_entity(world)
+        # Hierarchical gate: committed known-ungrounded method must not silently
+        # rebind invoke/select onto the patient merely because it has geometry.
+        forbid_patient = False
+        try:
+            from plugin.agent.executive.affordance_commitment import (
+                forbids_wrong_locus,
+            )
+
+            est = execution_state
+            if est is None:
+                est = getattr(proposal, "execution_state", None)
+            if est is None and features is not None:
+                est = getattr(features, "execution_state", None)
+            forbid_patient = bool(
+                est is not None
+                and forbids_wrong_locus(
+                    est,
+                    family=family,
+                    semantic_target=str(semantic_target or text or ""),
+                )
+            )
+        except Exception:
+            forbid_patient = False
+        if forbid_patient and family == "invoke_affordance":
+            return None, "committed_affordance_ungrounded_no_patient_substitute"
+        bound = None if forbid_patient else _forward_source_object_entity(world)
         if bound is not None:
             entity = bound
             if not semantic_target:
@@ -5470,6 +5688,10 @@ def proposal_to_action(
 
     confidence = proposal.confidence
     rationale_family = raw_family
+    na = proposal.next_action if isinstance(proposal.next_action, dict) else {}
+    est_roles = na.get("establishes_roles") or []
+    if not isinstance(est_roles, list):
+        est_roles = []
     action = Action(
         action=verb,
         semantic_target=semantic_target,
@@ -5488,6 +5710,16 @@ def proposal_to_action(
         frontier_label=f"unified:{family}:{text or semantic_target}".strip(":"),
         frontier_score=round(confidence, 4),
         reversible=family != "commit_irreversible",
+        target_kind=str(
+            na.get("target_kind")
+            or getattr(entity, "kind", "")
+            or getattr(entity, "object_type", "")
+            or ""
+        ),
+        establishes_roles=[str(r) for r in est_roles if str(r).strip()],
+        action_is_navigation=bool(na.get("action_is_navigation")),
+        attempt_id=str(na.get("attempt_id") or "").strip(),
+        legacy_semantics=bool(na.get("legacy_semantics")),
     )
     # The prediction, in the shape the transition and experience layers read. It
     # was empty on every model-chosen action, so record_outcome() compared each
@@ -5504,12 +5736,27 @@ def proposal_to_action(
     ][:8]
     # Search-scope families: family contract beats a look that wished for
     # conversation_open (live 210526: compose/resolve stamped conversation).
+    # Open-nav families: family contract beats a reveal-shaped wish
+    # (live 131030: open_entity + context_menu).
     fam_l = str(family or "").strip().lower()
     if fam_l in _SEARCH_SCOPE_FAMILIES:
         fallback = intention_expectation_from_decision(
             Action(action=verb, action_family=family, semantic_target=semantic_target, text=text)
         )
         predicted_surface = str(fallback.get("surface") or "search").strip()
+        likely = list(fallback.get("likely_controls") or [])[:8]
+        expectation = {
+            "surface": predicted_surface,
+            "likely_controls": likely,
+            "source": "family_contract",
+        }
+    elif fam_l in _OPEN_NAV_FAMILIES and (
+        not predicted_surface or predicted_surface in _REVEAL_EFFECT_SURFACES
+    ):
+        fallback = intention_expectation_from_decision(
+            Action(action=verb, action_family=family, semantic_target=semantic_target, text=text)
+        )
+        predicted_surface = str(fallback.get("surface") or "conversation").strip()
         likely = list(fallback.get("likely_controls") or [])[:8]
         expectation = {
             "surface": predicted_surface,
@@ -5538,6 +5785,10 @@ def proposal_to_action(
             "source": (
                 "family_contract"
                 if fam_l in _SEARCH_SCOPE_FAMILIES
+                or (
+                    fam_l in _OPEN_NAV_FAMILIES
+                    and str(expectation.get("source") or "") == "family_contract"
+                )
                 else ("unified_multimodal" if expectation.get("surface") else "act_intention_default")
             ),
         }

@@ -1865,17 +1865,51 @@ def _multimodal_look(
         return False
     model = str(getattr(proposal, "model", "") or "")
     try:
-        runtime.execution_state.last_unified_proposal = {
+        obs = dict(proposal.observed_state or {}) if isinstance(proposal.observed_state, dict) else {}
+        world = dict(proposal.world_model or {}) if isinstance(getattr(proposal, "world_model", None), dict) else {}
+        locate_ans = (
+            obs.get("locate_effect_answer")
+            or world.get("locate_effect_answer")
+            or obs.get("locate_effect_observed")
+            or world.get("locate_effect_observed")
+        )
+        uni_payload = {
             "frame": int(getattr(runtime.execution_state, "unified_frame", 0) or 0),
             "evidence_gaps": [str(g) for g in (proposal.evidence_gaps or []) if str(g).strip()],
             "coverage": proposal.coverage,
             "confidence": float(proposal.confidence or 0.0),
-            "surface": str((proposal.observed_state or {}).get("surface") or "").strip(),
+            "surface": str(obs.get("surface") or "").strip(),
             "probe_available": bool(getattr(proposal, "recommended_probe", None)),
             "next_action": dict(proposal.next_action or {}),
             "look_mode": str(mode or "perceive"),
             "model": model,
+            "observed_state": {
+                k: obs.get(k)
+                for k in (
+                    "surface",
+                    "open_conversation",
+                    "locate_effect_answer",
+                    "locate_effect_observed",
+                    "source_query_not_surfaced",
+                    "source_query_located",
+                    "verified_effect_predicates",
+                )
+                if k in obs
+            },
         }
+        if "source_query_not_surfaced" in obs or "source_query_not_surfaced" in world:
+            uni_payload["source_query_not_surfaced"] = bool(
+                obs.get("source_query_not_surfaced", world.get("source_query_not_surfaced"))
+            )
+        if "locate_effect_observed" in obs or "locate_effect_observed" in world:
+            uni_payload["locate_effect_observed"] = bool(
+                obs.get("locate_effect_observed", world.get("locate_effect_observed"))
+            )
+        if locate_ans is not None and not isinstance(locate_ans, bool):
+            uni_payload["locate_effect_answer"] = locate_ans
+        elif isinstance(locate_ans, bool):
+            uni_payload["locate_effect_observed"] = locate_ans
+        runtime.execution_state.last_unified_proposal = uni_payload
     except Exception:
         pass
     surf = str((proposal.observed_state or {}).get("surface") or "").strip().lower()

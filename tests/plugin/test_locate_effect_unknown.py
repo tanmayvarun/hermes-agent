@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from plugin.agent.capabilities.locate_content import (
     classify_locate_effect_status,
+    extract_locate_effect_verify_answer,
     locate_verify_can_establish_absence,
     note_locate_outcome,
     prefer_next_locate_realization,
@@ -169,8 +170,8 @@ def test_still_unobservable_does_not_mark_method_ineffective():
     assert "locate_scroll_scan" in iframe.method_frontier.eligible_methods()
 
 
-def test_high_quality_visual_verify_absent_resolves_unknown_to_not_achieved():
-    """Complete relevant viewport, patient absent → NOT_ACHIEVED (not still_unobs)."""
+def test_high_coverage_without_explicit_negative_remains_unknown():
+    """Capped inventory omission + good coverage must not invent NOT_ACHIEVED."""
     state = ExecutionState()
     note_locate_outcome(
         state,
@@ -196,6 +197,64 @@ def test_high_quality_visual_verify_absent_resolves_unknown_to_not_achieved():
         "coverage": 0.9,
         "evidence_gaps": [],
         "model": "vision",
+        "confidence": 0.9,
+    }
+    claim = extract_locate_effect_verify_answer(
+        state, document=state.unified_world_document
+    )
+    assert claim["answer"] == "unknown"
+    quality = locate_verify_can_establish_absence(
+        state,
+        document=state.unified_world_document,
+        multimodal_ok=True,
+        proposal_model="vision",
+    )
+    assert quality["sufficient"] is False
+    out = resolve_locate_effect_after_visual_verify(
+        state,
+        query_visible=False,
+        multimodal_ok=True,
+        proposal_model="vision",
+        document=state.unified_world_document,
+    )
+    assert out.get("effect_status") == "unknown"
+    iframe = active_intention_frame(state)
+    assert iframe is not None
+    assert iframe.method_frontier.status_of("locate_native_find") == (
+        MethodStatus.UNTRIED.value
+    )
+
+
+def test_explicit_locate_negative_with_good_evidence_becomes_not_achieved():
+    """Explicit NO + trustworthy observation → NOT_ACHIEVED."""
+    state = ExecutionState()
+    note_locate_outcome(
+        state,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="native_find",
+        message="accessibility text unavailable, screen must be read",
+    )
+    state.unified_world_document = {
+        "surface": "conversation",
+        "open_conversation": "Pallavi",
+        "objects": [
+            {
+                "id": "m1",
+                "kind": "message_bubble",
+                "text": "hey, free later?",
+                "matches_goal": False,
+            }
+        ],
+        "source_query_not_surfaced": True,
+        "locate_effect_answer": "no",
+    }
+    state.last_unified_proposal = {
+        "coverage": 0.9,
+        "evidence_gaps": [],
+        "model": "vision",
+        "confidence": 0.85,
     }
     quality = locate_verify_can_establish_absence(
         state,
@@ -204,6 +263,7 @@ def test_high_quality_visual_verify_absent_resolves_unknown_to_not_achieved():
         proposal_model="vision",
     )
     assert quality["sufficient"] is True
+    assert quality["answer"] == "no"
     out = resolve_locate_effect_after_visual_verify(
         state,
         query_visible=False,

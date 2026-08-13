@@ -794,7 +794,7 @@ def note_locate_outcome(
     return out
 
 
-# Visual-verify gaps that mean absence cannot be trusted yet.
+# Visual-verify gaps that mean an explicit answer is not trustworthy yet.
 _INSUFFICIENT_VERIFY_GAP_NEEDLES = (
     "unreadable",
     "can't see",
@@ -813,6 +813,170 @@ _INSUFFICIENT_VERIFY_GAP_NEEDLES = (
 # Idle reuse is not a paid visual verification look.
 _INSUFFICIENT_VERIFY_MODELS = frozenset({"phash_reuse", "held_last_good", "reuse"})
 
+# Explicit answers to the motivated locate-verification question (not inventory omission).
+_EXPLICIT_LOCATE_NEGATIVE_NEEDLES = (
+    "source_query_not_surfaced",
+    "locate_effect_observed=false",
+    "locate_effect_observed:false",
+    "locate_effect_answer=no",
+    "locate_effect_answer:no",
+    "locate did not surface",
+    "did not surface a binding-eligible",
+    "locate_effect=absent",
+)
+_EXPLICIT_LOCATE_POSITIVE_NEEDLES = (
+    "source_query_located",
+    "locate_effect_observed=true",
+    "locate_effect_observed:true",
+    "locate_effect_answer=yes",
+    "locate_effect_answer:yes",
+    "locate_effect=achieved",
+)
+_EXPLICIT_ANSWER_YES = frozenset({"yes", "true", "achieved", "observed", "surfaced"})
+_EXPLICIT_ANSWER_NO = frozenset(
+    {"no", "false", "absent", "not_achieved", "not-achieved", "unobserved"}
+)
+
+
+def _coerce_locate_effect_answer_token(raw: Any) -> str:
+    tok = str(raw if raw is not None else "").strip().lower()
+    if not tok:
+        return ""
+    if tok in _EXPLICIT_ANSWER_YES:
+        return "yes"
+    if tok in _EXPLICIT_ANSWER_NO:
+        return "no"
+    if tok in {"unknown", "uncertain", "unsure"}:
+        return "unknown"
+    return ""
+
+
+def extract_locate_effect_verify_answer(
+    execution_state: Any,
+    *,
+    document: Any = None,
+    evidence_gaps: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """YES / NO / UNKNOWN for the named locate-effect verification question.
+
+    High-quality perception alone does **not** invent NO. An item missing from
+    the capped task-relevant object inventory is not an authoritative negative.
+    """
+    doc = document
+    if doc is None and execution_state is not None:
+        doc = getattr(execution_state, "unified_world_document", None)
+    bags: List[Dict[str, Any]] = []
+    if isinstance(doc, dict):
+        bags.append(doc)
+    if execution_state is not None:
+        uni = getattr(execution_state, "last_unified_proposal", None)
+        if isinstance(uni, dict):
+            bags.append(uni)
+            obs = uni.get("observed_state")
+            if isinstance(obs, dict):
+                bags.append(obs)
+
+    for bag in bags:
+        # Typed predicate / answer fields from world or proposal.
+        if bag.get("source_query_not_surfaced") is True:
+            return {"answer": "no", "source": "source_query_not_surfaced"}
+        if bag.get("source_query_located") is True or bag.get("content_located") is True:
+            return {"answer": "yes", "source": "source_query_located"}
+        if "locate_effect_observed" in bag:
+            obs = bag.get("locate_effect_observed")
+            if obs is True:
+                return {"answer": "yes", "source": "locate_effect_observed"}
+            if obs is False:
+                return {"answer": "no", "source": "locate_effect_observed"}
+        ans = _coerce_locate_effect_answer_token(bag.get("locate_effect_answer"))
+        if ans:
+            return {"answer": ans, "source": "locate_effect_answer"}
+        for field in (
+            "verified_effect_predicates",
+            "achieved_effects",
+            "effect_predicates",
+        ):
+            raw = bag.get(field)
+            if not isinstance(raw, (list, tuple, set)):
+                continue
+            blob = " ".join(str(x).lower() for x in raw if str(x).strip())
+            if any(n in blob for n in _EXPLICIT_LOCATE_NEGATIVE_NEEDLES):
+                return {"answer": "no", "source": field}
+            if any(n in blob for n in _EXPLICIT_LOCATE_POSITIVE_NEEDLES):
+                return {"answer": "yes", "source": field}
+
+    gaps = list(evidence_gaps or [])
+    if not gaps and execution_state is not None:
+        uni = getattr(execution_state, "last_unified_proposal", None)
+        if isinstance(uni, dict) and isinstance(uni.get("evidence_gaps"), list):
+            gaps = [str(g) for g in uni.get("evidence_gaps") if str(g).strip()]
+    gap_blob = " ".join(str(g).lower() for g in gaps)
+    # Only accept gap *answers*, not restated verification questions.
+    if gap_blob and "?" not in gap_blob:
+        if any(n in gap_blob for n in _EXPLICIT_LOCATE_NEGATIVE_NEEDLES):
+            return {"answer": "no", "source": "evidence_gap_answer"}
+        if any(n in gap_blob for n in _EXPLICIT_LOCATE_POSITIVE_NEEDLES):
+            return {"answer": "yes", "source": "evidence_gap_answer"}
+    return {"answer": "unknown", "source": "no_explicit_claim"}
+
+
+def locate_verify_observation_trustworthy(
+    execution_state: Any,
+    *,
+    document: Any = None,
+    multimodal_ok: bool = True,
+    proposal_model: str = "",
+    coverage: Optional[float] = None,
+    evidence_gaps: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """Quality gates for trusting an *already explicit* locate-effect answer."""
+    if not multimodal_ok:
+        return {"trustworthy": False, "reason": "multimodal_failed"}
+    model = str(proposal_model or "").strip().lower()
+    if model in _INSUFFICIENT_VERIFY_MODELS:
+        return {"trustworthy": False, "reason": f"model_{model or 'empty'}"}
+    if execution_state is not None and bool(
+        getattr(execution_state, "perception_incomplete", False)
+    ):
+        return {"trustworthy": False, "reason": "perception_incomplete"}
+    doc = document
+    if doc is None and execution_state is not None:
+        doc = getattr(execution_state, "unified_world_document", None)
+    if not isinstance(doc, dict):
+        return {"trustworthy": False, "reason": "document_missing"}
+
+    cov = coverage
+    gaps = list(evidence_gaps or [])
+    conf: Optional[float] = None
+    if execution_state is not None:
+        uni = getattr(execution_state, "last_unified_proposal", None)
+        if isinstance(uni, dict):
+            if cov is None and uni.get("coverage") is not None:
+                try:
+                    cov = float(uni.get("coverage"))
+                except (TypeError, ValueError):
+                    cov = None
+            if uni.get("confidence") is not None:
+                try:
+                    conf = float(uni.get("confidence"))
+                except (TypeError, ValueError):
+                    conf = None
+            if not gaps and isinstance(uni.get("evidence_gaps"), list):
+                gaps = [str(g) for g in uni.get("evidence_gaps") if str(g).strip()]
+            if not model:
+                model = str(uni.get("model") or "").strip().lower()
+                if model in _INSUFFICIENT_VERIFY_MODELS:
+                    return {"trustworthy": False, "reason": f"model_{model}"}
+
+    if cov is not None and float(cov) < 0.55:
+        return {"trustworthy": False, "reason": "coverage_low"}
+    if conf is not None and float(conf) < 0.55:
+        return {"trustworthy": False, "reason": "confidence_low"}
+    gap_blob = " ".join(str(g).lower() for g in gaps)
+    if any(n in gap_blob for n in _INSUFFICIENT_VERIFY_GAP_NEEDLES):
+        return {"trustworthy": False, "reason": "evidence_gaps_insufficient"}
+    return {"trustworthy": True, "reason": "quality_ok"}
+
 
 def locate_verify_can_establish_absence(
     execution_state: Any,
@@ -823,51 +987,42 @@ def locate_verify_can_establish_absence(
     coverage: Optional[float] = None,
     evidence_gaps: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
-    """Whether a paid visual verify can establish *absence* of the locate patient.
+    """NOT_ACHIEVED only when an explicit negative claim is quality-validated.
 
-    ``query not visible`` is not itself ``still_unobservable``. Absence is only
-    NOT_ACHIEVED when observation quality is sufficient to establish it.
+    ``query not in object inventory`` + high coverage must remain UNKNOWN.
     """
-    if not multimodal_ok:
-        return {"sufficient": False, "reason": "multimodal_failed"}
-    model = str(proposal_model or "").strip().lower()
-    if model in _INSUFFICIENT_VERIFY_MODELS:
-        return {"sufficient": False, "reason": f"model_{model or 'empty'}"}
-    if execution_state is not None and bool(
-        getattr(execution_state, "perception_incomplete", False)
-    ):
-        return {"sufficient": False, "reason": "perception_incomplete"}
-    doc = document
-    if doc is None and execution_state is not None:
-        doc = getattr(execution_state, "unified_world_document", None)
-    if not isinstance(doc, dict):
-        return {"sufficient": False, "reason": "document_missing"}
-    if "objects" not in doc or not isinstance(doc.get("objects"), list):
-        return {"sufficient": False, "reason": "object_inventory_missing"}
-
-    cov = coverage
-    gaps = list(evidence_gaps or [])
-    if execution_state is not None:
-        uni = getattr(execution_state, "last_unified_proposal", None)
-        if isinstance(uni, dict):
-            if cov is None and uni.get("coverage") is not None:
-                try:
-                    cov = float(uni.get("coverage"))
-                except (TypeError, ValueError):
-                    cov = None
-            if not gaps and isinstance(uni.get("evidence_gaps"), list):
-                gaps = [str(g) for g in uni.get("evidence_gaps") if str(g).strip()]
-            if not model:
-                model = str(uni.get("model") or "").strip().lower()
-                if model in _INSUFFICIENT_VERIFY_MODELS:
-                    return {"sufficient": False, "reason": f"model_{model}"}
-
-    if cov is not None and float(cov) < 0.55:
-        return {"sufficient": False, "reason": "coverage_low"}
-    gap_blob = " ".join(str(g).lower() for g in gaps)
-    if any(n in gap_blob for n in _INSUFFICIENT_VERIFY_GAP_NEEDLES):
-        return {"sufficient": False, "reason": "evidence_gaps_insufficient"}
-    return {"sufficient": True, "reason": "observed_absence_capable"}
+    claim = extract_locate_effect_verify_answer(
+        execution_state, document=document, evidence_gaps=evidence_gaps
+    )
+    answer = str(claim.get("answer") or "unknown")
+    if answer != "no":
+        return {
+            "sufficient": False,
+            "reason": f"no_explicit_negative:{answer}",
+            "answer": answer,
+            "claim_source": str(claim.get("source") or ""),
+        }
+    quality = locate_verify_observation_trustworthy(
+        execution_state,
+        document=document,
+        multimodal_ok=multimodal_ok,
+        proposal_model=proposal_model,
+        coverage=coverage,
+        evidence_gaps=evidence_gaps,
+    )
+    if not bool(quality.get("trustworthy")):
+        return {
+            "sufficient": False,
+            "reason": str(quality.get("reason") or "untrusted_negative"),
+            "answer": "no",
+            "claim_source": str(claim.get("source") or ""),
+        }
+    return {
+        "sufficient": True,
+        "reason": "explicit_negative_validated",
+        "answer": "no",
+        "claim_source": str(claim.get("source") or ""),
+    }
 
 
 def resolve_locate_effect_after_visual_verify(
@@ -879,7 +1034,7 @@ def resolve_locate_effect_after_visual_verify(
     proposal_model: str = "",
     document: Any = None,
 ) -> Dict[str, Any]:
-    """Resolve locate verify using observation quality, not bare visibility."""
+    """Resolve locate verify from explicit YES/NO/UNKNOWN + quality gates."""
     if content_located or query_visible:
         return resolve_locate_effect_verification(
             execution_state,
@@ -887,6 +1042,25 @@ def resolve_locate_effect_after_visual_verify(
             query_visible=query_visible,
             still_unobservable=False,
         )
+    # Positive explicit claim without inventory hit still counts as ACHIEVED.
+    claim = extract_locate_effect_verify_answer(execution_state, document=document)
+    if str(claim.get("answer") or "") == "yes":
+        quality = locate_verify_observation_trustworthy(
+            execution_state,
+            document=document,
+            multimodal_ok=multimodal_ok,
+            proposal_model=proposal_model,
+        )
+        if bool(quality.get("trustworthy")):
+            out = resolve_locate_effect_verification(
+                execution_state,
+                content_located=True,
+                query_visible=False,
+                still_unobservable=False,
+            )
+            out["locate_effect_answer"] = "yes"
+            out["observation_reason"] = str(claim.get("source") or "")
+            return out
     quality = locate_verify_can_establish_absence(
         execution_state,
         document=document,
@@ -901,6 +1075,7 @@ def resolve_locate_effect_after_visual_verify(
     )
     out["observation_sufficient"] = bool(quality.get("sufficient"))
     out["observation_reason"] = str(quality.get("reason") or "")
+    out["locate_effect_answer"] = str(quality.get("answer") or claim.get("answer") or "")
     return out
 
 

@@ -4767,7 +4767,38 @@ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
     if seal is None or "scroll_scan" not in (seal.why + seal.realization):
         return False, f"after failed verify must reseal next frontier method, got {seal}"
 
-    # High-quality visual absence → NOT_ACHIEVED (not still_unobservable).
+    # High coverage without explicit negative → remains UNKNOWN.
+    cov = ExecutionState()
+    note_locate_outcome(
+        cov,
+        query="zarooratwala",
+        ok=True,
+        found=False,
+        realization="native_find",
+        message="accessibility text unavailable, screen must be read",
+    )
+    cov.unified_world_document = {
+        "surface": "conversation",
+        "open_conversation": "Pallavi",
+        "objects": [{"id": "m1", "kind": "message_bubble", "text": "hey"}],
+    }
+    cov.last_unified_proposal = {
+        "coverage": 0.9,
+        "evidence_gaps": [],
+        "model": "vision",
+        "confidence": 0.9,
+    }
+    cov_out = resolve_locate_effect_after_visual_verify(
+        cov,
+        query_visible=False,
+        multimodal_ok=True,
+        proposal_model="vision",
+        document=cov.unified_world_document,
+    )
+    if cov_out.get("effect_status") != "unknown":
+        return False, f"coverage-without-explicit-negative must remain UNKNOWN, got {cov_out}"
+
+    # Explicit locate negative + good evidence → NOT_ACHIEVED.
     hq = ExecutionState()
     note_locate_outcome(
         hq,
@@ -4781,8 +4812,15 @@ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
         "surface": "conversation",
         "open_conversation": "Pallavi",
         "objects": [{"id": "m1", "kind": "message_bubble", "text": "hey"}],
+        "source_query_not_surfaced": True,
+        "locate_effect_answer": "no",
     }
-    hq.last_unified_proposal = {"coverage": 0.9, "evidence_gaps": [], "model": "vision"}
+    hq.last_unified_proposal = {
+        "coverage": 0.9,
+        "evidence_gaps": [],
+        "model": "vision",
+        "confidence": 0.85,
+    }
     hq_out = resolve_locate_effect_after_visual_verify(
         hq,
         query_visible=False,
@@ -4791,12 +4829,12 @@ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
         document=hq.unified_world_document,
     )
     if hq_out.get("effect_status") != "not_achieved":
-        return False, f"high-quality absent verify must be NOT_ACHIEVED, got {hq_out}"
+        return False, f"explicit locate negative must be NOT_ACHIEVED, got {hq_out}"
     hq_frame = active_intention_frame(hq)
     if hq_frame is None or hq_frame.method_frontier.status_of(
         "locate_native_find"
     ) != MethodStatus.INEFFECTIVE.value:
-        return False, "high-quality absence must mark method INEFFECTIVE in context"
+        return False, "explicit negative must mark method INEFFECTIVE in context"
 
     # Incomplete visual look → remains UNKNOWN / not INEFFECTIVE.
     inc = ExecutionState()
