@@ -264,9 +264,12 @@ def test_frozen_world_old_vs_new_ranking_separates_ties():
     assert ranked[0]["id"] != "related"
 
 
-def test_rank_path_emits_candidate_ledger_choice_act_trace():
-    """End-to-end: candidates → ledger → selected hypothesis → ACT target."""
-    from plugin.agent.capabilities.search_episode import search_selection_trace
+def test_rank_path_emits_candidate_ledger_choice_trace():
+    """SEARCH telemetry: candidates → ledger → selected hypothesis (not ACT)."""
+    from plugin.agent.capabilities.search_episode import (
+        correlate_search_choice_with_decision,
+        search_selection_trace,
+    )
     from plugin.agent.decision_consultation import DecisionBrief
 
     state = ExecutionState()
@@ -290,8 +293,9 @@ def test_rank_path_emits_candidate_ledger_choice_act_trace():
     assert ep.get("hypothesis_ledger")
     trace = search_selection_trace(ep)
     assert trace["selection_path"] == "rank"
-    assert trace["selected_hypothesis"]
-    assert trace["act_target"] == trace["selected_hypothesis"]
+    # Ranking stage: explore pointer is set; committed choice may still be empty.
+    assert trace["explore_label"]
+    assert "act_target" not in trace
     brief = DecisionBrief(
         goal={"source_conversation": "Alice", "source_query": "acme"},
         world={"surface": "search", "objects": _frozen_inventory()},
@@ -302,10 +306,35 @@ def test_rank_path_emits_candidate_ledger_choice_act_trace():
     packet = brief.to_packet()
     assert packet["search_episode"]["path"] == "rank"
     assert packet["search_episode"]["hypothesis_ledger"]
-    assert packet["search_episode"]["selection_trace"]["act_target"]
-    assert _open_entity_target_from_brief(brief) == packet["search_episode"][
-        "selection_trace"
-    ]["act_target"]
+    assert "act_target" not in packet["search_episode"]["selection_trace"]
+    # Observational correlation: DecisionOutcome/open target vs SEARCH authority.
+    decision_target = _open_entity_target_from_brief(brief)
+    corr = correlate_search_choice_with_decision(
+        ep, decision_target=decision_target
+    )
+    assert corr["decision_target"] == decision_target
+    assert corr["search_authority_label"] == trace["explore_label"]
+    assert corr["search_choice_matches_decision"] is True
+
+
+def test_search_choice_decision_divergence_is_observable():
+    from plugin.agent.capabilities.search_episode import (
+        correlate_search_choice_with_decision,
+    )
+
+    ep = {
+        "selection_path": "rank",
+        "chosen_label": "https://www.acme.com/invoice.pdf",
+        "hypothesis_ledger": [{"label": "https://www.acme.com/invoice.pdf"}],
+        "status": "complete",
+        "role": "content",
+    }
+    corr = correlate_search_choice_with_decision(
+        ep, decision_target="https://www.instagram.com/acme"
+    )
+    assert corr["selected_hypothesis"] == "https://www.acme.com/invoice.pdf"
+    assert corr["decision_target"] == "https://www.instagram.com/acme"
+    assert corr["search_choice_matches_decision"] is False
 
 
 def test_source_contact_shortcut_marks_selection_path():
