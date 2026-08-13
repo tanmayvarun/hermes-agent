@@ -6,13 +6,18 @@ from typing import Any, Optional, Sequence
 
 import pytest
 
-from plugin.agent.composition import compose_domain_adapters, reset_composition_for_tests
+from types import SimpleNamespace
+
+from plugin.agent.composition import (
+    compose_domain_adapters,
+    composition_diagnostics,
+    reset_composition_for_tests,
+)
 from plugin.agent.executive.intention_frame import MethodSpec, ScoringPolicy, score_method
 from plugin.agent.executive.method_availability import (
     MethodAvailability,
     MethodReadiness,
     evaluate_method_availability,
-    should_ask_for_precondition,
 )
 from plugin.agent.executive.method_providers import (
     TaskInterpretation,
@@ -20,6 +25,8 @@ from plugin.agent.executive.method_providers import (
     discover_methods,
     register_method_provider,
 )
+from plugin.agent.providers.computer_use import ensure_computer_use_provider_registered
+from plugin.agent.runtime.session_store import get_or_create_session
 from plugin.agent.goal import Goal
 from plugin.agent.ingress import (
     ExecutionConstraints,
@@ -299,7 +306,12 @@ def test_failed_prerequisite_resolution_keeps_parent_and_advances_or_reasks_corr
     assert second.intention_id == intention
     assert second.selected_substrate == "computer_use"
     assert second.acceptance_trace.get("precondition_achieved") is False
+    assert second.acceptance_trace.get("availability") == "temporarily_unavailable"
     assert cu.calls == 1
+    sess = get_or_create_session("prereq-fail")
+    assert "structured_web_forward" in sess.blocked_method_ids
+    assert "structured_web_forward" not in sess.declined_method_ids
+    assert "authenticated_integration" in sess.failed_preconditions
 
 
 def test_accepted_prerequisite_resumes_parent_intention_after_resolver_success() -> None:
@@ -390,7 +402,26 @@ def test_zero_cost_zero_risk_zero_interference_remain_zero() -> None:
 
 
 def test_production_composition_registers_executable_method_provider() -> None:
-    compose_domain_adapters()
+    def _obs(**kwargs):
+        return lambda: SimpleNamespace(nodes=[])
+
+    def _exe(**kwargs):
+        class _E:
+            def execute(self, step):
+                from plugin.executor.ghost import ExecResult
+
+                return ExecResult(ok=True, backend="test", message="ok")
+
+        return _E()
+
+    diag = ensure_computer_use_provider_registered(
+        force_runnable=True,
+        observe_builder=_obs,
+        execute_builder=_exe,
+    )
+    assert diag["runnable"] is True
+    assert diag["provider_registered"] is True
+    assert diag["executor_registered"] is True
     specs, errors = discover_methods(
         TaskInterpretation(
             user_turn="Forward ZarooratWala to Tanmay",
@@ -401,6 +432,69 @@ def test_production_composition_registers_executable_method_provider() -> None:
     assert any(s.id == "native_computer_use_forward" for s in specs)
     assert any(str(getattr(s, "readiness", "")) == "ready" for s in specs)
     assert errors == [] or isinstance(errors, list)
+
+
+def test_production_tui_composition_selected_computer_use_is_runnable() -> None:
+    """Production composition path: no TUI observe/execute injection."""
+
+    def _obs(**kwargs):
+        return lambda: SimpleNamespace(nodes=[])
+
+    def _exe(**kwargs):
+        class _E:
+            def execute(self, step):
+                from plugin.executor.ghost import ExecResult
+
+                return ExecResult(ok=True, backend="test", message="ok")
+
+        return _E()
+
+    diag = ensure_computer_use_provider_registered(
+        force_runnable=True,
+        observe_builder=_obs,
+        execute_builder=_exe,
+    )
+    assert diag["provider_registered"] is True
+
+    seen = {"observe": False, "execute": False}
+
+    def fake_closed_loop(runtime, goal, *, observe=None, execute=None, **kwargs):
+        seen["observe"] = observe is not None
+        seen["execute"] = execute is not None
+        return SimpleNamespace(ok=True, reason="composed_ok", iterations=1)
+
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    result = rt.handle_turn(
+        _forward_req("prod-cu"),
+        # TUI-like: no observe/execute — only closed_loop stub for unit isolation.
+        execution_context={"closed_loop": fake_closed_loop},
+    )
+    assert seen["observe"] and seen["execute"]
+    assert "observe_execute_not_provided" not in str(result.message or "")
+    assert "computer_use_substrate_not_composed" not in str(result.message or "")
+    assert result.selected_substrate == "computer_use"
+    assert result.acceptance_trace.get("dispatched_executor") is True
+    payload = result.legacy_result or {}
+    if isinstance(payload, dict):
+        assert payload.get("bindings_source") == "composed_substrate"
+        assert payload.get("dispatched") is True
+
+
+def test_computer_use_composition_failure_is_diagnosed(monkeypatch) -> None:
+    def _boom(**kwargs):
+        raise RuntimeError("compose_boom")
+
+    monkeypatch.setattr(
+        "plugin.agent.providers.computer_use.ensure_computer_use_provider_registered",
+        _boom,
+    )
+    reset_composition_for_tests()
+    compose_domain_adapters()
+    diags = composition_diagnostics()
+    cu = [d for d in diags if d.get("event") == "computer_use_composition"]
+    assert cu
+    assert cu[-1].get("ok") is False
+    assert "compose_boom" in str(cu[-1].get("exception") or "")
 
 
 def test_provider_failure_is_traced() -> None:

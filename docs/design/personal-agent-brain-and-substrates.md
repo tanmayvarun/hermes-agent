@@ -580,10 +580,13 @@ session_store.py is temporary continuation storage (AgentSession debt).
 MemoryRecord schema deferred; Candidate/Evidence/write results only.
 ```
 
-**Hold live ZarooratWala probe** until dispatch + composition goldens are green.
+**Stage A live acceptance:** TUI → common runtime → MethodFrontier → ComputerUse
+(because WhatsApp Web is not READY) → composed substrate observe/execute →
+closed loop. Do **not** expect “link WhatsApp first” until Stage B.
 
-**Stage A live acceptance:** TUI → common runtime → MethodFrontier → genuinely
-executable provider → executor actually runs (CU closed-loop adapter OK).
+ComputerUse `readiness=READY` only when `computer_use_substrate` is composed and
+runnable; TUI never injects observe/execute. Composition failures are recorded in
+`composition_diagnostics()` (not silently swallowed).
 
 **Stage B (deferred):** ASK→resolve→resume / decline→CU once WhatsApp Web is READY.
 

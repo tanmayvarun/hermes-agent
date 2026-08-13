@@ -1,4 +1,4 @@
-"""Production ComputerUse method provider — genuinely executable substrate."""
+"""Production ComputerUse method provider — READY only when substrate is runnable."""
 
 from __future__ import annotations
 
@@ -11,9 +11,13 @@ from plugin.agent.ingress import ExecutionConstraints
 
 
 class ComputerUseMethodProvider:
-    """Registers READY computer_use methods for known executive goal kinds."""
+    """Advertises computer_use methods only when a runnable substrate is composed."""
 
     provider_id = "computer_use_native"
+
+    def __init__(self, *, runnable: bool = False, reason: str = "") -> None:
+        self.runnable = bool(runnable)
+        self.reason = str(reason or "")
 
     def discover(
         self,
@@ -21,6 +25,8 @@ class ComputerUseMethodProvider:
         *,
         constraints: Optional[ExecutionConstraints] = None,
     ) -> Sequence[MethodSpec]:
+        if not self.runnable:
+            return []
         effects = set(interpretation.desired_effects or [])
         kind = str(interpretation.goal_kind or "")
         if "forward_message" not in effects and "forward" not in kind:
@@ -43,12 +49,44 @@ class ComputerUseMethodProvider:
         ]
 
 
-def ensure_computer_use_provider_registered() -> None:
+def ensure_computer_use_provider_registered(
+    *,
+    force_runnable: Optional[bool] = None,
+    observe_builder=None,
+    execute_builder=None,
+    wait_builder=None,
+) -> dict:
+    """Compose substrate + register provider/executor when runnable.
+
+    Returns a structured composition diagnostic (never silently empty).
+    """
     from plugin.agent.executive.method_providers import register_method_provider
+    from plugin.agent.runtime.computer_use_substrate import compose_computer_use_substrate
     from plugin.agent.runtime.method_executors import (
         ComputerUseClosedLoopExecutor,
         register_method_executor,
     )
 
-    register_method_provider(ComputerUseMethodProvider())
+    substrate = compose_computer_use_substrate(
+        force_runnable=force_runnable,
+        observe_builder=observe_builder,
+        execute_builder=execute_builder,
+        wait_builder=wait_builder,
+    )
+    diagnostic = {
+        "event": "computer_use_composition",
+        "runnable": bool(substrate.runnable),
+        "reason": substrate.reason,
+        "provider_registered": False,
+        "executor_registered": False,
+    }
+    if not substrate.runnable:
+        return diagnostic
+
+    register_method_provider(
+        ComputerUseMethodProvider(runnable=True, reason=substrate.reason)
+    )
     register_method_executor(ComputerUseClosedLoopExecutor())
+    diagnostic["provider_registered"] = True
+    diagnostic["executor_registered"] = True
+    return diagnostic

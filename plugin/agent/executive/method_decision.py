@@ -67,6 +67,8 @@ def decide_methods(
     precondition_facts: Optional[Mapping[str, bool]] = None,
     declined_method_ids: Optional[Set[str]] = None,
     declined_preconditions: Optional[Set[str]] = None,
+    blocked_method_ids: Optional[Set[str]] = None,
+    failed_preconditions: Optional[Set[str]] = None,
     intention_id: str = "",
     desired_effect: str = "",
 ) -> MethodDecision:
@@ -86,6 +88,8 @@ def decide_methods(
             precondition_facts=precondition_facts,
             declined_method_ids=declined_method_ids,
             declined_preconditions=declined_preconditions,
+            blocked_method_ids=blocked_method_ids,
+            failed_preconditions=failed_preconditions,
         )
         avail_map[mid] = avail
         reason_map[mid] = reason

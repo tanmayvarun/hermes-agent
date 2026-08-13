@@ -32,6 +32,9 @@ class SessionRuntimeState:
     suspended_ask: Optional[SuspendedAsk] = None
     declined_method_ids: Set[str] = field(default_factory=set)
     declined_preconditions: Set[str] = field(default_factory=set)
+    # Accepted permission but prerequisite resolution failed (≠ USER_DECLINED).
+    blocked_method_ids: Set[str] = field(default_factory=set)
+    failed_preconditions: Set[str] = field(default_factory=set)
     # Verified precondition facts (session-scoped) — not AgentRuntime instance fields.
     precondition_facts: Dict[str, bool] = field(default_factory=dict)
     active_intention_id: str = ""

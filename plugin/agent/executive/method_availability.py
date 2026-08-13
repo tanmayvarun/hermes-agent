@@ -75,6 +75,8 @@ def evaluate_method_availability(
     precondition_facts: Optional[Mapping[str, bool]] = None,
     declined_method_ids: Optional[Set[str]] = None,
     declined_preconditions: Optional[Set[str]] = None,
+    blocked_method_ids: Optional[Set[str]] = None,
+    failed_preconditions: Optional[Set[str]] = None,
 ) -> tuple[str, str]:
     """Return (overall_availability, detail_reason). Availability only — no ranking."""
     readiness = str(getattr(spec, "readiness", None) or "").strip().lower()
@@ -82,6 +84,11 @@ def evaluate_method_availability(
     substrate = str(getattr(spec, "substrate", "") or "")
     if mid in (declined_method_ids or set()):
         return MethodAvailability.USER_DECLINED.value, "method_declined"
+    if mid in (blocked_method_ids or set()):
+        return (
+            MethodAvailability.TEMPORARILY_UNAVAILABLE.value,
+            "precondition_resolution_failed",
+        )
     if substrate_forbidden(substrate, constraints):
         return MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value, "substrate_constraint"
 
@@ -96,6 +103,11 @@ def evaluate_method_availability(
             continue
         if key in (declined_preconditions or set()):
             return MethodAvailability.USER_DECLINED.value, f"precondition_declined:{key}"
+        if key in (failed_preconditions or set()):
+            return (
+                MethodAvailability.TEMPORARILY_UNAVAILABLE.value,
+                f"precondition_resolution_failed:{key}",
+            )
         if facts.get(key, False) is True:
             continue
         missing.append(key)

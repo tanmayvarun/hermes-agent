@@ -95,6 +95,8 @@ class AgentRuntime:
             precondition_facts=session_state.precondition_facts,
             declined_method_ids=session_state.declined_method_ids,
             declined_preconditions=session_state.declined_preconditions,
+            blocked_method_ids=session_state.blocked_method_ids,
+            failed_preconditions=session_state.failed_preconditions,
             intention_id=intention_id,
             desired_effect=",".join(interpretation.desired_effects) or interpretation.goal_kind,
         )
@@ -339,10 +341,12 @@ class AgentRuntime:
                 }
                 return result
 
-            # Resolver failed / unsupported / pending — keep parent; do not fake success.
+            # Resolver failed — keep parent; do not treat as USER_DECLINED.
             if resolve.status == "failed":
                 session_state.suspended_ask = None
-                session_state.declined_method_ids.add(ask.method_id)
+                session_state.blocked_method_ids.add(ask.method_id)
+                if ask.precondition:
+                    session_state.failed_preconditions.add(ask.precondition)
                 session_state.active_intention_id = intention_id
                 resumed = TaskRequest(
                     user_turn=str(orig),
@@ -370,6 +374,7 @@ class AgentRuntime:
                     "method": ask.method_id,
                     "permission_granted": True,
                     "precondition_achieved": False,
+                    "availability": "temporarily_unavailable",
                 }
                 return result
 

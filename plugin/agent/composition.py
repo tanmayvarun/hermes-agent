@@ -6,7 +6,14 @@ Composition loads available adapters at runtime start.
 
 from __future__ import annotations
 
+from typing import Any, Dict, List
+
 _COMPOSED = False
+_COMPOSITION_DIAGNOSTICS: List[Dict[str, Any]] = []
+
+
+def composition_diagnostics() -> List[Dict[str, Any]]:
+    return list(_COMPOSITION_DIAGNOSTICS)
 
 
 def compose_domain_adapters() -> None:
@@ -20,16 +27,36 @@ def compose_domain_adapters() -> None:
         )
 
         ensure_whatsapp_provider_registered()
-    except Exception:
-        pass
+        _COMPOSITION_DIAGNOSTICS.append(
+            {"event": "identity_provider_composition", "provider": "whatsapp", "ok": True}
+        )
+    except Exception as exc:
+        _COMPOSITION_DIAGNOSTICS.append(
+            {
+                "event": "identity_provider_composition",
+                "provider": "whatsapp",
+                "ok": False,
+                "exception": f"{type(exc).__name__}: {exc}",
+            }
+        )
     try:
         from plugin.agent.providers.computer_use import (
             ensure_computer_use_provider_registered,
         )
 
-        ensure_computer_use_provider_registered()
-    except Exception:
-        pass
+        diag = ensure_computer_use_provider_registered()
+        _COMPOSITION_DIAGNOSTICS.append(dict(diag or {}))
+    except Exception as exc:
+        _COMPOSITION_DIAGNOSTICS.append(
+            {
+                "event": "computer_use_composition",
+                "runnable": False,
+                "provider_registered": False,
+                "executor_registered": False,
+                "ok": False,
+                "exception": f"{type(exc).__name__}: {exc}",
+            }
+        )
     _COMPOSED = True
 
 
@@ -37,3 +64,12 @@ def reset_composition_for_tests() -> None:
     """Test helper — allow re-compose after clearing registries."""
     global _COMPOSED
     _COMPOSED = False
+    _COMPOSITION_DIAGNOSTICS.clear()
+    try:
+        from plugin.agent.runtime.computer_use_substrate import (
+            install_computer_use_substrate,
+        )
+
+        install_computer_use_substrate(None)
+    except Exception:
+        pass
