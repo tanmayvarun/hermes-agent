@@ -75,7 +75,9 @@ def ensure_computer_use_provider_registered(
     )
     diagnostic = {
         "event": "computer_use_composition",
+        "ok": bool(substrate.runnable),
         "runnable": bool(substrate.runnable),
+        "substrate_composed": bool(substrate.runnable),
         "reason": substrate.reason,
         "provider_registered": False,
         "executor_registered": False,
@@ -89,4 +91,5 @@ def ensure_computer_use_provider_registered(
     register_method_executor(ComputerUseClosedLoopExecutor())
     diagnostic["provider_registered"] = True
     diagnostic["executor_registered"] = True
+    diagnostic["ok"] = True
     return diagnostic

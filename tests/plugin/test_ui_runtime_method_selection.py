@@ -434,8 +434,8 @@ def test_production_composition_registers_executable_method_provider() -> None:
     assert errors == [] or isinstance(errors, list)
 
 
-def test_production_tui_composition_selected_computer_use_is_runnable() -> None:
-    """Production composition path: no TUI observe/execute injection."""
+def test_forced_composed_substrate_dispatches_without_tui_injection() -> None:
+    """Forced substrate plumbing: TUI does not inject observe/execute."""
 
     def _obs(**kwargs):
         return lambda: SimpleNamespace(nodes=[])
@@ -454,6 +454,7 @@ def test_production_tui_composition_selected_computer_use_is_runnable() -> None:
         observe_builder=_obs,
         execute_builder=_exe,
     )
+    assert diag.get("ok") is True
     assert diag["provider_registered"] is True
 
     seen = {"observe": False, "execute": False}
@@ -480,6 +481,34 @@ def test_production_tui_composition_selected_computer_use_is_runnable() -> None:
         assert payload.get("dispatched") is True
 
 
+def test_compose_domain_adapters_computer_use_characterization() -> None:
+    """Real composition root: diagnostics always present; READY only if runnable."""
+    reset_composition_for_tests()
+    compose_domain_adapters()
+    diags = composition_diagnostics()
+    cu = [d for d in diags if d.get("event") == "computer_use_composition"]
+    assert cu, "computer_use_composition diagnostic must always be emitted"
+    d = cu[-1]
+    assert "ok" in d
+    assert "reason" in d or d.get("exception")
+    specs, _ = discover_methods(
+        TaskInterpretation(
+            user_turn="Forward ZarooratWala to Tanmay",
+            goal_kind="whatsapp_forward_message",
+            desired_effects=["forward_message"],
+        )
+    )
+    cu_specs = [s for s in specs if s.id == "native_computer_use_forward"]
+    if d.get("ok") and d.get("runnable"):
+        assert d.get("provider_registered") is True
+        assert d.get("executor_registered") is True
+        assert cu_specs
+        assert all(str(s.readiness) == "ready" for s in cu_specs)
+    else:
+        assert d.get("provider_registered") in (False, None)
+        assert not cu_specs
+
+
 def test_computer_use_composition_failure_is_diagnosed(monkeypatch) -> None:
     def _boom(**kwargs):
         raise RuntimeError("compose_boom")
@@ -495,6 +524,22 @@ def test_computer_use_composition_failure_is_diagnosed(monkeypatch) -> None:
     assert cu
     assert cu[-1].get("ok") is False
     assert "compose_boom" in str(cu[-1].get("exception") or "")
+
+
+def test_computer_use_substrate_does_not_default_app_to_whatsapp() -> None:
+    from plugin.agent.runtime.computer_use_substrate import ComputerUseSubstrate
+
+    sub = ComputerUseSubstrate(runnable=True, reason="test")
+    assert not hasattr(sub, "app_default") or getattr(sub, "app_default", "") == ""
+    goal = type("G", (), {"app": ""})()
+    bindings = sub.bind(
+        {
+            "runtime_state": RuntimeState(),
+            "goal": goal,
+            "log": None,
+        }
+    )
+    assert bindings.get("app") == ""
 
 
 def test_provider_failure_is_traced() -> None:

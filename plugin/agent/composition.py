@@ -44,16 +44,20 @@ def compose_domain_adapters() -> None:
             ensure_computer_use_provider_registered,
         )
 
-        diag = ensure_computer_use_provider_registered()
-        _COMPOSITION_DIAGNOSTICS.append(dict(diag or {}))
+        diag = dict(ensure_computer_use_provider_registered() or {})
+        diag.setdefault("event", "computer_use_composition")
+        diag.setdefault("ok", bool(diag.get("runnable")))
+        _COMPOSITION_DIAGNOSTICS.append(diag)
     except Exception as exc:
         _COMPOSITION_DIAGNOSTICS.append(
             {
                 "event": "computer_use_composition",
+                "ok": False,
                 "runnable": False,
+                "substrate_composed": False,
                 "provider_registered": False,
                 "executor_registered": False,
-                "ok": False,
+                "reason": "composition_exception",
                 "exception": f"{type(exc).__name__}: {exc}",
             }
         )
