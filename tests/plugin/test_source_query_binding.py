@@ -108,3 +108,19 @@ def test_self_you_identity_via_identity_resolver():
     assert originator_matches("You", "self")
     assert originator_matches("self", "You")
     assert not originator_matches("You", "Pallavi")
+
+
+def test_content_text_containing_you_is_not_self_identity():
+    """IdentityResolver must not treat arbitrary content blobs as self."""
+    from plugin.agent.role_binding import IdentityResolver
+    from plugin.agent.source_query_binding import (
+        infer_message_originator,
+        originator_matches,
+    )
+
+    blob = "YouTube sent you a notification"
+    assert IdentityResolver.canonical_identity(blob) != "self"
+    assert not IdentityResolver.values_same_identity(blob, "self")
+    assert not originator_matches(blob, "self")
+    # Infer extracts typed sender labels; plain content is not self.
+    assert infer_message_originator(blob) != "self"

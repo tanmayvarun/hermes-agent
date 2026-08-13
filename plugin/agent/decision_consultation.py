@@ -787,9 +787,12 @@ def build_decision_brief(
     ][:3]
     goal_dict = {
         "operation": str(getattr(goal, "kind", "") or ""),
+        # Goal.contact is the source/container referent in this procedure path.
         "source_conversation": str(getattr(goal, "contact", "") or ""),
         "source_query": str(getattr(goal, "link_query", "") or ""),
         "destination": str(getattr(goal, "target_contact", "") or ""),
+        # Typed authorship only — never alias from contact/source_conversation.
+        "originator": str(getattr(goal, "originator", "") or ""),
     }
     candidate_labels = [str(r.get("label") or "") for r in rows if r.get("label")]
 

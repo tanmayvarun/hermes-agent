@@ -522,6 +522,38 @@ def test_source_Alice_destination_Bob_search_container_is_Alice():
     assert ep.get("expected_container") == "Alice"
     assert ep.get("expected_originator") == "Alice"
     assert ep.get("expected_container") != "Bob"
+    assert ep.get("container_provenance") == "typed"
+
+
+def test_ambiguous_legacy_contact_without_source_role_is_not_authoritative_container():
+    """Bare goal.contact must not silently become expected_container."""
+    state = ExecutionState()
+    brief = DecisionBrief(
+        goal={
+            "contact": "Charlie",
+            "destination": "Dana",
+            "source_query": "notes",
+        },
+        world={
+            "surface": "search",
+            "objects": [
+                {
+                    "id": "hit",
+                    "kind": "search_result",
+                    "text": "notes.pdf",
+                    "matches_goal": True,
+                }
+            ],
+        },
+        task_state=TaskState(phase="reach_source", search_query="notes"),
+        capabilities=["open_entity", "resolve_entity", "observe", "search"],
+    )
+    from plugin.agent.capabilities.search_episode import ensure_search_episode_from_brief
+
+    ep = ensure_search_episode_from_brief(state, brief) or {}
+    assert ep.get("expected_container") in ("", None)
+    assert ep.get("legacy_source_candidate") == "Charlie"
+    assert ep.get("container_provenance") == "legacy_provisional"
 
 
 def test_strong_unknown_outranks_weaker_commit_ready():

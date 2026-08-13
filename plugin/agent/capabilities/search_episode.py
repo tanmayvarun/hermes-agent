@@ -1268,7 +1268,7 @@ def ensure_search_episode_from_brief(
     query = str(getattr(task, "search_query", "") or "").strip() if task else ""
     dest = str(goal.get("destination") or goal.get("target_contact") or "").strip()
     link_q = str(goal.get("source_query") or goal.get("link_query") or "").strip()
-    # Source/container referent — never destination/general contact by accident.
+    # Typed source/container referent — never destination by accident.
     source_container = str(
         goal.get("source_conversation")
         or goal.get("container")
@@ -1276,15 +1276,24 @@ def ensure_search_episode_from_brief(
         or goal.get("expected_container")
         or ""
     ).strip()
+    # Migration debt: bare goal.contact is role-ambiguous (source / dest /
+    # participant / subject). Do NOT promote it to authoritative
+    # expected_container. Keep as provisional seed for search arming only.
+    legacy_source_candidate = ""
     if not source_container:
-        # Legacy Goal.contact is usually source, but reject when it equals dest.
         legacy = str(goal.get("contact") or "").strip()
         if legacy and _norm(legacy) != _norm(dest):
-            source_container = legacy
+            legacy_source_candidate = legacy
     contact = source_container
+    container_provenance = (
+        "typed"
+        if source_container
+        else ("legacy_provisional" if legacy_source_candidate else "")
+    )
 
     role = "source"
-    referent = contact or link_q
+    # Prefer typed container; legacy contact may arm search but is not a role fact.
+    referent = contact or legacy_source_candidate or link_q
     if surface == "forward_picker":
         role = "destination"
         referent = dest or referent
@@ -1299,11 +1308,17 @@ def ensure_search_episode_from_brief(
         if role == "content":
             referent = link_q
 
-    tokens = [t for t in (referent, contact, link_q, query, dest) if t]
+    tokens = [
+        t
+        for t in (referent, contact, legacy_source_candidate, link_q, query, dest)
+        if t
+    ]
     tokens = list(dict.fromkeys(tokens))
     # Typed semantic roles from the goal — independent relations.
-    # container ← source conversation; originator ← typed sent_by / "from X".
-    # Never: expected_originator = container; never: container = destination.
+    # container ← typed source conversation only (not legacy contact).
+    # originator ← typed sent_by / "from X". Never alias to container/dest.
+    # Debt: role-keyed lookup (source_container / destination / source_object)
+    # rather than a binary source/destination branch.
     typed_container = dest if role == "destination" else source_container
     # Debt: normalize originator / expected_originator / sent_by upstream to one
     # canonical Goal relation; SEARCH should eventually consume only "originator".
@@ -1354,6 +1369,14 @@ def ensure_search_episode_from_brief(
             reason="ensure_from_brief",
             status=start_status,
         )
+        try:
+            ep0 = dict(search_episode_of(holder) or {})
+            ep0["container_provenance"] = container_provenance
+            if legacy_source_candidate:
+                ep0["legacy_source_candidate"] = legacy_source_candidate
+            holder.search_episode = ep0
+        except Exception:
+            pass
     else:
         # Refresh typed roles when goal fields are known; never invent from tokens
         # or alias originator ← container.
@@ -1365,6 +1388,12 @@ def ensure_search_episode_from_brief(
                 ep["expected_container"] = typed_container
             if typed_sought_object and not str(ep.get("sought_object") or "").strip():
                 ep["sought_object"] = typed_sought_object
+            if container_provenance and not str(ep.get("container_provenance") or "").strip():
+                ep["container_provenance"] = container_provenance
+            if legacy_source_candidate and not str(
+                ep.get("legacy_source_candidate") or ""
+            ).strip():
+                ep["legacy_source_candidate"] = legacy_source_candidate
             if query and not str(ep.get("query") or "").strip():
                 ep["query"] = query
             holder.search_episode = ep

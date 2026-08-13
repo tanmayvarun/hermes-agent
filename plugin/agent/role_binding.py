@@ -746,10 +746,18 @@ class IdentityResolver:
 
     @classmethod
     def canonical_identity(cls, value: Any) -> str:
-        """Normalize an identity label; self-aliases collapse to ``self``."""
+        """Normalize a *typed identity label*; self-aliases collapse to ``self``.
+
+        Contract: call only on identity labels (sender, originator, contact
+        name) — never on arbitrary content text. A sentence like
+        ``YouTube sent you a notification`` must not become ``self``.
+        """
         n = _norm(value)
         if not n:
             return ""
+        # Whole-label aliases only — reject multi-word content blobs.
+        if " " in n or len(n) > 24:
+            return n
         if n in cls.SELF_ALIASES:
             return "self"
         return n
