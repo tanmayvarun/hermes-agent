@@ -232,13 +232,16 @@ def interpret_search_candidate(
     if gm is not None:
         contradictions.extend(list(gm.contradictions or []))
     if expected_originator:
-        want = _norm(expected_originator)
+        from plugin.agent.role_binding import IdentityResolver
+        from plugin.agent.source_query_binding import originator_matches
+
         if not origin:
             unknowns.append("sender_unknown")
-        elif _norm(origin) in {"self", "you", "me"} and want not in {"self", "you", "me"}:
-            contradictions.append("explicit_self_vs_required_sender")
-        elif _norm(origin) != want and _norm(origin) not in {"self", "you", "me"}:
-            if want and _norm(origin) and want not in _norm(origin) and _norm(origin) not in want:
+        elif not originator_matches(origin, expected_originator):
+            # Self vs required other, or named mismatch — IdentityResolver owns aliases.
+            if IdentityResolver.canonical_identity(origin) == "self":
+                contradictions.append("explicit_self_vs_required_sender")
+            else:
                 contradictions.append("originator_name_mismatch")
     elif not origin:
         unknowns.append("sender_unknown")

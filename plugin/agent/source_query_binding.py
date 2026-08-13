@@ -216,18 +216,16 @@ def infer_message_originator(
 
 
 def originator_matches(observed: str, expected: str) -> bool:
-    """Identity equivalence via IdentityResolver — no substring matching."""
+    """Identity equivalence via IdentityResolver — no substring matching.
+
+    Self-aliases (``self`` / ``You`` / ``me``) are owned by
+    ``IdentityResolver.canonical_identity``, not SEARCH string heuristics.
+    """
     want = _norm(expected)
     got = _norm(observed)
     if not want:
         return True
     if not got:
-        return False
-    want_self = want in _SELF_ORIGINATORS
-    got_self = got in _SELF_ORIGINATORS
-    if want_self:
-        return got_self
-    if got_self:
         return False
     from plugin.agent.role_binding import IdentityResolver
 

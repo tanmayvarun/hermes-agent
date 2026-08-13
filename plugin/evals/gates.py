@@ -4757,6 +4757,29 @@ def _search_hypothesis_ranking_contracts() -> Tuple[bool, str]:
         return False, "expected_container should be Alice"
     if ep.get("expected_originator"):
         return False, "contact must not imply expected_originator"
+    # Destination must not become search container.
+    st2 = ExecutionState()
+    ensure_search_episode_from_brief(
+        st2,
+        DecisionBrief(
+            goal={
+                "source_conversation": "Alice",
+                "destination": "Bob",
+                "contact": "Bob",
+                "source_query": "invoice",
+            },
+            world={
+                "surface": "search",
+                "objects": [
+                    {"id": "1", "text": "invoice.pdf", "matches_goal": True}
+                ],
+            },
+            task_state=_TaskState(phase="reach_source", search_query="invoice"),
+        ),
+    )
+    ep2 = getattr(st2, "search_episode", None) or {}
+    if ep2.get("expected_container") != "Alice":
+        return False, "source_conversation must win over destination/contact for container"
     # Platform word in query alone must not yield sought_platform_host.
     plat = rank_search_hypotheses(
         [

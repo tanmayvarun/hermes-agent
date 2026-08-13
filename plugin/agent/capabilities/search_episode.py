@@ -1266,9 +1266,22 @@ def ensure_search_episode_from_brief(
     # Authored/typed box string only — never fall back to goal link_query, or
     # every reach_source brief arms a ranking episode before compose.
     query = str(getattr(task, "search_query", "") or "").strip() if task else ""
-    contact = str(goal.get("source_conversation") or goal.get("contact") or "").strip()
     dest = str(goal.get("destination") or goal.get("target_contact") or "").strip()
     link_q = str(goal.get("source_query") or goal.get("link_query") or "").strip()
+    # Source/container referent — never destination/general contact by accident.
+    source_container = str(
+        goal.get("source_conversation")
+        or goal.get("container")
+        or goal.get("conversation_with")
+        or goal.get("expected_container")
+        or ""
+    ).strip()
+    if not source_container:
+        # Legacy Goal.contact is usually source, but reject when it equals dest.
+        legacy = str(goal.get("contact") or "").strip()
+        if legacy and _norm(legacy) != _norm(dest):
+            source_container = legacy
+    contact = source_container
 
     role = "source"
     referent = contact or link_q
@@ -1289,9 +1302,11 @@ def ensure_search_episode_from_brief(
     tokens = [t for t in (referent, contact, link_q, query, dest) if t]
     tokens = list(dict.fromkeys(tokens))
     # Typed semantic roles from the goal — independent relations.
-    # container ← conversation/contact; originator ← sent_by / "from X" / "I sent".
-    # Never: expected_originator = contact/source_conversation.
-    typed_container = contact
+    # container ← source conversation; originator ← typed sent_by / "from X".
+    # Never: expected_originator = container; never: container = destination.
+    typed_container = dest if role == "destination" else source_container
+    # Debt: normalize originator / expected_originator / sent_by upstream to one
+    # canonical Goal relation; SEARCH should eventually consume only "originator".
     typed_originator = str(
         goal.get("originator")
         or goal.get("expected_originator")

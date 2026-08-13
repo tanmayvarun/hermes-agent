@@ -697,7 +697,7 @@ class IdentityResolver:
         if not ref:
             return False, supporting, [EvidenceNote("referent", detail="empty")]
 
-        want_self = _norm(ref) in {"self", "me", "i", "you", "myself"}
+        want_self = self.canonical_identity(ref) == "self"
         senders = [
             e
             for e in observation.identity_evidence
@@ -724,8 +724,7 @@ class IdentityResolver:
             return False, supporting, contradicting
 
         for ev in senders:
-            val = _norm(ev.value)
-            is_self = val in {"self", "me", "i", "you", "myself"}
+            is_self = self.canonical_identity(ev.value) == "self"
             if want_self and is_self:
                 supporting.append(EvidenceNote(ev.kind, ev.value, "same_originator_self"))
                 return True, supporting, contradicting
@@ -742,6 +741,19 @@ class IdentityResolver:
         )
         return False, supporting, contradicting
 
+    # Pronouns / UI labels for the agent-operated account (outgoing messages).
+    SELF_ALIASES = frozenset({"self", "me", "i", "you", "myself", "outgoing", "mine"})
+
+    @classmethod
+    def canonical_identity(cls, value: Any) -> str:
+        """Normalize an identity label; self-aliases collapse to ``self``."""
+        n = _norm(value)
+        if not n:
+            return ""
+        if n in cls.SELF_ALIASES:
+            return "self"
+        return n
+
     @staticmethod
     def values_same_identity(value: Any, referent: Any) -> bool:
         """Public value-level identity equality — not substring-of-content.
@@ -749,8 +761,11 @@ class IdentityResolver:
         Distinct from :meth:`same_identity`, which scores an observation against
         a referent. Downstream modules (query matching) should call this API
         instead of the private ``_values_same_identity`` helper.
+
+        ``self`` / ``You`` / ``me`` canonicalize to one identity.
         """
-        a, b = _norm(value), _norm(referent)
+        a = IdentityResolver.canonical_identity(value)
+        b = IdentityResolver.canonical_identity(referent)
         if not a or not b:
             return False
         if a == b:

@@ -354,36 +354,35 @@ def test_instagram_can_be_direct_object_when_sought():
 
 
 def test_platform_word_in_query_does_not_imply_platform_object_type():
-    ranked = rank_search_hypotheses(
-        [
-            {
-                "id": "ig",
-                "label": "Alice https://www.instagram.com/acme",
-                "matches_goal": True,
-                "sender": "Alice",
-            }
-        ],
-        # Free-form query may mention a platform as topic without seeking that
-        # platform as the object type.
+    raw = [
+        {
+            "id": "ig",
+            "label": "Alice https://www.instagram.com/acme",
+            "matches_goal": True,
+            "sender": "Alice",
+        }
+    ]
+    # Same raw candidates; only sought_object semantics change.
+    untyped = rank_search_hypotheses(
+        raw,
         query="report about Instagram growth",
         expected_container="Alice",
         expected_originator="Alice",
-        sought_object="",  # UNKNOWN object semantics
+        sought_object="",
         role="content",
     )
-    assert ranked[0]["interpretation"]["relevance"]["url_reason"] != (
-        "sought_platform_host"
-    )
-    # Contrast: typed sought_object unlocks platform directness.
-    sought = rank_search_hypotheses(
-        ranked,
+    typed = rank_search_hypotheses(
+        raw,
         query="report about Instagram growth",
         expected_container="Alice",
         expected_originator="Alice",
         sought_object="instagram",
         role="content",
     )
-    assert sought[0]["interpretation"]["relevance"]["url_reason"] == (
+    assert untyped[0]["interpretation"]["relevance"]["url_reason"] != (
+        "sought_platform_host"
+    )
+    assert typed[0]["interpretation"]["relevance"]["url_reason"] == (
         "sought_platform_host"
     )
 
@@ -457,10 +456,16 @@ def test_self_sent_to_John_sets_container_John_originator_self():
         capabilities=["open_entity", "resolve_entity", "observe", "search"],
     )
     from plugin.agent.capabilities.search_episode import ensure_search_episode_from_brief
+    from plugin.agent.role_binding import IdentityResolver
+    from plugin.agent.source_query_binding import originator_matches
 
     ep = ensure_search_episode_from_brief(state, brief) or {}
     assert ep.get("expected_container") == "John"
     assert ep.get("expected_originator") == "self"
+    # IdentityResolver owns self/You — not SEARCH pronoun heuristics.
+    assert IdentityResolver.canonical_identity("You") == "self"
+    assert IdentityResolver.values_same_identity("self", "You")
+    assert originator_matches("You", "self")
     ranked = rank_search_hypotheses(
         [
             {
@@ -482,6 +487,41 @@ def test_self_sent_to_John_sets_container_John_originator_self():
         role="content",
     )
     assert ranked[0]["id"] == "you"
+
+
+def test_source_Alice_destination_Bob_search_container_is_Alice():
+    """Destination must not become SEARCH expected_container."""
+    state = ExecutionState()
+    brief = DecisionBrief(
+        goal={
+            "source_conversation": "Alice",
+            "destination": "Bob",
+            "target_contact": "Bob",
+            "contact": "Bob",  # ambiguous legacy field — must not win over source
+            "source_query": "invoice",
+            "originator": "Alice",
+        },
+        world={
+            "surface": "search",
+            "objects": [
+                {
+                    "id": "hit",
+                    "kind": "search_result",
+                    "text": "Alice https://example.com/invoice.pdf",
+                    "matches_goal": True,
+                    "sender": "Alice",
+                }
+            ],
+        },
+        task_state=TaskState(phase="reach_source", search_query="invoice"),
+        capabilities=["open_entity", "resolve_entity", "observe", "search"],
+    )
+    from plugin.agent.capabilities.search_episode import ensure_search_episode_from_brief
+
+    ep = ensure_search_episode_from_brief(state, brief) or {}
+    assert ep.get("expected_container") == "Alice"
+    assert ep.get("expected_originator") == "Alice"
+    assert ep.get("expected_container") != "Bob"
 
 
 def test_strong_unknown_outranks_weaker_commit_ready():

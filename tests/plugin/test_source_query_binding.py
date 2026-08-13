@@ -95,3 +95,16 @@ def test_host_contradict_and_support_helpers():
     assert not query_supported_by_text("https://youtu.be/x", "zarooratwala")
     assert text_locates_source_query("see zarooratwala.com now", "zarooratwala")
     assert not text_locates_source_query("https://youtu.be/x", "zarooratwala")
+
+
+def test_self_you_identity_via_identity_resolver():
+    """self/You/me must canonicalize through IdentityResolver, not SEARCH heuristics."""
+    from plugin.agent.role_binding import IdentityResolver
+    from plugin.agent.source_query_binding import originator_matches
+
+    assert IdentityResolver.canonical_identity("You") == "self"
+    assert IdentityResolver.canonical_identity("me") == "self"
+    assert IdentityResolver.values_same_identity("self", "You")
+    assert originator_matches("You", "self")
+    assert originator_matches("self", "You")
+    assert not originator_matches("You", "Pallavi")
