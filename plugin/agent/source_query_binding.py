@@ -63,17 +63,56 @@ class ConstraintMatch:
         }
 
 
+# Roles / kinds that may show query text but are never content patients.
+_INPUT_EDITOR_KINDS = frozenset(
+    {
+        "draft",
+        "composer",
+        "composer_draft",
+        "message_composer",
+        "text_field",
+        "search_field",
+        "search_input",
+        "search_bar",
+        "input",
+        "edit_field",
+        "filter_field",
+        "typeahead",
+    }
+)
+_INPUT_EDITOR_ROLES = frozenset(
+    {
+        "composer",
+        "draft",
+        "message_composer",
+        "input",
+        "filter",
+        "filter_field",
+        "search_field",
+        "type_field",
+        "editor",
+    }
+)
+
+
 @dataclass
 class GoalMatch:
     """Per-constraint match evidence for a candidate vs the forward goal.
 
     ``task_relevance`` / perception recall may be high while ``binding_eligible``
     stays false (e.g. content+container match, originator mismatch).
+
+    Typed claims (binding path):
+    - ``query_match`` — query identity in text (alias of semantic_query_match)
+    - ``role_compatible`` — content-patient role (not composer/draft/input)
+    - ``binding_eligible`` — query_match ∧ role ∧ container ∧ originator
     """
 
     container_match: bool = False
     object_type_match: bool = False
     semantic_query_match: bool = False
+    query_match: bool = False
+    role_compatible: bool = True
     originator_match: bool = False
     identity_match: bool = False
     binding_eligible: bool = False
@@ -87,6 +126,8 @@ class GoalMatch:
             "container_match": self.container_match,
             "object_type_match": self.object_type_match,
             "semantic_query_match": self.semantic_query_match,
+            "query_match": self.query_match,
+            "role_compatible": self.role_compatible,
             "originator_match": self.originator_match,
             "identity_match": self.identity_match,
             "binding_eligible": self.binding_eligible,
@@ -225,13 +266,33 @@ def evaluate_source_object_match(
     expected_originator: str = "",
     sender: Any = None,
     perception_matches_goal: bool = False,
+    role: str = "",
 ) -> GoalMatch:
     """High-precision eligibility for binding ``source_object``."""
     gm = GoalMatch()
     blob = str(text or "")
     kind_l = _norm(kind)
+    role_l = _norm(role)
     q = _norm(query)
     want_origin = str(expected_originator or "").strip()
+
+    # Role: content patient vs input/editor (draft may carry query text).
+    gm.role_compatible = not (
+        kind_l in _INPUT_EDITOR_KINDS
+        or role_l in _INPUT_EDITOR_ROLES
+        or any(tok in kind_l for tok in ("composer", "draft", "input"))
+        or any(tok in role_l for tok in ("composer", "draft", "input", "filter"))
+    )
+    gm.constraints.append(
+        ConstraintMatch(
+            name="role",
+            required=True,
+            status="match" if gm.role_compatible else "mismatch",
+            evidence=f"kind={kind_l or '-'} role={role_l or '-'}",
+        )
+    )
+    if not gm.role_compatible:
+        gm.contradictions.append("role_incompatible_input_editor")
 
     # Container
     if expected_container:
@@ -262,7 +323,7 @@ def evaluate_source_object_match(
         )
 
     # Object type: message / link / chat content (not bare chat_row preview alone
-    # unless it carries the query).
+    # unless it carries the query). Input/editor kinds are never content objects.
     content_kinds = {
         "message",
         "message_bubble",
@@ -272,7 +333,10 @@ def evaluate_source_object_match(
         "message_with_link",
         "message_cluster",
     }
-    gm.object_type_match = kind_l in content_kinds or bool(extract_urls(blob))
+    gm.object_type_match = (
+        gm.role_compatible
+        and (kind_l in content_kinds or bool(extract_urls(blob)))
+    )
     gm.constraints.append(
         ConstraintMatch(
             name="object_type",
@@ -286,9 +350,10 @@ def evaluate_source_object_match(
     else:
         gm.contradictions.append("not_content_object")
 
-    # Semantic query
+    # Semantic query / typed query_match claim
     if not q:
         gm.semantic_query_match = True  # no query constraint
+        gm.query_match = True
         gm.constraints.append(
             ConstraintMatch(
                 name="content",
@@ -299,6 +364,7 @@ def evaluate_source_object_match(
         )
     else:
         gm.semantic_query_match = query_supported_by_text(blob, query)
+        gm.query_match = bool(gm.semantic_query_match)
         if gm.semantic_query_match:
             gm.evidence.append(f"query_supported:{query}")
         else:
@@ -314,6 +380,7 @@ def evaluate_source_object_match(
 
     if q and host_contradicts_query(blob, query):
         gm.semantic_query_match = False
+        gm.query_match = False
         gm.contradictions.append("url_host_contradicts_query")
         for c in gm.constraints:
             if c.name == "content":
@@ -368,22 +435,26 @@ def evaluate_source_object_match(
             )
         )
 
-    # Identity: query + content object + container (when known) + originator
+    # Identity: query + content-patient role + container (when known) + originator
     gm.identity_match = bool(
-        gm.semantic_query_match
+        gm.query_match
+        and gm.role_compatible
         and gm.object_type_match
         and (gm.container_match or not expected_container)
         and gm.originator_match
     )
 
-    # Perception bool is recall only — cannot override query/originator fail.
-    if perception_matches_goal and gm.semantic_query_match:
+    # Perception bool is recall only — cannot override query/originator/role fail.
+    if perception_matches_goal and gm.query_match:
         gm.evidence.append("perception_matches_goal_recall_only")
-    elif perception_matches_goal and not gm.semantic_query_match:
+    elif perception_matches_goal and not gm.query_match:
         gm.contradictions.append("perception_matches_goal_ignored_query_fail")
     if perception_matches_goal and want_origin and not gm.originator_match:
         gm.contradictions.append("perception_matches_goal_ignored_originator_fail")
+    if perception_matches_goal and not gm.role_compatible:
+        gm.contradictions.append("perception_matches_goal_ignored_role_fail")
 
+    # Binding path: relevance ≠ bind. Require typed query_match + role.
     gm.binding_eligible = bool(gm.identity_match)
     if gm.binding_eligible:
         gm.confidence = 0.9 if gm.container_match else 0.75
@@ -431,12 +502,19 @@ def scrub_matches_goal_flags(
             expected_originator=expected_originator,
             sender=sender,
             perception_matches_goal=True,
+            role=str(obj.get("role") or obj.get("field_role") or ""),
         )
         obj["goal_match"] = gm.to_dict()
+        # Keep matches_goal for display/recall when query_match holds but role
+        # forbids bind (draft). Clear when query identity / distractor fails.
         if not gm.binding_eligible:
-            obj["matches_goal"] = False
-            obj["matches_goal_rejected"] = "role_constraints_unsatisfied"
-            changed = True
+            if not gm.query_match or "url_host_contradicts_query" in gm.contradictions:
+                obj["matches_goal"] = False
+                obj["matches_goal_rejected"] = "role_constraints_unsatisfied"
+                changed = True
+            else:
+                obj["binding_eligible"] = False
+                changed = True
     if changed or objects:
         doc["objects"] = objects
     return doc
