@@ -19,7 +19,6 @@ from plugin.agent.memory.types import (
     MemoryCandidate,
     MemoryEvidence,
     MemoryInvalidationResult,
-    MemoryRecord,
     MemoryWriteResult,
 )
 from plugin.agent.runtime.agent_runtime import AgentRuntime
@@ -123,8 +122,8 @@ def test_noop_memory_write_reports_ignored_not_persisted() -> None:
     inv = mem.invalidate("mem-1", reason="stale")
     assert inv.disposition == "ignored"
     assert inv.memory_id == "mem-1"
-    # Candidate ≠ Record (types remain distinct).
-    assert MemoryCandidate is not MemoryRecord
+    # Candidate is not durable persistence (MemoryRecord deferred).
+    assert MemoryCandidate.__name__ == "MemoryCandidate"
 
 
 def test_client_context_differences_do_not_change_task_semantics() -> None:

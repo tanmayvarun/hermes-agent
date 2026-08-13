@@ -1,15 +1,16 @@
-"""MethodAvailability vs MethodReadiness — quality ranking stays separate.
+"""MethodAvailability vs MethodReadiness — orthogonal to MethodFrontier quality scores.
 
 Implementation readiness ≠ runtime prerequisite:
 
     readiness UNAVAILABLE → overall UNSUPPORTED (never ASK to link)
+    readiness unspecified/empty → legacy-compatible (not auto-UNSUPPORTED)
     readiness READY + auth missing → MISSING_PRECONDITION (may ASK)
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Mapping, Optional, Sequence, Set
+from typing import Any, Mapping, Optional, Set
 
 from plugin.agent.ingress import ExecutionConstraints
 
@@ -28,6 +29,14 @@ class MethodReadiness(str, Enum):
 
     READY = "ready"
     UNAVAILABLE = "unavailable"
+    UNSPECIFIED = ""  # legacy MethodSpec — preserve eligibility
+
+
+def _num(value: Any, default: float) -> float:
+    """None-aware float: keep legitimate 0.0 (do not coerce via truthiness)."""
+    if value is None:
+        return float(default)
+    return float(value)
 
 
 def overall_availability(
@@ -35,8 +44,8 @@ def overall_availability(
     readiness: str,
     runtime_availability: str,
 ) -> str:
-    """Combine implementation readiness with runtime prerequisite state."""
-    if str(readiness or "").strip().lower() != MethodReadiness.READY.value:
+    r = str(readiness or "").strip().lower()
+    if r == MethodReadiness.UNAVAILABLE.value:
         return MethodAvailability.UNSUPPORTED.value
     return str(runtime_availability or MethodAvailability.UNSUPPORTED.value)
 
@@ -67,13 +76,8 @@ def evaluate_method_availability(
     declined_method_ids: Optional[Set[str]] = None,
     declined_preconditions: Optional[Set[str]] = None,
 ) -> tuple[str, str]:
-    """Return (overall_availability, detail_reason).
-
-    Quality/ranking must not be computed here — availability only.
-    """
-    readiness = str(
-        getattr(spec, "readiness", None) or MethodReadiness.UNAVAILABLE.value
-    ).strip().lower()
+    """Return (overall_availability, detail_reason). Availability only — no ranking."""
+    readiness = str(getattr(spec, "readiness", None) or "").strip().lower()
     mid = str(getattr(spec, "id", "") or "")
     substrate = str(getattr(spec, "substrate", "") or "")
     if mid in (declined_method_ids or set()):
@@ -81,7 +85,7 @@ def evaluate_method_availability(
     if substrate_forbidden(substrate, constraints):
         return MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value, "substrate_constraint"
 
-    if readiness != MethodReadiness.READY.value:
+    if readiness == MethodReadiness.UNAVAILABLE.value:
         return MethodAvailability.UNSUPPORTED.value, "implementation_unavailable"
 
     facts = dict(precondition_facts or {})
@@ -94,9 +98,10 @@ def evaluate_method_availability(
             return MethodAvailability.USER_DECLINED.value, f"precondition_declined:{key}"
         if facts.get(key, False) is True:
             continue
-        # Absent fact → missing (fail closed for named preconditions).
         missing.append(key)
     if missing:
+        # Legacy unspecified readiness with preconditions: still MISSING, but ASK
+        # only when readiness is explicitly READY (see should_ask_for_precondition).
         return (
             MethodAvailability.MISSING_PRECONDITION.value,
             f"missing:{','.join(missing)}",
@@ -104,49 +109,25 @@ def evaluate_method_availability(
     return MethodAvailability.AVAILABLE.value, "ready"
 
 
-def method_quality_score(spec: Any) -> float:
-    """Quality-only score (orthogonal to availability). Higher is better."""
-    reliability = float(getattr(spec, "reliability", 0.5) or 0.5)
-    latency = float(getattr(spec, "latency", 0.5) or 0.5)
-    risk = float(getattr(spec, "risk", 0.5) or 0.5)
-    cost = float(getattr(spec, "cost", 0.5) or 0.5)
-    interference = float(getattr(spec, "user_interference", 0.5) or 0.5)
-    semantic = float(getattr(spec, "semantic_precision", 0.5) or 0.5)
-    return (
-        1.2 * reliability
-        + 1.0 * semantic
-        - 0.8 * latency
-        - 0.9 * risk
-        - 0.6 * cost
-        - 1.1 * interference
-    )
-
-
-def rank_by_quality(specs: Sequence[Any]) -> list[tuple[Any, float]]:
-    ranked = [(s, method_quality_score(s)) for s in specs]
-    ranked.sort(key=lambda x: x[1], reverse=True)
-    return ranked
-
-
 def should_ask_for_precondition(
     *,
     preferred_spec: Any,
     preferred_availability: str,
+    preferred_quality: float,
     best_available_quality: Optional[float],
     ask_quality_margin: float = 0.15,
 ) -> bool:
-    """Whether to interrupt the user for a READY method's missing precondition.
+    """Interrupt only for explicitly READY methods with missing user prereqs.
 
     Does not auto-ASK merely because the top-ranked method is missing a prereq.
-    Asks when no AVAILABLE alternative exists, or preferred quality beats the
-    best AVAILABLE alternative by ``ask_quality_margin``.
     """
     if preferred_availability != MethodAvailability.MISSING_PRECONDITION.value:
         return False
-    readiness = str(getattr(preferred_spec, "readiness", "") or "").lower()
+    readiness = str(getattr(preferred_spec, "readiness", "") or "").strip().lower()
     if readiness != MethodReadiness.READY.value:
         return False
-    pref_q = method_quality_score(preferred_spec)
     if best_available_quality is None:
         return True
-    return pref_q >= (float(best_available_quality) + float(ask_quality_margin))
+    return float(preferred_quality) >= (
+        float(best_available_quality) + float(ask_quality_margin)
+    )

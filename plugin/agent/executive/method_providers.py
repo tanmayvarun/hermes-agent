@@ -7,7 +7,7 @@ Providers advertise MethodSpecs for effects they understand.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Protocol, Sequence
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from plugin.agent.executive.intention_frame import MethodSpec
 from plugin.agent.ingress import ExecutionConstraints
@@ -54,13 +54,26 @@ def discover_methods(
     interpretation: TaskInterpretation,
     *,
     constraints: Optional[ExecutionConstraints] = None,
-) -> List[MethodSpec]:
+) -> Tuple[List[MethodSpec], List[Dict[str, Any]]]:
+    """Return (specs, provider_errors). Fail-open across providers; never silent."""
     out: List[MethodSpec] = []
+    errors: List[Dict[str, Any]] = []
     seen: set[str] = set()
     for provider in _PROVIDERS:
+        provider_id = str(
+            getattr(provider, "provider_id", None)
+            or getattr(provider, "__class__", type(provider)).__name__
+        )
         try:
             specs = provider.discover(interpretation, constraints=constraints) or []
-        except Exception:
+        except Exception as exc:
+            errors.append(
+                {
+                    "event": "method_provider_error",
+                    "provider_id": provider_id,
+                    "exception": f"{type(exc).__name__}: {exc}",
+                }
+            )
             continue
         for spec in specs:
             mid = str(getattr(spec, "id", "") or "")
@@ -68,7 +81,7 @@ def discover_methods(
                 continue
             seen.add(mid)
             out.append(spec)
-    return out
+    return out, errors
 
 
 def interpret_task_request(request: Any) -> TaskInterpretation:
@@ -90,7 +103,6 @@ def interpret_task_request(request: Any) -> TaskInterpretation:
             kind = "unknown"
     effects: List[str] = []
     if kind and kind != "unknown":
-        # Effect keys derived from goal kind; providers match on these.
         effects.append(str(kind))
         if "forward" in kind:
             effects.append("forward_message")

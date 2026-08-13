@@ -1,0 +1,54 @@
+"""Production ComputerUse method provider — genuinely executable substrate."""
+
+from __future__ import annotations
+
+from typing import Optional, Sequence
+
+from plugin.agent.executive.intention_frame import MethodSpec
+from plugin.agent.executive.method_availability import MethodReadiness
+from plugin.agent.executive.method_providers import TaskInterpretation
+from plugin.agent.ingress import ExecutionConstraints
+
+
+class ComputerUseMethodProvider:
+    """Registers READY computer_use methods for known executive goal kinds."""
+
+    provider_id = "computer_use_native"
+
+    def discover(
+        self,
+        interpretation: TaskInterpretation,
+        *,
+        constraints: Optional[ExecutionConstraints] = None,
+    ) -> Sequence[MethodSpec]:
+        effects = set(interpretation.desired_effects or [])
+        kind = str(interpretation.goal_kind or "")
+        if "forward_message" not in effects and "forward" not in kind:
+            return []
+        return [
+            MethodSpec(
+                id="native_computer_use_forward",
+                capability="forward_message",
+                substrate="computer_use",
+                provider=self.provider_id,
+                preconditions=[],
+                readiness=MethodReadiness.READY.value,
+                reliability=0.55,
+                latency=0.7,
+                risk=0.55,
+                cost=0.6,
+                user_interference=0.85,
+                semantic_precision=0.55,
+            )
+        ]
+
+
+def ensure_computer_use_provider_registered() -> None:
+    from plugin.agent.executive.method_providers import register_method_provider
+    from plugin.agent.runtime.method_executors import (
+        ComputerUseClosedLoopExecutor,
+        register_method_executor,
+    )
+
+    register_method_provider(ComputerUseMethodProvider())
+    register_method_executor(ComputerUseClosedLoopExecutor())

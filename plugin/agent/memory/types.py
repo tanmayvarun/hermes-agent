@@ -1,4 +1,8 @@
-"""Memory types — MemoryCandidate ≠ MemoryRecord; structured write outcomes."""
+"""Memory types — MemoryCandidate ≠ durable persistence; evidence ≠ truth.
+
+Durable MemoryRecord schema is deferred until a real store lands. The seam
+today needs candidates, evidence, and structured write/invalidate results.
+"""
 
 from __future__ import annotations
 
@@ -8,30 +12,12 @@ from typing import Any, Optional
 
 @dataclass
 class MemoryCandidate:
-    """May be worth remembering. Not yet a durable MemoryRecord."""
+    """May be worth remembering. Not yet durable persistence."""
 
     kind: str
     content: Any
     provenance: str = ""
     scope: str = "task"
-    confidence: float = 0.0
-    subject: str = ""
-    evidence_refs: list[str] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class MemoryRecord:
-    """Durable memory shape (stub for the seam — no store in this slice).
-
-    Distinct from MemoryCandidate: records exist only after write policy accepts.
-    """
-
-    memory_id: str
-    kind: str
-    content: Any
-    provenance: str = ""
-    scope: str = "session"
     confidence: float = 0.0
     subject: str = ""
     evidence_refs: list[str] = field(default_factory=list)

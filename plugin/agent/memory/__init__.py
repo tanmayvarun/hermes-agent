@@ -5,7 +5,6 @@ from plugin.agent.memory.types import (
     MemoryCandidate,
     MemoryEvidence,
     MemoryInvalidationResult,
-    MemoryRecord,
     MemoryWriteResult,
 )
 
@@ -13,7 +12,6 @@ __all__ = [
     "MemoryCandidate",
     "MemoryEvidence",
     "MemoryInvalidationResult",
-    "MemoryRecord",
     "MemorySystem",
     "MemoryWriteResult",
     "NoopMemorySystem",

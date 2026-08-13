@@ -1,6 +1,9 @@
 """Session-scoped runtime continuation (suspended ASK / intentions).
 
-Sessions belong to the runtime, not the client. TaskRequest holds SessionRef only.
+MIGRATION DEBT: this is a temporary module-global continuation store beside
+TUI SessionDB and per-session RuntimeState. Longer-term, a single AgentSession
+should own active intention, pending ASK, declined method scope, RuntimeState,
+and memory/session handles. Wire cleanup when the Hermes session ends.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ class SuspendedAsk:
     precondition: str
     question: str
     parent_effect: str = ""
+    permission_granted: bool = False
     interpretation_notes: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -28,8 +32,11 @@ class SessionRuntimeState:
     suspended_ask: Optional[SuspendedAsk] = None
     declined_method_ids: Set[str] = field(default_factory=set)
     declined_preconditions: Set[str] = field(default_factory=set)
+    # Verified precondition facts (session-scoped) — not AgentRuntime instance fields.
+    precondition_facts: Dict[str, bool] = field(default_factory=dict)
     active_intention_id: str = ""
     last_trace: Dict[str, Any] = field(default_factory=dict)
+    original_user_turn: str = ""
 
 
 _LOCK = threading.RLock()
@@ -47,6 +54,7 @@ def get_or_create_session(session_id: str) -> SessionRuntimeState:
 
 
 def clear_session(session_id: str) -> None:
+    """Call when the underlying Hermes/TUI session ends."""
     with _LOCK:
         _SESSIONS.pop(str(session_id or "").strip(), None)
 

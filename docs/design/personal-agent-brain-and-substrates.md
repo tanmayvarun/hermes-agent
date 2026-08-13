@@ -559,28 +559,33 @@ plugin/agent/runtime/agent_runtime.py  AgentRuntime
 
 ```text
 TUI → TaskRequest → TaskIngress → AgentRuntime.handle_turn
-  → interpret → method providers → quality ⊥ availability → decide
-  → WAITING_FOR_USER (resumable ASK) | legacy AIAgent delegate | selected method
+  → interpret → method providers → MethodFrontier.decide_methods
+  → WAITING_FOR_USER | execute_method(substrate) | legacy AIAgent (no method)
 ```
 
 Hard invariants:
 
 ```text
 AgentRuntime is domain-generic (no if forward_message / WhatsApp).
-Domain catalogs register via method_providers.
-Implementation readiness UNAVAILABLE ⇒ UNSUPPORTED (never ASK to link a stub).
-READY + missing user prereq ⇒ MISSING_PRECONDITION (may ASK).
-ASK = resumable WAITING_FOR_USER across session turns (not a sync UI callback).
-All ordinary TUI turns enter AgentRuntime; gateway does not classify chat vs executive.
+Ranking authority = existing MethodFrontier (no parallel runtime scorer).
+Selected MethodSpec dispatches MethodExecutorRegistry (CU → closed-loop adapter).
+Legacy chat only when no executable method — never as a stand-in for selected CU.
+Domain catalogs register via composition root method_providers.
+readiness "" = legacy-safe; UNAVAILABLE = explicit stub; READY = executable.
+ASK accept = permission to resolve prerequisite ≠ precondition achieved.
+Prerequisite verified by resolver before facts are set / parent resumes.
 Method quality ranking ⊥ MethodAvailability.
 Forced ComputerUse = ExecutionConstraints.allowed_substrates / forced_substrate.
+session_store.py is temporary continuation storage (AgentSession debt).
+MemoryRecord schema deferred; Candidate/Evidence/write results only.
 ```
 
-**Stage A live acceptance:** traditional TUI reaches common runtime + method selection.
-If WhatsApp Web is not READY, ComputerUse may win — correct.
+**Hold live ZarooratWala probe** until dispatch + composition goldens are green.
 
-**Stage B (deferred):** ASK→decline→ComputerUse live only once WhatsApp Web executor
-is READY so linking would make the method executable.
+**Stage A live acceptance:** TUI → common runtime → MethodFrontier → genuinely
+executable provider → executor actually runs (CU closed-loop adapter OK).
+
+**Stage B (deferred):** ASK→resolve→resume / decline→CU once WhatsApp Web is READY.
 
 Goldens: `tests/plugin/test_task_ingress_memory_seam.py`,
 `tests/plugin/test_ui_runtime_method_selection.py`.

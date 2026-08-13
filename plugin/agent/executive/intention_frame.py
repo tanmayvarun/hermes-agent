@@ -179,6 +179,10 @@ class ScoringPolicy:
     reversibility_weight: float = 0.3
     grounding_weight: float = 0.4
     repeat_penalty_weight: float = 0.5
+    # Applied for substrate-aware MethodSpecs (substrate set or readiness explicit).
+    reliability_weight: float = 0.35
+    semantic_weight: float = 0.25
+    interference_weight: float = 0.4
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -230,8 +234,9 @@ class MethodSpec:
     user_interference: float = 0.5
     reliability: float = 0.5
     semantic_precision: float = 0.5
-    # Implementation readiness: UNAVAILABLE ⇒ overall UNSUPPORTED (never ASK).
-    readiness: str = "unavailable"
+    # Implementation readiness: "" = unspecified/legacy-safe;
+    # "unavailable" = provider asserts stub; "ready" = executable implementation.
+    readiness: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -655,6 +660,13 @@ def close_attempt_on_frame(
     return closed
 
 
+def _score_num(value: Any, default: float) -> float:
+    """None-aware float for scoring — legitimate 0.0 must remain 0.0."""
+    if value is None:
+        return float(default)
+    return float(value)
+
+
 def score_method(
     spec: MethodSpec,
     policy: ScoringPolicy,
@@ -674,16 +686,30 @@ def score_method(
     if spec.provenance == MethodProvenance.LLM_INFERRED.value:
         info -= 0.1
     repeat = 1.0 if attempted else 0.0
-    return (
+    score = (
         policy.progress_weight * progress
         + policy.information_weight * info
         + policy.grounding_weight * grounding_confidence
-        + policy.reversibility_weight * float(spec.reversibility)
-        - policy.risk_weight * float(spec.risk)
-        - policy.latency_weight * float(spec.latency)
-        - policy.cost_weight * float(spec.cost)
+        + policy.reversibility_weight * _score_num(spec.reversibility, 0.9)
+        - policy.risk_weight * _score_num(spec.risk, 0.1)
+        - policy.latency_weight * _score_num(spec.latency, 0.2)
+        - policy.cost_weight * _score_num(spec.cost, 0.2)
         - policy.repeat_penalty_weight * repeat
     )
+    # Substrate-aware / readiness-aware specs: include interference & reliability.
+    readiness = str(getattr(spec, "readiness", "") or "").strip().lower()
+    substrate = str(getattr(spec, "substrate", "") or "").strip()
+    if substrate or readiness in {"ready", "unavailable"}:
+        score += policy.reliability_weight * _score_num(
+            getattr(spec, "reliability", None), 0.5
+        )
+        score += policy.semantic_weight * _score_num(
+            getattr(spec, "semantic_precision", None), 0.5
+        )
+        score -= policy.interference_weight * _score_num(
+            getattr(spec, "user_interference", None), 0.5
+        )
+    return score
 
 
 def apply_wrong_locus_ineligibility(

@@ -10046,10 +10046,13 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             except (TypeError, ValueError):
                 pass
 
+            from plugin.agent.composition import compose_domain_adapters
             from plugin.agent.ingress import SessionRef, TaskIngress, TaskRequest
             from plugin.agent.runtime.agent_runtime import AgentRuntime
             from plugin.agent.runtime.state import RuntimeState
             from plugin.agent.runtime.turn_result import TurnStatus
+
+            compose_domain_adapters()
 
             _task_req = TaskIngress.normalize(
                 TaskRequest(

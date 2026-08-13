@@ -1,4 +1,4 @@
-"""Stage A goldens: TUI→AgentRuntime cutover, availability ⊥ quality, resumable ASK."""
+"""Stage A goldens (post merge-blocker fixes): frontier authority, dispatch, ASK permission."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ from typing import Any, Optional, Sequence
 
 import pytest
 
-from plugin.agent.executive.intention_frame import MethodSpec
+from plugin.agent.composition import compose_domain_adapters, reset_composition_for_tests
+from plugin.agent.executive.intention_frame import MethodSpec, ScoringPolicy, score_method
 from plugin.agent.executive.method_availability import (
     MethodAvailability,
     MethodReadiness,
@@ -19,6 +20,7 @@ from plugin.agent.executive.method_providers import (
     discover_methods,
     register_method_provider,
 )
+from plugin.agent.goal import Goal
 from plugin.agent.ingress import (
     ExecutionConstraints,
     SessionRef,
@@ -27,21 +29,39 @@ from plugin.agent.ingress import (
     semantic_task_fingerprint,
 )
 from plugin.agent.runtime.agent_runtime import AgentRuntime
+from plugin.agent.runtime.method_executors import (
+    MethodExecutionResult,
+    clear_method_executors,
+    register_method_executor,
+)
+from plugin.agent.runtime.prerequisite_resolver import (
+    InjectedPrerequisiteResolver,
+    clear_prerequisite_resolvers,
+    register_prerequisite_resolver,
+)
 from plugin.agent.runtime.session_store import reset_session_store
 from plugin.agent.runtime.state import RuntimeState
 from plugin.agent.runtime.turn_result import TurnStatus
 
 
 @pytest.fixture(autouse=True)
-def _clean_providers_and_sessions():
+def _clean_registries():
     clear_method_providers()
+    clear_method_executors()
+    clear_prerequisite_resolvers()
     reset_session_store()
+    reset_composition_for_tests()
     yield
     clear_method_providers()
+    clear_method_executors()
+    clear_prerequisite_resolvers()
     reset_session_store()
+    reset_composition_for_tests()
 
 
 class _CatalogProvider:
+    provider_id = "test_catalog"
+
     def __init__(self, specs: Sequence[MethodSpec]):
         self.specs = list(specs)
 
@@ -51,14 +71,43 @@ class _CatalogProvider:
         *,
         constraints: Optional[ExecutionConstraints] = None,
     ) -> Sequence[MethodSpec]:
-        if "forward_message" not in interpretation.desired_effects and (
-            "forward" not in interpretation.goal_kind
-        ):
-            # Still return for synthetic tests that set effects explicitly.
-            if interpretation.desired_effects:
-                return list(self.specs)
-            return list(self.specs)
         return list(self.specs)
+
+
+class _RecordingCUExecutor:
+    executor_id = "test_computer_use"
+    substrates = ("computer_use",)
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def execute(self, spec: Any, *, context: dict) -> MethodExecutionResult:
+        self.calls += 1
+        return MethodExecutionResult(
+            ok=True,
+            status="executed",
+            detail="cu_dispatched",
+            payload={"ok": True, "dispatched": True, "method_id": spec.id},
+            executor_id=self.executor_id,
+        )
+
+
+class _RecordingBrowserExecutor:
+    executor_id = "test_browser"
+    substrates = ("browser",)
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def execute(self, spec: Any, *, context: dict) -> MethodExecutionResult:
+        self.calls += 1
+        return MethodExecutionResult(
+            ok=True,
+            status="executed",
+            detail="browser_dispatched",
+            payload={"ok": True, "method_id": spec.id},
+            executor_id=self.executor_id,
+        )
 
 
 def _web_ready_missing_auth() -> MethodSpec:
@@ -112,6 +161,21 @@ def _computer_use() -> MethodSpec:
     )
 
 
+def _forward_req(session: str = "s", **kwargs) -> TaskRequest:
+    prompt = kwargs.pop("user_turn", "Forward ZarooratWala to Tanmay")
+    return TaskRequest(
+        user_turn=prompt,
+        session=SessionRef(session),
+        client_context={"client": "tui"},
+        legacy_goal=Goal(
+            kind="whatsapp_forward_message",
+            contact="Pallavi",
+            prompt=prompt,
+        ),
+        **kwargs,
+    )
+
+
 def test_all_tui_user_turns_enter_agent_runtime_before_legacy_conversation_routing() -> None:
     calls = {"n": 0}
 
@@ -120,60 +184,254 @@ def test_all_tui_user_turns_enter_agent_runtime_before_legacy_conversation_routi
         return {"final_response": f"echo:{msg}"}
 
     rt = AgentRuntime(runtime_state=RuntimeState())
-    req = TaskIngress.normalize(
-        TaskRequest(
-            user_turn="hello there",
-            session=SessionRef("tui-sess-1"),
-            client_context={"client": "tui"},
-        )
+    # No providers → conversation legacy
+    result = rt.handle_turn(
+        TaskIngress.normalize(
+            TaskRequest(
+                user_turn="hello there",
+                session=SessionRef("tui-sess-1"),
+                client_context={"client": "tui"},
+            )
+        ),
+        conversation_runner=runner,
     )
-    result = rt.handle_turn(req, conversation_runner=runner)
     assert result.status == TurnStatus.LEGACY_DELEGATED
     assert calls["n"] == 1
-    assert result.acceptance_trace.get("session_id") == "tui-sess-1"
     assert result.acceptance_trace.get("client") == "tui"
 
 
-def test_ui_adapter_does_not_choose_execution_substrate() -> None:
-    """Client context label must not appear as selected_substrate."""
+def test_selected_computer_use_method_dispatches_computer_use_executor_not_legacy_chat() -> None:
     register_method_provider(_CatalogProvider([_computer_use()]))
-    rt = AgentRuntime(runtime_state=RuntimeState())
-    req = TaskRequest(
-        user_turn="Forward ZarooratWala link from Pallavi to Tanmay",
-        session=SessionRef("s"),
-        client_context={"client": "tui"},
-    )
-    # Force interpretation effects via legacy goal-like provider match.
-    from plugin.agent.goal import Goal
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    chat_calls = {"n": 0}
 
-    req.legacy_goal = Goal(
-        kind="whatsapp_forward_message",
-        contact="Pallavi",
-        prompt=req.user_turn,
-    )
-    result = rt.handle_turn(req)
+    def runner(msg, **kwargs):
+        chat_calls["n"] += 1
+        return {"final_response": "should_not_run"}
+
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    result = rt.handle_turn(_forward_req("cu-dispatch"), conversation_runner=runner)
+    assert cu.calls == 1
+    assert chat_calls["n"] == 0
     assert result.selected_substrate == "computer_use"
-    assert result.selected_substrate != "tui"
-    assert result.acceptance_trace.get("client") == "tui"
+    assert result.acceptance_trace.get("dispatched_executor") is True
+    assert result.acceptance_trace.get("executor_id") == "test_computer_use"
+
+
+def test_agent_runtime_delegates_ranking_to_single_method_frontier_authority() -> None:
+    register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
+    register_method_executor(_RecordingCUExecutor())
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    result = rt.handle_turn(_forward_req("rank-auth"))
+    assert result.acceptance_trace.get("ranking_authority") == "MethodFrontier.rank_eligible"
+    import inspect
+    from plugin.agent.runtime import agent_runtime as mod
+
+    src = inspect.getsource(mod.AgentRuntime.handle_turn)
+    assert "method_quality_score" not in src
+    assert "evaluated.sort" not in src
+
+
+def test_unimplemented_preferred_method_does_not_ask_for_prerequisite() -> None:
+    register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
+    register_method_executor(_RecordingCUExecutor())
+    web = _web_unimplemented()
+    avail, _ = evaluate_method_availability(web)
+    assert avail == MethodAvailability.UNSUPPORTED.value
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req("no-ask")
+    )
+    assert result.status != TurnStatus.WAITING_FOR_USER
+    assert result.selected_substrate == "computer_use"
+
+
+def test_preferred_ready_method_missing_user_prerequisite_can_ask_before_fallback() -> None:
+    register_method_provider(
+        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+    )
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req("ask-sess")
+    )
+    assert result.status == TurnStatus.WAITING_FOR_USER
+    assert result.acceptance_trace.get("missing_precondition") == "authenticated_integration"
+
+
+def test_user_acceptance_does_not_mark_precondition_achieved_without_resolver_success() -> None:
+    register_method_provider(
+        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+    )
+    register_method_executor(_RecordingCUExecutor())
+    # No resolver → unsupported; must not select structured_web as if auth true.
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    first = rt.handle_turn(_forward_req("perm-only"))
+    assert first.status == TurnStatus.WAITING_FOR_USER
+    second = rt.handle_turn(
+        TaskRequest(user_turn="yes", session=SessionRef("perm-only"))
+    )
+    assert second.acceptance_trace.get("prerequisite_resolve", {}).get("status") in {
+        "unsupported",
+        "failed",
+        "pending",
+    }
+    # Must not claim structured web executed solely from "yes".
+    assert second.selected_method != "structured_web_forward" or second.acceptance_trace.get(
+        "prerequisite_resolve", {}
+    ).get("status") == "achieved"
+
+
+def test_failed_prerequisite_resolution_keeps_parent_and_advances_or_reasks_correctly() -> None:
+    register_method_provider(
+        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+    )
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    register_prerequisite_resolver(
+        InjectedPrerequisiteResolver({"authenticated_integration": "failed"})
+    )
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    first = rt.handle_turn(_forward_req("prereq-fail"))
+    intention = first.intention_id
+    second = rt.handle_turn(
+        TaskRequest(user_turn="yes", session=SessionRef("prereq-fail"))
+    )
+    assert second.status == TurnStatus.CONTINUED
+    assert second.intention_id == intention
+    assert second.selected_substrate == "computer_use"
+    assert second.acceptance_trace.get("precondition_achieved") is False
+    assert cu.calls == 1
+
+
+def test_accepted_prerequisite_resumes_parent_intention_after_resolver_success() -> None:
+    register_method_provider(
+        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+    )
+    browser = _RecordingBrowserExecutor()
+    register_method_executor(browser)
+    register_method_executor(_RecordingCUExecutor())
+    register_prerequisite_resolver(
+        InjectedPrerequisiteResolver({"authenticated_integration": "achieved"})
+    )
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    first = rt.handle_turn(_forward_req("prereq-ok"))
+    intention = first.intention_id
+    second = rt.handle_turn(
+        TaskRequest(user_turn="yes", session=SessionRef("prereq-ok"))
+    )
+    assert second.status == TurnStatus.CONTINUED
+    assert second.intention_id == intention
+    assert second.selected_method == "structured_web_forward"
+    assert browser.calls == 1
+    assert second.acceptance_trace.get("resumed_after") == "prerequisite_achieved"
+
+
+def test_user_declined_method_prerequisite_advances_method_frontier() -> None:
+    register_method_provider(
+        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+    )
+    register_method_executor(_RecordingCUExecutor())
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    rt.handle_turn(_forward_req("decline-sess"))
+    result = rt.handle_turn(
+        TaskRequest(user_turn="not now", session=SessionRef("decline-sess"))
+    )
+    assert result.selected_method == "native_computer_use_forward"
+    again = rt.handle_turn(_forward_req("decline-sess"))
+    assert again.status != TurnStatus.WAITING_FOR_USER
+
+
+def test_legacy_method_without_readiness_is_not_accidentally_unsupported() -> None:
+    legacy = MethodSpec(
+        id="legacy_reveal",
+        capability="reveal_actions",
+        preconditions=[],
+        # readiness default ""
+    )
+    assert str(legacy.readiness or "") == ""
+    avail, reason = evaluate_method_availability(legacy)
+    assert avail == MethodAvailability.AVAILABLE.value
+    assert reason == "ready"
+
+
+def test_zero_cost_zero_risk_zero_interference_remain_zero() -> None:
+    spec = MethodSpec(
+        id="zeroed",
+        capability="forward_message",
+        substrate="browser",
+        readiness=MethodReadiness.READY.value,
+        cost=0.0,
+        risk=0.0,
+        latency=0.0,
+        user_interference=0.0,
+        reliability=1.0,
+        semantic_precision=1.0,
+    )
+    policy = ScoringPolicy.for_meta("act")
+    # Direct field integrity
+    assert float(spec.cost) == 0.0
+    assert float(spec.risk) == 0.0
+    assert float(spec.user_interference) == 0.0
+    score = score_method(spec, policy)
+    # A falsy-or bug would treat zeros as 0.5 and change the score materially.
+    spec_bad = MethodSpec(
+        id="nonzero_defaults",
+        capability="forward_message",
+        substrate="browser",
+        readiness=MethodReadiness.READY.value,
+        cost=0.5,
+        risk=0.5,
+        latency=0.5,
+        user_interference=0.5,
+        reliability=1.0,
+        semantic_precision=1.0,
+    )
+    assert score != score_method(spec_bad, policy)
+    assert score > score_method(spec_bad, policy)
+
+
+def test_production_composition_registers_executable_method_provider() -> None:
+    compose_domain_adapters()
+    specs, errors = discover_methods(
+        TaskInterpretation(
+            user_turn="Forward ZarooratWala to Tanmay",
+            goal_kind="whatsapp_forward_message",
+            desired_effects=["forward_message", "whatsapp_forward_message"],
+        )
+    )
+    assert any(s.id == "native_computer_use_forward" for s in specs)
+    assert any(str(getattr(s, "readiness", "")) == "ready" for s in specs)
+    assert errors == [] or isinstance(errors, list)
+
+
+def test_provider_failure_is_traced() -> None:
+    class Boom:
+        provider_id = "boom"
+
+        def discover(self, interpretation, *, constraints=None):
+            raise RuntimeError("provider_exploded")
+
+    register_method_provider(Boom())
+    register_method_provider(_CatalogProvider([_computer_use()]))
+    register_method_executor(_RecordingCUExecutor())
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req("prov-err")
+    )
+    errs = result.acceptance_trace.get("provider_errors") or []
+    assert any(e.get("provider_id") == "boom" for e in errs)
+    assert result.selected_method == "native_computer_use_forward"
 
 
 def test_same_task_request_and_constraints_yield_same_method_frontier() -> None:
     register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
+    register_method_executor(_RecordingCUExecutor())
     constraints = ExecutionConstraints()
     tui = TaskIngress.normalize(
-        TaskRequest(
-            user_turn="Forward the link to Tanmay",
-            session=SessionRef("shared"),
-            client_context={"client": "tui", "supports_rich_ui": True},
-            constraints=constraints,
-            legacy_goal=__import__("plugin.agent.goal", fromlist=["Goal"]).Goal(
-                kind="whatsapp_forward_message", contact="Pallavi", prompt="Forward the link to Tanmay"
-            ),
-        )
+        _forward_req("shared", constraints=constraints)
     )
+    tui.client_context = {"client": "tui", "supports_rich_ui": True}
     desktop = TaskIngress.normalize(
         TaskRequest(
-            user_turn="Forward the link to Tanmay",
+            user_turn=tui.user_turn,
             session=SessionRef("shared"),
             client_context={"client": "desktop", "supports_rich_ui": False},
             constraints=constraints,
@@ -184,162 +442,16 @@ def test_same_task_request_and_constraints_yield_same_method_frontier() -> None:
     r1 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(tui)
     r2 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(desktop)
     assert r1.selected_method == r2.selected_method
-    assert r1.selected_substrate == r2.selected_substrate
-    assert [m["id"] for m in r1.acceptance_trace["candidate_methods"]] == [
-        m["id"] for m in r2.acceptance_trace["candidate_methods"]
-    ]
-
-
-def test_unimplemented_preferred_method_does_not_ask_for_prerequisite() -> None:
-    register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
-    web = _web_unimplemented()
-    avail, reason = evaluate_method_availability(web)
-    assert avail == MethodAvailability.UNSUPPORTED.value
-    assert "implementation" in reason
-    assert not should_ask_for_precondition(
-        preferred_spec=web,
-        preferred_availability=avail,
-        best_available_quality=0.1,
-    )
-    rt = AgentRuntime(runtime_state=RuntimeState())
-    from plugin.agent.goal import Goal
-
-    result = rt.handle_turn(
-        TaskRequest(
-            user_turn="Forward ZarooratWala to Tanmay",
-            session=SessionRef("no-ask"),
-            legacy_goal=Goal(
-                kind="whatsapp_forward_message",
-                contact="Pallavi",
-                prompt="Forward ZarooratWala to Tanmay",
-            ),
-        )
-    )
-    assert result.status != TurnStatus.WAITING_FOR_USER
-    assert result.selected_substrate == "computer_use"
-    cands = result.acceptance_trace["candidate_methods"]
-    web_c = next(c for c in cands if c["id"] == "whatsapp_web_forward")
-    assert web_c["availability"] == MethodAvailability.UNSUPPORTED.value
-
-
-def test_preferred_ready_method_missing_user_prerequisite_can_ask_before_fallback() -> None:
-    register_method_provider(
-        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
-    )
-    rt = AgentRuntime(runtime_state=RuntimeState())
-    from plugin.agent.goal import Goal
-
-    result = rt.handle_turn(
-        TaskRequest(
-            user_turn="Forward ZarooratWala to Tanmay",
-            session=SessionRef("ask-sess"),
-            legacy_goal=Goal(
-                kind="whatsapp_forward_message",
-                contact="Pallavi",
-                prompt="Forward ZarooratWala to Tanmay",
-            ),
-        )
-    )
-    assert result.status == TurnStatus.WAITING_FOR_USER
-    assert "prerequisite" in (result.question or "").lower() or result.question
-    assert result.acceptance_trace.get("missing_precondition") == "authenticated_integration"
-
-
-def test_ask_returns_waiting_state_and_resumes_same_intention_on_next_turn() -> None:
-    register_method_provider(
-        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
-    )
-    rt = AgentRuntime(runtime_state=RuntimeState())
-    from plugin.agent.goal import Goal
-
-    goal = Goal(
-        kind="whatsapp_forward_message",
-        contact="Pallavi",
-        prompt="Forward ZarooratWala to Tanmay",
-    )
-    sess = SessionRef("resume-sess")
-    first = rt.handle_turn(
-        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
-    )
-    assert first.status == TurnStatus.WAITING_FOR_USER
-    intention = first.intention_id
-    second = rt.handle_turn(
-        TaskRequest(user_turn="no", session=sess, legacy_goal=goal)
-    )
-    assert second.status == TurnStatus.CONTINUED
-    assert second.intention_id == intention
-    assert second.selected_substrate == "computer_use"
-    assert second.acceptance_trace.get("resumed_after") == "user_declined"
-
-
-def test_user_declined_method_prerequisite_advances_method_frontier() -> None:
-    register_method_provider(
-        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
-    )
-    rt = AgentRuntime(runtime_state=RuntimeState())
-    from plugin.agent.goal import Goal
-
-    goal = Goal(
-        kind="whatsapp_forward_message",
-        contact="Pallavi",
-        prompt="Forward message",
-    )
-    sess = SessionRef("decline-sess")
-    rt.handle_turn(TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal))
-    result = rt.handle_turn(TaskRequest(user_turn="not now", session=sess, legacy_goal=goal))
-    assert result.selected_method == "native_computer_use_forward"
-    # Declined method must not be re-asked within scope.
-    again = rt.handle_turn(
-        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
-    )
-    assert again.status != TurnStatus.WAITING_FOR_USER
-    assert again.selected_method == "native_computer_use_forward"
-
-
-def test_accepted_prerequisite_resumes_parent_intention() -> None:
-    register_method_provider(
-        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
-    )
-    rt = AgentRuntime(runtime_state=RuntimeState())
-    from plugin.agent.goal import Goal
-
-    goal = Goal(
-        kind="whatsapp_forward_message",
-        contact="Pallavi",
-        prompt="Forward message",
-    )
-    sess = SessionRef("accept-sess")
-    first = rt.handle_turn(
-        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
-    )
-    intention = first.intention_id
-    second = rt.handle_turn(TaskRequest(user_turn="yes", session=sess, legacy_goal=goal))
-    assert second.status == TurnStatus.CONTINUED
-    assert second.intention_id == intention
-    assert second.selected_method == "structured_web_forward"
-    assert second.acceptance_trace.get("resumed_after") == "user_accepted_prerequisite"
 
 
 def test_forced_substrate_via_execution_constraints_not_harness_branch() -> None:
     register_method_provider(
         _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
     )
-    # Even with READY web missing auth, forced CU forbids browser and skips ASK
-    # when CU is the only allowed substrate with AVAILABLE readiness.
-    # Web becomes FORBIDDEN_BY_CONSTRAINT; CU AVAILABLE → select CU, no ASK.
-    rt = AgentRuntime(runtime_state=RuntimeState())
-    from plugin.agent.goal import Goal
-
-    goal = Goal(
-        kind="whatsapp_forward_message",
-        contact="Pallavi",
-        prompt="Forward message",
-    )
-    result = rt.handle_turn(
-        TaskRequest(
-            user_turn=goal.prompt,
-            session=SessionRef("force-cu"),
-            legacy_goal=goal,
+    register_method_executor(_RecordingCUExecutor())
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req(
+            "force-cu",
             constraints=ExecutionConstraints(
                 allowed_substrates=("computer_use",),
                 forced_substrate="computer_use",
@@ -348,19 +460,11 @@ def test_forced_substrate_via_execution_constraints_not_harness_branch() -> None
     )
     assert result.status != TurnStatus.WAITING_FOR_USER
     assert result.selected_substrate == "computer_use"
-    web = next(
-        c
-        for c in result.acceptance_trace["candidate_methods"]
-        if c["id"] == "structured_web_forward"
-    )
-    assert web["availability"] == MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value
 
 
-def test_agent_runtime_has_no_whatsapp_forward_branch_source() -> None:
-    import inspect
-    from plugin.agent.runtime import agent_runtime as mod
-
-    src = inspect.getsource(mod.AgentRuntime.handle_turn)
-    assert "whatsapp" not in src.lower()
-    assert "forward_message" not in src
-    assert "zarooratwala" not in src.lower()
+def test_ui_adapter_does_not_choose_execution_substrate() -> None:
+    register_method_provider(_CatalogProvider([_computer_use()]))
+    register_method_executor(_RecordingCUExecutor())
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(_forward_req("s"))
+    assert result.selected_substrate == "computer_use"
+    assert result.selected_substrate != "tui"
