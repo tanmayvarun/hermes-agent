@@ -22,26 +22,6 @@ _YOU_SENDER_RE = re.compile(
     re.I,
 )
 
-# Hosts that are never the brand/domain of a grocery/link query like zarooratwala.
-_DISTRACTOR_HOSTS = frozenset(
-    {
-        "youtu.be",
-        "youtube.com",
-        "m.youtube.com",
-        "instagram.com",
-        "www.instagram.com",
-        "facebook.com",
-        "fb.com",
-        "twitter.com",
-        "x.com",
-        "tiktok.com",
-        "google.com",
-        "maps.google.com",
-        "wa.me",
-        "chat.whatsapp.com",
-    }
-)
-
 _SELF_ORIGINATORS = frozenset({"self", "me", "i", "you", "myself"})
 
 
@@ -193,14 +173,12 @@ def host_contradicts_query(text: str, query: str) -> bool:
         host = url_host(url)
         if not host:
             continue
-        # Explicit distractor platforms are never the direct content object,
-        # even when the query appears as an account/path token.
         path_blob = _norm(url)
-        if host in _DISTRACTOR_HOSTS or any(
-            host.endswith("." + d) for d in _DISTRACTOR_HOSTS if "." in d
-        ):
-            return True
-        # Brand/domain query: host must contain the brand token.
+        # Brand/domain query: host or path must support the brand token.
+        # Platform hosts are not a global denylist — Instagram/YouTube/etc.
+        # can be the sought object when the goal names them; when the brand
+        # appears only in a path, ranking (not this hard reject) separates
+        # direct brand hosts from related platform accounts.
         if q and ("." in q or len(tokens) == 1):
             brand = tokens[0]
             if brand not in host and brand not in path_blob:

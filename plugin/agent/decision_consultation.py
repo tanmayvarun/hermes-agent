@@ -2178,11 +2178,11 @@ def _canonical_capability(raw: Any) -> str:
 
 
 def _open_entity_target_from_brief(brief: "DecisionBrief") -> str:
-    """Resolve open target — SEARCH owns semantic choice; ACT does not re-rank.
+    """Resolve open target — SEARCH owns hypothesis choice; ACT executes it.
 
-    Merge-blocker contract: if the search episode already chose a hypothesis
-    (``chosen_label`` / ``explore_label``), return that. Never silently
-    substitute a different row via a second coarse scorer.
+    Contract: consume ``chosen_label`` / ``explore_label`` only. Do not invoke
+    hypothesis ranking. No SEARCH choice ⇒ empty string (return to SEARCH),
+    except a goal-grounded contact address when there is no content query.
     """
     goal = brief.goal if isinstance(brief.goal, dict) else {}
     contact = str(goal.get("source_conversation") or "").strip()
@@ -2192,37 +2192,11 @@ def _open_entity_target_from_brief(brief: "DecisionBrief") -> str:
     ).strip()
     if chosen:
         return chosen
-    # No SEARCH choice yet — fall back to top interpreted hypothesis if present.
-    doc = brief.world if isinstance(brief.world, dict) else {}
     link_q = str(goal.get("source_query") or goal.get("link_query") or "").strip()
-    try:
-        from plugin.agent.capabilities.search_hypothesis import rank_search_hypotheses
-
-        ranked = rank_search_hypotheses(
-            [
-                {
-                    "id": o.get("id"),
-                    "label": str(o.get("text") or o.get("label") or ""),
-                    "kind": o.get("kind"),
-                    "matches_goal": bool(o.get("matches_goal")),
-                    "sender": o.get("sender") or o.get("originator"),
-                    "role": o.get("role") or o.get("field_role"),
-                    "goal_match": o.get("goal_match"),
-                }
-                for o in (doc.get("objects") or [])
-                if isinstance(o, dict)
-                and str(o.get("text") or o.get("label") or "").strip()
-            ],
-            query=link_q,
-            expected_container=contact,
-            expected_originator=contact,
-            role="content" if link_q else "source",
-        )
-        if ranked:
-            return str(ranked[0].get("label") or ranked[0].get("text") or contact)
-    except Exception:
-        pass
-    return contact
+    # Grounded source address from the decision itself — not inventory re-rank.
+    if not link_q:
+        return contact
+    return ""
 
 
 def _search_results_ready_for_open(brief: "DecisionBrief") -> bool:

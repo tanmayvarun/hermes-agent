@@ -16,13 +16,20 @@ import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from plugin.agent.source_query_binding import (
-    _DISTRACTOR_HOSTS,
     evaluate_source_object_match,
     extract_urls,
-    host_contradicts_query,
     infer_message_originator,
     query_supported_by_text,
     url_host,
+)
+
+# Goal-conditioned platform cues (sought object semantics), not a denylist.
+_PLATFORM_SEEK_HINTS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("instagram", ("instagram.com", "instagr.am")),
+    ("youtube", ("youtube.com", "youtu.be")),
+    ("twitter", ("twitter.com", "x.com")),
+    ("github", ("github.com",)),
+    ("linkedin", ("linkedin.com",)),
 )
 
 
@@ -58,8 +65,27 @@ def _is_query_echo(label: str, query: str) -> bool:
     return False
 
 
-def _url_relevance_tier(text: str, query: str) -> Tuple[int, str]:
-    """3=direct object URL, 2=related entity URL, 1=non-URL content, 0=none."""
+def _sought_platform_hosts(query: str, sought_object: str = "") -> List[str]:
+    """Hosts that are *direct* because the goal/query seeks that platform."""
+    blob = f"{_norm(query)} {_norm(sought_object)}"
+    hosts: List[str] = []
+    for needle, host_list in _PLATFORM_SEEK_HINTS:
+        if needle in blob:
+            hosts.extend(host_list)
+    return hosts
+
+
+def _url_relevance_tier(
+    text: str,
+    query: str,
+    *,
+    sought_object: str = "",
+) -> Tuple[int, str]:
+    """3=direct object URL, 2=related entity URL, 1=non-URL content, 0=none.
+
+    Directness is goal-conditioned (sought platform / brand-in-host), never a
+    global host denylist.
+    """
     q = _norm(query)
     blob = _norm(text)
     urls = extract_urls(text)
@@ -67,29 +93,26 @@ def _url_relevance_tier(text: str, query: str) -> Tuple[int, str]:
         if q and query_supported_by_text(blob, query):
             return 1, "text_match"
         return 0, "no_query_support"
-    brand = (q.split() or [""])[0]
+    brand_tokens = [t for t in re.split(r"\W+", q) if len(t) >= 4]
+    brand = brand_tokens[0] if brand_tokens else (q.split() or [""])[0]
+    sought_hosts = _sought_platform_hosts(query, sought_object)
     best = 0
     reason = "url_present"
     for url in urls:
         host = url_host(url)
         path = _norm(url)
-        if host in _DISTRACTOR_HOSTS or any(
-            host.endswith("." + d) for d in _DISTRACTOR_HOSTS if "." in d
-        ):
-            # Related account/path — not the sought direct object.
-            if brand and brand in path:
-                best = max(best, 2)
-                reason = "related_distractor_host"
-            else:
-                best = max(best, 1)
-                reason = "distractor_host"
+        if any(h == host or host.endswith("." + h) for h in sought_hosts):
+            # Goal names this platform → stronger than mere brand-in-host.
+            best = max(best, 4)
+            reason = "sought_platform_host"
             continue
         if brand and brand in host:
             best = max(best, 3)
             reason = "direct_brand_host"
         elif brand and brand in path:
+            # Query appears only in path → related entity unless platform sought.
             best = max(best, 2)
-            reason = "query_in_url_path"
+            reason = "query_in_path_not_host"
         else:
             best = max(best, 2 if query_supported_by_text(path, query) else 1)
             reason = "url_other"
@@ -102,6 +125,7 @@ def interpret_search_candidate(
     query: str = "",
     expected_container: str = "",
     expected_originator: str = "",
+    sought_object: str = "",
     role: str = "content",
 ) -> Dict[str, Any]:
     """Build structured interpretation; does not bind."""
@@ -117,7 +141,9 @@ def interpret_search_candidate(
     unknowns: List[str] = []
     gm = None
     echo = bool(query and _is_query_echo(label, query))
-    url_tier, url_reason = _url_relevance_tier(label, query)
+    url_tier, url_reason = _url_relevance_tier(
+        label, query, sought_object=sought_object or query
+    )
     origin = infer_message_originator(label, sender=sender, kind=kind)
 
     # Contact/source hunts: do not apply content-patient GoalMatch (that was
@@ -135,11 +161,23 @@ def interpret_search_candidate(
         if candidate.get("matches_goal") and name_hit:
             relevance_tier = max(relevance_tier, 3)
         relation_tier = 2 if not origin else (3 if name_hit else 1)
+        exploration_value = {
+            "can_more_evidence_be_acquired": bool(name_hit and not groupish),
+            "explorable": not echo and not groupish,
+        }
+        explore_tier = (
+            2
+            if exploration_value["explorable"]
+            and exploration_value["can_more_evidence_be_acquired"]
+            else (1 if exploration_value["explorable"] else 0)
+        )
+        # Explore order: relevance / relation / information value — never
+        # commit_readiness (binder owns that).
         rank_key = (
             0 if echo else 1,
             relevance_tier,
             relation_tier,
-            1 if name_hit and not groupish else 0,
+            explore_tier,
             0,
         )
         return {
@@ -160,10 +198,7 @@ def interpret_search_candidate(
             },
             "contradictions": contradictions,
             "unknowns": unknowns,
-            "exploration_value": {
-                "can_more_evidence_be_acquired": True,
-                "explorable": not echo and not groupish,
-            },
+            "exploration_value": exploration_value,
             "commit_readiness": {
                 "binding_eligible": bool(name_hit and not groupish),
                 "advisory_only": True,
@@ -231,9 +266,9 @@ def interpret_search_candidate(
     }
     exploration_value = {
         "can_more_evidence_be_acquired": bool(
-            "sender_unknown" in unknowns or url_tier >= 2
+            "sender_unknown" in unknowns or (url_tier >= 2 and not echo)
         ),
-        "explorable": not echo,
+        "explorable": not echo and "explicit_self_vs_required_sender" not in contradictions,
     }
 
     if "explicit_self_vs_required_sender" in contradictions:
@@ -248,6 +283,8 @@ def interpret_search_candidate(
     relevance_tier = 0
     if echo:
         relevance_tier = 0
+    elif url_tier >= 4 and query_match:
+        relevance_tier = 5
     elif url_tier >= 3 and query_match:
         relevance_tier = 4
     elif url_tier == 2 and query_match:
@@ -257,16 +294,23 @@ def interpret_search_candidate(
     elif candidate.get("matches_goal"):
         relevance_tier = 1
 
+    # Information value for exploration — NOT commit_readiness. A strong
+    # UNKNOWN can outrank a weaker bind-ready candidate.
+    explore_tier = 0
+    if exploration_value.get("explorable"):
+        explore_tier = 2 if exploration_value.get("can_more_evidence_be_acquired") else 1
+
     rank_key = (
         0 if echo else 1,
         relevance_tier,
         relation_tier,
-        1 if commit_readiness["binding_eligible"] else 0,
+        explore_tier,
         url_tier,
     )
     rank_reason = (
         f"echo={echo}; rel_tier={relevance_tier}; origin_tier={relation_tier}; "
-        f"url={url_reason}; unknowns={unknowns[:2]}; contra={contradictions[:2]}"
+        f"explore={explore_tier}; url={url_reason}; unknowns={unknowns[:2]}; "
+        f"contra={contradictions[:2]}"
     )
 
     return {
@@ -288,6 +332,7 @@ def attach_interpretations(
     query: str = "",
     expected_container: str = "",
     expected_originator: str = "",
+    sought_object: str = "",
     role: str = "content",
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
@@ -300,6 +345,7 @@ def attach_interpretations(
             query=query,
             expected_container=expected_container,
             expected_originator=expected_originator,
+            sought_object=sought_object,
             role=role,
         )
         row["interpretation"] = interp
@@ -315,6 +361,7 @@ def rank_search_hypotheses(
     query: str = "",
     expected_container: str = "",
     expected_originator: str = "",
+    sought_object: str = "",
     role: str = "content",
 ) -> List[Dict[str, Any]]:
     """Order candidates for exploration; echoes demoted when better fits exist."""
@@ -323,6 +370,7 @@ def rank_search_hypotheses(
         query=query,
         expected_container=expected_container,
         expected_originator=expected_originator,
+        sought_object=sought_object or query,
         role=role,
     )
     if not rows:

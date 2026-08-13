@@ -385,6 +385,8 @@ def start_search_episode(
     referent: str = "",
     query: str = "",
     evidence_tokens: Optional[Sequence[str]] = None,
+    expected_originator: str = "",
+    expected_container: str = "",
     space: str = "ui_filter",
     reason: str = "",
     status: str = "querying",
@@ -401,6 +403,9 @@ def start_search_episode(
         "evidence_tokens": [
             str(t).strip() for t in (evidence_tokens or []) if str(t).strip()
         ][:12],
+        # Typed goal/referent roles only — never inferred from evidence_tokens.
+        "expected_originator": str(expected_originator or "").strip(),
+        "expected_container": str(expected_container or "").strip(),
         "query": str(query or "").strip(),
         "candidate_count": 0,
         "candidate_fingerprint": "",
@@ -448,6 +453,8 @@ def advance_search_with_candidates(
         evidence_tokens=tokens,
         episode=ep,
         role=str(ep.get("role") or ""),
+        expected_originator=str(ep.get("expected_originator") or ""),
+        expected_container=str(ep.get("expected_container") or ""),
     )
     unique = unique_fitting_candidate(
         filtered, referent=ref, evidence_tokens=tokens, query=q
@@ -455,6 +462,7 @@ def advance_search_with_candidates(
     status = "ranking"
     chosen_label = ""
     chosen_id: Any = None
+    choice_confidence = ""
     role_rejected_ids = [
         x for x in list(ep.get("role_rejected_ids") or []) if x is not None
     ][:24]
@@ -487,10 +495,13 @@ def advance_search_with_candidates(
             if chosen_label and chosen_label not in role_rejected_labels:
                 role_rejected_labels.append(chosen_label)
         else:
-            # May be commit-ready or only explore-ready (unknown evidence).
+            # Unique hypothesis after filter ≠ RoleBinding.resolved.
+            # Mark retrieval complete with provisional choice confidence so
+            # downstream cannot treat uniqueness as semantic resolution.
             status = "complete"
             chosen_label = str(unique.get("label") or unique.get("text") or "")
             chosen_id = unique.get("id")
+            choice_confidence = "provisional"
     elif unique is not None and len(filtered) > 1:
         # Strong unique among many after echo demotion — still rank when ambiguous.
         status = "ranking"
@@ -542,6 +553,8 @@ def advance_search_with_candidates(
         "candidate_fingerprint": _fingerprint(filtered or rows),
         "chosen_label": chosen_label,
         "chosen_id": chosen_id,
+        "choice_confidence": choice_confidence
+        or (ep.get("choice_confidence") if status == "complete" else ""),
         "explore_label": ep_explore_label or chosen_label,
         "filtered_count": len(filtered),
         "raw_count": len(rows),
@@ -549,7 +562,15 @@ def advance_search_with_candidates(
         "role_rejected_ids": role_rejected_ids,
         "role_rejected_labels": role_rejected_labels,
         "hypothesis_ledger": ledger[:16],
+        "retrieval_complete": bool(
+            status == "complete" or ep.get("retrieval_complete")
+        ),
+        # Unique / ranked choice is not RoleBinder resolution.
+        "role_resolved": bool(ep.get("role_resolved")) if status != "complete" else False,
     }
+    if status == "complete" and choice_confidence == "provisional":
+        ep["role_resolved"] = False
+        ep["retrieval_complete"] = True
     if just_rejected_unique:
         gm = unique.get("goal_match") if isinstance(unique, dict) else None
         reject_reason = role_rejection_reason_from_assessment(
@@ -1112,25 +1133,22 @@ def filter_search_candidates(
 
     ep = episode if isinstance(episode, dict) else {}
     role_s = str(role or ep.get("role") or "content").strip().lower() or "content"
-    # Content hunts: originator/container from episode referent / tokens.
-    origin = str(expected_originator or "").strip()
-    container = str(expected_container or "").strip()
-    if not origin:
-        # Prefer a person-like token distinct from the query string.
-        qn = _norm(query or ep.get("query") or "")
-        for t in tokens:
-            tn = _norm(t)
-            if tn and tn != qn and "http" not in tn and "." not in tn:
-                origin = str(t).strip()
-                break
-    if not container:
-        container = origin
+    # Typed goal/referent state only. evidence_tokens are an unordered bag —
+    # never promote a token into expected_originator / expected_container.
+    origin = str(
+        expected_originator or ep.get("expected_originator") or ""
+    ).strip()
+    container = str(
+        expected_container or ep.get("expected_container") or ""
+    ).strip()
+    sought = str(query or ep.get("query") or referent or "").strip()
 
     ranked = rank_search_hypotheses(
         rows,
-        query=str(query or ep.get("query") or referent or "").strip(),
+        query=sought,
         expected_container=container,
         expected_originator=origin,
+        sought_object=sought,
         role=role_s,
     )
     return ranked
@@ -1264,6 +1282,9 @@ def ensure_search_episode_from_brief(
 
     tokens = [t for t in (referent, contact, link_q, query, dest) if t]
     tokens = list(dict.fromkeys(tokens))
+    # Typed semantic roles from the goal — not from unordered evidence_tokens.
+    typed_originator = contact if role == "content" else ""
+    typed_container = contact
     cands = candidates_from_world_document(doc)
     ep = search_episode_of(holder)
     # Arm only when search has material evidence — not on chat_list previews
@@ -1291,14 +1312,22 @@ def ensure_search_episode_from_brief(
             referent=referent,
             query=query,
             evidence_tokens=tokens,
+            expected_originator=typed_originator,
+            expected_container=typed_container,
             space=space_for_surface(surface),
             reason="ensure_from_brief",
             status=start_status,
         )
-    elif query and not str(ep.get("query") or "").strip():
+    else:
+        # Refresh typed roles when goal contact is known; never invent from tokens.
         try:
             ep = dict(ep)
-            ep["query"] = query
+            if typed_originator and not str(ep.get("expected_originator") or "").strip():
+                ep["expected_originator"] = typed_originator
+            if typed_container and not str(ep.get("expected_container") or "").strip():
+                ep["expected_container"] = typed_container
+            if query and not str(ep.get("query") or "").strip():
+                ep["query"] = query
             holder.search_episode = ep
         except Exception:
             pass

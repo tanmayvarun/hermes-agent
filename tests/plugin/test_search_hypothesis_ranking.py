@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+
+def _norm_absent_role(interp: dict) -> bool:
+    rel = interp.get("relation_evidence") or {}
+    # Ranker must not invent person/container from unordered evidence tokens.
+    return not rel.get("container") and "John" not in str(rel.get("originator") or "")
+
+
 from plugin.agent.capabilities.search_episode import (
     advance_search_with_candidates,
     filter_search_candidates,
@@ -19,9 +26,6 @@ from plugin.agent.decision_consultation import (
     _open_entity_target_from_brief,
 )
 from plugin.agent.runtime.state import ExecutionState
-from plugin.agent.source_query_binding import evaluate_source_object_match
-
-
 def _frozen_inventory():
     """Representative search-surface inventory (frozen world — ranker isolation)."""
     return [
@@ -164,19 +168,12 @@ def test_ranking_does_not_equal_binding():
     top = ranked[0]
     # Explore order set; commit still RoleBinder's job.
     assert top["interpretation"]["commit_readiness"]["advisory_only"] is True
-    # Related Instagram must not be binding_eligible.
+    # Related Instagram ranks below direct brand host (goal-conditioned),
+    # regardless of whether binder could accept path-supported evidence.
     related = next(r for r in ranked if r["id"] == "related")
-    gm = evaluate_source_object_match(
-        text=related["text"],
-        kind="message_bubble",
-        query="acme",
-        container_open="Alice",
-        expected_container="Alice",
-        expected_originator="Alice",
-        sender="Alice",
-        perception_matches_goal=True,
-    )
-    assert gm.binding_eligible is False
+    assert ranked[0]["id"] == "direct"
+    assert related["interpretation"]["relevance"]["url_tier"] == 2
+    assert top["interpretation"]["relevance"]["url_tier"] == 3
 
 
 def test_binder_authority_high_rank_does_not_write_resolved_entity():
@@ -187,6 +184,8 @@ def test_binder_authority_high_rank_does_not_write_resolved_entity():
         referent="acme",
         query="acme",
         evidence_tokens=["Alice", "acme"],
+        expected_originator="Alice",
+        expected_container="Alice",
     )
     advance_search_with_candidates(
         state,
@@ -301,3 +300,142 @@ def test_filter_search_candidates_uses_hypothesis_rank():
     )
     assert out[0]["id"] == "direct"
     assert "interpretation" in out[0]
+
+
+def test_untyped_evidence_tokens_do_not_assign_semantic_roles():
+    """Unordered search evidence must not invent originator/container."""
+    out = filter_search_candidates(
+        [
+            {
+                "id": "hit",
+                "label": "quarterly forecast notes",
+                "kind": "search_result",
+                "matches_goal": True,
+            }
+        ],
+        referent="Project Phoenix",
+        query="quarterly forecast",
+        evidence_tokens=["forecast", "Project Phoenix", "John"],
+        role="content",
+    )
+    interp = out[0]["interpretation"]
+    # Without typed goal roles, expectations stay empty / UNKNOWN.
+    assert interp["relation_evidence"].get("container") in ("", None)
+    assert "sender_unknown" in interp["unknowns"]
+    # Must not treat first non-query token ("forecast" / "John") as originator.
+    assert _norm_absent_role(interp)
+
+
+def test_instagram_can_be_direct_object_when_sought():
+    ranked = rank_search_hypotheses(
+        [
+            {
+                "id": "ig",
+                "label": "Alice https://www.instagram.com/zarooratwala",
+                "matches_goal": True,
+                "sender": "Alice",
+            },
+            {
+                "id": "site",
+                "label": "Alice https://www.zarooratwala.com/",
+                "matches_goal": True,
+                "sender": "Alice",
+            },
+        ],
+        query="zarooratwala instagram",
+        expected_container="Alice",
+        expected_originator="Alice",
+        sought_object="zarooratwala Instagram page",
+        role="content",
+    )
+    assert ranked[0]["id"] == "ig"
+    assert ranked[0]["interpretation"]["relevance"]["url_reason"] == "sought_platform_host"
+
+
+def test_strong_unknown_outranks_weaker_commit_ready():
+    ranked = rank_search_hypotheses(
+        [
+            {
+                "id": "strong_unk",
+                "label": "https://www.acme.com/invoice.pdf",
+                "matches_goal": True,
+            },
+            {
+                "id": "weak_ready",
+                "label": "Alice invoice notes",
+                "matches_goal": True,
+                "sender": "Alice",
+            },
+        ],
+        query="acme",
+        expected_container="Alice",
+        expected_originator="Alice",
+        role="content",
+    )
+    assert ranked[0]["id"] == "strong_unk"
+    top = ranked[0]["interpretation"]
+    weak = next(r for r in ranked if r["id"] == "weak_ready")["interpretation"]
+    assert "sender_unknown" in top["unknowns"]
+    # Bind-ready must not override stronger explore hypothesis via rank_key.
+    assert top["rank_key"][1] > weak["rank_key"][1]
+
+
+def test_no_search_choice_means_act_does_not_invent_one():
+    brief = DecisionBrief(
+        goal={"source_conversation": "Alice", "source_query": "acme"},
+        world={
+            "surface": "search",
+            "objects": [
+                {
+                    "id": "a",
+                    "text": "https://www.acme.com/invoice.pdf",
+                    "matches_goal": True,
+                },
+                {
+                    "id": "b",
+                    "text": "https://www.instagram.com/acme",
+                    "matches_goal": True,
+                },
+            ],
+        },
+        search_episode={
+            "status": "ranking",
+            "chosen_label": "",
+            "explore_label": "",
+        },
+        task_state=TaskState(phase="reach_source"),
+        capabilities=["open_entity"],
+    )
+    assert _open_entity_target_from_brief(brief) == ""
+
+
+def test_unique_fit_is_provisional_not_role_resolved():
+    state = ExecutionState()
+    start_search_episode(
+        state,
+        role="content",
+        referent="acme",
+        query="acme",
+        evidence_tokens=["Alice", "acme"],
+        expected_originator="Alice",
+        expected_container="Alice",
+        status="ranking",
+    )
+    advance_search_with_candidates(
+        state,
+        [
+            {
+                "id": "only",
+                "label": "https://www.acme.com/invoice.pdf",
+                "matches_goal": True,
+            }
+        ],
+        referent="acme",
+        query="acme",
+        evidence_tokens=["Alice", "acme"],
+    )
+    ep = state.search_episode or {}
+    assert ep.get("status") == "complete"
+    assert ep.get("choice_confidence") == "provisional"
+    assert ep.get("retrieval_complete") is True
+    assert ep.get("role_resolved") is False

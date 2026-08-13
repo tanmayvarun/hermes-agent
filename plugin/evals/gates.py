@@ -4709,6 +4709,28 @@ def _search_hypothesis_ranking_contracts() -> Tuple[bool, str]:
     )
     if _open_entity_target_from_brief(brief) != "Alice https://www.acme.com/invoice.pdf":
         return False, "ACT must preserve SEARCH chosen_label"
+    empty_choice = DecisionBrief(
+        goal={"source_conversation": "Alice", "source_query": "acme"},
+        world={"surface": "search", "objects": inv},
+        search_episode={"status": "ranking", "chosen_label": "", "explore_label": ""},
+    )
+    if _open_entity_target_from_brief(empty_choice) != "":
+        return False, "ACT must not invent a hypothesis when SEARCH has no choice"
+    # Untyped tokens must not become expected_originator.
+    from plugin.agent.capabilities.search_episode import filter_search_candidates
+
+    filtered = filter_search_candidates(
+        [{"id": "h", "label": "forecast notes", "matches_goal": True}],
+        referent="Project Phoenix",
+        query="quarterly forecast",
+        evidence_tokens=["forecast", "Project Phoenix", "John"],
+        role="content",
+    )
+    if not filtered:
+        return False, "filter returned empty"
+    rel = (filtered[0].get("interpretation") or {}).get("relation_evidence") or {}
+    if rel.get("container"):
+        return False, "evidence_tokens must not invent expected_container"
     return True, "search hypothesis ranking contracts ok"
 
 
