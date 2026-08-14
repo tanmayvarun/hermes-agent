@@ -230,6 +230,12 @@ class MemoryRetriever:
             else:
                 features["hot_projection"] = 0.0
 
+            features["recent_disambiguation_support"] = float(
+                self.store.recent_reference_support(text, ent.entity_id)
+                if hasattr(self.store, "recent_reference_support")
+                else 0.0
+            )
+
             channel = str(q.current_context.get("channel") or "")
             if channel:
                 ids = self.store.channel_identities_for_entity(
@@ -240,12 +246,13 @@ class MemoryRetriever:
                 features["channel_compatible"] = 0.5
 
             final = (
-                0.35 * features.get("alias_exact", 0.0)
-                + 0.15 * features.get("alias_partial", 0.0)
-                + 0.25 * features.get("interaction_recency", 0.0)
-                + 0.15 * features.get("interaction_frequency", 0.0)
+                0.30 * features.get("alias_exact", 0.0)
+                + 0.12 * features.get("alias_partial", 0.0)
+                + 0.22 * features.get("interaction_recency", 0.0)
+                + 0.13 * features.get("interaction_frequency", 0.0)
                 + 0.05 * features.get("continuity", 0.0)
                 + 0.05 * features.get("hot_projection", 0.0)
+                + 0.13 * features.get("recent_disambiguation_support", 0.0)
             )
             if features.get("channel_compatible") == 0.0 and channel:
                 final *= 0.5

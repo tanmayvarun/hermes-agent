@@ -130,9 +130,12 @@ const SEND_TIMEOUT_MS = parseInt(process.env.WHATSAPP_SEND_TIMEOUT_MS || '60000'
 
 // Display-name → chatId index for /resolve (compose "send hi to Pallavi").
 // Populated from contacts/chats/history sync + inbound message notify names.
-const contactNameIndex = new Map(); // lower(name) -> { chatId, name, source }
+// lower(name) -> { chatId, name, source, lastInteractionAt?, interactionHint? }
+const contactNameIndex = new Map();
+// jid -> interaction metadata (from chats / history; used by Day-0 memory)
+const chatInteractionIndex = new Map();
 
-function rememberContactName(name, chatId, source = 'unknown') {
+function rememberContactName(name, chatId, source = 'unknown', meta = {}) {
   const label = String(name || '').trim();
   const jid = String(chatId || '').trim();
   if (!label || !jid) return;
@@ -141,7 +144,51 @@ function rememberContactName(name, chatId, source = 'unknown') {
   const prev = contactNameIndex.get(key);
   // Prefer @s.whatsapp.net over @lid when both appear for the same name.
   if (prev?.chatId?.endsWith('@s.whatsapp.net') && jid.endsWith('@lid')) return;
-  contactNameIndex.set(key, { chatId: jid, name: label, source });
+  const entry = {
+    chatId: jid,
+    name: label,
+    source,
+    lastInteractionAt: meta.lastInteractionAt ?? prev?.lastInteractionAt ?? null,
+    interactionHint: meta.interactionHint ?? prev?.interactionHint ?? 0,
+  };
+  contactNameIndex.set(key, entry);
+  if (meta.lastInteractionAt != null || meta.interactionHint) {
+    const prevIx = chatInteractionIndex.get(jid) || {};
+    chatInteractionIndex.set(jid, {
+      lastInteractionAt: meta.lastInteractionAt ?? prevIx.lastInteractionAt ?? null,
+      interactionHint: Math.max(
+        Number(meta.interactionHint || 0),
+        Number(prevIx.interactionHint || 0),
+      ),
+    });
+  }
+}
+
+function rememberChatInteraction(chat) {
+  if (!chat || !chat.id) return;
+  const jid = String(chat.id);
+  const tsRaw = chat.conversationTimestamp ?? chat.conversationTimestampMs ?? null;
+  let lastInteractionAt = null;
+  if (tsRaw != null) {
+    const n = Number(tsRaw);
+    // Baileys may emit seconds or ms
+    lastInteractionAt = n > 1e12 ? n / 1000 : n;
+  }
+  const unread = Number(chat.unreadCount || 0);
+  const prev = chatInteractionIndex.get(jid) || {};
+  chatInteractionIndex.set(jid, {
+    lastInteractionAt: lastInteractionAt ?? prev.lastInteractionAt ?? null,
+    interactionHint: Math.max(unread, Number(prev.interactionHint || 0)),
+  });
+  rememberContactName(
+    chat.name || chat.displayName || chat.subject,
+    jid,
+    'chats.meta',
+    {
+      lastInteractionAt: lastInteractionAt ?? undefined,
+      interactionHint: unread || undefined,
+    },
+  );
 }
 
 function resolveContactName(query) {
@@ -479,11 +526,13 @@ async function startSocket() {
   });
   sock.ev.on('chats.upsert', (chats) => {
     for (const c of chats || []) {
+      rememberChatInteraction(c);
       rememberContactName(c.name || c.displayName || c.subject, c.id, 'chats.upsert');
     }
   });
   sock.ev.on('chats.update', (chats) => {
     for (const c of chats || []) {
+      rememberChatInteraction(c);
       rememberContactName(c.name || c.displayName || c.subject, c.id, 'chats.update');
     }
   });
@@ -492,6 +541,7 @@ async function startSocket() {
       rememberContactName(c.name || c.notify || c.verifiedName || c.pushName, c.id || c.jid, 'history.contacts');
     }
     for (const c of chats || []) {
+      rememberChatInteraction(c);
       rememberContactName(c.name || c.displayName || c.subject, c.id, 'history.chats');
     }
   });
@@ -1171,6 +1221,35 @@ app.get('/chat/:id', async (req, res) => {
     name: chatId.replace(/@.*/, ''),
     isGroup,
     participants: [],
+  });
+});
+
+// Day-0 memory: dump indexed contacts + interaction hints (not full message bodies).
+app.get('/contacts', (req, res) => {
+  if (!sock || connectionState !== 'connected') {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+  const contacts = [];
+  const seen = new Set();
+  for (const entry of contactNameIndex.values()) {
+    const jid = entry.chatId;
+    if (!jid || seen.has(jid)) continue;
+    seen.add(jid);
+    const ix = chatInteractionIndex.get(jid) || {};
+    contacts.push({
+      provider: 'whatsapp',
+      external_id: jid,
+      display_name: entry.name,
+      aliases: [entry.name],
+      source: entry.source,
+      last_interaction_at: ix.lastInteractionAt ?? entry.lastInteractionAt ?? null,
+      interaction_hint: ix.interactionHint ?? entry.interactionHint ?? 0,
+    });
+  }
+  return res.json({
+    contacts,
+    indexed: contactNameIndex.size,
+    cursor: `wa_contacts:${contacts.length}:${Date.now()}`,
   });
 });
 

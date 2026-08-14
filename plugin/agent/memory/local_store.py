@@ -687,6 +687,74 @@ class LocalMemorySystem:
         )
         self._conn.commit()
 
+    def get_bootstrap_state(self) -> str:
+        row = self._conn.execute(
+            "SELECT value FROM bootstrap_state WHERE key = 'state'"
+        ).fetchone()
+        return str(row["value"]) if row else "NOT_STARTED"
+
+    def set_bootstrap_state(self, state: str) -> None:
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO bootstrap_state(key, value, updated_at)
+            VALUES ('state', ?, ?)
+            """,
+            (state, time.time()),
+        )
+        self._conn.commit()
+
+    def record_reference_evidence(
+        self,
+        *,
+        surface_form: str,
+        chosen_entity_id: str,
+        rejected_entity_ids: Sequence[str],
+        context: Optional[Mapping[str, Any]] = None,
+        event_id: str = "",
+        scope: str = "personal:user:local:private",
+    ) -> str:
+        eid = ids.new_id("ref")
+        self._conn.execute(
+            """
+            INSERT INTO entity_reference_evidence(
+                evidence_id, surface_form, chosen_entity_id,
+                rejected_entity_ids_json, context_json, event_id, created_at, scope
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                eid,
+                (surface_form or "").strip().lower(),
+                chosen_entity_id,
+                _json(list(rejected_entity_ids)),
+                _json(dict(context or {})),
+                event_id,
+                time.time(),
+                scope,
+            ),
+        )
+        self._conn.commit()
+        return eid
+
+    def recent_reference_support(
+        self, surface_form: str, entity_id: str, *, within_days: float = 90.0
+    ) -> float:
+        """1.0 if this entity was recently chosen for this surface form."""
+        needle = (surface_form or "").strip().lower()
+        if not needle or not entity_id:
+            return 0.0
+        cutoff = time.time() - within_days * 86400.0
+        row = self._conn.execute(
+            """
+            SELECT chosen_entity_id FROM entity_reference_evidence
+            WHERE surface_form = ? AND created_at >= ?
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (needle, cutoff),
+        ).fetchone()
+        if row is None:
+            return 0.0
+        return 1.0 if row["chosen_entity_id"] == entity_id else 0.0
+
     # ------------------------------------------------------------------
     # MemorySystem Protocol surface
     # ------------------------------------------------------------------

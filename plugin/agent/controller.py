@@ -2465,10 +2465,19 @@ def run_goal_closed_loop(
     # Locals kept for the seam; closed-loop internals continue to use ``runtime``.
     # RuntimeState must never gain an AgentRuntime backreference.
     from plugin.agent.ingress import ExecutionConstraints, TaskIngress
+    from plugin.agent.memory.bootstrap import open_local_memory
     from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
     from plugin.agent.runtime.agent_runtime import AgentRuntime
 
-    _memory: MemorySystem = memory if memory is not None else NoopMemorySystem()
+    if memory is not None:
+        _memory: MemorySystem = memory
+    else:
+        try:
+            _memory, _ = open_local_memory(
+                start_bootstrap=True, blocking_bootstrap=False
+            )
+        except Exception:
+            _memory = NoopMemorySystem()
     # ComputerUse benchmark: force substrate via constraints (not a harness branch).
     _task_request = TaskIngress.normalize(
         TaskIngress.from_legacy_goal(

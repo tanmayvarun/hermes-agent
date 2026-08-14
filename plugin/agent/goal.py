@@ -43,6 +43,11 @@ class Goal:
     # Message addressee ("sent to Pallavi"). Distinct from originator and from
     # forward destination (target_contact). Empty means UNKNOWN.
     recipient: str = ""
+    # MemorySystem committed identity (pre-MethodFrontier). Substrates ground
+    # these; they must not re-interpret unresolved surface forms.
+    committed_entity_id: str = ""
+    committed_channel_id: str = ""  # e.g. WhatsApp JID
+    committed_display_name: str = ""
     procedure_id: str = ""
     procedure_score: float = 0.0
     procedure_reasons: list[str] = field(default_factory=list)

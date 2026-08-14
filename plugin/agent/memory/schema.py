@@ -164,6 +164,27 @@ CREATE TABLE IF NOT EXISTS source_cursors (
     updated_at REAL
 );
 
+CREATE TABLE IF NOT EXISTS bootstrap_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at REAL
+);
+
+-- Reference-resolution evidence (ASK corrections). NOT interaction frequency.
+CREATE TABLE IF NOT EXISTS entity_reference_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    surface_form TEXT NOT NULL,
+    chosen_entity_id TEXT NOT NULL,
+    rejected_entity_ids_json TEXT NOT NULL DEFAULT '[]',
+    context_json TEXT NOT NULL DEFAULT '{}',
+    event_id TEXT,
+    created_at REAL NOT NULL,
+    scope TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ref_evidence_surface
+    ON entity_reference_evidence(surface_form, created_at);
+
 CREATE TABLE IF NOT EXISTS recent_entities_projection (
     entity_id TEXT NOT NULL,
     scope TEXT NOT NULL,

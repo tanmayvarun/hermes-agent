@@ -10131,6 +10131,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
 
             from plugin.agent.composition import compose_domain_adapters
             from plugin.agent.ingress import SessionRef, TaskIngress, TaskRequest
+            from plugin.agent.memory.bootstrap import open_local_memory
             from plugin.agent.runtime.agent_runtime import AgentRuntime
             from plugin.agent.runtime.state import RuntimeState
             from plugin.agent.runtime.turn_result import TurnStatus
@@ -10151,8 +10152,15 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             )
             if "agent_runtime_state" not in session:
                 session["agent_runtime_state"] = RuntimeState()
+            if "memory_system" not in session:
+                _mem, _boot = open_local_memory(
+                    start_bootstrap=True, blocking_bootstrap=False
+                )
+                session["memory_system"] = _mem
+                session["memory_bootstrap"] = _boot
             _agent_runtime = AgentRuntime(
                 runtime_state=session["agent_runtime_state"],
+                memory=session["memory_system"],
                 task_request=_task_req,
             )
             _turn = _agent_runtime.handle_turn(

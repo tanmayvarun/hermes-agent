@@ -348,6 +348,15 @@ def _goal_fields(context: Dict[str, Any]) -> Dict[str, str]:
         "target_contact": str(getattr(goal, "target_contact", "") or "").strip(),
         "message_body": str(getattr(goal, "message_body", "") or "").strip(),
         "kind": str(getattr(goal, "kind", "") or "").strip(),
+        "committed_entity_id": str(
+            getattr(goal, "committed_entity_id", "") or ""
+        ).strip(),
+        "committed_channel_id": str(
+            getattr(goal, "committed_channel_id", "") or ""
+        ).strip(),
+        "committed_display_name": str(
+            getattr(goal, "committed_display_name", "") or ""
+        ).strip(),
     }
 
 
@@ -564,6 +573,10 @@ class WhatsAppGatewayForwardExecutor:
             )
 
         jid, how = _resolve_target_jid(target)
+        # Prefer MemorySystem-committed channel identity over lexical name resolve.
+        committed_jid = fields.get("committed_channel_id") or ""
+        if committed_jid:
+            jid, how = committed_jid, "memory_committed_channel"
         if not jid:
             return MethodExecutionResult(
                 ok=False,
@@ -576,6 +589,7 @@ class WhatsAppGatewayForwardExecutor:
                     "ok": False,
                     "fallback": "next_method",
                     "target_contact": target,
+                    "committed_entity_id": fields.get("committed_entity_id") or "",
                     "account": account,
                 },
                 executor_id=self.executor_id,

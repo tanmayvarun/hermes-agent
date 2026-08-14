@@ -243,8 +243,13 @@ class MemoryPipeline:
         rejected_entity_ids: Sequence[str],
         context: Optional[dict[str, Any]] = None,
     ) -> str:
-        """ASK correction → evidence event (immediate personalization)."""
+        """ASK correction → EntityReferenceEvidence (not interaction frequency).
+
+        Choosing "Pallavi PhonePe" is reference-resolution evidence, not proof
+        of more recent messaging. Retrieval uses ``recent_disambiguation_support``.
+        """
         evt = ids.event_id()
+        now = time.time()
         self.store.append_event(
             MemoryEvent(
                 event_id=evt,
@@ -256,39 +261,21 @@ class MemoryPipeline:
                     "rejected_entity_ids": list(rejected_entity_ids),
                     "context": dict(context or {}),
                 },
-                event_time=time.time(),
-                ingestion_time=time.time(),
+                event_time=now,
+                ingestion_time=now,
                 scope=DEFAULT_SCOPE,
                 provenance="entity_disambiguation",
                 entity_ids=[chosen_entity_id, *rejected_entity_ids],
             )
         )
-        # Bump interaction aggregate lightly so future ranking prefers the choice
-        agg = self.store.get_aggregate(
-            self.user_entity_id, chosen_entity_id, scope=DEFAULT_SCOPE
+        self.store.record_reference_evidence(
+            surface_form=surface_form,
+            chosen_entity_id=chosen_entity_id,
+            rejected_entity_ids=list(rejected_entity_ids),
+            context=dict(context or {}),
+            event_id=evt,
+            scope=DEFAULT_SCOPE,
         )
-        now = time.time()
-        if agg is None:
-            agg = InteractionAggregate(
-                aggregate_id="",
-                subject_id=self.user_entity_id,
-                object_id=chosen_entity_id,
-                count_7d=1,
-                count_30d=1,
-                count_180d=1,
-                last_interaction_at=now,
-                active_days_30d=1,
-                continuity=0.1,
-                scope=DEFAULT_SCOPE,
-                evidence_refs=[evt],
-            )
-        else:
-            agg.count_7d += 1
-            agg.count_30d += 1
-            agg.count_180d += 1
-            agg.last_interaction_at = now
-            agg.evidence_refs = list(agg.evidence_refs) + [evt]
-        self.store.upsert_interaction_aggregate(agg)
         self.rebuild_recent_entities_projection(
             watermark=f"disambiguation:{evt}"
         )

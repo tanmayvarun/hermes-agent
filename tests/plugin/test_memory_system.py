@@ -246,9 +246,10 @@ def test_close_candidates_trigger_ask_via_binding_uncertainty(store):
 def test_disambiguation_event_improves_future_retrieval(store):
     pipe = _day0_two_pallavis(store)
     ents = store.find_entities_by_name("Pallavi")
-    # Force ASK path with equal-ish — pick PhonePe entity as user choice for test
     phonepe = next(e for e in ents if "PhonePe" in e.canonical_name)
     frequent = next(e for e in ents if e.entity_id != phonepe.entity_id)
+    before = store.get_aggregate("user:local", phonepe.entity_id, scope=phonepe.scope)
+    before_count = before.count_30d if before else 0
     pipe.record_disambiguation(
         surface_form="Pallavi",
         chosen_entity_id=phonepe.entity_id,
@@ -257,9 +258,21 @@ def test_disambiguation_event_improves_future_retrieval(store):
     )
     events = store.scan_events(event_type="entity_disambiguation")
     assert len(events) == 1
-    agg = store.get_aggregate("user:local", phonepe.entity_id, scope=phonepe.scope)
-    assert agg is not None
-    assert agg.count_30d >= 1
+    # Must NOT corrupt interaction frequency
+    after = store.get_aggregate("user:local", phonepe.entity_id, scope=phonepe.scope)
+    assert after is not None
+    assert after.count_30d == before_count
+    assert store.recent_reference_support("Pallavi", phonepe.entity_id) == 1.0
+    packet = MemoryRetriever(store).retrieve(
+        MemoryQuery(
+            purpose="entity_resolution",
+            text="Pallavi",
+            current_context={"channel": "whatsapp", "user_entity_id": "user:local"},
+        )
+    )
+    # Disambiguation support should appear on PhonePe features
+    phonepe_rank = next(r for r in packet.ranked if r.ref == phonepe.entity_id)
+    assert phonepe_rank.feature_scores.get("recent_disambiguation_support", 0) >= 1.0
 
 
 def test_context_assembler_does_not_choose_identity(store):

@@ -200,6 +200,66 @@ class AgentRuntime:
 
         phase(PHASE_INTERPRETING)
         interpretation = interpret_task_request(req)
+
+        # Personal-entity resolution BEFORE MethodFrontier / substrate choice.
+        recipient_trace: Dict[str, Any] = {}
+        try:
+            from plugin.agent.memory.recipient_binding import (
+                resolve_recipient_before_methods,
+            )
+
+            boot_state = ""
+            if hasattr(self.memory, "get_bootstrap_state"):
+                boot_state = str(self.memory.get_bootstrap_state() or "")
+            rr = resolve_recipient_before_methods(
+                self.memory,
+                goal=interpretation.goal,
+                desired_effects=list(interpretation.desired_effects or []),
+                channel="whatsapp",
+                bootstrap_state=boot_state,
+            )
+            recipient_trace = {
+                "status": rr.status,
+                "surface_form": rr.surface_form,
+                "entity_id": rr.entity_id,
+                "channel_external_id": rr.channel_external_id,
+                "reason": rr.reason,
+                "bootstrap_state": rr.bootstrap_state,
+            }
+            if rr.status == "ask":
+                question = rr.question or f"Which '{rr.surface_form}' did you mean?"
+                session_state.suspended_ask = SuspendedAsk(
+                    intention_id=intention_id,
+                    method_id="memory_entity_resolution",
+                    precondition="entity_resolution",
+                    question=question,
+                    parent_effect=",".join(interpretation.desired_effects),
+                    interpretation_notes={
+                        "surface_form": rr.surface_form,
+                        "alternatives": list(rr.alternatives or []),
+                        "entity_id": rr.entity_id,
+                    },
+                )
+                phase(PHASE_AWAITING_USER, status="waiting_for_user")
+                return finish(
+                    RuntimeTurnResult(
+                        status=TurnStatus.WAITING_FOR_USER,
+                        question=question,
+                        message=question,
+                        intention_id=intention_id,
+                        task_request_id=task_request_id,
+                        session_id=sid,
+                        runtime_id=session_state.runtime_id,
+                        acceptance_trace={
+                            "recipient_resolution": recipient_trace,
+                            "ASK": question,
+                        },
+                        interpretation=interpretation,
+                    )
+                )
+        except Exception as exc:
+            recipient_trace = {"status": "error", "error": str(exc)}
+
         phase(PHASE_SELECTING_METHOD)
         specs, provider_errors = discover_methods(
             interpretation, constraints=req.constraints
@@ -254,6 +314,7 @@ class AgentRuntime:
                 "goal_kind": interpretation.goal_kind,
                 "desired_effects": list(interpretation.desired_effects),
             },
+            "recipient_resolution": recipient_trace,
             "candidate_methods": candidate_trace,
             "ranking_authority": "MethodFrontier.rank_eligible",
             "provider_errors": list(provider_errors),
