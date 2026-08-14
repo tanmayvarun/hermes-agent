@@ -15,6 +15,8 @@ from plugin.agent.brain.evidence_acquisition import run_evidence_acquisition
 from plugin.agent.brain.identity_hypothesis import IdentityHypothesis, hypotheses_from_ranked
 from plugin.agent.brain.information_need import (
     EVIDENCE_FOUND,
+    ERROR,
+    NO_CAPABILITY,
     STRENGTH_DECISIVE,
     STRENGTH_MODERATE,
     STRENGTH_STRONG,
@@ -122,7 +124,7 @@ def consult_identity_hypotheses(
                 evidence_classes=["working_context", "exact_alias"],
             )
 
-    refs = [h for h in hypotheses if h.context.reference_support >= 1.0]
+    refs = [h for h in hypotheses if h.context.reference_status == "known_positive"]
     if len(refs) == 1:
         return _assessment_for_choice(
             refs[0],
@@ -145,7 +147,7 @@ def consult_identity_hypotheses(
             and (
                 h.context.l1_preferred
                 or h.context.working_context_hit
-                or h.context.reference_support >= 1.0
+                or h.context.reference_status == "known_positive"
                 or h.context.active_project_hit
             )
         ]
@@ -230,7 +232,17 @@ class EntityResolutionEvidenceStrategy:
         *,
         need: InformationNeed,
     ) -> list[Any]:
+        """Merge evidence monotonically — missing fields never erase established ones.
+
+        ERROR / NO_CAPABILITY do not write negative facts.
+        """
         hyps = [h for h in hypotheses if isinstance(h, IdentityHypothesis)]
+        if result.status in {ERROR, NO_CAPABILITY}:
+            for h in hyps:
+                h.gather_notes.append(
+                    f"{result.evidence_kind}:{result.status}:{result.notes or ''}"
+                )
+            return list(hypotheses)
         if result.status != EVIDENCE_FOUND:
             return list(hypotheses)
 
@@ -244,45 +256,94 @@ class EntityResolutionEvidenceStrategy:
                     h.context.l1_preferred = True
                     h.context.working_context_hit = True
                     h.gather_notes.append("working_context_prefer")
+                # Non-preferred candidates: leave prior L1 flags untouched.
 
         elif kind == "memory_aggregates":
             by_entity = dict(payload.get("by_entity") or {})
             now = time.time()
             for h in hyps:
-                row = by_entity.get(h.entity_id) or {}
-                if "error" in row:
-                    h.gather_notes.append(f"aggregate_error:{row['error']}")
+                if h.entity_id not in by_entity:
+                    # Absence from this provider ≠ erase prior aggregate evidence.
                     continue
-                h.salience.frequency_known = bool(row.get("frequency_known"))
-                if h.salience.frequency_known:
-                    h.salience.frequency = min(
-                        1.0, float(row.get("count_30d") or 0) / 50.0
+                row = by_entity[h.entity_id] or {}
+                if row.get("error") or row.get("status") == "error":
+                    if h.salience.frequency_status != "known":
+                        h.salience.frequency_status = "error"
+                    h.gather_notes.append(
+                        f"aggregate_error:{row.get('error') or 'error'}"
                     )
+                    continue
+                if "frequency_known" in row:
+                    if bool(row.get("frequency_known")):
+                        h.salience.frequency_known = True
+                        h.salience.frequency_status = "known"
+                        h.salience.frequency = min(
+                            1.0, float(row.get("count_30d") or 0) / 50.0
+                        )
+                    elif not h.salience.frequency_known:
+                        # Explicit unknown from this source — only if not already known.
+                        h.salience.frequency_status = "unknown"
                 last_at = row.get("last_interaction_at")
                 if last_at is not None:
                     h.salience.last_interaction_at = float(last_at)
                     days = max(0.0, (now - float(last_at)) / 86400.0)
                     h.salience.recency = max(0.0, 1.0 - days / 180.0)
+                    h.salience.recency_status = "known"
                 h.gather_notes.append(
-                    f"aggregate freq_known={h.salience.frequency_known} "
-                    f"recency={h.salience.recency:.2f}"
+                    f"aggregate freq_status={h.salience.frequency_status} "
+                    f"recency_status={h.salience.recency_status}"
                 )
 
         elif kind == "reference_history":
-            by_entity = dict(payload.get("reference_support_by_entity") or {})
+            by_entity = dict(payload.get("by_entity") or {})
+            # Back-compat with older payload shape
+            if not by_entity and payload.get("reference_support_by_entity"):
+                by_entity = {
+                    eid: {
+                        "reference_support": float(v),
+                        "status": (
+                            "known_positive" if float(v) >= 1.0 else "known_negative"
+                        ),
+                    }
+                    for eid, v in dict(payload["reference_support_by_entity"]).items()
+                }
             for h in hyps:
-                h.context.reference_support = float(by_entity.get(h.entity_id) or 0.0)
-                h.gather_notes.append(
-                    f"reference_support={h.context.reference_support:.2f}"
-                )
+                if h.entity_id not in by_entity:
+                    continue
+                row = by_entity[h.entity_id] or {}
+                status = str(row.get("status") or "")
+                if status == "error":
+                    if h.context.reference_status == "unknown":
+                        h.context.reference_status = "error"
+                    h.gather_notes.append(
+                        f"reference_error:{row.get('error') or 'error'}"
+                    )
+                    continue
+                if status in {"known_positive", "known_negative"}:
+                    h.context.reference_status = status
+                    h.context.reference_support = float(
+                        row.get("reference_support") or 0.0
+                    )
+                    h.gather_notes.append(
+                        f"reference_status={status} "
+                        f"support={h.context.reference_support:.2f}"
+                    )
 
         elif kind == "channel_activity":
             by_entity = dict(payload.get("by_entity") or {})
             now = time.time()
             for h in hyps:
-                row = by_entity.get(h.entity_id) or {}
+                if h.entity_id not in by_entity:
+                    continue
+                row = by_entity[h.entity_id] or {}
+                if row.get("status") == "error":
+                    if h.salience.frequency_status != "known":
+                        h.salience.frequency_status = "error"
+                    h.gather_notes.append("wa_contacts:error")
+                    continue
                 if row.get("frequency_known") and row.get("interaction_count_30d") is not None:
                     h.salience.frequency_known = True
+                    h.salience.frequency_status = "known"
                     h.salience.frequency = min(
                         1.0, float(row["interaction_count_30d"]) / 50.0
                     )
@@ -292,6 +353,7 @@ class EntityResolutionEvidenceStrategy:
                     h.salience.last_interaction_at = float(last_at)
                     days = max(0.0, (now - float(last_at)) / 86400.0)
                     h.salience.recency = max(0.0, 1.0 - days / 180.0)
+                    h.salience.recency_status = "known"
                     h.gather_notes.append(f"wa_contacts:recency={h.salience.recency:.3f}")
 
         return list(hypotheses)
@@ -337,7 +399,7 @@ class EntityResolutionEvidenceStrategy:
             ambiguities.append("frequency_unknown_for_candidates")
             preferred.append("memory_aggregates")
 
-        refs = [h for h in hyps if h.context.reference_support >= 1.0]
+        refs = [h for h in hyps if h.context.reference_status == "known_positive"]
         if len(refs) != 1:
             ambiguities.append("no_unique_prior_reference")
             preferred.append("reference_history")

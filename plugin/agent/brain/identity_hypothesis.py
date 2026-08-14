@@ -29,6 +29,9 @@ class SalienceEvidence:
     recency: float = 0.0
     frequency: float = 0.0
     frequency_known: bool = False
+    # Three-way: unknown | known | error  (known implies frequency_known may be True)
+    frequency_status: str = "unknown"
+    recency_status: str = "unknown"  # unknown | known | error
     hot: float = 0.0
     last_interaction_at: Optional[float] = None
 
@@ -38,6 +41,8 @@ class ContextEvidence:
     working_context_hit: bool = False
     l1_preferred: bool = False
     reference_support: float = 0.0
+    # Three-way: unknown | known_positive | known_negative | error
+    reference_status: str = "unknown"
     active_project_hit: bool = False
 
 
@@ -72,6 +77,8 @@ class IdentityHypothesis:
                 "recency": self.salience.recency,
                 "frequency": self.salience.frequency,
                 "frequency_known": self.salience.frequency_known,
+                "frequency_status": self.salience.frequency_status,
+                "recency_status": self.salience.recency_status,
                 "hot": self.salience.hot,
                 "last_interaction_at": self.salience.last_interaction_at,
             },
@@ -79,6 +86,7 @@ class IdentityHypothesis:
                 "working_context_hit": self.context.working_context_hit,
                 "l1_preferred": self.context.l1_preferred,
                 "reference_support": self.context.reference_support,
+                "reference_status": self.context.reference_status,
                 "active_project_hit": self.context.active_project_hit,
             },
             "channel": {
@@ -154,11 +162,14 @@ def hypotheses_from_ranked(
         freq_known = bool((getattr(agg, "metadata", None) or {}).get("frequency_known"))
         last_at = getattr(agg, "last_interaction_at", None) if agg else None
         ref_sup = 0.0
+        ref_status = "unknown"
         if hasattr(memory, "recent_reference_support") and eid:
             try:
                 ref_sup = float(memory.recent_reference_support(surface, eid) or 0.0)
+                ref_status = "known_positive" if ref_sup >= 1.0 else "known_negative"
             except Exception:
                 ref_sup = 0.0
+                ref_status = "error"
         ext_ids: list[str] = []
         ch_disp = cname
         if hasattr(memory, "channel_identities_for_entity") and eid:
@@ -175,6 +186,7 @@ def hypotheses_from_ranked(
             or (l1_name and l1_name in cname.lower())
         )
         proj_hit = any(p and p in cname.lower() for p in projects)
+        recency_val = float(feats.get("interaction_recency", 0.0) or 0.0)
         out.append(
             IdentityHypothesis(
                 entity_id=eid,
@@ -186,9 +198,11 @@ def hypotheses_from_ranked(
                     aliases=aliases,
                 ),
                 salience=SalienceEvidence(
-                    recency=float(feats.get("interaction_recency", 0.0) or 0.0),
+                    recency=recency_val,
                     frequency=float(feats.get("interaction_frequency", 0.0) or 0.0),
                     frequency_known=freq_known,
+                    frequency_status="known" if freq_known else "unknown",
+                    recency_status="known" if last_at is not None else "unknown",
                     hot=float(feats.get("hot_projection", 0.0) or 0.0),
                     last_interaction_at=float(last_at) if last_at else None,
                 ),
@@ -196,6 +210,7 @@ def hypotheses_from_ranked(
                     working_context_hit=l1_pref or proj_hit,
                     l1_preferred=l1_pref,
                     reference_support=ref_sup,
+                    reference_status=ref_status,
                     active_project_hit=proj_hit,
                 ),
                 channel=ChannelEvidence(

@@ -7,6 +7,7 @@ Attempts are tracked by (evidence_kind, provider_id).
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional, Protocol
 
 from plugin.agent.brain.information_need import (
@@ -20,6 +21,8 @@ from plugin.agent.brain.information_need import (
     ProbeAttempt,
 )
 from plugin.agent.information import InformationCapabilityRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class EvidenceStrategy(Protocol):
@@ -45,6 +48,41 @@ class EvidenceStrategy(Protocol):
     ) -> EvidenceNeedAssessment: ...
 
 
+def _safe_probe(
+    provider: Any,
+    need: InformationNeed,
+    *,
+    evidence_kind: str,
+    hypotheses: list[Any],
+) -> EvidenceResult:
+    """Exception boundary: provider failures become EvidenceResult(ERROR)."""
+    pid = str(getattr(provider, "provider_id", "") or "unknown")
+    try:
+        return provider.probe(need, evidence_kind=evidence_kind, hypotheses=hypotheses)
+    except Exception as exc:
+        logger.warning(
+            "evidence provider %s failed for kind=%s: %s", pid, evidence_kind, exc
+        )
+        return EvidenceResult(
+            status=ERROR,
+            provider_id=pid,
+            evidence_kind=evidence_kind,
+            notes=f"{type(exc).__name__}: {exc}",
+            payload={"exception": True},
+        )
+
+
+def _is_global_unavailable(result: EvidenceResult) -> bool:
+    """True only when the provider declares itself unavailable for all kinds."""
+    if result.status not in {NO_CAPABILITY, ERROR}:
+        return False
+    payload = dict(result.payload or {})
+    if payload.get("global_unavailable") is True:
+        return True
+    notes = (result.notes or "").lower()
+    return notes in {"disabled", "provider_unavailable", "global_unavailable"}
+
+
 def run_evidence_acquisition(
     need: InformationNeed,
     *,
@@ -61,6 +99,9 @@ def run_evidence_acquisition(
     Budgets:
       - information budget: EVIDENCE_FOUND / NO_EVIDENCE only
       - attempt budget: every registry/provider interaction
+
+    Failures are pair-scoped via attempted_pairs unless the provider reports
+    global unavailability.
     """
     hyps = list(hypotheses if hypotheses is not None else need.competing_hypotheses)
     episode = EvidenceAcquisitionEpisode(
@@ -70,7 +111,7 @@ def run_evidence_acquisition(
         attempt_budget_remaining=max(0, int(need.attempt_budget)),
     )
     last: Optional[EvidenceResult] = None
-    blacklisted: set[str] = set()
+    global_unavailable: set[str] = set()
 
     while episode.budget_remaining > 0 and episode.attempt_budget_remaining > 0:
         pairs = episode.attempted_pairs()
@@ -87,19 +128,20 @@ def run_evidence_acquisition(
             episode.resolution_reason = assessment.resolution_reason
             break
 
-        # Find next (kind, provider) — do not exhaust a kind after one provider.
         choice = registry.select_provider(
             need,
             preferred_kinds=list(assessment.preferred_evidence_kinds),
             attempted_pairs=pairs,
-            blacklisted=blacklisted,
+            blacklisted=global_unavailable,
         )
         if choice is None:
             episode.uncertainty_notes.extend(assessment.remaining_ambiguities)
             break
 
         kind, provider = choice
-        result = provider.probe(need, evidence_kind=kind, hypotheses=hyps)
+        result = _safe_probe(
+            provider, need, evidence_kind=kind, hypotheses=hyps
+        )
         episode.probes_attempted.append(result)
         episode.probe_attempts.append(
             ProbeAttempt(
@@ -125,7 +167,9 @@ def run_evidence_acquisition(
                 }
             )
         if result.status in {NO_CAPABILITY, ERROR}:
-            blacklisted.add(result.provider_id)
+            if _is_global_unavailable(result):
+                global_unavailable.add(result.provider_id)
+            # Pair already recorded — do not consume information budget.
             continue
         episode.budget_remaining -= 1
 

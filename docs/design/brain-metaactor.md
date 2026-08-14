@@ -450,8 +450,13 @@ Hard rules:
 - Domain strategies (`EntityResolutionEvidenceStrategy`,
   `DocumentResolutionEvidenceStrategy`, …) **incorporate** raw `EvidenceResult`
   payloads into hypotheses, then reassess. Providers must not mutate hypotheses.
-- Attempts are tracked by `(evidence_kind, provider_id)` — one weak provider does
-  not exhaust an evidence kind.
+- **Monotonic incorporate:** missing fields/rows from a new provider must not erase
+  previously established evidence. Absence ≠ negative evidence.
+- **Three-way epistemic state:** `known_positive` / `known_negative` / `unknown|error`
+  — failed lookups must not become zeros.
+- Attempts are tracked by `(evidence_kind, provider_id)`. Provider failures are
+  pair-scoped unless the result declares global unavailability.
+- Probe execution is exception-bounded → `EvidenceResult(ERROR)`.
 - Dual budgets: `budget` (meaningful probes) and `attempt_budget` (operational).
 - `BindingAssessment` uses qualitative `evidence_strength`
   (`weak|moderate|strong|decisive`) and `evidence_classes` — not fabricated
@@ -459,6 +464,11 @@ Hard rules:
 - Evidence gathering resolves **epistemic** insufficiency only; never overrides
   `ActionRiskPolicy.REFUSE`.
 - Exact-name evidence is a **prior**, not resolution authority.
+
+Design debt (defer):
+
+- Per-feature evidence provenance / EvidenceRefs on hypotheses
+- Retrieval-coverage-aware `single_candidate` strength
 
 Code:
 

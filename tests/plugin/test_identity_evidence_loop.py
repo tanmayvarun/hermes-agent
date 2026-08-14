@@ -509,6 +509,187 @@ def test_document_adaptive_reassessment_after_first_provider_miss():
     assert ("recent_file_memory", "recent_file_memory_empty") in pairs
 
 
+def test_incorporate_is_monotonic_missing_row_does_not_erase():
+    from plugin.agent.brain.identity_consultant import EntityResolutionEvidenceStrategy
+    from plugin.agent.brain.identity_hypothesis import (
+        ContextEvidence,
+        IdentityHypothesis,
+        NameEvidence,
+        SalienceEvidence,
+    )
+
+    h = IdentityHypothesis(
+        entity_id="e:1",
+        display_name="Pallavi",
+        name=NameEvidence(match_kind="exact", surface_form="Pallavi", canonical_name="Pallavi"),
+        salience=SalienceEvidence(
+            frequency=0.8,
+            frequency_known=True,
+            frequency_status="known",
+            recency=0.9,
+            recency_status="known",
+        ),
+        context=ContextEvidence(
+            reference_support=1.0,
+            reference_status="known_positive",
+        ),
+    )
+    strat = EntityResolutionEvidenceStrategy(surface="Pallavi")
+    need = InformationNeed(need_type="entity_resolution", subject="Pallavi")
+    # Provider found evidence for other entities only — e:1 absent
+    result = EvidenceResult(
+        status=EVIDENCE_FOUND,
+        provider_id="memory_aggregates",
+        evidence_kind="memory_aggregates",
+        payload={"by_entity": {"e:other": {"frequency_known": False}}},
+    )
+    strat.incorporate(result, [h], need=need)
+    assert h.salience.frequency_known is True
+    assert h.salience.frequency_status == "known"
+    assert h.salience.frequency == 0.8
+    assert h.context.reference_status == "known_positive"
+
+
+def test_reference_lookup_error_is_not_negative_evidence():
+    from plugin.agent.brain.identity_consultant import EntityResolutionEvidenceStrategy
+    from plugin.agent.brain.identity_hypothesis import (
+        ContextEvidence,
+        IdentityHypothesis,
+        NameEvidence,
+    )
+
+    h = IdentityHypothesis(
+        entity_id="e:1",
+        display_name="Pallavi",
+        name=NameEvidence(match_kind="exact", surface_form="Pallavi", canonical_name="Pallavi"),
+        context=ContextEvidence(reference_status="unknown", reference_support=0.0),
+    )
+    strat = EntityResolutionEvidenceStrategy(surface="Pallavi")
+    need = InformationNeed(need_type="entity_resolution", subject="Pallavi")
+    result = EvidenceResult(
+        status=EVIDENCE_FOUND,
+        provider_id="reference_history",
+        evidence_kind="reference_history",
+        payload={"by_entity": {"e:1": {"status": "error", "error": "db down"}}},
+    )
+    strat.incorporate(result, [h], need=need)
+    assert h.context.reference_status == "error"
+    assert h.context.reference_support == 0.0  # unset value, not known_negative
+
+
+def test_provider_exception_becomes_error_result_and_loop_continues():
+    need = InformationNeed(
+        need_type="entity_resolution",
+        subject="Pallavi",
+        competing_hypotheses=[],
+        budget=2,
+        attempt_budget=4,
+    )
+
+    class BoomProvider:
+        provider_id = "boom"
+        evidence_kinds = frozenset({"working_context"})
+
+        def can_serve(self, need, evidence_kind):
+            return True
+
+        def probe(self, need, *, evidence_kind, hypotheses):
+            raise RuntimeError("bridge down")
+
+    class OkProvider:
+        provider_id = "ok"
+        evidence_kinds = frozenset({"memory_aggregates"})
+
+        def can_serve(self, need, evidence_kind):
+            return True
+
+        def probe(self, need, *, evidence_kind, hypotheses):
+            return EvidenceResult(
+                status="NO_EVIDENCE",
+                provider_id=self.provider_id,
+                evidence_kind=evidence_kind,
+            )
+
+    class Strat:
+        def incorporate(self, result, hypotheses, *, need):
+            return hypotheses
+
+        def assess(self, need, hypotheses, *, last_result=None, attempted_pairs=None):
+            pairs = set(attempted_pairs or ())
+            kinds = []
+            if ("working_context", "boom") not in pairs:
+                kinds.append("working_context")
+            if ("memory_aggregates", "ok") not in pairs:
+                kinds.append("memory_aggregates")
+            return EvidenceNeedAssessment(
+                remaining_ambiguities=["x"],
+                preferred_evidence_kinds=kinds or [],
+            )
+
+    reg = InformationCapabilityRegistry()
+    reg.register(BoomProvider())
+    reg.register(OkProvider())
+    episode = run_evidence_acquisition(need, registry=reg, strategy=Strat(), hypotheses=[])
+    assert any(r.status == "ERROR" and r.provider_id == "boom" for r in episode.probes_attempted)
+    assert any(r.provider_id == "ok" for r in episode.probes_attempted)
+
+
+def test_error_on_one_kind_does_not_global_blacklist_provider():
+    """Pair-scoped failure: provider usable for another evidence kind."""
+    need = InformationNeed(
+        need_type="entity_resolution",
+        subject="Pallavi",
+        budget=3,
+        attempt_budget=6,
+    )
+
+    class MultiKindProvider:
+        provider_id = "multi"
+        evidence_kinds = frozenset({"working_context", "channel_activity"})
+        calls: list[str] = []
+
+        def can_serve(self, need, evidence_kind):
+            return True
+
+        def probe(self, need, *, evidence_kind, hypotheses):
+            self.calls.append(evidence_kind)
+            if evidence_kind == "working_context":
+                raise RuntimeError("wc failed")
+            return EvidenceResult(
+                status=EVIDENCE_FOUND,
+                provider_id=self.provider_id,
+                evidence_kind=evidence_kind,
+                payload={"by_entity": {}},
+            )
+
+    class Strat:
+        def incorporate(self, result, hypotheses, *, need):
+            return hypotheses
+
+        def assess(self, need, hypotheses, *, last_result=None, attempted_pairs=None):
+            pairs = set(attempted_pairs or ())
+            kinds = []
+            if ("working_context", "multi") not in pairs:
+                kinds.append("working_context")
+            elif ("channel_activity", "multi") not in pairs:
+                kinds.append("channel_activity")
+            if not kinds:
+                return EvidenceNeedAssessment(resolved=True, resolution_ref="done")
+            return EvidenceNeedAssessment(
+                remaining_ambiguities=["x"],
+                preferred_evidence_kinds=kinds,
+            )
+
+    prov = MultiKindProvider()
+    MultiKindProvider.calls = []
+    reg = InformationCapabilityRegistry()
+    reg.register(prov)
+    episode = run_evidence_acquisition(need, registry=reg, strategy=Strat(), hypotheses=[])
+    assert "working_context" in MultiKindProvider.calls
+    assert "channel_activity" in MultiKindProvider.calls
+    assert episode.resolved
+
+
 def test_brain_does_not_import_whatsapp_http():
     import pathlib
 

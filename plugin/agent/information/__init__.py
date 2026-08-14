@@ -173,28 +173,48 @@ class MemoryReferenceHistoryProvider:
                 notes="no_reference_api",
             )
         surface = need.subject
-        by_entity: dict[str, float] = {}
+        by_entity: dict[str, dict[str, Any]] = {}
+        errors = 0
         for h in hypotheses:
             if not isinstance(h, IdentityHypothesis):
                 continue
             try:
-                by_entity[h.entity_id] = float(
+                val = float(
                     self.memory.recent_reference_support(surface, h.entity_id) or 0.0
                 )
-            except Exception:
-                by_entity[h.entity_id] = 0.0
-        if any(v > 0 for v in by_entity.values()):
+                by_entity[h.entity_id] = {
+                    "reference_support": val,
+                    "status": "known_positive" if val >= 1.0 else "known_negative",
+                }
+            except Exception as exc:
+                errors += 1
+                by_entity[h.entity_id] = {
+                    "status": "error",
+                    "error": str(exc),
+                }
+        if errors and errors == len(by_entity):
+            return EvidenceResult(
+                status=ERROR,
+                provider_id=self.provider_id,
+                evidence_kind=evidence_kind,
+                notes="all_reference_lookups_failed",
+                payload={"by_entity": by_entity},
+            )
+        if any(
+            (row.get("status") or "").startswith("known")
+            for row in by_entity.values()
+        ):
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"reference_support_by_entity": by_entity},
+                payload={"by_entity": by_entity},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
             provider_id=self.provider_id,
             evidence_kind=evidence_kind,
-            payload={"reference_support_by_entity": by_entity},
+            payload={"by_entity": by_entity},
         )
 
 
