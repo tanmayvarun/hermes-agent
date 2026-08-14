@@ -1,7 +1,9 @@
 # Hermes runtime — clients, executive, memory, substrates
 
 **Status:** Architecture roof (design locked for incremental implementation).  
-**Related:** [agent-design.md](agent-design.md), [executive-runtime.md](executive-runtime.md),
+**Related:** [brain-metaactor.md](brain-metaactor.md) (**canonical Brain / MetaActor roof**),
+[memorydesign.md](memorydesign.md),
+[agent-design.md](agent-design.md), [executive-runtime.md](executive-runtime.md),
 [representation-capability-substrate.md](representation-capability-substrate.md),
 [belief-centric-control-loop.md](belief-centric-control-loop.md),
 [interface-foundation.md](interface-foundation.md).
@@ -18,6 +20,11 @@
 > memory is relevant. A MemorySystem owns durable knowledge, retrieval,
 > provenance, consolidation, and forgetting.**
 
+> **Cognition ownership:** the Agent Brain is the MetaActor. Associative
+> **ContextActivation runs before semantic commitment**; deliberate retrieval
+> runs only when activated context is insufficient. See
+> [brain-metaactor.md](brain-metaactor.md).
+
 ```text
 One runtime.
 One semantic task model.
@@ -29,6 +36,7 @@ Many clients.
 Central cognition invariant:
 
 ```text
+Brain (MetaActor) owns BrainWorkspace + progressive interpretation.
 Brain reasons in goals, facts, questions, intentions, desired effects.
 Execution substrates reason in mechanisms.
 MemorySystem supplies evidence-bearing durable knowledge.

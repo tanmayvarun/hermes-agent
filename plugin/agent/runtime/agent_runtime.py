@@ -2,8 +2,12 @@
 
 Owns RuntimeState + MemorySystem one-way. Orchestrates:
 
-    TaskRequest → interpretation → method providers → MethodFrontier decision
+    TaskRequest → ContextActivation (BrainWorkspace) → interpretation
+    → method providers → MethodFrontier decision
     → ASK (resumable) | execute_method(selected) | legacy conversation
+
+Slice 1: associative ContextActivation runs before Goal interpret; it does
+**not** commit identity (RoleBinder / recipient_binding remain separate).
 
 No WhatsApp / forward_message branches. Ranking authority is MethodFrontier
 (``decide_methods``), not a parallel scorer inside this module.
@@ -199,6 +203,26 @@ class AgentRuntime:
             )
 
         phase(PHASE_INTERPRETING)
+
+        # Slice 1: associative ContextActivation BEFORE Goal interpret / commit.
+        # Does not replace recipient_binding; evidence only → BrainWorkspace.
+        activation_trace: Dict[str, Any] = {}
+        try:
+            from plugin.agent.brain.context_activation import activate_context
+
+            workspace = activate_context(
+                self.memory,
+                raw_turn=str(req.user_turn or ""),
+                session_ref=sid,
+                working_context={
+                    "client": (req.client_context or {}).get("client"),
+                },
+            )
+            session_state.brain_workspace = workspace
+            activation_trace = workspace.activation_trace()
+        except Exception as exc:
+            activation_trace = {"status": "error", "error": str(exc), "committed": False}
+
         interpretation = interpret_task_request(req)
 
         # Personal-entity resolution BEFORE MethodFrontier / substrate choice.
@@ -253,6 +277,7 @@ class AgentRuntime:
                         session_id=sid,
                         runtime_id=session_state.runtime_id,
                         acceptance_trace={
+                            "context_activation": activation_trace,
                             "recipient_resolution": recipient_trace,
                             "ASK": question,
                         },
@@ -305,6 +330,7 @@ class AgentRuntime:
                         session_id=sid,
                         runtime_id=session_state.runtime_id,
                         acceptance_trace={
+                            "context_activation": activation_trace,
                             "recipient_resolution": recipient_trace,
                             "ASK": question,
                         },
@@ -362,6 +388,7 @@ class AgentRuntime:
             "session_id": sid,
             "runtime_id": session_state.runtime_id,
             "intention_id": intention_id,
+            "context_activation": activation_trace,
             "goal_interpretation": {
                 "goal_kind": interpretation.goal_kind,
                 "desired_effects": list(interpretation.desired_effects),

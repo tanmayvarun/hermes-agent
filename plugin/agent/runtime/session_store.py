@@ -40,6 +40,8 @@ class SessionRuntimeState:
     active_intention_id: str = ""
     last_trace: Dict[str, Any] = field(default_factory=dict)
     original_user_turn: str = ""
+    # Slice 1 Brain MetaActor — activation workspace (no semantic commits).
+    brain_workspace: Any = None
 
 
 _LOCK = threading.RLock()

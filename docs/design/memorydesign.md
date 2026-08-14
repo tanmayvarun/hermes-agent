@@ -1,14 +1,20 @@
 # Hermes MemorySystem design
 
 **Status:** Architecture approved for implementation (post design-review + research + final contract tightenings).  
-**Related:** [personal-agent-brain-and-substrates.md](personal-agent-brain-and-substrates.md),
+**Related:** [brain-metaactor.md](brain-metaactor.md) (Brain MetaActor / ContextActivation —
+cognition ownership),
+[personal-agent-brain-and-substrates.md](personal-agent-brain-and-substrates.md),
 [executive-runtime.md](executive-runtime.md),
 [agent-design.md](agent-design.md).  
-**Code seam today:** [`plugin/agent/memory/`](../../plugin/agent/memory/) — `MemorySystem` Protocol + `NoopMemorySystem` only.
+**Code seam today:** [`plugin/agent/memory/`](../../plugin/agent/memory/) — LocalMemorySystem +
+bootstrap + retriever; Brain activation seam in [`plugin/agent/brain/`](../../plugin/agent/brain/).
 
 **Research alignment:** Hermes is closer to **Graphiti/Zep + Memori** than to classic “vector = memory” systems. Borrow selectively from Mem0, Supermemory, Graphiti/Zep, Letta/MemGPT, Cognee, Memori, memU — do **not** copy any one architecture wholesale.
 
-**Do not reopen architecture.** Implement Slices 1–4 with the contracts below. Vectors, semantic compaction, wiki views, graph DBs, and cloud sync stay deferred.
+**Do not reopen storage architecture.** Memory evidence/projection contracts below stay locked.
+**Cognition ownership** (when activation runs, who commits identity) is owned by
+[brain-metaactor.md](brain-metaactor.md) — stop expanding storage; implement Brain slices there.
+Vectors, semantic compaction, wiki views, graph DBs, and cloud sync stay deferred.
 
 ---
 
@@ -52,8 +58,10 @@ stays outside the store so MemorySystem never owns semantic commitments.
 | Evidence (events / episodes) | What happened / was observed? | Append-only EventStore |
 | Canonical memory | What is worth remembering now? | Entity / Relationship / InteractionAggregate / Episode? / MemoryStore |
 | Projections | How do we retrieve efficiently? | MemoryProjectionManager (rebuildable; freshness-tracked) |
-| Retrieval / context | What matters for *this* prompt? | Retriever + ContextAssembler |
-| Belief / binding | What does the task commit? | EntityResolver → RoleBinder |
+| Retrieval / context | What matters for *this* prompt? | Retriever; **ContextAssembler is Brain-facing** (ConsultationContext from BrainWorkspace) |
+| Automatic activation | What becomes active on a new turn? | Brain **ContextActivation** (L0–L2 + cue L3) — not deliberate SEARCH |
+| Deliberate retrieval | What evidence solves a named deficit? | Brain MetaActor `MemoryQuery` / SEARCH after insufficient interpretation |
+| Belief / binding | What does the task commit? | EntityResolver → **RoleBinder** (Brain adopts consultant proposals) |
 | Action | How / whether to act? | Executive + ActionRiskPolicy → Substrate |
 
 **Single most important principle:** never throw away evidence merely because a better abstraction was derived over it.
