@@ -1,0 +1,250 @@
+From 0cb0fc116d87058fc5e901d3c625cc89b343a041 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 12:03:24 +0530
+Subject: [PATCH 3/3] =?UTF-8?q?fix(agent):=20instrument=20SEARCH=20candida?=
+ =?UTF-8?q?te=E2=86=92ledger=E2=86=92choice=E2=86=92ACT=20path?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Emit selection_path and selection_trace so live probes can verify whether
+the ranking architecture chose the target, versus a source-contact shortcut.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py   | 46 +++++++++++-
+ plugin/agent/decision_consultation.py         | 35 +++++++++-
+ .../plugin/test_search_hypothesis_ranking.py  | 70 +++++++++++++++++++
+ 3 files changed, 148 insertions(+), 3 deletions(-)
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index 12269aad0..f1632e638 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -569,6 +569,12 @@ def advance_search_with_candidates(
+         ),
+         # Unique / ranked choice is not RoleBinder resolution.
+         "role_resolved": bool(ep.get("role_resolved")) if status != "complete" else False,
++        # End-to-end ranking path marker (vs source-contact shortcut).
++        "selection_path": (
++            "rank"
++            if ledger
++            else str(ep.get("selection_path") or "")
++        ),
+     }
+     if status == "complete" and choice_confidence == "provisional":
+         ep["role_resolved"] = False
+@@ -724,15 +730,43 @@ def note_retrieval_complete(
+     return ep
+ 
+ 
++def search_selection_trace(episode: Optional[Dict[str, Any]]) -> Dict[str, Any]:
++    """Compact candidate→ledger→choice→ACT-target telemetry for live probes."""
++    ep = episode if isinstance(episode, dict) else {}
++    if not ep:
++        return {}
++    ledger = list(ep.get("hypothesis_ledger") or [])[:8]
++    path = str(ep.get("selection_path") or "").strip()
++    if not path:
++        if ledger:
++            path = "rank"
++        elif str(ep.get("chosen_label") or "").strip():
++            path = "source_contact_shortcut"
++    chosen = str(ep.get("chosen_label") or ep.get("explore_label") or "").strip()
++    return {
++        "selection_path": path,
++        "candidate_count": int(ep.get("candidate_count") or 0),
++        "hypothesis_ledger": ledger,
++        "selected_hypothesis": chosen,
++        "explore_label": str(ep.get("explore_label") or ""),
++        "choice_confidence": str(ep.get("choice_confidence") or ""),
++        "role_resolved": bool(ep.get("role_resolved")),
++        "act_target": chosen,
++        "status": str(ep.get("status") or ""),
++        "role": str(ep.get("role") or ""),
++    }
++
++
+ def complete_search_choice(
+     execution_state: Any,
+     *,
+     chosen_label: str,
+     chosen_id: Any = None,
+     scores: Optional[Sequence[Any]] = None,
++    selection_path: str = "",
+ ) -> Dict[str, Any]:
+     """Role-resolved search completion (retrieval + binding-eligible referent)."""
+-    return note_retrieval_complete(
++    ep = note_retrieval_complete(
+         execution_state,
+         chosen_label=chosen_label,
+         chosen_id=chosen_id,
+@@ -740,6 +774,15 @@ def complete_search_choice(
+         role_resolved=True,
+         candidate_count=1,
+     )
++    path = str(selection_path or "").strip()
++    if path and isinstance(ep, dict):
++        ep = {**ep, "selection_path": path}
++        try:
++            if execution_state is not None:
++                execution_state.search_episode = ep
++        except Exception:
++            pass
++    return ep
+ 
+ 
+ def maybe_complete_source_contact_from_visible_row(
+@@ -805,6 +848,7 @@ def maybe_complete_source_contact_from_visible_row(
+         chosen_label=label,
+         chosen_id=row.get("id"),
+         scores=[1.0],
++        selection_path="source_contact_shortcut",
+     )
+ 
+ 
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 65dcedf3f..1589c9b79 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -221,6 +221,19 @@ class DecisionBrief:
+         if self.effect_closure:
+             packet["effect_closure"] = dict(self.effect_closure)
+         if isinstance(self.search_episode, dict) and self.search_episode:
++            try:
++                from plugin.agent.capabilities.search_episode import (
++                    search_selection_trace,
++                )
++
++                trace = search_selection_trace(self.search_episode)
++            except Exception:
++                trace = {}
++            ledger = list(
++                (trace.get("hypothesis_ledger") if trace else None)
++                or self.search_episode.get("hypothesis_ledger")
++                or []
++            )[:4]
+             packet["search_episode"] = {
+                 "status": self.search_episode.get("status"),
+                 "role": self.search_episode.get("role"),
+@@ -228,7 +241,27 @@ class DecisionBrief:
+                 "query": self.search_episode.get("query"),
+                 "candidate_count": self.search_episode.get("candidate_count"),
+                 "chosen_label": self.search_episode.get("chosen_label"),
++                "explore_label": self.search_episode.get("explore_label"),
++                "choice_confidence": self.search_episode.get("choice_confidence"),
++                "role_resolved": self.search_episode.get("role_resolved"),
+                 "space": self.search_episode.get("space"),
++                "hypothesis_ledger": ledger,
++                "path": str(
++                    (trace or {}).get("selection_path")
++                    or self.search_episode.get("selection_path")
++                    or ""
++                ),
++                "selection_trace": {
++                    k: (trace or {}).get(k)
++                    for k in (
++                        "selection_path",
++                        "selected_hypothesis",
++                        "act_target",
++                        "candidate_count",
++                        "choice_confidence",
++                    )
++                    if (trace or {}).get(k) not in (None, "", [])
++                },
+             }
+         return packet
+ 
+@@ -3052,8 +3085,6 @@ def _entity_resolution_type_query_outcome(
+     )
+ 
+ 
+-
+-
+ def _patient_content_established(brief: "DecisionBrief") -> bool:
+     """True when source-query patient is already on-screen / soft-located.
+ 
+diff --git a/tests/plugin/test_search_hypothesis_ranking.py b/tests/plugin/test_search_hypothesis_ranking.py
+index 2513e617c..93b91e28e 100644
+--- a/tests/plugin/test_search_hypothesis_ranking.py
++++ b/tests/plugin/test_search_hypothesis_ranking.py
+@@ -264,6 +264,76 @@ def test_frozen_world_old_vs_new_ranking_separates_ties():
+     assert ranked[0]["id"] != "related"
+ 
+ 
++def test_rank_path_emits_candidate_ledger_choice_act_trace():
++    """End-to-end: candidates → ledger → selected hypothesis → ACT target."""
++    from plugin.agent.capabilities.search_episode import search_selection_trace
++    from plugin.agent.decision_consultation import DecisionBrief
++
++    state = ExecutionState()
++    start_search_episode(
++        state,
++        role="content",
++        referent="acme",
++        query="acme",
++        evidence_tokens=["Alice", "acme"],
++        expected_originator="Alice",
++        expected_container="Alice",
++    )
++    ep = advance_search_with_candidates(
++        state,
++        _frozen_inventory(),
++        referent="acme",
++        query="acme",
++        evidence_tokens=["Alice", "acme"],
++    )
++    assert ep.get("selection_path") == "rank"
++    assert ep.get("hypothesis_ledger")
++    trace = search_selection_trace(ep)
++    assert trace["selection_path"] == "rank"
++    assert trace["selected_hypothesis"]
++    assert trace["act_target"] == trace["selected_hypothesis"]
++    brief = DecisionBrief(
++        goal={"source_conversation": "Alice", "source_query": "acme"},
++        world={"surface": "search", "objects": _frozen_inventory()},
++        search_episode=ep,
++        task_state=TaskState(phase="reach_source"),
++        capabilities=["open_entity"],
++    )
++    packet = brief.to_packet()
++    assert packet["search_episode"]["path"] == "rank"
++    assert packet["search_episode"]["hypothesis_ledger"]
++    assert packet["search_episode"]["selection_trace"]["act_target"]
++    assert _open_entity_target_from_brief(brief) == packet["search_episode"][
++        "selection_trace"
++    ]["act_target"]
++
++
++def test_source_contact_shortcut_marks_selection_path():
++    from plugin.agent.capabilities.search_episode import (
++        maybe_complete_source_contact_from_visible_row,
++        search_selection_trace,
++    )
++
++    state = ExecutionState()
++    doc = {
++        "surface": "chat_list",
++        "objects": [
++            {
++                "id": "r1",
++                "kind": "chat_row",
++                "text": "Alice",
++                "point": [10, 20],
++            }
++        ],
++    }
++    ep = maybe_complete_source_contact_from_visible_row(
++        state, document=doc, contact="Alice", source_chat_open=False
++    )
++    assert ep is not None
++    assert ep.get("selection_path") == "source_contact_shortcut"
++    assert search_selection_trace(ep)["selection_path"] == "source_contact_shortcut"
++
++
+ def test_hypothesis_ledger_mandatory_fields():
+     ranked = rank_search_hypotheses(
+         _frozen_inventory(),
+-- 
+2.39.5 (Apple Git-154)
+

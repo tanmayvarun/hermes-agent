@@ -17,6 +17,8 @@ from plugin.agent.affordance_frontier import Affordance, AffordanceFrontier, STA
 
 
 def test_promote_frontier_after_accept_grounds_forward_from_accepted_doc():
+    from plugin.perception.coordinate_frame import build_frame_graph
+
     state = ExecutionState()
     state.reveal_handoff = {
         "surface": "context_menu",
@@ -31,9 +33,18 @@ def test_promote_frontier_after_accept_grounds_forward_from_accepted_doc():
         "latent_actions": [],
         "probe_actions": [],
     }
+    graph = build_frame_graph(
+        image_size=(1000.0, 800.0),
+        window_origin_in_screen=(0.0, 0.0),
+        point_scale=1.0,
+        capture_scale=1.0,
+        capture_id="c_accept",
+    )
     accepted = {
         "surface": "conversation",
         "open_conversation": "Pallavi",
+        "capture_id": "c_accept",
+        "frame_graph": graph.to_dict(),
         "objects": [
             {
                 "text": "zarooratwala",
@@ -96,6 +107,10 @@ def test_promote_frontier_after_accept_grounds_forward_from_accepted_doc():
         ],
     }
     state.unified_world_document = accepted
+    state.task_surface = {
+        "capture_id": "c_accept",
+        "frame_graph": graph.to_dict(),
+    }
 
     status = promote_frontier_after_accept(
         state,

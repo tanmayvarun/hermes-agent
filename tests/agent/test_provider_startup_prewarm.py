@@ -72,6 +72,35 @@ def test_startup_prewarm_raises_when_fewer_than_three_providers_answer(monkeypat
     assert not ai._provider_startup_prewarm_done.is_set()
 
 
+def test_startup_prewarm_min_follows_single_stack_config(monkeypatch):
+    """ollama-cloud-only config must not demand three providers."""
+    _reset_gate()
+    monkeypatch.delenv("HERMES_PROVIDER_STARTUP_MIN_SUCCESS", raising=False)
+
+    with patch(
+        "agent.agent_init._configured_unique_agent_providers",
+        return_value=1,
+    ):
+        assert ai._startup_provider_prewarm_min_successes() == 1
+
+    rows = [{"slug": "ollama-cloud"}]
+    with patch(
+        "agent.agent_init._startup_provider_prewarm_min_successes",
+        return_value=1,
+    ), patch("hermes_cli.model_switch.list_authenticated_providers", return_value=rows), patch(
+        "hermes_cli.models.cached_provider_model_ids",
+        return_value=["mistral-large-3:675b"],
+    ):
+        result = ai._prewarm_provider_apis_at_startup(
+            current_provider="ollama-cloud",
+            current_base_url="https://ollama.com/v1",
+        )
+
+    assert result["status"] == "ok"
+    assert result["successes"] == ["ollama-cloud"]
+    assert ai._provider_startup_prewarm_done.is_set()
+
+
 def test_runtime_inventory_prewarm_records_models_and_warms_ollama(monkeypatch):
     _reset_gate()
     monkeypatch.setenv("HERMES_PROVIDER_STARTUP_MIN_SUCCESS", "1")

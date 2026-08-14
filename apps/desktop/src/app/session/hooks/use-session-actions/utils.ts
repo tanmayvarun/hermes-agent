@@ -73,7 +73,17 @@ const _chatMessageFieldsExhaustive: {
   [K in Exclude<keyof ChatMessage, (typeof COMPARED_FIELDS)[number] | (typeof IGNORED_FIELDS)[number]>]: never
 } = {}
 
-const COMPARED_FIELDS = ['id', 'role', 'pending', 'error', 'hidden', 'branchGroupId', 'attribution'] as const
+const COMPARED_FIELDS = [
+  'id',
+  'role',
+  'pending',
+  'error',
+  'hidden',
+  'branchGroupId',
+  'attribution',
+  'uiHints',
+  'taskOutcome'
+] as const
 const IGNORED_FIELDS = ['timestamp', 'attachmentRefs', 'parts'] as const
 
 // Compile-time check: every ChatMessagePart discriminant must be handled by
@@ -154,9 +164,43 @@ export function chatMessagesEquivalent(a: ChatMessage, b: ChatMessage): boolean 
     a.pending !== b.pending ||
     a.error !== b.error ||
     a.hidden !== b.hidden ||
-    a.branchGroupId !== b.branchGroupId
+    a.branchGroupId !== b.branchGroupId ||
+    a.attribution !== b.attribution
   ) {
     return false
+  }
+
+  const aHints = a.uiHints ?? null
+  const bHints = b.uiHints ?? null
+  if (aHints !== bHints) {
+    if (!aHints || !bHints) {
+      return false
+    }
+    // Conservative: any key/value mismatch forces a transcript update.
+    const aKeys = Object.keys(aHints)
+    const bKeys = Object.keys(bHints)
+    if (aKeys.length !== bKeys.length || aKeys.some(k => aHints[k] !== bHints[k])) {
+      return false
+    }
+  }
+
+  const aOutcome = a.taskOutcome ?? null
+  const bOutcome = b.taskOutcome ?? null
+  if (aOutcome !== bOutcome) {
+    if (!aOutcome || !bOutcome) {
+      return false
+    }
+    if (
+      aOutcome.finalStatus !== bOutcome.finalStatus ||
+      aOutcome.durationMs !== bOutcome.durationMs ||
+      aOutcome.phase !== bOutcome.phase ||
+      aOutcome.summary !== bOutcome.summary ||
+      aOutcome.taskRequestId !== bOutcome.taskRequestId ||
+      aOutcome.errorCode !== bOutcome.errorCode ||
+      aOutcome.message !== bOutcome.message
+    ) {
+      return false
+    }
   }
 
   if (a.parts.length !== b.parts.length) {

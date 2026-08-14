@@ -1,0 +1,743 @@
+From 352b512e8d08ae296cdb3f8bc32da57e49f17a32 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 15:44:37 +0530
+Subject: [PATCH] feat(agent): land TaskIngress and Noop MemorySystem seam
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Introduce common ingress (TaskRequest/SessionRef) and AgentRuntime with
+one-way ownership of RuntimeState. Adapt run_goal_closed_loop as the first
+legacy Goal caller — not the ingress owner — with no memory side effects.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .../personal-agent-brain-and-substrates.md    |  33 ++-
+ plugin/agent/controller.py                    |  36 +++
+ plugin/agent/ingress.py                       | 140 ++++++++++++
+ plugin/agent/memory/__init__.py               |  20 ++
+ plugin/agent/memory/system.py                 |  79 +++++++
+ plugin/agent/memory/types.py                  |  73 ++++++
+ plugin/agent/runtime/agent_runtime.py         |  40 ++++
+ tests/plugin/test_task_ingress_memory_seam.py | 210 ++++++++++++++++++
+ 8 files changed, 629 insertions(+), 2 deletions(-)
+ create mode 100644 plugin/agent/ingress.py
+ create mode 100644 plugin/agent/memory/__init__.py
+ create mode 100644 plugin/agent/memory/system.py
+ create mode 100644 plugin/agent/memory/types.py
+ create mode 100644 plugin/agent/runtime/agent_runtime.py
+ create mode 100644 tests/plugin/test_task_ingress_memory_seam.py
+
+diff --git a/docs/design/personal-agent-brain-and-substrates.md b/docs/design/personal-agent-brain-and-substrates.md
+index 06eabfdff..c4f8e3a3c 100644
+--- a/docs/design/personal-agent-brain-and-substrates.md
++++ b/docs/design/personal-agent-brain-and-substrates.md
+@@ -545,15 +545,44 @@ both attach. This document locks that target; it does not refactor clients.
+ 
+ ---
+ 
++## Implementation status (A + thin C)
++
++Landed as a **seam only** (no durable store, no TUI/CLI wire-in yet):
++
++```text
++plugin/agent/ingress.py              TaskRequest, SessionRef, TaskIngress
++plugin/agent/memory/                 MemorySystem Protocol + NoopMemorySystem
++plugin/agent/runtime/agent_runtime.py  AgentRuntime façade
++```
++
++Ownership invariants in code:
++
++```text
++TaskIngress → AgentRuntime is the common seam.
++run_goal_closed_loop is the first *legacy adapter* into that seam
++  (Goal → from_legacy_goal → normalize → AgentRuntime),
++  not the owner/composition root of TaskIngress.
++
++AgentRuntime owns RuntimeState (one-way).
++RuntimeState must not backreference AgentRuntime.
++
++TaskIngress.normalize is canonical; from_legacy_goal is compatibility only.
++No constructor / normalize path calls retrieve / submit_candidate / invalidate.
++Noop submit_candidate → MemoryWriteResult(disposition="ignored", …).
++```
++
++Architectural goldens: `tests/plugin/test_task_ingress_memory_seam.py`.
++
+ ## Roadmap (conceptual)
+ 
+ ```text
+ Current packaging:
+   architecture roof + GROUNDING_WRONG_LOCUS exemplar (landed)
++  A + thin C seam (TaskIngress / AgentRuntime / NoopMemorySystem) — landed
+ 
+-A. Common runtime / TaskIngress seam
++A. Common runtime / TaskIngress seam          ← thin seam landed
+ B. Capability / Method / Substrate contract
+-C. MemorySystem minimal seam (retrieve / submit_candidate / invalidate)
++C. MemorySystem minimal seam                   ← Protocol + noop landed; no store
+ D. ComputerUseExecutor boundary
+ E. Executive / Progress evolution (ProgressLedger target shape)
+ F. Additional substrates / specialists (CodingAgent as large tool)
+diff --git a/plugin/agent/controller.py b/plugin/agent/controller.py
+index a16928975..6d2d45308 100644
+--- a/plugin/agent/controller.py
++++ b/plugin/agent/controller.py
+@@ -2413,6 +2413,7 @@ def run_goal_closed_loop(
+     wait_fn: Optional[WaitFn] = None,
+     retention_floor: float = 0.35,
+     engine: Optional[DecisionEngine] = None,
++    memory: Optional["MemorySystem"] = None,
+ ) -> GoalResult:
+     """Brain-owned tools closed loop (controller is a dispatcher).
+ 
+@@ -2425,6 +2426,13 @@ def run_goal_closed_loop(
+ 
+     Surprise / low worldview / dead motors set signals for meta — they do not
+     force a look ahead of the brain's choice.
++
++    Ingress note: this function is the **first legacy adapter** into the common
++    TaskIngress → AgentRuntime seam. It is not the owner/composition root of
++    TaskIngress. Target shape remains: all clients/harnesses → TaskIngress →
++    AgentRuntime. Ownership is one-way (AgentRuntime owns RuntimeState); this
++    path never attaches AgentRuntime onto RuntimeState and never auto-retrieves
++    memory.
+     """
+     # Composition root: register domain evidence providers outside generic core.
+     try:
+@@ -2453,6 +2461,34 @@ def run_goal_closed_loop(
+         }:
+             raise SystemExit(f"live eval preflight failed: {exc}") from exc
+ 
++    # Legacy Goal → TaskRequest → AgentRuntime (first adapter; not ingress owner).
++    # Locals kept for the seam; closed-loop internals continue to use ``runtime``.
++    # RuntimeState must never gain an AgentRuntime backreference.
++    from plugin.agent.ingress import TaskIngress
++    from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
++    from plugin.agent.runtime.agent_runtime import AgentRuntime
++
++    _memory: MemorySystem = memory if memory is not None else NoopMemorySystem()
++    _task_request = TaskIngress.normalize(
++        TaskIngress.from_legacy_goal(
++            goal,
++            client_context={
++                "client": "live_harness",
++                "legacy_adapter": "run_goal_closed_loop",
++            },
++        )
++    )
++    agent_runtime = AgentRuntime(
++        runtime_state=runtime,
++        memory=_memory,
++        task_request=_task_request,
++    )
++    if agent_runtime.runtime_state is not runtime:
++        raise RuntimeError("AgentRuntime must preserve RuntimeState identity")
++    # Kept at the composition boundary for future executive/memory decisions.
++    # Existing loop internals continue to use ``runtime`` (same object).
++    _ = agent_runtime.task_request
++
+     eng = engine or get_decision_engine()
+     # Goal tokens for branch/selection consistency + revert_effects analyze.
+     try:
+diff --git a/plugin/agent/ingress.py b/plugin/agent/ingress.py
+new file mode 100644
+index 000000000..bfd247449
+--- /dev/null
++++ b/plugin/agent/ingress.py
+@@ -0,0 +1,140 @@
++"""Common TaskIngress seam — normalize TaskRequest into AgentRuntime.
++
++Canonical direction:
++
++    raw user request → TaskRequest → TaskIngress.normalize → AgentRuntime
++
++``from_legacy_goal`` is an explicit compatibility adapter for callers that
++already hold a parsed ``Goal`` (e.g. live harness → ``run_goal_closed_loop``).
++It is **not** the target ingress source of truth.
++
++TaskIngress has no cognition and never retrieves / writes memory.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any, Mapping, Optional, Sequence
++
++
++@dataclass(frozen=True)
++class SessionRef:
++    """Runtime-owned session handle. TaskRequest holds a ref; it does not own lifecycle."""
++
++    session_id: str
++
++
++@dataclass(frozen=True)
++class ExecutionConstraints:
++    """Constraints that may affect executive / method choice — not presentation config."""
++
++    foreground_allowed: bool = True
++    network_allowed: bool = True
++    destructive_actions_allowed: bool = False
++    approval_policy: str = "default"
++
++
++@dataclass
++class TaskRequest:
++    """Client-neutral task ingress shape.
++
++    Goal is intentionally not required. Legacy adapters may attach an already-parsed
++    Goal via ``legacy_goal`` without making Goal the canonical TaskRequest field.
++    """
++
++    user_turn: str = ""
++    attachments: list[Any] = field(default_factory=list)
++    session: Optional[SessionRef] = None
++    client_context: dict[str, Any] = field(default_factory=dict)
++    constraints: ExecutionConstraints = field(default_factory=ExecutionConstraints)
++    interaction_capabilities: dict[str, Any] = field(default_factory=dict)
++    # Explicit legacy payload — not part of the long-term TaskRequest contract.
++    legacy_goal: Any = None
++
++
++class TaskIngress:
++    """Normalize TaskRequest; attach session/memory handles only — no cognition."""
++
++    @staticmethod
++    def normalize(request: TaskRequest) -> TaskRequest:
++        """Canonical ingress operation.
++
++        Pass-through normalize: trim user_turn, shallow-copy presentation maps so
++        callers cannot mutate the normalized request in place via shared dicts.
++        Does not consult MemorySystem.
++        """
++        if request is None:
++            raise TypeError("TaskRequest is required")
++        client_context = dict(request.client_context or {})
++        interaction_capabilities = dict(request.interaction_capabilities or {})
++        attachments = list(request.attachments or [])
++        user_turn = str(request.user_turn or "").strip()
++        constraints = request.constraints or ExecutionConstraints()
++        return TaskRequest(
++            user_turn=user_turn,
++            attachments=attachments,
++            session=request.session,
++            client_context=client_context,
++            constraints=constraints,
++            interaction_capabilities=interaction_capabilities,
++            legacy_goal=request.legacy_goal,
++        )
++
++    @staticmethod
++    def from_legacy_goal(
++        goal: Any,
++        *,
++        session: Optional[SessionRef] = None,
++        client_context: Optional[Mapping[str, Any]] = None,
++        constraints: Optional[ExecutionConstraints] = None,
++        interaction_capabilities: Optional[Mapping[str, Any]] = None,
++        attachments: Optional[Sequence[Any]] = None,
++    ) -> TaskRequest:
++        """Compatibility constructor for callers that already hold a parsed Goal.
++
++        Temporary migration adapter — not the target ingress direction.
++        """
++        prompt = ""
++        try:
++            prompt = str(getattr(goal, "prompt", "") or "").strip()
++        except Exception:
++            prompt = ""
++        if not prompt:
++            try:
++                kind = str(getattr(goal, "kind", "") or "").strip()
++                contact = str(getattr(goal, "contact", "") or "").strip()
++                prompt = " ".join(p for p in (kind, contact) if p).strip()
++            except Exception:
++                prompt = ""
++        return TaskRequest(
++            user_turn=prompt,
++            attachments=list(attachments or []),
++            session=session,
++            client_context=dict(client_context or {}),
++            constraints=constraints or ExecutionConstraints(),
++            interaction_capabilities=dict(interaction_capabilities or {}),
++            legacy_goal=goal,
++        )
++
++
++def semantic_task_fingerprint(request: TaskRequest) -> dict[str, Any]:
++    """Client-neutral semantic core of a TaskRequest (excludes presentation labels)."""
++    ctx = dict(request.client_context or {})
++    # Presentation-only keys that must not affect task semantics.
++    for key in ("client", "supports_rich_ui", "supports_streaming", "ui_theme"):
++        ctx.pop(key, None)
++    constraints = request.constraints or ExecutionConstraints()
++    return {
++        "user_turn": str(request.user_turn or ""),
++        "attachments": list(request.attachments or []),
++        "session_id": request.session.session_id if request.session else None,
++        "constraints": {
++            "foreground_allowed": bool(constraints.foreground_allowed),
++            "network_allowed": bool(constraints.network_allowed),
++            "destructive_actions_allowed": bool(constraints.destructive_actions_allowed),
++            "approval_policy": str(constraints.approval_policy or "default"),
++        },
++        "interaction_capabilities": dict(request.interaction_capabilities or {}),
++        "client_context_semantic": ctx,
++        "has_legacy_goal": request.legacy_goal is not None,
++    }
+diff --git a/plugin/agent/memory/__init__.py b/plugin/agent/memory/__init__.py
+new file mode 100644
+index 000000000..7e3624e1a
+--- /dev/null
++++ b/plugin/agent/memory/__init__.py
+@@ -0,0 +1,20 @@
++"""MemorySystem package — durable knowledge beside Executive (not a substrate)."""
++
++from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
++from plugin.agent.memory.types import (
++    MemoryCandidate,
++    MemoryEvidence,
++    MemoryInvalidationResult,
++    MemoryRecord,
++    MemoryWriteResult,
++)
++
++__all__ = [
++    "MemoryCandidate",
++    "MemoryEvidence",
++    "MemoryInvalidationResult",
++    "MemoryRecord",
++    "MemorySystem",
++    "MemoryWriteResult",
++    "NoopMemorySystem",
++]
+diff --git a/plugin/agent/memory/system.py b/plugin/agent/memory/system.py
+new file mode 100644
+index 000000000..ce56fe33f
+--- /dev/null
++++ b/plugin/agent/memory/system.py
+@@ -0,0 +1,79 @@
++"""MemorySystem Protocol + NoopMemorySystem (thin C seam).
++
++Design-neutral about async: methods are sync callables so existing closed-loop
++code can call them without an event loop; future backends may wrap async IO
++behind this façade. Do not assume retrieval is always an instantaneous
++in-process lookup.
++"""
++
++from __future__ import annotations
++
++from typing import Any, Mapping, Optional, Protocol, Sequence, runtime_checkable
++
++from plugin.agent.memory.types import (
++    MemoryCandidate,
++    MemoryEvidence,
++    MemoryInvalidationResult,
++    MemoryWriteResult,
++)
++
++
++@runtime_checkable
++class MemorySystem(Protocol):
++    def retrieve(
++        self,
++        query: str,
++        *,
++        context: Optional[Mapping[str, Any]] = None,
++        limit: int = 8,
++    ) -> Sequence[MemoryEvidence]:
++        """Return evidence-bearing memories. Never auto-called by TaskIngress."""
++        ...
++
++    def submit_candidate(self, candidate: MemoryCandidate) -> MemoryWriteResult:
++        """Offer a candidate for write policy. May ignore, accept, or persist."""
++        ...
++
++    def invalidate(
++        self,
++        memory_id: str,
++        *,
++        reason: str = "",
++    ) -> MemoryInvalidationResult:
++        """Invalidate / forget by id (structured outcome)."""
++        ...
++
++
++class NoopMemorySystem:
++    """In-memory seam placeholder — does not persist.
++
++    Writes report disposition=ignored so callers cannot confuse submit with persist.
++    """
++
++    def retrieve(
++        self,
++        query: str,
++        *,
++        context: Optional[Mapping[str, Any]] = None,
++        limit: int = 8,
++    ) -> list[MemoryEvidence]:
++        return []
++
++    def submit_candidate(self, candidate: MemoryCandidate) -> MemoryWriteResult:
++        return MemoryWriteResult(
++            disposition="ignored",
++            reason="noop_memory_system",
++            memory_id=None,
++        )
++
++    def invalidate(
++        self,
++        memory_id: str,
++        *,
++        reason: str = "",
++    ) -> MemoryInvalidationResult:
++        return MemoryInvalidationResult(
++            disposition="ignored",
++            reason=reason or "noop_memory_system",
++            memory_id=memory_id or None,
++        )
+diff --git a/plugin/agent/memory/types.py b/plugin/agent/memory/types.py
+new file mode 100644
+index 000000000..242b527e4
+--- /dev/null
++++ b/plugin/agent/memory/types.py
+@@ -0,0 +1,73 @@
++"""Memory types — MemoryCandidate ≠ MemoryRecord; structured write outcomes."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any, Optional
++
++
++@dataclass
++class MemoryCandidate:
++    """May be worth remembering. Not yet a durable MemoryRecord."""
++
++    kind: str
++    content: Any
++    provenance: str = ""
++    scope: str = "task"
++    confidence: float = 0.0
++    subject: str = ""
++    evidence_refs: list[str] = field(default_factory=list)
++    metadata: dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass
++class MemoryRecord:
++    """Durable memory shape (stub for the seam — no store in this slice).
++
++    Distinct from MemoryCandidate: records exist only after write policy accepts.
++    """
++
++    memory_id: str
++    kind: str
++    content: Any
++    provenance: str = ""
++    scope: str = "session"
++    confidence: float = 0.0
++    subject: str = ""
++    evidence_refs: list[str] = field(default_factory=list)
++    metadata: dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass
++class MemoryEvidence:
++    """Retrieved memory as evidence — never automatic world/task truth."""
++
++    memory_id: str
++    kind: str
++    content: Any
++    provenance: str = ""
++    scope: str = "session"
++    confidence: float = 0.0
++    subject: str = ""
++    metadata: dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass(frozen=True)
++class MemoryWriteResult:
++    """Structured outcome of submit_candidate.
++
++    runtime submitted memory ≠ memory was persisted.
++    """
++
++    disposition: str  # ignored | accepted | persisted | rejected
++    reason: str = ""
++    memory_id: Optional[str] = None
++
++
++@dataclass(frozen=True)
++class MemoryInvalidationResult:
++    """Structured outcome of invalidate / forget."""
++
++    disposition: str  # ignored | invalidated | not_found | rejected
++    reason: str = ""
++    memory_id: Optional[str] = None
+diff --git a/plugin/agent/runtime/agent_runtime.py b/plugin/agent/runtime/agent_runtime.py
+new file mode 100644
+index 000000000..cd6de8914
+--- /dev/null
++++ b/plugin/agent/runtime/agent_runtime.py
+@@ -0,0 +1,40 @@
++"""Thin AgentRuntime façade — owns RuntimeState + MemorySystem one-way.
++
++Ownership invariant:
++
++    AgentRuntime
++    ├── RuntimeState
++    ├── MemorySystem
++    └── TaskRequest / SessionRef
++
++RuntimeState must not backreference AgentRuntime.
++Construction has no MemorySystem side effects.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Optional
++
++from plugin.agent.ingress import SessionRef, TaskRequest
++from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
++from plugin.agent.runtime.state import RuntimeState
++
++
++@dataclass
++class AgentRuntime:
++    """HermesRuntime façade for the common ingress seam."""
++
++    runtime_state: RuntimeState
++    memory: MemorySystem = field(default_factory=NoopMemorySystem)
++    task_request: Optional[TaskRequest] = None
++    session: Optional[SessionRef] = None
++
++    def __post_init__(self) -> None:
++        if self.runtime_state is None:
++            raise TypeError("AgentRuntime requires runtime_state")
++        if self.memory is None:
++            self.memory = NoopMemorySystem()
++        if self.session is None and self.task_request is not None:
++            self.session = self.task_request.session
++        # Construction must not touch MemorySystem (no retrieve/submit/invalidate).
+diff --git a/tests/plugin/test_task_ingress_memory_seam.py b/tests/plugin/test_task_ingress_memory_seam.py
+new file mode 100644
+index 000000000..100096a4c
+--- /dev/null
++++ b/tests/plugin/test_task_ingress_memory_seam.py
+@@ -0,0 +1,210 @@
++"""Architectural goldens for TaskIngress + Noop MemorySystem seam (A + thin C)."""
++
++from __future__ import annotations
++
++from typing import Any, Mapping, Optional, Sequence
++
++import pytest
++
++from plugin.agent.goal import Goal
++from plugin.agent.ingress import (
++    ExecutionConstraints,
++    SessionRef,
++    TaskIngress,
++    TaskRequest,
++    semantic_task_fingerprint,
++)
++from plugin.agent.memory.system import NoopMemorySystem
++from plugin.agent.memory.types import (
++    MemoryCandidate,
++    MemoryEvidence,
++    MemoryInvalidationResult,
++    MemoryRecord,
++    MemoryWriteResult,
++)
++from plugin.agent.runtime.agent_runtime import AgentRuntime
++from plugin.agent.runtime.state import RuntimeState
++
++
++class SpyMemorySystem:
++    """Records MemorySystem calls to assert ingress/ctor have no side effects."""
++
++    def __init__(self) -> None:
++        self.retrieve_calls = 0
++        self.submit_calls = 0
++        self.invalidate_calls = 0
++
++    def retrieve(
++        self,
++        query: str,
++        *,
++        context: Optional[Mapping[str, Any]] = None,
++        limit: int = 8,
++    ) -> Sequence[MemoryEvidence]:
++        self.retrieve_calls += 1
++        return []
++
++    def submit_candidate(self, candidate: MemoryCandidate) -> MemoryWriteResult:
++        self.submit_calls += 1
++        return MemoryWriteResult(disposition="ignored", reason="spy")
++
++    def invalidate(
++        self,
++        memory_id: str,
++        *,
++        reason: str = "",
++    ) -> MemoryInvalidationResult:
++        self.invalidate_calls += 1
++        return MemoryInvalidationResult(
++            disposition="ignored", reason=reason or "spy", memory_id=memory_id
++        )
++
++
++def test_task_ingress_has_no_memory_side_effects() -> None:
++    spy = SpyMemorySystem()
++    req = TaskRequest(
++        user_turn="Send this to Sarah.",
++        session=SessionRef("s1"),
++        client_context={"client": "tui"},
++    )
++    # Ingress must not touch memory at all (normalize has no memory parameter).
++    normalized = TaskIngress.normalize(req)
++    assert normalized.user_turn == "Send this to Sarah."
++    assert spy.retrieve_calls == 0
++    assert spy.submit_calls == 0
++    assert spy.invalidate_calls == 0
++
++
++def test_agent_runtime_construction_does_not_retrieve_memory() -> None:
++    spy = SpyMemorySystem()
++    rs = RuntimeState()
++    req = TaskIngress.normalize(TaskRequest(user_turn="hello", session=SessionRef("s2")))
++    runtime = AgentRuntime(runtime_state=rs, memory=spy, task_request=req)
++    assert runtime.runtime_state is rs
++    assert spy.retrieve_calls == 0
++    assert spy.submit_calls == 0
++    assert spy.invalidate_calls == 0
++
++
++def test_runtime_state_does_not_backreference_agent_runtime() -> None:
++    rs = RuntimeState()
++    runtime = AgentRuntime(runtime_state=rs, memory=NoopMemorySystem())
++    assert not hasattr(rs, "agent_runtime")
++    assert getattr(rs, "agent_runtime", None) is None
++    # One-way ownership only.
++    assert runtime.runtime_state is rs
++
++
++def test_legacy_goal_adapter_preserves_goal_without_making_goal_required_for_task_request() -> None:
++    # Canonical user-turn TaskRequest works without Goal.
++    plain = TaskIngress.normalize(TaskRequest(user_turn="Open WhatsApp chat with Pallavi"))
++    assert plain.legacy_goal is None
++    assert "goal" not in plain.__dataclass_fields__
++    assert "legacy_goal" in plain.__dataclass_fields__
++
++    goal = Goal(kind="whatsapp_forward_message", contact="Pallavi", prompt="Forward to Tanmay")
++    adapted = TaskIngress.normalize(TaskIngress.from_legacy_goal(goal))
++    assert adapted.legacy_goal is goal
++    assert adapted.user_turn == "Forward to Tanmay"
++    # Goal is not a required TaskRequest field — only legacy payload.
++    assert "goal" not in adapted.__dataclass_fields__
++
++
++def test_noop_memory_write_reports_ignored_not_persisted() -> None:
++    mem = NoopMemorySystem()
++    assert mem.retrieve("anything") == []
++    write = mem.submit_candidate(
++        MemoryCandidate(kind="episodic", content="tried open Pallavi", provenance="test")
++    )
++    assert isinstance(write, MemoryWriteResult)
++    assert write.disposition == "ignored"
++    assert write.reason == "noop_memory_system"
++    assert write.memory_id is None
++    inv = mem.invalidate("mem-1", reason="stale")
++    assert inv.disposition == "ignored"
++    assert inv.memory_id == "mem-1"
++    # Candidate ≠ Record (types remain distinct).
++    assert MemoryCandidate is not MemoryRecord
++
++
++def test_client_context_differences_do_not_change_task_semantics() -> None:
++    constraints = ExecutionConstraints(
++        foreground_allowed=True,
++        network_allowed=True,
++        destructive_actions_allowed=False,
++        approval_policy="default",
++    )
++    tui = TaskIngress.normalize(
++        TaskRequest(
++            user_turn="Forward Pallavi's message to Tanmay",
++            session=SessionRef("shared-session"),
++            client_context={
++                "client": "tui",
++                "supports_rich_ui": True,
++                "supports_streaming": True,
++            },
++            constraints=constraints,
++            interaction_capabilities={"approvals": True},
++        )
++    )
++    desktop = TaskIngress.normalize(
++        TaskRequest(
++            user_turn="Forward Pallavi's message to Tanmay",
++            session=SessionRef("shared-session"),
++            client_context={
++                "client": "desktop",
++                "supports_rich_ui": False,
++                "supports_streaming": False,
++            },
++            constraints=constraints,
++            interaction_capabilities={"approvals": True},
++        )
++    )
++    assert semantic_task_fingerprint(tui) == semantic_task_fingerprint(desktop)
++    assert tui.client_context["client"] != desktop.client_context["client"]
++
++
++def test_run_goal_closed_loop_legacy_adapter_builds_runtime_without_retrieve() -> None:
++    """First legacy adapter: Goal → TaskIngress → AgentRuntime; no retrieve."""
++    from plugin.agent.controller import run_goal_closed_loop
++
++    class _StopAfterSeam(Exception):
++        pass
++
++    spy = SpyMemorySystem()
++    rs = RuntimeState()
++    goal = Goal(kind="whatsapp_voice_call", contact="Pallavi", prompt="Call Pallavi")
++
++    def _observe():
++        # Seam must already have been constructed before first observe.
++        raise _StopAfterSeam("seam_ok")
++
++    class _Exec:
++        def execute(self, step):  # pragma: no cover - should not run
++            return {"ok": False, "error": "unused"}
++
++    with pytest.raises(_StopAfterSeam):
++        run_goal_closed_loop(
++            rs,
++            goal,
++            observe=_observe,
++            execute=_Exec(),
++            max_iterations=1,
++            settle_s=0.01,
++            wait_fn=lambda *_a, **_k: None,
++            memory=spy,
++        )
++    assert spy.retrieve_calls == 0
++    assert spy.submit_calls == 0
++    assert spy.invalidate_calls == 0
++    assert not hasattr(rs, "agent_runtime")
++
++
++def test_normalize_does_not_submit_or_invalidate() -> None:
++    spy = SpyMemorySystem()
++    TaskIngress.normalize(
++        TaskRequest(user_turn="  spaced  ", client_context={"client": "cli"})
++    )
++    assert spy.submit_calls == 0
++    assert spy.invalidate_calls == 0
++    assert spy.retrieve_calls == 0
+-- 
+2.39.5 (Apple Git-154)
+

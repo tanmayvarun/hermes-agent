@@ -1,0 +1,1961 @@
+{
+  "goal": {
+    "operation": "whatsapp_forward_message",
+    "source_conversation": "Pallavi",
+    "source_query": "zarooratwala",
+    "destination": "Tanmay",
+    "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+  },
+  "world_model": {
+    "frame": 38,
+    "surface": "conversation",
+    "open_conversation": "Pallavi",
+    "focused_field_role": "in_chat_or_composer",
+    "objects": [
+      {
+        "id": "msg_link_zarooratwala",
+        "kind": "message_bubble",
+        "text": "You: https://www.zarooratwala.com/?utm_source=ig...",
+        "point": [
+          806,
+          94
+        ],
+        "matches_goal": true,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "img_media_content",
+        "kind": "image_display",
+        "text": "Photo of desk with religious items and headphones",
+        "point": [
+          320,
+          450
+        ],
+        "matches_goal": false,
+        "owner_surface": "media_overlay"
+      },
+      {
+        "id": "btn_done",
+        "kind": "button",
+        "text": "Done",
+        "point": [
+          618,
+          665
+        ],
+        "matches_goal": false,
+        "owner_surface": "media_overlay"
+      },
+      {
+        "id": "btn_reply",
+        "kind": "button",
+        "text": "Reply",
+        "point": [
+          573,
+          665
+        ],
+        "matches_goal": false,
+        "owner_surface": "media_overlay"
+      }
+    ],
+    "layers": [
+      {
+        "role": "container",
+        "name": "Conversation: Pallavi",
+        "state": "occluded",
+        "objects": [
+          {
+            "id": "msg_link_zarooratwala",
+            "kind": "message_bubble",
+            "text": "You: https://www.zarooratwala.com/?utm_source=ig...",
+            "point": [
+              806,
+              94
+            ],
+            "matches_goal": true,
+            "owner_surface": "conversation"
+          }
+        ]
+      },
+      {
+        "role": "dialog",
+        "name": "Media Viewer Overlay",
+        "state": "active",
+        "objects": [
+          {
+            "id": "img_media_content",
+            "kind": "image_display",
+            "text": "Photo of desk with religious items and headphones",
+            "point": [
+              320,
+              450
+            ],
+            "matches_goal": false,
+            "owner_surface": "media_overlay"
+          },
+          {
+            "id": "btn_done",
+            "kind": "button",
+            "text": "Done",
+            "point": [
+              618,
+              665
+            ],
+            "matches_goal": false,
+            "owner_surface": "media_overlay"
+          },
+          {
+            "id": "btn_reply",
+            "kind": "button",
+            "text": "Reply",
+            "point": [
+              573,
+              665
+            ],
+            "matches_goal": false,
+            "owner_surface": "media_overlay"
+          }
+        ]
+      }
+    ],
+    "beliefs": [
+      {
+        "predicate": "media_viewer_active",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Screenshot shows full-screen image overlay",
+          "'Done' and 'Reply' buttons visible at bottom right"
+        ],
+        "confirmed_on_frame": 20,
+        "owner_surface": "conversation",
+        "semantic_role": "ui_state"
+      },
+      {
+        "predicate": "context_menu_absent",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Media viewer blocks access to message bubble context menu",
+          "No forward/share controls visible in overlay"
+        ],
+        "confirmed_on_frame": 20,
+        "owner_surface": "conversation",
+        "semantic_role": "ui_state"
+      },
+      {
+        "predicate": "click_target_mismatch",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "Repeated select_content actions opened media instead of triggering context menu",
+          "Clicks landing on link text or media preview rather than message container"
+        ],
+        "confirmed_on_frame": 20,
+        "owner_surface": "conversation",
+        "semantic_role": "interaction_error"
+      },
+      {
+        "predicate": "source_message_found",
+        "value": true,
+        "confidence": 0.9,
+        "evidence": [
+          "Previous frame showed link message",
+          "Link text visible behind overlay (inferred)"
+        ],
+        "confirmed_on_frame": 17,
+        "owner_surface": "conversation",
+        "semantic_role": "target_link"
+      }
+    ],
+    "progress": {
+      "phase": "locating_source",
+      "objective": "Exit media viewer to access message context menu",
+      "notes": "The previous action (likely a click on the link message) opened the media viewer overlay instead of the context menu. The target link is now obscured. Must close this view to retry selecting the messa"
+    },
+    "attempts": [
+      {
+        "frame": 20,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe (media viewer active)"
+      }
+    ],
+    "exhausted": [
+      "select_content (on link text)"
+    ],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": null,
+      "window_id": null,
+      "display_index": null,
+      "display_count": 1,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": true
+        }
+      ],
+      "capture_origin": [
+        706.0,
+        39.0
+      ],
+      "capture_scale": 2.0,
+      "point_scale": 1.4328125,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "observation": {
+    "frame": 39,
+    "app": "WhatsApp",
+    "window_name": "WhatsApp",
+    "ax_node_count": 0,
+    "ax_content_node_count": 0,
+    "ax_evidence": [
+      {
+        "id": 10,
+        "role": "AXStaticText",
+        "label": "Pallavi",
+        "bounds": [
+          -1210,
+          59,
+          48,
+          13
+        ],
+        "description": "Pallavi"
+      },
+      {
+        "id": 23,
+        "role": "AXStaticText",
+        "label": "https://www.zarooratwala.com/?",
+        "bounds": [
+          -700,
+          142,
+          197,
+          13
+        ],
+        "description": "https://www.zarooratwala.com/?"
+      },
+      {
+        "id": 29,
+        "role": "AXStaticText",
+        "label": "Draft: zarooratwala lasawethe se",
+        "bounds": [
+          -1580,
+          371,
+          202,
+          14
+        ],
+        "description": "Draft: zarooratwala lasawethe se"
+      },
+      {
+        "id": 31,
+        "role": "AXStaticText",
+        "label": "Pallavi",
+        "bounds": [
+          -1580,
+          353,
+          48,
+          13
+        ],
+        "description": "Pallavi"
+      },
+      {
+        "id": 34,
+        "role": "AXStaticText",
+        "label": "ZarooratWala - Fresh Groceries Delivered",
+        "bounds": [
+          -698,
+          89,
+          248,
+          14
+        ],
+        "description": "ZarooratWala - Fresh Groceries Delivered"
+      },
+      {
+        "id": 36,
+        "role": "AXStaticText",
+        "label": "zarooratwala.com",
+        "bounds": [
+          -698,
+          114,
+          114,
+          16
+        ],
+        "description": "zarooratwala.com"
+      },
+      {
+        "id": 46,
+        "role": "AXStaticText",
+        "label": "zarooratwala lasawethe se",
+        "bounds": [
+          -1219,
+          985,
+          163,
+          13
+        ],
+        "description": "zarooratwala lasawethe se"
+      },
+      {
+        "id": 68,
+        "role": "AXStaticText",
+        "label": "Low Wallet Balance: E14.9 Dear Tanmay,...",
+        "bounds": [
+          -1580,
+          919,
+          250,
+          16
+        ],
+        "description": "Low Wallet Balance: E14.9 Dear Tanmay,..."
+      },
+      {
+        "id": 5,
+        "role": "AXStaticText",
+        "label": "Q Search",
+        "bounds": [
+          -1637,
+          101,
+          66,
+          14
+        ],
+        "description": "Q Search"
+      },
+      {
+        "id": 2,
+        "role": "AXWindow",
+        "label": "‎WhatsApp",
+        "bounds": [
+          42,
+          39,
+          1581,
+          979
+        ]
+      },
+      {
+        "id": 4,
+        "role": "AXStaticText",
+        "label": "Chats",
+        "bounds": [
+          -1635,
+          57,
+          50,
+          16
+        ],
+        "description": "Chats"
+      },
+      {
+        "id": 6,
+        "role": "AXStaticText",
+        "label": "J You: 81.1 experiment went bad : went...",
+        "bounds": [
+          -1580,
+          167,
+          252,
+          14
+        ],
+        "description": "J You: 81.1 experiment went bad : went..."
+      },
+      {
+        "id": 7,
+        "role": "AXStaticText",
+        "label": "Same Size Table Added Beside - Multiple Design Ideas",
+        "bounds": [
+          -1166,
+          769,
+          356,
+          13
+        ],
+        "description": "Same Size Table Added Beside - Multiple Design Ideas"
+      },
+      {
+        "id": 8,
+        "role": "AXStaticText",
+        "label": "Helping Hands - IITR 2013 & 20...",
+        "bounds": [
+          -1580,
+          422,
+          222,
+          16
+        ],
+        "description": "Helping Hands - IITR 2013 & 20..."
+      },
+      {
+        "id": 9,
+        "role": "AXStaticText",
+        "label": "IIT Ventures @ BLR",
+        "bounds": [
+          -1580,
+          218,
+          130,
+          13
+        ],
+        "description": "IIT Ventures @ BLR"
+      },
+      {
+        "id": 11,
+        "role": "AXStaticText",
+        "label": "10:28 AM",
+        "bounds": [
+          -1357,
+          353,
+          57,
+          13
+        ],
+        "description": "10:28 AM"
+      },
+      {
+        "id": 12,
+        "role": "AXStaticText",
+        "label": "We're hiring for...",
+        "bounds": [
+          -1433,
+          441,
+          103,
+          14
+        ],
+        "description": "We're hiring for..."
+      },
+      {
+        "id": 13,
+        "role": "AXStaticText",
+        "label": "General - PPe Alumni",
+        "bounds": [
+          -1578,
+          629,
+          144,
+          14
+        ],
+        "description": "General - PPe Alumni"
+      },
+      {
+        "id": 14,
+        "role": "AXStaticText",
+        "label": "~Prathmesh Kant: & Forwarding pro...",
+        "bounds": [
+          -1580,
+          234,
+          232,
+          16
+        ],
+        "description": "~Prathmesh Kant: & Forwarding pro..."
+      },
+      {
+        "id": 15,
+        "role": "AXStaticText",
+        "label": "~Sinchan Saha: NIC would tell you the n...",
+        "bounds": [
+          -1580,
+          645,
+          250,
+          14
+        ],
+        "description": "~Sinchan Saha: NIC would tell you the n..."
+      },
+      {
+        "id": 16,
+        "role": "AXStaticText",
+        "label": "11:18 AM",
+        "bounds": [
+          -1355,
+          217,
+          57,
+          12
+        ],
+        "description": "11:18 AM"
+      },
+      {
+        "id": 17,
+        "role": "AXStaticText",
+        "label": "14/146",
+        "bounds": [
+          -1580,
+          695,
+          48,
+          14
+        ],
+        "description": "14/146"
+      },
+      {
+        "id": 18,
+        "role": "AXStaticText",
+        "label": "Owners including Family- Godr...",
+        "bounds": [
+          -1578,
+          284,
+          218,
+          16
+        ],
+        "description": "Owners including Family- Godr..."
+      },
+      {
+        "id": 19,
+        "role": "AXStaticText",
+        "label": "Draft: emenlaun",
+        "bounds": [
+          -1580,
+          714,
+          101,
+          14
+        ],
+        "description": "Draft: emenlaun"
+      },
+      {
+        "id": 20,
+        "role": "AXStaticText",
+        "label": "9:33 AM",
+        "bounds": [
+          -1353,
+          422,
+          55,
+          14
+        ],
+        "description": "9:33 AM"
+      },
+      {
+        "id": 21,
+        "role": "AXStaticText",
+        "label": "Create more workspace, storage & a balanced look",
+        "bounds": [
+          -1091,
+          785,
+          204,
+          11
+        ],
+        "description": "Create more workspace, storage & a balanced look"
+      },
+      {
+        "id": 22,
+        "role": "AXStaticText",
+        "label": "utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdg=",
+        "bounds": [
+          -700,
+          158,
+          507,
+          16
+        ],
+        "description": "utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdg="
+      },
+      {
+        "id": 25,
+        "role": "AXStaticText",
+        "label": "Isha Electronic City",
+        "bounds": [
+          -1580,
+          491,
+          133,
+          14
+        ],
+        "description": "Isha Electronic City"
+      },
+      {
+        "id": 26,
+        "role": "AXStaticText",
+        "label": "TO4XNIeHRuA2FIbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTIOMjc-",
+        "bounds": [
+          -700,
+          174,
+          448,
+          13
+        ],
+        "description": "TO4XNIeHRuA2FIbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTIOMjc-"
+      },
+      {
+        "id": 27,
+        "role": "AXStaticText",
+        "label": "bete ke sath rahti hai.",
+        "bounds": [
+          -888,
+          270,
+          137,
+          14
+        ],
+        "description": "bete ke sath rahti hai."
+      },
+      {
+        "id": 28,
+        "role": "AXStaticText",
+        "label": "3:59 AM J/",
+        "bounds": [
+          -231,
+          208,
+          62,
+          13
+        ],
+        "description": "3:59 AM J/"
+      },
+      {
+        "id": 30,
+        "role": "AXStaticText",
+        "label": "11:15 AM",
+        "bounds": [
+          -1355,
+          284,
+          57,
+          15
+        ],
+        "description": "11:15 AM"
+      },
+      {
+        "id": 32,
+        "role": "AXStaticText",
+        "label": "AAad4VZ8BZYp2WG07_QZXUZyv4Zf6|j_V8EMIN_L5A04vzaCi86G8MTX-",
+        "bounds": [
+          -698,
+          190,
+          445,
+          13
+        ],
+        "description": "AAad4VZ8BZYp2WG07_QZXUZyv4Zf6|j_V8EMIN_L5A04vzaCi86G8MTX-"
+      },
+      {
+        "id": 33,
+        "role": "AXStaticText",
+        "label": "Chunni ko bhi Prabal se baat karna hai, uski mother ka phone aaya tha. Lady gentle hai..Agra ki hai, Banglore me bade",
+        "bounds": [
+          -886,
+          255,
+          714,
+          16
+        ],
+        "description": "Chunni ko bhi Prabal se baat karna hai, uski mother ka phone aaya tha. Lady gentle hai..Agra ki hai, Banglore me bade"
+      },
+      {
+        "id": 35,
+        "role": "AXStaticText",
+        "label": "~Shivam G: Hi guys!",
+        "bounds": [
+          -1580,
+          440,
+          126,
+          14
+        ],
+        "description": "~Shivam G: Hi guys!"
+      },
+      {
+        "id": 37,
+        "role": "AXStaticText",
+        "label": "Sat, 1 Aug",
+        "bounds": [
+          -744,
+          310,
+          66,
+          16
+        ],
+        "description": "Sat, 1 Aug"
+      },
+      {
+        "id": 38,
+        "role": "AXStaticText",
+        "label": "Yesterday",
+        "bounds": [
+          -1364,
+          560,
+          66,
+          11
+        ],
+        "description": "Yesterday"
+      },
+      {
+        "id": 39,
+        "role": "AXStaticText",
+        "label": "7:52 PM JJ",
+        "bounds": [
+          -231,
+          273,
+          62,
+          11
+        ],
+        "description": "7:52 PM JJ"
+      },
+      {
+        "id": 40,
+        "role": "AXStaticText",
+        "label": "~Shashikanth Bhandarkar: ® Hasiru Sh...",
+        "bounds": [
+          -1580,
+          507,
+          252,
+          16
+        ],
+        "description": "~Shashikanth Bhandarkar: ® Hasiru Sh..."
+      },
+      {
+        "id": 41,
+        "role": "AXStaticText",
+        "label": "mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ",
+        "bounds": [
+          -700,
+          206,
+          280,
+          13
+        ],
+        "description": "mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ"
+      },
+      {
+        "id": 42,
+        "role": "AXStaticText",
+        "label": "~Smita R: Msg from Tenant of tower C.",
+        "bounds": [
+          -1578,
+          303,
+          236,
+          13
+        ],
+        "description": "~Smita R: Msg from Tenant of tower C."
+      },
+      {
+        "id": 43,
+        "role": "AXStaticText",
+        "label": "6:24 PM",
+        "bounds": [
+          -769,
+          735,
+          45,
+          13
+        ],
+        "description": "6:24 PM"
+      },
+      {
+        "id": 44,
+        "role": "AXStaticText",
+        "label": "• Forwarded",
+        "bounds": [
+          -886,
+          238,
+          75,
+          11
+        ],
+        "description": "• Forwarded"
+      },
+      {
+        "id": 45,
+        "role": "AXStaticText",
+        "label": "+",
+        "bounds": [
+          -1265,
+          981,
+          25,
+          22
+        ],
+        "description": "+"
+      },
+      {
+        "id": 47,
+        "role": "AXStaticText",
+        "label": "VTV",
+        "bounds": [
+          -1169,
+          928,
+          87,
+          36
+        ],
+        "description": "VTV"
+      },
+      {
+        "id": 48,
+        "role": "AXStaticText",
+        "label": "9:11 AM",
+        "bounds": [
+          -1348,
+          491,
+          48,
+          11
+        ],
+        "description": "9:11 AM"
+      },
+      {
+        "id": 50,
+        "role": "AXStaticText",
+        "label": "B. Wall Shelves + Book Storage",
+        "bounds": [
+          -976,
+          811,
+          87,
+          4
+        ],
+        "description": "B. Wall Shelves + Book Storage"
+      },
+      {
+        "id": 51,
+        "role": "AXStaticText",
+        "label": "11:53 AM",
+        "bounds": [
+          -1355,
+          149,
+          55,
+          12
+        ],
+        "description": "11:53 AM"
+      },
+      {
+        "id": 52,
+        "role": "AXStaticText",
+        "label": "Weight tracker",
+        "bounds": [
+          -1580,
+          149,
+          103,
+          13
+        ],
+        "description": "Weight tracker"
+      },
+      {
+        "id": 54,
+        "role": "AXStaticText",
+        "label": "Investing - PPe Alumni",
+        "bounds": [
+          -1580,
+          560,
+          156,
+          13
+        ],
+        "description": "Investing - PPe Alumni"
+      },
+      {
+        "id": 55,
+        "role": "AXStaticText",
+        "label": "~ Jatin Soni: Ahh okay",
+        "bounds": [
+          -1580,
+          576,
+          137,
+          16
+        ],
+        "description": "~ Jatin Soni: Ahh okay"
+      },
+      {
+        "id": 56,
+        "role": "AXStaticText",
+        "label": "Yesterday",
+        "bounds": [
+          -1364,
+          629,
+          66,
+          11
+        ],
+        "description": "Yesterday"
+      },
+      {
+        "id": 57,
+        "role": "AXStaticText",
+        "label": "Yesterday",
+        "bounds": [
+          -1362,
+          696,
+          64,
+          13
+        ],
+        "description": "Yesterday"
+      },
+      {
+        "id": 58,
+        "role": "AXStaticText",
+        "label": "Yesterday",
+        "bounds": [
+          -1364,
+          764,
+          64,
+          14
+        ],
+        "description": "Yesterday"
+      },
+      {
+        "id": 59,
+        "role": "AXStaticText",
+        "label": "Axis Mutual Fund",
+        "bounds": [
+          -1580,
+          764,
+          117,
+          14
+        ],
+        "description": "Axis Mutual Fund"
+      },
+      {
+        "id": 60,
+        "role": "AXStaticText",
+        "label": "India's growth is coming from cro...",
+        "bounds": [
+          -1543,
+          783,
+          211,
+          14
+        ],
+        "description": "India's growth is coming from cro..."
+      },
+      {
+        "id": 61,
+        "role": "AXStaticText",
+        "label": "Yesterday",
+        "bounds": [
+          -1362,
+          834,
+          64,
+          13
+        ],
+        "description": "Yesterday"
+      },
+      {
+        "id": 63,
+        "role": "AXStaticText",
+        "label": "LOL\"eTAM",
+        "bounds": [
+          -1628,
+          852,
+          29,
+          4
+        ],
+        "description": "LOL\"eTAM"
+      },
+      {
+        "id": 64,
+        "role": "AXStaticText",
+        "label": "[CoE - IoT & AI] BLR Startups",
+        "bounds": [
+          -1580,
+          833,
+          199,
+          14
+        ],
+        "description": "[CoE - IoT & AI] BLR Startups"
+      },
+      {
+        "id": 65,
+        "role": "AXStaticText",
+        "label": "Draft: w",
+        "bounds": [
+          -1580,
+          852,
+          52,
+          11
+        ],
+        "description": "Draft: w"
+      },
+      {
+        "id": 66,
+        "role": "AXStaticText",
+        "label": "Yesterday",
+        "bounds": [
+          -1364,
+          902,
+          64,
+          14
+        ],
+        "description": "Yesterday"
+      },
+      {
+        "id": 67,
+        "role": "AXStaticText",
+        "label": "Fast2SMS",
+        "bounds": [
+          -1580,
+          903,
+          71,
+          11
+        ],
+        "description": "Fast2SMS"
+      },
+      {
+        "id": 69,
+        "role": "AXStaticText",
+        "label": "Yesterday",
+        "bounds": [
+          -1364,
+          969,
+          67,
+          16
+        ],
+        "description": "Yesterday"
+      },
+      {
+        "id": 70,
+        "role": "AXStaticText",
+        "label": "Jai Jaganatha - Ratha Yatra 2...",
+        "bounds": [
+          -1580,
+          971,
+          216,
+          14
+        ],
+        "description": "Jai Jaganatha - Ratha Yatra 2..."
+      },
+      {
+        "id": 71,
+        "role": "AXStaticText",
+        "label": "~Subhransu Pradhan: https://www.insta..",
+        "bounds": [
+          -1580,
+          988,
+          250,
+          16
+        ],
+        "description": "~Subhransu Pradhan: https://www.insta.."
+      },
+      {
+        "id": 1,
+        "role": "AXApplication",
+        "label": "WhatsApp",
+        "bounds": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "id": 3,
+        "role": "AXUnknown",
+        "label": "",
+        "bounds": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "source": "screenshot",
+        "state": "on",
+        "why": "always supplied; the authoritative account of the screen"
+      },
+      {
+        "source": "accessibility",
+        "state": "empty",
+        "why": "the app exposed no accessibility tree this frame",
+        "node_count": 0,
+        "content_node_count": 0
+      },
+      {
+        "source": "ocr",
+        "state": "on",
+        "why": "text read from the screenshot, bounds in screen points; corroborates the pixels but may split or clip words",
+        "lines": [
+          {
+            "text": "Chats",
+            "bounds": [
+              -1635.7,
+              57.3,
+              50.6,
+              16.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Q Search",
+            "bounds": [
+              -1638.0,
+              101.0,
+              66.6,
+              14.0
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "Pallavi",
+            "bounds": [
+              -1210.6,
+              59.7,
+              48.3,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Weight tracker",
+            "bounds": [
+              -1580.5,
+              149.3,
+              103.4,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "J You: 81.1 experiment went bad : went...",
+            "bounds": [
+              -1580.5,
+              167.5,
+              252.8,
+              14.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "11:53 AM",
+            "bounds": [
+              -1355.4,
+              149.1,
+              55.3,
+              12.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "ZarooratWala - Fresh Groceries Delivered",
+            "bounds": [
+              -698.1,
+              89.5,
+              248.2,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "zarooratwala.com",
+            "bounds": [
+              -698.1,
+              114.8,
+              114.9,
+              16.1
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "https://www.zarooratwala.com/?",
+            "bounds": [
+              -700.4,
+              142.4,
+              197.6,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdg=",
+            "bounds": [
+              -700.4,
+              158.5,
+              507.9,
+              16.1
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "TO4XNIeHRuA2FIbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTIOMjc-",
+            "bounds": [
+              -700.4,
+              174.6,
+              448.1,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "AAad4VZ8BZYp2WG07_QZXUZyv4Zf6|j_V8EMIN_L5A04vzaCi86G8MTX-",
+            "bounds": [
+              -698.1,
+              190.7,
+              445.8,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ",
+            "bounds": [
+              -700.4,
+              206.8,
+              280.4,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "IIT Ventures @ BLR",
+            "bounds": [
+              -1580.5,
+              218.3,
+              131.0,
+              13.8
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "~Prathmesh Kant: & Forwarding pro...",
+            "bounds": [
+              -1580.5,
+              234.3,
+              232.1,
+              16.2
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "11:18 AM",
+            "bounds": [
+              -1355.4,
+              217.7,
+              57.7,
+              12.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Owners including Family- Godr...",
+            "bounds": [
+              -1578.2,
+              284.9,
+              218.3,
+              16.1
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "~Smita R: Msg from Tenant of tower C.",
+            "bounds": [
+              -1578.2,
+              303.3,
+              236.7,
+              13.8
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "11:15 AM",
+            "bounds": [
+              -1355.5,
+              284.3,
+              57.7,
+              15.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "3:59 AM J/",
+            "bounds": [
+              -231.6,
+              209.0,
+              62.0,
+              14.0
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "• Forwarded",
+            "bounds": [
+              -886.5,
+              238.9,
+              75.8,
+              11.6
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Chunni ko bhi Prabal se baat karna hai, uski mother ka phone aaya tha. Lady gentle hai..Agra ki hai, Banglore me bade",
+            "bounds": [
+              -886.5,
+              255.0,
+              714.7,
+              16.1
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "bete ke sath rahti hai.",
+            "bounds": [
+              -888.8,
+              271.0,
+              137.9,
+              14.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "7:52 PM JJ",
+            "bounds": [
+              -231.6,
+              273.4,
+              62.0,
+              11.6
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "Sat, 1 Aug",
+            "bounds": [
+              -744.1,
+              310.1,
+              66.7,
+              16.3
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Pallavi",
+            "bounds": [
+              -1580.5,
+              353.8,
+              48.3,
+              13.9
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Draft: zarooratwala lasawethe se",
+            "bounds": [
+              -1580.5,
+              372.0,
+              202.2,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "10:28 AM",
+            "bounds": [
+              -1357.6,
+              353.8,
+              57.4,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Helping Hands - IITR 2013 & 20...",
+            "bounds": [
+              -1580.5,
+              422.8,
+              222.9,
+              16.2
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "9:33 AM",
+            "bounds": [
+              -1353.1,
+              422.6,
+              55.2,
+              14.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "~Shivam G: Hi guys!",
+            "bounds": [
+              -1580.5,
+              441.0,
+              126.4,
+              14.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "We're hiring for...",
+            "bounds": [
+              -1433.5,
+              441.0,
+              103.4,
+              14.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "Isha Electronic City",
+            "bounds": [
+              -1580.5,
+              491.5,
+              133.3,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "~Shashikanth Bhandarkar: ® Hasiru Sh...",
+            "bounds": [
+              -1580.6,
+              507.3,
+              253.0,
+              16.7
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "9:11 AM",
+            "bounds": [
+              -1348.4,
+              491.5,
+              48.3,
+              11.7
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Investing - PPe Alumni",
+            "bounds": [
+              -1580.5,
+              560.5,
+              156.3,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "~ Jatin Soni: Ahh okay",
+            "bounds": [
+              -1580.5,
+              576.8,
+              137.9,
+              16.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Yesterday",
+            "bounds": [
+              -1364.5,
+              560.7,
+              66.6,
+              11.5
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "General - PPe Alumni",
+            "bounds": [
+              -1578.2,
+              629.5,
+              144.8,
+              14.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "Yesterday",
+            "bounds": [
+              -1364.5,
+              629.6,
+              66.6,
+              11.5
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "~Sinchan Saha: NIC would tell you the n...",
+            "bounds": [
+              -1580.5,
+              645.5,
+              250.5,
+              14.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "14/146",
+            "bounds": [
+              -1580.7,
+              695.7,
+              48.6,
+              14.9
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Draft: emenlaun",
+            "bounds": [
+              -1580.5,
+              714.5,
+              101.1,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Yesterday",
+            "bounds": [
+              -1362.2,
+              696.2,
+              64.4,
+              13.9
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "6:24 PM",
+            "bounds": [
+              -769.3,
+              735.3,
+              46.0,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Axis Mutual Fund",
+            "bounds": [
+              -1580.5,
+              765.0,
+              117.2,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "India's growth is coming from cro...",
+            "bounds": [
+              -1543.8,
+              783.5,
+              211.4,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Yesterday",
+            "bounds": [
+              -1364.6,
+              764.9,
+              64.5,
+              14.4
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Same Size Table Added Beside - Multiple Design Ideas",
+            "bounds": [
+              -1166.9,
+              769.8,
+              356.2,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Create more workspace, storage & a balanced look",
+            "bounds": [
+              -1091.1,
+              785.9,
+              204.5,
+              11.6
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "B. Wall Shelves + Book Storage",
+            "bounds": [
+              -976.2,
+              811.0,
+              87.3,
+              5.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "LOL\"eTAM",
+            "bounds": [
+              -1628.8,
+              852.5,
+              29.9,
+              4.6
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "[CoE - IoT & AI] BLR Startups",
+            "bounds": [
+              -1580.5,
+              834.0,
+              199.9,
+              14.0
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "Draft: w",
+            "bounds": [
+              -1580.6,
+              852.4,
+              52.9,
+              11.8
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "Yesterday",
+            "bounds": [
+              -1362.2,
+              834.2,
+              64.3,
+              13.8
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Fast2SMS",
+            "bounds": [
+              -1580.5,
+              903.1,
+              71.2,
+              11.5
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Yesterday",
+            "bounds": [
+              -1364.6,
+              902.9,
+              64.4,
+              14.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Low Wallet Balance: E14.9 Dear Tanmay,...",
+            "bounds": [
+              -1580.5,
+              919.0,
+              250.5,
+              16.5
+            ],
+            "confidence": 0.5
+          },
+          {
+            "text": "Jai Jaganatha - Ratha Yatra 2...",
+            "bounds": [
+              -1580.5,
+              972.0,
+              216.0,
+              14.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "Yesterday",
+            "bounds": [
+              -1364.9,
+              969.2,
+              67.5,
+              17.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "~Subhransu Pradhan: https://www.insta..",
+            "bounds": [
+              -1580.5,
+              988.0,
+              250.5,
+              16.2
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "+",
+            "bounds": [
+              -1265.7,
+              981.2,
+              25.3,
+              23.0
+            ],
+            "confidence": 1.0
+          },
+          {
+            "text": "VTV",
+            "bounds": [
+              -1169.2,
+              928.4,
+              87.3,
+              36.8
+            ],
+            "confidence": 0.3
+          },
+          {
+            "text": "zarooratwala lasawethe se",
+            "bounds": [
+              -1219.7,
+              985.8,
+              163.2,
+              13.8
+            ],
+            "confidence": 1.0
+          }
+        ]
+      }
+    ],
+    "image_size": [
+      640,
+      683
+    ],
+    "image_roi": [
+      1328,
+      0,
+      3162,
+      1958
+    ],
+    "encoded_bytes": 69165
+  },
+  "allowed_actions": [
+    "click",
+    "right_click",
+    "hover",
+    "type",
+    "scroll",
+    "press_escape",
+    "observe",
+    "request_more_evidence",
+    "compose_search_query",
+    "locate_content",
+    "open_entity",
+    "resolve_entity",
+    "select_content",
+    "reveal_actions",
+    "invoke_affordance",
+    "dismiss_transient",
+    "revert_effects",
+    "relieve_host_storage",
+    "recover_blocked_app",
+    "commit_irreversible"
+  ],
+  "affordance_frontier": {
+    "surface": "conversation",
+    "observed_actions": [
+      {
+        "id": "ax_5_compose_search_query",
+        "family": "compose_search_query",
+        "status": "observed",
+        "confidence": 0.7,
+        "target_id": 5,
+        "target_label": "Q Search",
+        "actuators": [
+          {
+            "type": "coordinate_click",
+            "point": [
+              -1604,
+              108
+            ],
+            "confidence": 0.9
+          }
+        ],
+        "risk": 0.05,
+        "evidence": [
+          {
+            "source": "ax_role",
+            "detail": "AXStaticText"
+          }
+        ],
+        "coordinate_space": "screen",
+        "geometry_source": "ax_role"
+      },
+      {
+        "id": "obj_2_invoke_affordance",
+        "family": "invoke_affordance",
+        "status": "observed",
+        "confidence": 0.6,
+        "target_label": "Done",
+        "expected_outcomes": [
+          {
+            "probability": 0.8,
+            "predicates": {
+              "conversation_open": true
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "source": "vision_object",
+            "detail": "kind=button"
+          }
+        ],
+        "owner_surface": "media_overlay"
+      },
+      {
+        "id": "obj_3_invoke_affordance",
+        "family": "invoke_affordance",
+        "status": "observed",
+        "confidence": 0.6,
+        "target_label": "Reply",
+        "expected_outcomes": [
+          {
+            "probability": 0.8,
+            "predicates": {
+              "conversation_open": true
+            }
+          }
+        ],
+        "evidence": [
+          {
+            "source": "vision_object",
+            "detail": "kind=button"
+          }
+        ],
+        "owner_surface": "media_overlay"
+      }
+    ],
+    "latent_actions": [],
+    "probe_actions": [],
+    "known_transition_edges": [
+      {
+        "from_action": "open_entity",
+        "to_surface": "conversation",
+        "probability": 1.0,
+        "enumeration_status": "observed",
+        "basis": "seen 1/1 times this session"
+      },
+      {
+        "from_action": "observe",
+        "to_surface": "conversation",
+        "probability": 0.8,
+        "enumeration_status": "observed",
+        "basis": "seen 4/5 times this session"
+      },
+      {
+        "from_action": "observe",
+        "to_surface": "media_overlay",
+        "probability": 0.2,
+        "enumeration_status": "observed",
+        "basis": "seen 1/5 times this session"
+      },
+      {
+        "from_action": "locate_content",
+        "to_surface": "conversation",
+        "probability": 1.0,
+        "enumeration_status": "observed",
+        "basis": "seen 2/2 times this session"
+      },
+      {
+        "from_action": "reveal_actions",
+        "to_surface": "conversation",
+        "probability": 1.0,
+        "enumeration_status": "observed",
+        "basis": "seen 2/2 times this session"
+      },
+      {
+        "from_action": "select_content",
+        "to_surface": "conversation",
+        "probability": 1.0,
+        "enumeration_status": "observed",
+        "basis": "seen 6/6 times this session"
+      },
+      {
+        "from_action": "invoke_affordance",
+        "to_surface": "forward_picker",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      },
+      {
+        "from_action": "reveal_actions",
+        "to_surface": "forward_picker",
+        "probability": 0.7,
+        "enumeration_status": "predicted",
+        "basis": "surface graph"
+      }
+    ],
+    "unknown_frontiers": [],
+    "excluded_actions": []
+  },
+  "last_action": {
+    "action": "Observe",
+    "family": "observe",
+    "target": "",
+    "text": "",
+    "result": {
+      "ok": true,
+      "message": "observe"
+    },
+    "you_predicted": {
+      "surface": "conversation",
+      "likely_controls": [
+        "Message bubbles",
+        "Input field"
+      ]
+    },
+    "prediction_error": {
+      "predicted_surface": "conversation",
+      "observed_surface": "media_overlay",
+      "matched": false,
+      "verdict": "you predicted 'conversation' and the screen is 'media_overlay'. None of the controls you expected are present (message bubbles, input field).",
+      "controls_predicted": [
+        "message bubbles",
+        "input field"
+      ],
+      "controls_present": [],
+      "controls_absent": [
+        "message bubbles",
+        "input field"
+      ],
+      "action_family": "invoke_affordance",
+      "attempt_id": "a_afdffa628f",
+      "target": "",
+      "effect_absent": true,
+      "consumed_by_reflect": true,
+      "suppressed_rearm": true,
+      "surprise_armed": false
+    },
+    "effect": "verified",
+    "failure_domain": "entity",
+    "world_change_score": 0.0,
+    "open_before": "https://www.zarooratwala.com/2",
+    "open_after": "https://www.zarooratwala.com/2",
+    "diagnosis_hints": [
+      "regression_implicates_entity_or_nav"
+    ],
+    "times_repeated_in_a_row": 4,
+    "recent_surprises": [
+      {
+        "iteration": 4,
+        "action": "openentity",
+        "family": "open_entity",
+        "effect": "promising_unresolved",
+        "outcome": "promising_unresolved",
+        "failure_domain": "none",
+        "world_change_score": 1.0,
+        "predicted_surface": "conversation",
+        "observed_surface": "chat_list",
+        "notes": [
+          "promising_branch_explore_locally"
+        ]
+      },
+      {
+        "iteration": 6,
+        "action": "observe",
+        "family": "open_entity",
+        "effect": "verified",
+        "outcome": "verified",
+        "failure_domain": "none",
+        "world_change_score": 1.0,
+        "predicted_surface": "context_menu",
+        "observed_surface": "conversation",
+        "notes": [
+          "promising_branch_explore_locally"
+        ]
+      }
+    ]
+  },
+  "identical_readings_in_a_row": 19,
+  "stuck_signals": {
+    "seconds_since_anything_advanced": 808.3,
+    "seconds_before_this_counts_as_stalled": 45.0,
+    "stalled": true,
+    "moves_already_tried_more_than_once": [
+      {
+        "family": "select_content",
+        "target": "you: https://www.zarooratwala.com/?utm_source=ig...",
+        "attempts": 2,
+        "effects": []
+      }
+    ]
+  },
+  "unconfirmed_beliefs": [
+    "media_viewer_active (last confirmed 19 frames ago)",
+    "context_menu_absent (last confirmed 19 frames ago)",
+    "click_target_mismatch (last confirmed 19 frames ago)",
+    "source_message_found (last confirmed 22 frames ago)"
+  ],
+  "perception_objective": {
+    "questions": [],
+    "focus": "",
+    "depth": "shallow",
+    "objective": "evidence sufficient to act",
+    "completion_condition": ""
+  }
+}

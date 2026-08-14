@@ -491,6 +491,9 @@ def test_compose_domain_adapters_computer_use_characterization() -> None:
     d = cu[-1]
     assert "ok" in d
     assert "reason" in d or d.get("exception")
+    wa = [x for x in diags if x.get("event") == "whatsapp_gateway_composition"]
+    assert wa, "whatsapp_gateway_composition diagnostic must always be emitted"
+    assert "ok" in wa[-1]
     specs, _ = discover_methods(
         TaskInterpretation(
             user_turn="Forward ZarooratWala to Tanmay",
@@ -499,6 +502,7 @@ def test_compose_domain_adapters_computer_use_characterization() -> None:
         )
     )
     cu_specs = [s for s in specs if s.id == "native_computer_use_forward"]
+    wa_specs = [s for s in specs if s.id == "whatsapp_gateway_forward"]
     if d.get("ok") and d.get("runnable"):
         assert d.get("provider_registered") is True
         assert d.get("executor_registered") is True
@@ -507,6 +511,12 @@ def test_compose_domain_adapters_computer_use_characterization() -> None:
     else:
         assert d.get("provider_registered") in (False, None)
         assert not cu_specs
+    if wa[-1].get("ok") and wa[-1].get("ready"):
+        assert wa[-1].get("provider_registered") is True
+        assert wa_specs
+        assert all(str(s.readiness) == "ready" for s in wa_specs)
+    else:
+        assert not wa_specs
 
 
 def test_computer_use_composition_failure_is_diagnosed(monkeypatch) -> None:
@@ -607,3 +617,446 @@ def test_ui_adapter_does_not_choose_execution_substrate() -> None:
     result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(_forward_req("s"))
     assert result.selected_substrate == "computer_use"
     assert result.selected_substrate != "tui"
+
+
+def _whatsapp_gateway_missing_link() -> MethodSpec:
+    return MethodSpec(
+        id="whatsapp_gateway_forward",
+        capability="forward_message",
+        substrate="whatsapp_gateway",
+        provider="whatsapp_gateway",
+        preconditions=["whatsapp_linked"],
+        readiness=MethodReadiness.READY.value,
+        reliability=0.88,
+        latency=0.45,
+        risk=0.35,
+        cost=0.35,
+        user_interference=0.35,
+        semantic_precision=0.8,
+    )
+
+
+def test_whatsapp_gateway_ready_missing_link_asks_before_computer_use() -> None:
+    register_method_provider(
+        _CatalogProvider([_whatsapp_gateway_missing_link(), _computer_use()])
+    )
+    register_method_executor(_RecordingCUExecutor())
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req("wa-ask")
+    )
+    assert result.status == TurnStatus.WAITING_FOR_USER
+    assert result.acceptance_trace.get("missing_precondition") == "whatsapp_linked"
+    # Domain-neutral ASK copy when no resolver ask_prompt is registered.
+    assert "whatsapp_linked" in (result.question or "")
+
+
+def test_whatsapp_link_pending_surfaces_qr_ui_hints() -> None:
+    from plugin.agent.runtime.prerequisite_resolver import PrerequisiteResolveResult
+
+    class _QrPendingResolver:
+        def resolve(
+            self,
+            precondition: str,
+            *,
+            permission_granted: bool,
+            context: Optional[dict] = None,
+        ):
+            if precondition != "whatsapp_linked":
+                return PrerequisiteResolveResult(
+                    status="unsupported", precondition=precondition, detail="not_owned"
+                )
+            return PrerequisiteResolveResult(
+                status="pending",
+                precondition=precondition,
+                detail="awaiting_qr_scan",
+                evidence={
+                    "kind": "whatsapp_link_device",
+                    "pairing_id": "pair-test",
+                    "status": "waiting",
+                    "qr_payload": "https://wa.me/qr/TESTPAYLOAD",
+                },
+                user_message=(
+                    "Scan this QR with WhatsApp → Linked devices → Link a device."
+                ),
+            )
+
+    register_method_provider(
+        _CatalogProvider([_whatsapp_gateway_missing_link(), _computer_use()])
+    )
+    register_method_executor(_RecordingCUExecutor())
+    register_prerequisite_resolver(_QrPendingResolver())
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    first = rt.handle_turn(_forward_req("wa-qr"))
+    assert first.status == TurnStatus.WAITING_FOR_USER
+    second = rt.handle_turn(TaskRequest(user_turn="yes", session=SessionRef("wa-qr")))
+    assert second.status == TurnStatus.WAITING_FOR_USER
+    assert second.ui_hints.get("kind") == "whatsapp_link_device"
+    assert second.ui_hints.get("qr_payload") == "https://wa.me/qr/TESTPAYLOAD"
+    assert "Scan this QR" in (second.message or "")
+
+
+def test_decline_whatsapp_link_falls_back_to_computer_use() -> None:
+    register_method_provider(
+        _CatalogProvider([_whatsapp_gateway_missing_link(), _computer_use()])
+    )
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    rt.handle_turn(_forward_req("wa-decline"))
+    result = rt.handle_turn(
+        TaskRequest(user_turn="not now", session=SessionRef("wa-decline"))
+    )
+    assert result.selected_method == "native_computer_use_forward"
+    assert cu.calls == 1
+
+
+def test_valid_linked_creds_skip_ask_even_when_bridge_offline(monkeypatch) -> None:
+    """Phone already linked (real Baileys account on disk) → no Link ASK; continue."""
+    from plugin.agent.providers import whatsapp_gateway as wag
+
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.is_whatsapp_live", lambda **_k: False
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.is_whatsapp_linked", lambda **_k: True
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.linked_account_from_session",
+        lambda **_k: ("918600900337:33@s.whatsapp.net", "Me", "918600900337"),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.bridge_available", lambda: (True, "ok")
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.probe_bridge_connection",
+        lambda **_k: (False, "connection_refused"),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.ensure_whatsapp_bridge_running",
+        lambda **_k: (False, "connection_refused"),
+    )
+    register_method_provider(wag.WhatsAppGatewayMethodProvider(ready=True, reason="ok"))
+    register_prerequisite_resolver(wag.WhatsAppLinkPrerequisiteResolver())
+    register_method_provider(_CatalogProvider([_computer_use()]))
+    register_method_executor(wag.WhatsAppGatewayForwardExecutor())
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req(
+            "wa-already-linked",
+            user_turn="Find the zarooratwala link sent to Kulvinder and forward it to Pallavi",
+        )
+    )
+    assert result.status != TurnStatus.WAITING_FOR_USER
+    assert result.acceptance_trace.get("missing_precondition") is None
+    assert not (result.question or "")
+    assert result.selected_method == "native_computer_use_forward"
+    assert cu.calls == 1
+
+
+def test_executor_ensures_bridge_before_falling_through(monkeypatch) -> None:
+    """Linked + /health down → ensure daemon; if it comes up, continue (not re-ASK)."""
+    from plugin.agent.providers import whatsapp_gateway as wag
+
+    probes = {"n": 0}
+
+    def _probe(**_k):
+        probes["n"] += 1
+        # First probe down; after ensure, up.
+        if probes["n"] == 1:
+            return False, "connection_refused"
+        return True, "connected"
+
+    ensure_calls = {"n": 0}
+
+    def _ensure(**_k):
+        ensure_calls["n"] += 1
+        return True, "connected"
+
+    monkeypatch.setattr("hermes_cli.whatsapp_pairing.is_whatsapp_linked", lambda **_k: True)
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.linked_account_from_session",
+        lambda **_k: ("918600900337:33@s.whatsapp.net", "Me", "918600900337"),
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.probe_bridge_connection", _probe
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.ensure_whatsapp_bridge_running", _ensure
+    )
+
+    ex = wag.WhatsAppGatewayForwardExecutor()
+    result = ex.execute(
+        SimpleNamespace(id="whatsapp_gateway_forward"),
+        context={
+            "goal": SimpleNamespace(
+                link_query="ZarooratWala",
+                contact="Pallavi",
+                target_contact="Tanmay",
+            )
+        },
+    )
+    assert ensure_calls["n"] == 1
+    assert result.ok is False
+    assert result.status == "search_unsupported"
+    assert (result.payload or {}).get("fallback") == "next_method"
+
+
+def test_unlinked_creds_ask_before_computer_use_when_bridge_offline(monkeypatch) -> None:
+    """No real linked account → ASK before falling through to Computer Use."""
+    from plugin.agent.providers import whatsapp_gateway as wag
+
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.is_whatsapp_live", lambda **_k: False
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.is_whatsapp_linked", lambda **_k: False
+    )
+    monkeypatch.setattr(
+        "hermes_cli.whatsapp_pairing.bridge_available", lambda: (True, "ok")
+    )
+    register_method_provider(wag.WhatsAppGatewayMethodProvider(ready=True, reason="ok"))
+    register_prerequisite_resolver(wag.WhatsAppLinkPrerequisiteResolver())
+    register_method_provider(_CatalogProvider([_computer_use()]))
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req(
+            "wa-unlinked",
+            user_turn="Find the zarooratwala link sent to Kulvinder and forward it to Pallavi",
+        )
+    )
+    assert result.status == TurnStatus.WAITING_FOR_USER
+    assert result.acceptance_trace.get("missing_precondition") == "whatsapp_linked"
+    assert "WhatsApp" in (result.question or "")
+    assert cu.calls == 0
+
+
+def test_bridge_unavailable_executor_recovers_to_link_ask() -> None:
+    class _DeadBridgeWA:
+        executor_id = "whatsapp_gateway_forward"
+        substrates = ("whatsapp_gateway",)
+
+        def execute(self, spec: Any, *, context: dict) -> MethodExecutionResult:
+            return MethodExecutionResult(
+                ok=False,
+                status="bridge_unavailable",
+                detail="bridge down",
+                payload={
+                    "fallback": "ask_prerequisite",
+                    "ask_precondition": "whatsapp_linked",
+                    "ask_question": (
+                        "I can do this over WhatsApp (preferred) once this device is linked."
+                    ),
+                },
+                executor_id=self.executor_id,
+            )
+
+    wa_live = MethodSpec(
+        id="whatsapp_gateway_forward",
+        capability="forward_message",
+        substrate="whatsapp_gateway",
+        provider="whatsapp_gateway",
+        preconditions=[],
+        readiness=MethodReadiness.READY.value,
+        reliability=0.88,
+        latency=0.45,
+        risk=0.35,
+        cost=0.35,
+        user_interference=0.35,
+        semantic_precision=0.8,
+    )
+    register_method_provider(_CatalogProvider([wa_live, _computer_use()]))
+    register_method_executor(_DeadBridgeWA())
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req("wa-recover-ask")
+    )
+    assert result.status == TurnStatus.WAITING_FOR_USER
+    assert result.acceptance_trace.get("executor_recover_ask") is True
+    assert "WhatsApp" in (result.question or "")
+    assert cu.calls == 0
+
+
+def test_bridge_unavailable_after_link_falls_through_not_reask() -> None:
+    """Post-scan pair-only leaves /health down — must not re-show QR; use CU."""
+
+    class _DeadBridgeWA:
+        executor_id = "whatsapp_gateway_forward"
+        substrates = ("whatsapp_gateway",)
+
+        def execute(self, spec: Any, *, context: dict) -> MethodExecutionResult:
+            return MethodExecutionResult(
+                ok=False,
+                status="bridge_unavailable",
+                detail="bridge down after pair",
+                payload={
+                    "fallback": "ask_prerequisite",
+                    "ask_precondition": "whatsapp_linked",
+                    "ask_question": "Link WhatsApp?",
+                },
+                executor_id=self.executor_id,
+            )
+
+    wa_live = MethodSpec(
+        id="whatsapp_gateway_forward",
+        capability="forward_message",
+        substrate="whatsapp_gateway",
+        provider="whatsapp_gateway",
+        preconditions=[],
+        readiness=MethodReadiness.READY.value,
+        reliability=0.88,
+        latency=0.45,
+        risk=0.35,
+        cost=0.35,
+        user_interference=0.35,
+        semantic_precision=0.8,
+    )
+    register_method_provider(_CatalogProvider([wa_live, _computer_use()]))
+    register_method_executor(_DeadBridgeWA())
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    # Pretend link already achieved this session (scan completed).
+    st = get_or_create_session("wa-post-link")
+    st.precondition_facts["whatsapp_linked"] = True
+    result = rt.handle_turn(_forward_req("wa-post-link"))
+    assert result.status == TurnStatus.COMPLETED
+    assert result.selected_method == "native_computer_use_forward"
+    assert cu.calls == 1
+    assert not (result.ui_hints or {}).get("qr_payload")
+
+
+def test_whatsapp_qr_expired_falls_through_to_computer_use() -> None:
+    from plugin.agent.runtime.prerequisite_resolver import PrerequisiteResolveResult
+
+    class _ExpiredResolver:
+        def resolve(
+            self,
+            precondition: str,
+            *,
+            permission_granted: bool,
+            context: Optional[dict] = None,
+        ):
+            if precondition != "whatsapp_linked":
+                return PrerequisiteResolveResult(
+                    status="unsupported", precondition=precondition, detail="not_owned"
+                )
+            return PrerequisiteResolveResult(
+                status="failed",
+                precondition=precondition,
+                detail="WhatsApp QR setup expired. Start a new setup.",
+                evidence={
+                    "kind": "whatsapp_link_device",
+                    "status": "expired",
+                    "pairing_id": "pair-expired",
+                },
+                failure_policy="fallback_next_method",
+            )
+
+    register_method_provider(
+        _CatalogProvider([_whatsapp_gateway_missing_link(), _computer_use()])
+    )
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    register_prerequisite_resolver(_ExpiredResolver())
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    first = rt.handle_turn(_forward_req("wa-expire"))
+    assert first.status == TurnStatus.WAITING_FOR_USER
+    second = rt.handle_turn(TaskRequest(user_turn="yes", session=SessionRef("wa-expire")))
+    assert second.selected_method == "native_computer_use_forward"
+    assert cu.calls == 1
+    assert second.acceptance_trace.get("resumed_after") == "prerequisite_failed_fallback"
+    assert not (second.ui_hints or {}).get("qr_payload")
+
+
+def test_whatsapp_pairing_error_keeps_ask_with_qr_ui() -> None:
+    """Retryable pairing errors must not silently skip QR / jump to CU."""
+    from plugin.agent.runtime.prerequisite_resolver import PrerequisiteResolveResult
+
+    class _ErrorResolver:
+        def resolve(
+            self,
+            precondition: str,
+            *,
+            permission_granted: bool,
+            context: Optional[dict] = None,
+        ):
+            if precondition != "whatsapp_linked":
+                return PrerequisiteResolveResult(
+                    status="unsupported", precondition=precondition, detail="not_owned"
+                )
+            return PrerequisiteResolveResult(
+                status="failed",
+                precondition=precondition,
+                detail="logged_out",
+                evidence={
+                    "kind": "whatsapp_link_device",
+                    "status": "error",
+                    "pairing_id": "pair-err",
+                    "qr_payload": None,
+                },
+                failure_policy="keep_ask",
+                user_message="Retry WhatsApp link setup.",
+            )
+
+    register_method_provider(
+        _CatalogProvider([_whatsapp_gateway_missing_link(), _computer_use()])
+    )
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    register_prerequisite_resolver(_ErrorResolver())
+    rt = AgentRuntime(runtime_state=RuntimeState())
+    first = rt.handle_turn(_forward_req("wa-err-keep"))
+    assert first.status == TurnStatus.WAITING_FOR_USER
+    second = rt.handle_turn(TaskRequest(user_turn="yes", session=SessionRef("wa-err-keep")))
+    assert second.status == TurnStatus.WAITING_FOR_USER
+    assert cu.calls == 0
+    assert second.acceptance_trace.get("prerequisite_failed_kept_ask") is True
+    assert (second.ui_hints or {}).get("kind") == "whatsapp_link_device"
+
+
+def test_search_unsupported_falls_through_to_computer_use() -> None:
+    class _SearchUnsupportedWA:
+        executor_id = "whatsapp_gateway_forward"
+        substrates = ("whatsapp_gateway",)
+
+        def execute(self, spec: Any, *, context: dict) -> MethodExecutionResult:
+            return MethodExecutionResult(
+                ok=False,
+                status="search_unsupported",
+                detail="no history search",
+                payload={"fallback": "next_method"},
+                executor_id=self.executor_id,
+            )
+
+    wa_live = MethodSpec(
+        id="whatsapp_gateway_forward",
+        capability="forward_message",
+        substrate="whatsapp_gateway",
+        provider="whatsapp_gateway",
+        preconditions=[],
+        readiness=MethodReadiness.READY.value,
+        reliability=0.88,
+        latency=0.45,
+        risk=0.35,
+        cost=0.35,
+        user_interference=0.35,
+        semantic_precision=0.8,
+    )
+    register_method_provider(_CatalogProvider([wa_live, _computer_use()]))
+    register_method_executor(_SearchUnsupportedWA())
+    cu = _RecordingCUExecutor()
+    register_method_executor(cu)
+    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
+        _forward_req("wa-search-fallback")
+    )
+    assert result.status == TurnStatus.COMPLETED
+    assert result.selected_method == "native_computer_use_forward"
+    assert cu.calls == 1
+    assert result.acceptance_trace.get("executor_fallback", {}).get("status") == (
+        "search_unsupported"
+    )

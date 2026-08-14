@@ -15,6 +15,12 @@ class PrerequisiteResolveResult:
     precondition: str
     detail: str = ""
     evidence: Dict[str, Any] = None  # type: ignore[assignment]
+    # Domain-owned policy for AgentRuntime (no substrate names in the core):
+    #   fallback_next_method — block this method/precondition and re-rank
+    #   keep_ask — remain WAITING (retryable setup, e.g. fresh QR)
+    failure_policy: str = ""
+    # Optional user-facing copy while pending / retrying (owned by the resolver).
+    user_message: str = ""
 
     def __post_init__(self) -> None:
         if self.evidence is None:
@@ -42,6 +48,26 @@ def register_prerequisite_resolver(resolver: PrerequisiteResolver) -> None:
 
 def clear_prerequisite_resolvers() -> None:
     _RESOLVERS.clear()
+
+
+def ask_prompt_for_precondition(precondition: str) -> str:
+    """Consent text from the owning resolver, else a domain-neutral default."""
+    key = str(precondition or "").strip()
+    if key:
+        for resolver in _RESOLVERS:
+            prompt_fn = getattr(resolver, "ask_prompt", None)
+            if not callable(prompt_fn):
+                continue
+            try:
+                text = prompt_fn(key)
+            except Exception:
+                continue
+            if text and str(text).strip():
+                return str(text).strip()
+    return (
+        f"A preferred method needs prerequisite '{key or 'access'}' first. "
+        "Allow me to set that up so I can continue without a more disruptive approach?"
+    )
 
 
 def resolve_prerequisite(

@@ -33,6 +33,9 @@ class Goal:
     prompt: str = ""
     target_contact: str = ""  # e.g. forward destination
     link_query: str = ""  # e.g. link/text to find
+    # Literal text to send when the user already named the body ("send hi to X").
+    # Empty means the body must be found (history search) or supplied elsewhere.
+    message_body: str = ""
     # Message/file author/sender ("from Pallavi" / "I sent"). Distinct from
     # container (conversation_with / source_conversation). Empty means UNKNOWN —
     # never alias to contact.
@@ -84,7 +87,36 @@ class Goal:
         if not prompt:
             return cls(kind="unknown", app=app, prompt="")
 
-        if "whatsapp" in lowered and any(keyword in lowered for keyword in ("forward", "share", "send", "find")):
+        # Explicit "on WhatsApp" OR forward/share of a link/message (app defaults to WhatsApp).
+        # Live prompts often omit the channel name: "Find the X link sent to Y and forward to Z".
+        has_forward_act = any(k in lowered for k in ("forward", "share", "send"))
+        has_find = any(k in lowered for k in ("find", "locate", "search"))
+        whatsapp_named = "whatsapp" in lowered
+        forward_like_implicit = has_forward_act and any(
+            k in lowered for k in ("link", "message", "sent to", "shared to", "forwarded to")
+        )
+        # Compose: "send hi to Pallavi" — body already known; no history search.
+        simple_send = re.search(
+            r"^\s*send\s+(.+?)\s+to\s+([A-Za-z][\w .'-]{0,80}?)(?:\s+on\s+whatsapp)?\s*[.!]?\s*$",
+            prompt,
+            re.IGNORECASE,
+        )
+        if simple_send and not has_find:
+            body = (simple_send.group(1) or "").strip().strip("\"'")
+            name = (simple_send.group(2) or "").strip().strip("\"'")
+            # Title-case names for downstream matching; keep body as typed.
+            if body and name and "link" not in body.lower():
+                return cls(
+                    kind="whatsapp_forward_message",
+                    app=app,
+                    prompt=prompt,
+                    contact=name,
+                    target_contact=name,
+                    recipient=name,
+                    message_body=body,
+                    link_query="",
+                )
+        if (whatsapp_named and (has_forward_act or has_find)) or forward_like_implicit:
             # Typed relations — keep independent (never alias sent_to → originator).
             recipient = cls._extract_name(
                 (
@@ -111,6 +143,7 @@ class Goal:
                 (
                     r"(?:forward|share|send)\s+(?:it\s+)?(?:to|with)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
                     r"(?:forward|share)\s+(?:to|with)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                    r"\bsend\s+.+\s+to\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
                 ),
                 prompt,
             )
@@ -121,6 +154,13 @@ class Goal:
                 ),
                 prompt,
             )
+            message_body = ""
+            if not link_query:
+                body_m = re.search(r"\bsend\s+(.+?)\s+to\s+", prompt, re.IGNORECASE)
+                if body_m:
+                    candidate = (body_m.group(1) or "").strip().strip("\"'")
+                    if candidate and "link" not in candidate.lower():
+                        message_body = candidate
             # Authorship only from explicit self / from-X cues — never from recipient.
             self_origin = bool(
                 re.search(
@@ -137,11 +177,12 @@ class Goal:
                     kind="whatsapp_forward_message",
                     app=app,
                     prompt=prompt,
-                    contact=contact,
-                    target_contact=target,
+                    contact=contact or target,
+                    target_contact=target or recipient,
                     link_query=link_query,
+                    message_body=message_body,
                     originator=originator,
-                    recipient=recipient,
+                    recipient=recipient or target,
                 )
             if "find" in lowered:
                 return cls(

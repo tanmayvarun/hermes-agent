@@ -17,6 +17,7 @@ import { clearClarifyRequest, setClarifyRequest } from '@/store/clarify'
 import { setSessionCompacting } from '@/store/compaction'
 import { refreshBackgroundProcesses } from '@/store/composer-status'
 import { $gateway } from '@/store/gateway'
+import { finalizePromptTaskFromComplete, upsertPromptTaskFromEvent } from '@/store/prompt-tasks'
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import { notify } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
@@ -74,7 +75,23 @@ interface GatewayEventDeps {
   nativeSubagentSessionsRef: MutableRefObject<Set<string>>
   appendAssistantDelta: (sessionId: string, delta: string) => void
   appendReasoningDelta: (sessionId: string, delta: string, replace?: boolean) => void
-  completeAssistantMessage: (sessionId: string, text: string) => void
+  completeAssistantMessage: (
+    sessionId: string,
+    text: string,
+    options?: {
+      taskOutcome?: {
+        durationMs?: number | null
+        errorCode?: string
+        finalStatus: string
+        message?: string
+        phase?: string
+        summary?: string
+        taskRequestId?: string
+      }
+      uiHints?: Record<string, unknown>
+      waitingForUser?: boolean
+    }
+  ) => void
   failAssistantMessage: (sessionId: string, errorMessage: string) => void
   flushQueuedDeltas: (sessionId?: string) => void
   queryClient: QueryClient
@@ -473,7 +490,52 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         playCompletionSound()
 
         const finalText = coerceGatewayText(payload?.text) || coerceGatewayText(payload?.rendered)
-        completeAssistantMessage(sessionId, finalText)
+        // Always forward ui_hints when present (including {}) so QR clears after link/timeout.
+        const uiHints =
+          payload?.ui_hints && typeof payload.ui_hints === 'object'
+            ? (payload.ui_hints as Record<string, unknown>)
+            : undefined
+        const priorTurnStartedAt =
+          sessionStateByRuntimeIdRef.current.get(sessionId)?.turnStartedAt ?? null
+        const finalized = finalizePromptTaskFromComplete(
+          sessionId,
+          (payload || {}) as Record<string, unknown>,
+          { turnStartedAt: priorTurnStartedAt }
+        )
+        const taskOutcome = finalized
+          ? {
+              durationMs: finalized.durationMs,
+              errorCode: finalized.errorCode,
+              finalStatus: finalized.status,
+              message: finalized.message,
+              phase: finalized.phase,
+              summary: finalized.summary,
+              taskRequestId: finalized.taskRequestId
+            }
+          : payload?.final_status || payload?.duration_ms != null
+            ? {
+                durationMs:
+                  typeof payload?.duration_ms === 'number' ? payload.duration_ms : null,
+                errorCode:
+                  typeof payload?.error_code === 'string' ? payload.error_code : undefined,
+                finalStatus: String(
+                  payload?.final_status ||
+                    (payload?.waiting_for_user ? 'waiting_for_user' : 'completed')
+                ),
+                message: typeof payload?.message === 'string' ? payload.message : undefined,
+                phase: typeof payload?.phase === 'string' ? payload.phase : undefined,
+                summary: typeof payload?.summary === 'string' ? payload.summary : undefined,
+                taskRequestId:
+                  typeof payload?.task_request_id === 'string'
+                    ? payload.task_request_id
+                    : undefined
+              }
+            : undefined
+        completeAssistantMessage(sessionId, finalText, {
+          ...(uiHints !== undefined ? { uiHints } : {}),
+          ...(taskOutcome ? { taskOutcome } : {}),
+          waitingForUser: Boolean(payload?.waiting_for_user)
+        })
 
         if (isActiveEvent) {
           setTurnStartedAt(null)
@@ -722,6 +784,10 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
           // completions / watch matches here — re-sync the status stack.
           void refreshBackgroundProcesses(sessionId)
         }
+      } else if (event.type === 'task.status') {
+        if (sessionId && payload) {
+          upsertPromptTaskFromEvent(sessionId, payload as Record<string, unknown>)
+        }
       } else if (event.type === 'review.summary') {
         // Self-improvement background review saved something to memory/skills
         // and emitted a persistent summary (Python formats it as
@@ -770,7 +836,7 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
           }))
         }
       } else if (event.type === 'error') {
-        const errorMessage = payload?.message || 'Hermes reported an error'
+        const errorMessage = payload?.message || 'Plugin reported an error'
         const looksLikeProviderSetup = isProviderSetupErrorMessage(errorMessage)
 
         // A turn that errors out has also ended — drop any open blocking prompt
@@ -806,7 +872,7 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
           notify({
             id: `gateway-error:${errorMessage}`,
             kind: 'error',
-            title: 'Hermes error',
+            title: 'Plugin error',
             message: errorMessage
           })
         }

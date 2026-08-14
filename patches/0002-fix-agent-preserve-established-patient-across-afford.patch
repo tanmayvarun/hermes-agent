@@ -1,0 +1,479 @@
+From 6c3b0d7a5f012c8a8c24bdfd24ce092a6dbe0ec4 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 12:02:50 +0530
+Subject: [PATCH 2/3] fix(agent): preserve established patient across
+ affordance failures
+
+Interaction failures (reveal/context-menu) must repair the affordance layer
+instead of regressing into locate/SEARCH. Invalidate retrieval only when the
+patient is contradicted or absent.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py |  24 ++-
+ plugin/agent/decision_consultation.py       |  68 +++++--
+ plugin/agent/executive/meta_consultation.py |  39 ++++
+ plugin/agent/unified_cognition.py           |  19 +-
+ tests/plugin/test_progress_preservation.py  | 193 ++++++++++++++++++++
+ 5 files changed, 330 insertions(+), 13 deletions(-)
+ create mode 100644 tests/plugin/test_progress_preservation.py
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index d42f743e0..12269aad0 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -1493,11 +1493,23 @@ def search_continue_capability(
+     ).strip()
+     # Open conversation + unpaid content query under SEARCH → locate in-chat
+     # (live 225807: SEARCH meta kept falling through to Observe).
++    # Live 113806: skip when patient content is already established on-screen —
++    # affordance repair must not regress into retrieval.
++    patient_known = False
++    if link_q and surface == "conversation":
++        try:
++            from plugin.agent.source_query_binding import document_locates_source_query
++
++            doc = brief.world if isinstance(getattr(brief, "world", None), dict) else {}
++            patient_known = bool(document_locates_source_query(doc, link_q))
++        except Exception:
++            patient_known = False
+     if (
+         surface == "conversation"
+         and meta == "search"
+         and bool(getattr(task, "source_chat_open", False))
+         and not bool(getattr(task, "content_located", False))
++        and not patient_known
+         and link_q
+         and "locate_content" in allowed
+     ):
+@@ -1850,13 +1862,23 @@ def meta_referent_search_signals(
+     # (live 214626: false/true source open + ACT on unrelated visible row).
+     role = str(ep.get("role") or "").strip().lower()
+     content_episode_done = bool(complete and role == "content")
++    # Soft on-screen patient clears SEARCH debt without RoleBinder commit
++    # (live 113806: visible URL + reveal miss must not re-arm locate).
++    patient_on_screen = bool(content_located)
++    if not patient_on_screen and link_q and isinstance(document, dict):
++        try:
++            from plugin.agent.source_query_binding import document_locates_source_query
++
++            patient_on_screen = bool(document_locates_source_query(document, link_q))
++        except Exception:
++            patient_on_screen = False
+     # Content SEARCH debt only after the container is open. A completed *source*
+     # episode (Pallavi row chosen) must not clear it (live 214025).
+     need_content = (
+         bool(link_q)
+         and bool(source_chat_open)
+         and not failed
+-        and not content_located
++        and not patient_on_screen
+         and not content_episode_done
+     )
+     need_dest = surf == "forward_picker" and bool(dest) and not complete
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 66f6fb74a..65dcedf3f 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -3052,6 +3052,38 @@ def _entity_resolution_type_query_outcome(
+     )
+ 
+ 
++
++
++def _patient_content_established(brief: "DecisionBrief") -> bool:
++    """True when source-query patient is already on-screen / soft-located.
++
++    Interaction-affordance failures must not erase this fact and restart
++    retrieval (live 113806: reveal miss → locate_content found=False).
++    """
++    task = brief.task_state
++    if bool(getattr(task, "content_located", False)):
++        return True
++    link_q = str(
++        (brief.goal or {}).get("source_query")
++        or (brief.goal or {}).get("link_query")
++        or ""
++    ).strip()
++    if not link_q:
++        return False
++    doc = brief.world if isinstance(brief.world, dict) else {}
++    try:
++        from plugin.agent.source_query_binding import document_locates_source_query
++
++        if document_locates_source_query(doc, link_q):
++            return True
++    except Exception:
++        pass
++    # Soft extras / phase already acknowledging patient presence.
++    if str(getattr(task, "phase", "") or "").strip().lower() == "act_on_content":
++        return True
++    return False
++
++
+ def _content_search_locate_outcome(
+     brief: "DecisionBrief",
+     *,
+@@ -3065,6 +3097,9 @@ def _content_search_locate_outcome(
+ 
+     Live 185549: AX-blind locate left EffectStatus UNKNOWN; identical locate must
+     not reseal while verification is pending / method still unresolved.
++
++    Live 113806: do **not** reseal when the patient is already established —
++    reveal/select failures repair affordances, they do not restart retrieval.
+     """
+     meta_now = str(getattr(brief, "meta_action", "") or "").strip().lower()
+     if meta_now != "search":
+@@ -3074,6 +3109,8 @@ def _content_search_locate_outcome(
+         return None
+     if bool(getattr(task, "content_located", False)):
+         return None
++    if _patient_content_established(brief):
++        return None
+     link_q = str(
+         (brief.goal or {}).get("source_query")
+         or (brief.goal or {}).get("link_query")
+@@ -3090,6 +3127,9 @@ def _content_search_locate_outcome(
+     prior_cap = str(getattr(prior, "capability", "") or "").strip().lower()
+     if prior_cap == "locate_content" and str(getattr(prior, "target", "") or "").strip():
+         return None
++    # Affordance repair: never overwrite reveal/select with locate while patient known.
++    if prior_cap in {"reveal_actions", "select_content"}:
++        return None
+     if prior_cap in {"type_query", "compose_search_query", "resolve_entity"}:
+         # Prefer locate inside an open chat over sidebar compose.
+         if prior_cap != "type_query" or surface == "conversation":
+@@ -3530,22 +3570,28 @@ def apply_decision_consultation(
+ 
+     # SEARCH with open source chat + unpaid link query → locate_content
+     # (live 225807 Observe thrash after correct YouTube reject).
++    # Live 113806: do not override reveal/select when the patient is already
++    # established — that is affordance repair, not retrieval restart.
+     _content_seal = _content_search_locate_outcome(
+         brief, prior=outcome, execution_state=execution_state
+     )
++    _cap_now = str(outcome.capability or "").strip().lower()
++    _patient_known = _patient_content_established(brief)
++    _affordance_caps = {"reveal_actions", "select_content"}
+     if _content_seal is not None and (
+         not outcome.ok
+-        or str(outcome.capability or "").strip().lower()
+-        in {
+-            "",
+-            "observe",
+-            "request_more_evidence",
+-            "invoke_affordance",
+-            "reveal_actions",
+-            "select_content",
+-            "open_entity",
+-            "commit_irreversible",
+-        }
++        or (
++            _cap_now
++            in {
++                "",
++                "observe",
++                "request_more_evidence",
++                "invoke_affordance",
++                "open_entity",
++                "commit_irreversible",
++            }
++            or (_cap_now in _affordance_caps and not _patient_known)
++        )
+     ):
+         outcome = _content_seal
+ 
+diff --git a/plugin/agent/executive/meta_consultation.py b/plugin/agent/executive/meta_consultation.py
+index adf874769..e0e4b6522 100644
+--- a/plugin/agent/executive/meta_consultation.py
++++ b/plugin/agent/executive/meta_consultation.py
+@@ -616,6 +616,45 @@ def sanitize_meta_choice(
+                 "source": "llm_contract",
+             },
+         )
++    # Patient already established (SEARCH debt cleared) + reveal/select failure:
++    # repair interaction affordance on the same patient — do not re-enter SEARCH
++    # (live 113806: context_menu miss → locate_content found=False).
++    if (
++        reveal_failed
++        and bool(getattr(ctx, "address_known", False))
++        and not content_search_owed
++        and not bool(getattr(ctx, "role_identity_search_owed", False))
++        and not destination_search
++        and action is MetaAction.SEARCH
++    ):
++        prefer_select = str(
++            getattr(ctx, "reveal_prefer_capability", "") or ""
++        ).strip().lower() in {"select_content", "select"}
++        if prefer_select:
++            return MetaChoice(
++                MetaAction.ACT,
++                "contract: patient established — repair affordance via select, not re-search",
++                {
++                    "act": 1.0,
++                    "affordance_repair": 1.0,
++                    "reveal_episode_failed": 1.0,
++                    "forbid_search": 1.0,
++                    "llm_proposed": action.value,
++                    "source": "llm_contract",
++                },
++            )
++        return MetaChoice(
++            MetaAction.EXPLORE,
++            "contract: patient established — repair affordance, not re-search",
++            {
++                "explore": 1.0,
++                "affordance_repair": 1.0,
++                "reveal_episode_failed": 1.0,
++                "forbid_search": 1.0,
++                "llm_proposed": action.value,
++                "source": "llm_contract",
++            },
++        )
+     # Active EXPLORE intention with methods left → keep EXPLORE (intent retry).
+     # Exception: reveal already failed with select recovery — that is ACT.
+     intention_active = bool(getattr(ctx, "intention_explore_active", False))
+diff --git a/plugin/agent/unified_cognition.py b/plugin/agent/unified_cognition.py
+index 904a54bea..ae7e3be34 100644
+--- a/plugin/agent/unified_cognition.py
++++ b/plugin/agent/unified_cognition.py
+@@ -5442,6 +5442,19 @@ def proposal_to_action(
+             )
+ 
+             cand = text or semantic_target
++            cand_l = str(cand or "").strip().lower()
++            # Perception object ids (msg_link_*) must never become locate queries
++            # (live 113806: locate "msg_link_zarooratwala" → found=False).
++            object_id_query = bool(
++                cand_l.startswith("msg_")
++                or cand_l.startswith("obj_")
++                or (
++                    bool(re.match(r"^[a-z]+_[a-z0-9_]+$", cand_l))
++                    and "http" not in cand_l
++                    and " " not in cand_l
++                    and len(cand_l) > len(link_q) + 2
++                )
++            )
+             distractor = bool(cand) and (
+                 host_contradicts_query(cand, link_q)
+                 or (
+@@ -5450,12 +5463,16 @@ def proposal_to_action(
+                 )
+             )
+             if family == "locate_content" and (
+-                not cand or distractor or not query_supported_by_text(cand, link_q)
++                not cand
++                or distractor
++                or object_id_query
++                or not query_supported_by_text(cand, link_q)
+             ):
+                 text = link_q
+                 semantic_target = link_q
+             elif distractor:
+                 text = link_q
++
+         except Exception:
+             if family == "locate_content":
+                 text = link_q
+diff --git a/tests/plugin/test_progress_preservation.py b/tests/plugin/test_progress_preservation.py
+new file mode 100644
+index 000000000..4445a23aa
+--- /dev/null
++++ b/tests/plugin/test_progress_preservation.py
+@@ -0,0 +1,193 @@
++"""Scoped invalidation: interaction failure must not erase established patient."""
++
++from __future__ import annotations
++
++from plugin.agent.capabilities.search_episode import meta_referent_search_signals
++from plugin.agent.decision_consultation import (
++    DecisionBrief,
++    DecisionOutcome,
++    TaskState,
++    _content_search_locate_outcome,
++    _patient_content_established,
++)
++from plugin.agent.executive.meta_action import MetaAction, MetaContext
++from plugin.agent.executive.meta_consultation import sanitize_meta_choice
++from plugin.agent.runtime.state import ExecutionState
++
++
++def _patient_doc(query: str = "zarooratwala") -> dict:
++    return {
++        "surface": "conversation",
++        "open_conversation": "Alice",
++        "objects": [
++            {
++                "id": "msg_link_1",
++                "kind": "link",
++                "text": f"https://www.{query}.com/",
++                "matches_goal": True,
++            }
++        ],
++    }
++
++
++def test_reveal_failure_preserves_established_patient():
++    brief = DecisionBrief(
++        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        world=_patient_doc(),
++        capabilities=["locate_content", "reveal_actions", "select_content"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            content_located=False,
++            content_visible=True,
++        ),
++        reveal_episode_failed=True,
++    )
++    assert _patient_content_established(brief) is True
++    prior = DecisionOutcome(
++        ok=True,
++        capability="reveal_actions",
++        target="https://www.zarooratwala.com/",
++        why="reveal after patient visible",
++        confidence=0.9,
++    )
++    seal = _content_search_locate_outcome(brief, prior=prior)
++    assert seal is None, "reveal failure must not reseal locate while patient known"
++
++
++def test_failed_context_menu_repairs_affordance_before_retrieval():
++    """Meta contract: SEARCH after reveal fail + patient known → affordance repair."""
++    choice = sanitize_meta_choice(
++        {"meta_action": "search", "why": "content unpaid", "confidence": 0.9},
++        MetaContext(
++            address_known=True,
++            referent_search_needed=False,
++            reveal_episode_failed=True,
++            reveal_prefer_capability="select_content",
++        ),
++    )
++    assert choice is not None
++    assert choice.action is MetaAction.ACT
++    assert choice.scores.get("forbid_search") == 1.0
++    assert choice.scores.get("affordance_repair") == 1.0
++
++
++def test_patient_disappeared_allows_retrieval_regression():
++    """Only contradictory absence re-arms locate / SEARCH content debt."""
++    brief = DecisionBrief(
++        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        world={
++            "surface": "conversation",
++            "open_conversation": "Alice",
++            "objects": [
++                {"id": "m1", "kind": "message", "text": "hello", "matches_goal": False}
++            ],
++        },
++        capabilities=["locate_content", "observe"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="hunt_content",
++            source_chat_open=True,
++            content_located=False,
++            content_visible=False,
++        ),
++    )
++    assert _patient_content_established(brief) is False
++    seal = _content_search_locate_outcome(brief)
++    assert seal is not None
++    assert seal.capability == "locate_content"
++
++    goal = type(
++        "G",
++        (),
++        {
++            "contact": "Alice",
++            "link_query": "zarooratwala",
++            "target_contact": "Bob",
++        },
++    )()
++    state = ExecutionState()
++    sig = meta_referent_search_signals(
++        state,
++        phase="hunt_content",
++        source_chat_open=True,
++        surface="conversation",
++        goal=goal,
++        content_located=False,
++        document=brief.world,
++    )
++    assert sig["needed"] is True
++
++
++def test_surface_change_invalidates_grounding_not_identity():
++    """Patient still on-screen after overlay dismiss → keep identity, no locate."""
++    # Context menu dismissed → conversation surface, URL still present.
++    brief = DecisionBrief(
++        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        world=_patient_doc(),
++        capabilities=["locate_content", "reveal_actions", "select_content"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            content_located=False,
++            content_visible=True,
++            referent_selected=False,  # grounding lost with overlay
++        ),
++        reveal_episode_failed=True,
++    )
++    assert _patient_content_established(brief) is True
++    assert brief.task_state.referent_selected is False
++    seal = _content_search_locate_outcome(
++        brief,
++        prior=DecisionOutcome(
++            ok=False,
++            capability="reveal_actions",
++            target="https://www.zarooratwala.com/",
++            why="context_menu absent",
++        ),
++    )
++    assert seal is None
++
++    goal = type(
++        "G",
++        (),
++        {
++            "contact": "Alice",
++            "link_query": "zarooratwala",
++            "target_contact": "Bob",
++        },
++    )()
++    sig = meta_referent_search_signals(
++        ExecutionState(),
++        phase="act_on_content",
++        source_chat_open=True,
++        surface="conversation",
++        goal=goal,
++        content_located=False,
++        document=brief.world,
++    )
++    assert sig["needed"] is False, "on-screen patient clears SEARCH debt"
++
++
++def test_visible_patient_clears_content_search_debt_without_content_located_flag():
++    goal = type(
++        "G",
++        (),
++        {
++            "contact": "Alice",
++            "link_query": "zarooratwala",
++            "target_contact": "Bob",
++        },
++    )()
++    sig = meta_referent_search_signals(
++        ExecutionState(),
++        phase="hunt_content",
++        source_chat_open=True,
++        surface="conversation",
++        goal=goal,
++        content_located=False,
++        document=_patient_doc(),
++    )
++    assert sig["needed"] is False
+-- 
+2.39.5 (Apple Git-154)
+

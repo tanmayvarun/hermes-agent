@@ -84,4 +84,20 @@ describe('manualPickRemoved', () => {
   it('never clobbers when there is no pick', () => {
     expect(manualPickRemoved(providers, '', '')).toBe(false)
   })
+
+  it('flags an OpenRouter-shaped sticky id missing from ollama-cloud inventory', () => {
+    const ollama = [
+      { name: 'Ollama Cloud', slug: 'ollama-cloud', models: ['mistral-large-3:675b', 'nemotron-3-ultra'] }
+    ]
+    expect(
+      manualPickRemoved(ollama, 'ollama-cloud', 'nvidia/nemotron-3-ultra-550b-a55b:free')
+    ).toBe(true)
+  })
+
+  it('keeps a bare-stem alias when the inventory has the stem', () => {
+    const ollama = [
+      { name: 'Ollama Cloud', slug: 'ollama-cloud', models: ['nemotron-3-ultra'] }
+    ]
+    expect(manualPickRemoved(ollama, 'ollama-cloud', 'nvidia/nemotron-3-ultra:free')).toBe(false)
+  })
 })

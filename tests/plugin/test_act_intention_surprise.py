@@ -143,3 +143,19 @@ def test_decision_prediction_surface_wins_over_family_default():
         prediction={"expected_surface": "search"},
     )
     assert intention_expectation_from_decision(decision)["surface"] == "search"
+
+
+def test_open_entity_cannot_claim_reveal_effect_surface():
+    """Live 131030: open_entity + context_menu is effect/family incoherent."""
+    decision = Action(
+        action="OpenEntity",
+        action_family="open_entity",
+        semantic_target="You: https://www.zarooratwala.com/?...",
+        prediction={
+            "expected_surface": "context_menu",
+            "expected_affordances": ["Forward", "Reply", "Copy"],
+        },
+    )
+    exp = intention_expectation_from_decision(decision)
+    assert exp["surface"] == "conversation"
+    assert "Forward" not in (exp.get("likely_controls") or [])

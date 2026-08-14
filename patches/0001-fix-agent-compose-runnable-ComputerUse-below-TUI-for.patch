@@ -1,0 +1,771 @@
+From c03e4774ee1106257288990c42090ee5dcadd605 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 17:42:55 +0530
+Subject: [PATCH] fix(agent): compose runnable ComputerUse below TUI for Stage
+ A
+
+Wire observe/execute in computer_use_substrate at composition; advertise
+READY only when runnable. Surface composition diagnostics; keep
+prerequisite-resolution failure distinct from USER_DECLINED.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .../personal-agent-brain-and-substrates.md    |   9 +-
+ plugin/agent/composition.py                   |  46 +++-
+ plugin/agent/executive/method_availability.py |  12 +
+ plugin/agent/executive/method_decision.py     |   4 +
+ plugin/agent/providers/computer_use.py        |  46 +++-
+ plugin/agent/runtime/agent_runtime.py         |   9 +-
+ plugin/agent/runtime/closed_loop_adapter.py   |  48 +++-
+ .../agent/runtime/computer_use_substrate.py   | 220 ++++++++++++++++++
+ plugin/agent/runtime/session_store.py         |   3 +
+ .../test_ui_runtime_method_selection.py       | 100 +++++++-
+ 10 files changed, 471 insertions(+), 26 deletions(-)
+ create mode 100644 plugin/agent/runtime/computer_use_substrate.py
+
+diff --git a/docs/design/personal-agent-brain-and-substrates.md b/docs/design/personal-agent-brain-and-substrates.md
+index a9c46e340..b696b16dd 100644
+--- a/docs/design/personal-agent-brain-and-substrates.md
++++ b/docs/design/personal-agent-brain-and-substrates.md
+@@ -580,10 +580,13 @@ session_store.py is temporary continuation storage (AgentSession debt).
+ MemoryRecord schema deferred; Candidate/Evidence/write results only.
+ ```
+ 
+-**Hold live ZarooratWala probe** until dispatch + composition goldens are green.
++**Stage A live acceptance:** TUI → common runtime → MethodFrontier → ComputerUse
++(because WhatsApp Web is not READY) → composed substrate observe/execute →
++closed loop. Do **not** expect “link WhatsApp first” until Stage B.
+ 
+-**Stage A live acceptance:** TUI → common runtime → MethodFrontier → genuinely
+-executable provider → executor actually runs (CU closed-loop adapter OK).
++ComputerUse `readiness=READY` only when `computer_use_substrate` is composed and
++runnable; TUI never injects observe/execute. Composition failures are recorded in
++`composition_diagnostics()` (not silently swallowed).
+ 
+ **Stage B (deferred):** ASK→resolve→resume / decline→CU once WhatsApp Web is READY.
+ 
+diff --git a/plugin/agent/composition.py b/plugin/agent/composition.py
+index 523189245..a87710649 100644
+--- a/plugin/agent/composition.py
++++ b/plugin/agent/composition.py
+@@ -6,7 +6,14 @@ Composition loads available adapters at runtime start.
+ 
+ from __future__ import annotations
+ 
++from typing import Any, Dict, List
++
+ _COMPOSED = False
++_COMPOSITION_DIAGNOSTICS: List[Dict[str, Any]] = []
++
++
++def composition_diagnostics() -> List[Dict[str, Any]]:
++    return list(_COMPOSITION_DIAGNOSTICS)
+ 
+ 
+ def compose_domain_adapters() -> None:
+@@ -20,16 +27,36 @@ def compose_domain_adapters() -> None:
+         )
+ 
+         ensure_whatsapp_provider_registered()
+-    except Exception:
+-        pass
++        _COMPOSITION_DIAGNOSTICS.append(
++            {"event": "identity_provider_composition", "provider": "whatsapp", "ok": True}
++        )
++    except Exception as exc:
++        _COMPOSITION_DIAGNOSTICS.append(
++            {
++                "event": "identity_provider_composition",
++                "provider": "whatsapp",
++                "ok": False,
++                "exception": f"{type(exc).__name__}: {exc}",
++            }
++        )
+     try:
+         from plugin.agent.providers.computer_use import (
+             ensure_computer_use_provider_registered,
+         )
+ 
+-        ensure_computer_use_provider_registered()
+-    except Exception:
+-        pass
++        diag = ensure_computer_use_provider_registered()
++        _COMPOSITION_DIAGNOSTICS.append(dict(diag or {}))
++    except Exception as exc:
++        _COMPOSITION_DIAGNOSTICS.append(
++            {
++                "event": "computer_use_composition",
++                "runnable": False,
++                "provider_registered": False,
++                "executor_registered": False,
++                "ok": False,
++                "exception": f"{type(exc).__name__}: {exc}",
++            }
++        )
+     _COMPOSED = True
+ 
+ 
+@@ -37,3 +64,12 @@ def reset_composition_for_tests() -> None:
+     """Test helper — allow re-compose after clearing registries."""
+     global _COMPOSED
+     _COMPOSED = False
++    _COMPOSITION_DIAGNOSTICS.clear()
++    try:
++        from plugin.agent.runtime.computer_use_substrate import (
++            install_computer_use_substrate,
++        )
++
++        install_computer_use_substrate(None)
++    except Exception:
++        pass
+diff --git a/plugin/agent/executive/method_availability.py b/plugin/agent/executive/method_availability.py
+index 873f5bfc5..4017a910a 100644
+--- a/plugin/agent/executive/method_availability.py
++++ b/plugin/agent/executive/method_availability.py
+@@ -75,6 +75,8 @@ def evaluate_method_availability(
+     precondition_facts: Optional[Mapping[str, bool]] = None,
+     declined_method_ids: Optional[Set[str]] = None,
+     declined_preconditions: Optional[Set[str]] = None,
++    blocked_method_ids: Optional[Set[str]] = None,
++    failed_preconditions: Optional[Set[str]] = None,
+ ) -> tuple[str, str]:
+     """Return (overall_availability, detail_reason). Availability only — no ranking."""
+     readiness = str(getattr(spec, "readiness", None) or "").strip().lower()
+@@ -82,6 +84,11 @@ def evaluate_method_availability(
+     substrate = str(getattr(spec, "substrate", "") or "")
+     if mid in (declined_method_ids or set()):
+         return MethodAvailability.USER_DECLINED.value, "method_declined"
++    if mid in (blocked_method_ids or set()):
++        return (
++            MethodAvailability.TEMPORARILY_UNAVAILABLE.value,
++            "precondition_resolution_failed",
++        )
+     if substrate_forbidden(substrate, constraints):
+         return MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value, "substrate_constraint"
+ 
+@@ -96,6 +103,11 @@ def evaluate_method_availability(
+             continue
+         if key in (declined_preconditions or set()):
+             return MethodAvailability.USER_DECLINED.value, f"precondition_declined:{key}"
++        if key in (failed_preconditions or set()):
++            return (
++                MethodAvailability.TEMPORARILY_UNAVAILABLE.value,
++                f"precondition_resolution_failed:{key}",
++            )
+         if facts.get(key, False) is True:
+             continue
+         missing.append(key)
+diff --git a/plugin/agent/executive/method_decision.py b/plugin/agent/executive/method_decision.py
+index 00da3cfb0..bb40ab4b8 100644
+--- a/plugin/agent/executive/method_decision.py
++++ b/plugin/agent/executive/method_decision.py
+@@ -67,6 +67,8 @@ def decide_methods(
+     precondition_facts: Optional[Mapping[str, bool]] = None,
+     declined_method_ids: Optional[Set[str]] = None,
+     declined_preconditions: Optional[Set[str]] = None,
++    blocked_method_ids: Optional[Set[str]] = None,
++    failed_preconditions: Optional[Set[str]] = None,
+     intention_id: str = "",
+     desired_effect: str = "",
+ ) -> MethodDecision:
+@@ -86,6 +88,8 @@ def decide_methods(
+             precondition_facts=precondition_facts,
+             declined_method_ids=declined_method_ids,
+             declined_preconditions=declined_preconditions,
++            blocked_method_ids=blocked_method_ids,
++            failed_preconditions=failed_preconditions,
+         )
+         avail_map[mid] = avail
+         reason_map[mid] = reason
+diff --git a/plugin/agent/providers/computer_use.py b/plugin/agent/providers/computer_use.py
+index 6f680156c..499a19142 100644
+--- a/plugin/agent/providers/computer_use.py
++++ b/plugin/agent/providers/computer_use.py
+@@ -1,4 +1,4 @@
+-"""Production ComputerUse method provider — genuinely executable substrate."""
++"""Production ComputerUse method provider — READY only when substrate is runnable."""
+ 
+ from __future__ import annotations
+ 
+@@ -11,16 +11,22 @@ from plugin.agent.ingress import ExecutionConstraints
+ 
+ 
+ class ComputerUseMethodProvider:
+-    """Registers READY computer_use methods for known executive goal kinds."""
++    """Advertises computer_use methods only when a runnable substrate is composed."""
+ 
+     provider_id = "computer_use_native"
+ 
++    def __init__(self, *, runnable: bool = False, reason: str = "") -> None:
++        self.runnable = bool(runnable)
++        self.reason = str(reason or "")
++
+     def discover(
+         self,
+         interpretation: TaskInterpretation,
+         *,
+         constraints: Optional[ExecutionConstraints] = None,
+     ) -> Sequence[MethodSpec]:
++        if not self.runnable:
++            return []
+         effects = set(interpretation.desired_effects or [])
+         kind = str(interpretation.goal_kind or "")
+         if "forward_message" not in effects and "forward" not in kind:
+@@ -43,12 +49,44 @@ class ComputerUseMethodProvider:
+         ]
+ 
+ 
+-def ensure_computer_use_provider_registered() -> None:
++def ensure_computer_use_provider_registered(
++    *,
++    force_runnable: Optional[bool] = None,
++    observe_builder=None,
++    execute_builder=None,
++    wait_builder=None,
++) -> dict:
++    """Compose substrate + register provider/executor when runnable.
++
++    Returns a structured composition diagnostic (never silently empty).
++    """
+     from plugin.agent.executive.method_providers import register_method_provider
++    from plugin.agent.runtime.computer_use_substrate import compose_computer_use_substrate
+     from plugin.agent.runtime.method_executors import (
+         ComputerUseClosedLoopExecutor,
+         register_method_executor,
+     )
+ 
+-    register_method_provider(ComputerUseMethodProvider())
++    substrate = compose_computer_use_substrate(
++        force_runnable=force_runnable,
++        observe_builder=observe_builder,
++        execute_builder=execute_builder,
++        wait_builder=wait_builder,
++    )
++    diagnostic = {
++        "event": "computer_use_composition",
++        "runnable": bool(substrate.runnable),
++        "reason": substrate.reason,
++        "provider_registered": False,
++        "executor_registered": False,
++    }
++    if not substrate.runnable:
++        return diagnostic
++
++    register_method_provider(
++        ComputerUseMethodProvider(runnable=True, reason=substrate.reason)
++    )
+     register_method_executor(ComputerUseClosedLoopExecutor())
++    diagnostic["provider_registered"] = True
++    diagnostic["executor_registered"] = True
++    return diagnostic
+diff --git a/plugin/agent/runtime/agent_runtime.py b/plugin/agent/runtime/agent_runtime.py
+index 0884365ff..cc8bdbdfd 100644
+--- a/plugin/agent/runtime/agent_runtime.py
++++ b/plugin/agent/runtime/agent_runtime.py
+@@ -95,6 +95,8 @@ class AgentRuntime:
+             precondition_facts=session_state.precondition_facts,
+             declined_method_ids=session_state.declined_method_ids,
+             declined_preconditions=session_state.declined_preconditions,
++            blocked_method_ids=session_state.blocked_method_ids,
++            failed_preconditions=session_state.failed_preconditions,
+             intention_id=intention_id,
+             desired_effect=",".join(interpretation.desired_effects) or interpretation.goal_kind,
+         )
+@@ -339,10 +341,12 @@ class AgentRuntime:
+                 }
+                 return result
+ 
+-            # Resolver failed / unsupported / pending — keep parent; do not fake success.
++            # Resolver failed — keep parent; do not treat as USER_DECLINED.
+             if resolve.status == "failed":
+                 session_state.suspended_ask = None
+-                session_state.declined_method_ids.add(ask.method_id)
++                session_state.blocked_method_ids.add(ask.method_id)
++                if ask.precondition:
++                    session_state.failed_preconditions.add(ask.precondition)
+                 session_state.active_intention_id = intention_id
+                 resumed = TaskRequest(
+                     user_turn=str(orig),
+@@ -370,6 +374,7 @@ class AgentRuntime:
+                     "method": ask.method_id,
+                     "permission_granted": True,
+                     "precondition_achieved": False,
++                    "availability": "temporarily_unavailable",
+                 }
+                 return result
+ 
+diff --git a/plugin/agent/runtime/closed_loop_adapter.py b/plugin/agent/runtime/closed_loop_adapter.py
+index 93ec9c7b3..60d77e9a7 100644
+--- a/plugin/agent/runtime/closed_loop_adapter.py
++++ b/plugin/agent/runtime/closed_loop_adapter.py
+@@ -1,8 +1,7 @@
+ """Compatibility adapter: ComputerUse MethodSpec → legacy closed-loop.
+ 
+-Domain-agnostic entry. Live observe/execute wiring is loaded from the
+-experiment harness helpers when available; callers may inject overrides via
+-``context['observe']`` / ``context['execute']`` / ``context['closed_loop']``.
++Bindings come from the composed ComputerUseSubstrate — not from TUI/client
++injection. Context may still override for tests.
+ """
+ 
+ from __future__ import annotations
+@@ -26,12 +25,37 @@ def run_legacy_closed_loop_for_goal(
+     closed_loop = ctx.get("closed_loop")
+     observe = ctx.get("observe")
+     execute = ctx.get("execute")
+-    if closed_loop is None:
+-        from plugin.agent.controller import run_goal_closed_loop
++    wait_fn = ctx.get("wait_fn")
++    log = ctx.get("log")
++
++    if observe is None or execute is None:
++        from plugin.agent.runtime.computer_use_substrate import get_computer_use_substrate
++
++        substrate = get_computer_use_substrate()
++        if substrate is None or not substrate.runnable:
++            return {
++                "ok": False,
++                "detail": "computer_use_substrate_not_composed",
++                "substrate": "computer_use",
++                "method_id": str(getattr(spec, "id", "") or ""),
++                "dispatched": True,
++            }
++        try:
++            bindings = substrate.bind(ctx)
++        except Exception as exc:
++            return {
++                "ok": False,
++                "detail": f"computer_use_bind_failed:{type(exc).__name__}:{exc}",
++                "substrate": "computer_use",
++                "method_id": str(getattr(spec, "id", "") or ""),
++                "dispatched": True,
++            }
++        observe = bindings.get("observe")
++        execute = bindings.get("execute")
++        wait_fn = wait_fn or bindings.get("wait_fn")
++        log = log or bindings.get("log")
+ 
+-        closed_loop = run_goal_closed_loop
+     if observe is None or execute is None:
+-        # Live wiring optional — unit tests inject observe/execute.
+         return {
+             "ok": False,
+             "detail": "computer_use_observe_execute_not_provided",
+@@ -40,15 +64,20 @@ def run_legacy_closed_loop_for_goal(
+             "dispatched": True,
+         }
+ 
++    if closed_loop is None:
++        from plugin.agent.controller import run_goal_closed_loop
++
++        closed_loop = run_goal_closed_loop
++
+     result = closed_loop(
+         runtime,
+         goal,
+         observe=observe,
+         execute=execute,
+-        log=ctx.get("log"),
++        log=log,
+         max_iterations=int(ctx.get("max_iterations") or 15),
+         settle_s=float(ctx.get("settle_s") or 0.5),
+-        wait_fn=ctx.get("wait_fn"),
++        wait_fn=wait_fn,
+         engine=ctx.get("engine"),
+         memory=ctx.get("memory"),
+     )
+@@ -59,5 +88,6 @@ def run_legacy_closed_loop_for_goal(
+         "substrate": "computer_use",
+         "method_id": str(getattr(spec, "id", "") or ""),
+         "dispatched": True,
++        "bindings_source": "composed_substrate",
+         "result": result,
+     }
+diff --git a/plugin/agent/runtime/computer_use_substrate.py b/plugin/agent/runtime/computer_use_substrate.py
+new file mode 100644
+index 000000000..77349bf05
+--- /dev/null
++++ b/plugin/agent/runtime/computer_use_substrate.py
+@@ -0,0 +1,220 @@
++"""Production ComputerUse substrate wiring — below AgentRuntime / ClientAdapter.
++
++Observe/execute bindings are composed here. TUI must not inject them.
++READY is advertised only when this substrate is runnable.
++"""
++
++from __future__ import annotations
++
++import logging
++from dataclasses import dataclass, field
++from typing import Any, Callable, Dict, Optional, Tuple
++
++logger = logging.getLogger(__name__)
++
++ObserveFn = Callable[[], Any]
++WaitFn = Callable[[float, str], None]
++
++
++@dataclass
++class ComputerUseSubstrate:
++    """Composed ComputerUse dependencies."""
++
++    runnable: bool
++    reason: str = ""
++    app_default: str = "WhatsApp"
++    # Optional test/prod override factories (already-bound callables builders).
++    _observe_builder: Optional[Callable[..., ObserveFn]] = None
++    _execute_builder: Optional[Callable[..., Any]] = None
++    _wait_builder: Optional[Callable[..., WaitFn]] = None
++
++    def bind(self, context: Dict[str, Any]) -> Dict[str, Any]:
++        """Return observe/execute/wait_fn/log for closed-loop dispatch."""
++        if not self.runnable:
++            raise RuntimeError(f"computer_use_substrate_not_runnable:{self.reason}")
++        runtime = context.get("runtime_state")
++        goal = context.get("goal")
++        if runtime is None or goal is None:
++            raise RuntimeError("computer_use_bind_missing_runtime_or_goal")
++        log = context.get("log")
++        if log is None:
++            log = _NullEventLogger()
++        app = str(getattr(goal, "app", "") or self.app_default or "WhatsApp")
++
++        if self._observe_builder is not None:
++            observe = self._observe_builder(runtime=runtime, goal=goal, log=log, app=app)
++        else:
++            observe = _default_observe(runtime=runtime, log=log, app=app)
++
++        if self._execute_builder is not None:
++            execute = self._execute_builder(runtime=runtime, goal=goal, log=log, app=app)
++        else:
++            execute = _LiveCapabilityExecutor(runtime=runtime, goal=goal, app=app)
++
++        if self._wait_builder is not None:
++            wait_fn = self._wait_builder(runtime=runtime, goal=goal, log=log, app=app)
++        else:
++            wait_fn = _default_wait(log=log, runtime=runtime)
++
++        return {
++            "observe": observe,
++            "execute": execute,
++            "wait_fn": wait_fn,
++            "log": log,
++        }
++
++
++_ACTIVE: Optional[ComputerUseSubstrate] = None
++
++
++def get_computer_use_substrate() -> Optional[ComputerUseSubstrate]:
++    return _ACTIVE
++
++
++def install_computer_use_substrate(substrate: Optional[ComputerUseSubstrate]) -> None:
++    global _ACTIVE
++    _ACTIVE = substrate
++
++
++def probe_computer_use_environment() -> Tuple[bool, str]:
++    """True when live observation backends needed for ComputerUse are present."""
++    try:
++        from plugin.perception.macos.accessibility.observer import (
++            ax_available,
++            macapptree_available,
++        )
++    except Exception as exc:
++        return False, f"accessibility_import_failed:{type(exc).__name__}:{exc}"
++    try:
++        has_ax = bool(ax_available())
++    except Exception as exc:
++        return False, f"ax_probe_failed:{exc}"
++    try:
++        has_tree = bool(macapptree_available())
++    except Exception:
++        has_tree = False
++    if not has_ax and not has_tree:
++        return False, "no_ax_or_macapptree_backend"
++    try:
++        from plugin.experiments.live_observe import _live_observe  # noqa: F401
++        from plugin.agent.capabilities.dispatch import dispatch_from_step  # noqa: F401
++    except Exception as exc:
++        return False, f"substrate_import_failed:{type(exc).__name__}:{exc}"
++    return True, "ok"
++
++
++def compose_computer_use_substrate(
++    *,
++    force_runnable: Optional[bool] = None,
++    observe_builder: Optional[Callable[..., ObserveFn]] = None,
++    execute_builder: Optional[Callable[..., Any]] = None,
++    wait_builder: Optional[Callable[..., WaitFn]] = None,
++) -> ComputerUseSubstrate:
++    """Compose substrate. READY/runnable only when environment (or forced test) allows."""
++    if force_runnable is True:
++        ok, reason = True, "forced_runnable"
++    elif force_runnable is False:
++        ok, reason = False, "forced_not_runnable"
++    else:
++        ok, reason = probe_computer_use_environment()
++    substrate = ComputerUseSubstrate(
++        runnable=ok,
++        reason=reason,
++        _observe_builder=observe_builder,
++        _execute_builder=execute_builder,
++        _wait_builder=wait_builder,
++    )
++    install_computer_use_substrate(substrate if ok else None)
++    return substrate
++
++
++def _default_observe(*, runtime: Any, log: Any, app: str) -> ObserveFn:
++    def observe():
++        from plugin.agent.unified_cognition import expects_overlay_perception
++        from plugin.experiments.live_observe import _live_observe
++
++        return _live_observe(
++            log,
++            app=app,
++            step=int(getattr(runtime.execution_state, "iteration", 0) or 0),
++            with_screenshot=True,
++            include_overlays=expects_overlay_perception(runtime.execution_state),
++        )
++
++    return observe
++
++
++def _default_wait(*, log: Any, runtime: Any) -> WaitFn:
++    def wait_fn(seconds: float, reason: str) -> None:
++        import time
++
++        try:
++            log.step(
++                "wait",
++                step=int(getattr(runtime.execution_state, "iteration", 0) or 0),
++                message=f"{seconds}s {reason}",
++            )
++        except Exception:
++            pass
++        time.sleep(max(0.0, float(seconds or 0.0)))
++
++    return wait_fn
++
++
++class _LiveCapabilityExecutor:
++    """Generic live motor: capability dispatch + ghost scroll fallback."""
++
++    def __init__(self, *, runtime: Any, goal: Any, app: str) -> None:
++        self.runtime = runtime
++        self.goal = goal
++        self.app = app
++
++    def execute(self, step: Any) -> Any:
++        from plugin.agent.capabilities.dispatch import dispatch_from_step
++        from plugin.executor.ghost import ExecResult, get_executor
++
++        act = str(getattr(step, "action", "") or "").lower()
++        fam = str(getattr(step, "action_family", "") or "")
++        if act == "observe":
++            return ExecResult(ok=True, backend="none", message="observe")
++        if fam == "scroll_content" or act == "scroll":
++            direction = getattr(step, "scroll_direction", "") or "down"
++            amount = int(getattr(step, "scroll_amount", 0) or 3)
++            return get_executor(dry_run=False, app=self.app).scroll(
++                direction, amount=amount
++            )
++        try:
++            from plugin.agent.apps.registry import get_overlay
++
++            overlay = get_overlay(str(getattr(self.goal, "app", "") or self.app), self.runtime.world_model)
++        except Exception:
++            overlay = None
++        outcome = dispatch_from_step(
++            step,
++            app=self.app,
++            overlay=overlay,
++            world=self.runtime.world_model,
++            execution_state=self.runtime.execution_state,
++            goal=self.goal,
++        )
++        return ExecResult(
++            ok=bool(getattr(outcome, "ok", False)),
++            backend="capability",
++            message=str(
++                getattr(outcome, "message", None)
++                or getattr(outcome, "capability", None)
++                or fam
++                or act
++            ),
++        )
++
++
++class _NullEventLogger:
++    def step(self, *args: Any, **kwargs: Any) -> None:
++        return None
++
++    def log(self, *args: Any, **kwargs: Any) -> None:
++        return None
++
++    def check(self, *args: Any, **kwargs: Any) -> None:
++        return None
+diff --git a/plugin/agent/runtime/session_store.py b/plugin/agent/runtime/session_store.py
+index 0b7ef5c21..20c98c1ea 100644
+--- a/plugin/agent/runtime/session_store.py
++++ b/plugin/agent/runtime/session_store.py
+@@ -32,6 +32,9 @@ class SessionRuntimeState:
+     suspended_ask: Optional[SuspendedAsk] = None
+     declined_method_ids: Set[str] = field(default_factory=set)
+     declined_preconditions: Set[str] = field(default_factory=set)
++    # Accepted permission but prerequisite resolution failed (≠ USER_DECLINED).
++    blocked_method_ids: Set[str] = field(default_factory=set)
++    failed_preconditions: Set[str] = field(default_factory=set)
+     # Verified precondition facts (session-scoped) — not AgentRuntime instance fields.
+     precondition_facts: Dict[str, bool] = field(default_factory=dict)
+     active_intention_id: str = ""
+diff --git a/tests/plugin/test_ui_runtime_method_selection.py b/tests/plugin/test_ui_runtime_method_selection.py
+index 0cdf69a36..c784e969d 100644
+--- a/tests/plugin/test_ui_runtime_method_selection.py
++++ b/tests/plugin/test_ui_runtime_method_selection.py
+@@ -6,13 +6,18 @@ from typing import Any, Optional, Sequence
+ 
+ import pytest
+ 
+-from plugin.agent.composition import compose_domain_adapters, reset_composition_for_tests
++from types import SimpleNamespace
++
++from plugin.agent.composition import (
++    compose_domain_adapters,
++    composition_diagnostics,
++    reset_composition_for_tests,
++)
+ from plugin.agent.executive.intention_frame import MethodSpec, ScoringPolicy, score_method
+ from plugin.agent.executive.method_availability import (
+     MethodAvailability,
+     MethodReadiness,
+     evaluate_method_availability,
+-    should_ask_for_precondition,
+ )
+ from plugin.agent.executive.method_providers import (
+     TaskInterpretation,
+@@ -20,6 +25,8 @@ from plugin.agent.executive.method_providers import (
+     discover_methods,
+     register_method_provider,
+ )
++from plugin.agent.providers.computer_use import ensure_computer_use_provider_registered
++from plugin.agent.runtime.session_store import get_or_create_session
+ from plugin.agent.goal import Goal
+ from plugin.agent.ingress import (
+     ExecutionConstraints,
+@@ -299,7 +306,12 @@ def test_failed_prerequisite_resolution_keeps_parent_and_advances_or_reasks_corr
+     assert second.intention_id == intention
+     assert second.selected_substrate == "computer_use"
+     assert second.acceptance_trace.get("precondition_achieved") is False
++    assert second.acceptance_trace.get("availability") == "temporarily_unavailable"
+     assert cu.calls == 1
++    sess = get_or_create_session("prereq-fail")
++    assert "structured_web_forward" in sess.blocked_method_ids
++    assert "structured_web_forward" not in sess.declined_method_ids
++    assert "authenticated_integration" in sess.failed_preconditions
+ 
+ 
+ def test_accepted_prerequisite_resumes_parent_intention_after_resolver_success() -> None:
+@@ -390,7 +402,26 @@ def test_zero_cost_zero_risk_zero_interference_remain_zero() -> None:
+ 
+ 
+ def test_production_composition_registers_executable_method_provider() -> None:
+-    compose_domain_adapters()
++    def _obs(**kwargs):
++        return lambda: SimpleNamespace(nodes=[])
++
++    def _exe(**kwargs):
++        class _E:
++            def execute(self, step):
++                from plugin.executor.ghost import ExecResult
++
++                return ExecResult(ok=True, backend="test", message="ok")
++
++        return _E()
++
++    diag = ensure_computer_use_provider_registered(
++        force_runnable=True,
++        observe_builder=_obs,
++        execute_builder=_exe,
++    )
++    assert diag["runnable"] is True
++    assert diag["provider_registered"] is True
++    assert diag["executor_registered"] is True
+     specs, errors = discover_methods(
+         TaskInterpretation(
+             user_turn="Forward ZarooratWala to Tanmay",
+@@ -403,6 +434,69 @@ def test_production_composition_registers_executable_method_provider() -> None:
+     assert errors == [] or isinstance(errors, list)
+ 
+ 
++def test_production_tui_composition_selected_computer_use_is_runnable() -> None:
++    """Production composition path: no TUI observe/execute injection."""
++
++    def _obs(**kwargs):
++        return lambda: SimpleNamespace(nodes=[])
++
++    def _exe(**kwargs):
++        class _E:
++            def execute(self, step):
++                from plugin.executor.ghost import ExecResult
++
++                return ExecResult(ok=True, backend="test", message="ok")
++
++        return _E()
++
++    diag = ensure_computer_use_provider_registered(
++        force_runnable=True,
++        observe_builder=_obs,
++        execute_builder=_exe,
++    )
++    assert diag["provider_registered"] is True
++
++    seen = {"observe": False, "execute": False}
++
++    def fake_closed_loop(runtime, goal, *, observe=None, execute=None, **kwargs):
++        seen["observe"] = observe is not None
++        seen["execute"] = execute is not None
++        return SimpleNamespace(ok=True, reason="composed_ok", iterations=1)
++
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    result = rt.handle_turn(
++        _forward_req("prod-cu"),
++        # TUI-like: no observe/execute — only closed_loop stub for unit isolation.
++        execution_context={"closed_loop": fake_closed_loop},
++    )
++    assert seen["observe"] and seen["execute"]
++    assert "observe_execute_not_provided" not in str(result.message or "")
++    assert "computer_use_substrate_not_composed" not in str(result.message or "")
++    assert result.selected_substrate == "computer_use"
++    assert result.acceptance_trace.get("dispatched_executor") is True
++    payload = result.legacy_result or {}
++    if isinstance(payload, dict):
++        assert payload.get("bindings_source") == "composed_substrate"
++        assert payload.get("dispatched") is True
++
++
++def test_computer_use_composition_failure_is_diagnosed(monkeypatch) -> None:
++    def _boom(**kwargs):
++        raise RuntimeError("compose_boom")
++
++    monkeypatch.setattr(
++        "plugin.agent.providers.computer_use.ensure_computer_use_provider_registered",
++        _boom,
++    )
++    reset_composition_for_tests()
++    compose_domain_adapters()
++    diags = composition_diagnostics()
++    cu = [d for d in diags if d.get("event") == "computer_use_composition"]
++    assert cu
++    assert cu[-1].get("ok") is False
++    assert "compose_boom" in str(cu[-1].get("exception") or "")
++
++
+ def test_provider_failure_is_traced() -> None:
+     class Boom:
+         provider_id = "boom"
+-- 
+2.39.5 (Apple Git-154)
+

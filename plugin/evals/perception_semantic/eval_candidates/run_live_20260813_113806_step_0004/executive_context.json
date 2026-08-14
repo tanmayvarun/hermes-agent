@@ -1,0 +1,91 @@
+{
+  "goal": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay",
+  "goal_fields": {
+    "source_conversation": "Pallavi",
+    "destination": "Tanmay",
+    "source_query": "zarooratwala"
+  },
+  "current_intention": "Open Pallavi chat to find the link",
+  "perception_objective": {
+    "questions": [],
+    "focus": "",
+    "depth": "shallow",
+    "objective": "evidence sufficient to act",
+    "completion_condition": ""
+  },
+  "active_app": "WhatsApp",
+  "active_interaction_surface": "chat_list",
+  "known_bindings": {
+    "source_container": "Pallavi",
+    "source_object": "zarooratwala",
+    "originator": "Pallavi",
+    "destination": "Tanmay",
+    "open_conversation": ""
+  },
+  "previous_action": {
+    "action": "OpenEntity",
+    "family": "open_entity",
+    "target": "Pallavi: https://www.zarooratwala.com/?...",
+    "text": "Pallavi",
+    "result": {
+      "ok": true,
+      "message": "click 'Pallavi: https://www.zarooratwala.com/?...' center=(300.0, 350.0) via entity bounds"
+    },
+    "you_predicted": {
+      "surface": "conversation",
+      "source": "act_intention",
+      "action_family": "open_entity",
+      "likely_controls": [
+        "message_bubble",
+        "forward_button"
+      ],
+      "semantic_target": "Pallavi: https://www.zarooratwala.com/?...",
+      "attempt_id": "a_4dd5cc1915"
+    },
+    "prediction_error": {
+      "predicted_surface": "conversation",
+      "observed_surface": "chat_list",
+      "matched": false,
+      "verdict": "you predicted 'conversation' and the screen is 'chat_list'. None of the controls you expected are present (message_bubble, forward_button).",
+      "controls_predicted": [
+        "message_bubble",
+        "forward_button"
+      ],
+      "controls_present": [],
+      "controls_absent": [
+        "message_bubble",
+        "forward_button"
+      ],
+      "action_family": "compose_search_query",
+      "attempt_id": "a_211389a2fa",
+      "target": "",
+      "effect_absent": true,
+      "consumed_by_reflect": true,
+      "surprise_armed": false,
+      "suppressed_rearm": true
+    },
+    "effect": "verified",
+    "world_change_score": 1.0,
+    "open_after": "https://www.zarooratwala.com/?",
+    "diagnosis_hints": [
+      "promising_branch_explore_locally"
+    ],
+    "recent_surprises": [
+      {
+        "iteration": 4,
+        "action": "openentity",
+        "family": "open_entity",
+        "effect": "promising_unresolved",
+        "outcome": "promising_unresolved",
+        "failure_domain": "none",
+        "world_change_score": 1.0,
+        "predicted_surface": "conversation",
+        "observed_surface": "chat_list",
+        "notes": [
+          "promising_branch_explore_locally"
+        ]
+      }
+    ]
+  },
+  "step": 4
+}

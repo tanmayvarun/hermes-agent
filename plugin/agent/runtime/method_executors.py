@@ -68,6 +68,57 @@ class ComputerUseClosedLoopExecutor:
     adapter: Optional[Callable[..., Any]] = None
 
     def execute(self, spec: Any, *, context: Dict[str, Any]) -> MethodExecutionResult:
+        from plugin.agent.runtime.executor_idempotency import (
+            get_executor_idempotency_guard,
+            make_effect_key,
+        )
+        from plugin.agent.runtime.integrity_gates import ComputerUseReadyGate
+
+        ctx = dict(context or {})
+        facts = {}
+        session_state = ctx.get("session_state")
+        if session_state is not None and hasattr(session_state, "precondition_facts"):
+            facts = dict(getattr(session_state, "precondition_facts") or {})
+        elif isinstance(ctx.get("precondition_facts"), dict):
+            facts = dict(ctx.get("precondition_facts") or {})
+
+        setup_blocker_id = str(ctx.get("setup_blocker_id") or "").strip()
+        gate = ComputerUseReadyGate.require_ready(
+            precondition_facts=facts,
+            setup_blocker_id=setup_blocker_id,
+        )
+        if not gate.ok:
+            return MethodExecutionResult(
+                ok=False,
+                status="setup_blocked",
+                detail=gate.reason or "Computer Use blocked by setup integrity gate",
+                payload={
+                    "fallback": gate.fallback or "ask_prerequisite",
+                    "ask_precondition": gate.ask_precondition,
+                    "error_code": gate.error_code,
+                    "gate": gate.to_payload(),
+                },
+                executor_id=self.executor_id,
+            )
+
+        task_request_id = str(ctx.get("task_request_id") or "").strip()
+        goal = ctx.get("goal")
+        goal_fp = (
+            getattr(goal, "raw", None)
+            or getattr(goal, "text", None)
+            or getattr(goal, "user_turn", None)
+            or str(goal or "")
+        )
+        guard = get_executor_idempotency_guard()
+        idem_key = make_effect_key(
+            task_request_id=task_request_id or str(getattr(spec, "id", "") or "cu"),
+            effect="computer_use_act",
+            parts=(getattr(spec, "id", ""), goal_fp),
+        )
+        prior = guard.lookup(idem_key)
+        if prior is not None:
+            return guard.mark_replay(prior)
+
         adapter = self.adapter
         if adapter is None:
             from plugin.agent.runtime.closed_loop_adapter import (
@@ -76,7 +127,7 @@ class ComputerUseClosedLoopExecutor:
 
             adapter = run_legacy_closed_loop_for_goal
         try:
-            payload = adapter(spec=spec, context=context)
+            payload = adapter(spec=spec, context=ctx)
         except Exception as exc:
             return MethodExecutionResult(
                 ok=False,
@@ -89,10 +140,13 @@ class ComputerUseClosedLoopExecutor:
         if isinstance(payload, dict):
             ok = bool(payload.get("ok", True))
             detail = str(payload.get("detail") or payload.get("reason") or "")
-        return MethodExecutionResult(
+        result = MethodExecutionResult(
             ok=ok,
             status="executed" if ok else "failed",
             detail=detail,
             payload=payload,
             executor_id=self.executor_id,
         )
+        if ok:
+            guard.remember_success(idem_key, result)
+        return result

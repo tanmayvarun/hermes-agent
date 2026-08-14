@@ -1,0 +1,21 @@
+{
+  "id": "run_live_20260813_113806_step_0019",
+  "status": "needs_annotation",
+  "screenshot": "screenshot.png",
+  "source": {
+    "kind": "live_record",
+    "stamp": "live_20260813_113806",
+    "step": 19,
+    "harvest_quality": "production_packet"
+  },
+  "phenomena": [],
+  "files": [
+    "screenshot.png",
+    "ax.json",
+    "executive_context.json",
+    "model_input.json",
+    "model_output.json",
+    "transition.json",
+    "annotation.json"
+  ]
+}

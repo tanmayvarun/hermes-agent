@@ -68,8 +68,47 @@ def test_failure_window_pixels_cannot_ground_forward():
 
 
 def test_success_overlay_document_promotes_forward_menu():
+    from plugin.perception.coordinate_frame import build_frame_graph
+
     state = ExecutionState()
     state.reveal_handoff = {"surface": "context_menu", "ttl": 2, "incomplete_reveal": True}
+    graph = build_frame_graph(
+        image_size=(1000.0, 800.0),
+        window_origin_in_screen=(0.0, 0.0),
+        point_scale=1.0,
+        capture_scale=1.0,
+        capture_id="c_overlay",
+    )
+    document = {
+        "surface": "conversation",
+        "capture_id": "c_overlay",
+        "frame_graph": graph.to_dict(),
+        "objects": [
+            {
+                "text": "Forward",
+                "kind": "menu_item",
+                "is_menu_item": True,
+                "point": [3100, 320],
+                "coordinate_space": "screen",
+                "geometry_source": "ocr",
+                "owner_surface": "context_menu",
+            },
+            {
+                "text": "Reply",
+                "kind": "menu_item",
+                "is_menu_item": True,
+                "point": [3100, 280],
+                "coordinate_space": "screen",
+                "geometry_source": "ocr",
+                "owner_surface": "context_menu",
+            },
+        ],
+    }
+    state.unified_world_document = document
+    state.task_surface = {
+        "capture_id": "c_overlay",
+        "frame_graph": graph.to_dict(),
+    }
     frontier = AffordanceFrontier(
         surface="conversation",
         latent_actions=[
@@ -83,23 +122,7 @@ def test_success_overlay_document_promotes_forward_menu():
     )
     reconcile_frontier(
         frontier,
-        document={
-            "surface": "conversation",
-            "objects": [
-                {
-                    "text": "Forward",
-                    "kind": "menu_item",
-                    "is_menu_item": True,
-                    "point": [3100, 320],
-                },
-                {
-                    "text": "Reply",
-                    "kind": "menu_item",
-                    "is_menu_item": True,
-                    "point": [3100, 280],
-                },
-            ],
-        },
+        document=document,
         execution_state=state,
         last_action_family="reveal_actions",
     )

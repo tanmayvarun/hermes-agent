@@ -2,8 +2,7 @@ import { cn } from '@/lib/utils'
 
 const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
 
-// Brand badge: nous-girl mark on a white tile, identical in light/dark.
-// Fills the tile (softly rounded); size via className (default size-14).
+/** Plugin brand badge — green wordmark tile from the consumer Android app. */
 export function BrandMark({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
@@ -13,7 +12,7 @@ export function BrandMark({ className, ...props }: React.ComponentProps<'span'>)
       )}
       {...props}
     >
-      <img alt="" className="size-full object-contain" src={assetPath('nous-girl.jpg')} />
+      <img alt="Plugin" className="size-full object-contain p-1" src={assetPath('plugin-logo.svg')} />
     </span>
   )
 }

@@ -30,4 +30,8 @@ describe('theme typography emoji fallback (#40364)', () => {
     expect(EMOJI_FALLBACK).toContain('Segoe UI Emoji')
     expect(EMOJI_FALLBACK).toContain('Noto Color Emoji')
   })
+
+  it('default UI sans face is Poppins', () => {
+    expect(DEFAULT_TYPOGRAPHY.fontSans).toMatch(/^"Poppins"/)
+  })
 })

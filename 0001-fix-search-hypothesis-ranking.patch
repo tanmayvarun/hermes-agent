@@ -1,0 +1,1317 @@
+From 9dbca7c0d57c2747d39bbe193b7c0562e7f83b8e Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 11:06:42 +0530
+Subject: [PATCH] fix(agent): role-conditioned SEARCH hypothesis ranking
+
+Stop discarding goal_match/sender before explore-order. Rank candidates
+via structured interpretation (relevance/relation/unknowns/contradictions)
+instead of 4-feature lexical ties. SEARCH owns chosen_label; ACT must not
+silently re-rank. Distractor hosts contradict even with query-in-path.
+Mandatory hypothesis_ledger instrumentation + transfer goldens.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py   | 128 ++++--
+ .../agent/capabilities/search_hypothesis.py   | 430 ++++++++++++++++++
+ plugin/agent/decision_consultation.py         |  91 ++--
+ plugin/agent/source_query_binding.py          |   6 +-
+ plugin/evals/gates.py                         |  72 +++
+ tests/plugin/test_decision_consultation.py    |  10 +-
+ tests/plugin/test_search_episode.py           |  37 +-
+ .../plugin/test_search_hypothesis_ranking.py  | 303 ++++++++++++
+ 8 files changed, 998 insertions(+), 79 deletions(-)
+ create mode 100644 plugin/agent/capabilities/search_hypothesis.py
+ create mode 100644 tests/plugin/test_search_hypothesis_ranking.py
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index d2e0e1291..17b48af06 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -442,7 +442,12 @@ def advance_search_with_candidates(
+         tokens.append(q)
+ 
+     filtered = filter_search_candidates(
+-        rows, referent=ref, query=q, evidence_tokens=tokens, episode=ep
++        rows,
++        referent=ref,
++        query=q,
++        evidence_tokens=tokens,
++        episode=ep,
++        role=str(ep.get("role") or ""),
+     )
+     unique = unique_fitting_candidate(
+         filtered, referent=ref, evidence_tokens=tokens, query=q
+@@ -460,9 +465,19 @@ def advance_search_with_candidates(
+     ][:24]
+     just_rejected_unique = False
+     if unique is not None and len(filtered) == 1:
+-        gm = unique.get("goal_match")
+-        if isinstance(gm, dict) and not bool(gm.get("binding_eligible")):
+-            # Retrieval can finish; role must not resolve on a hard reject.
++        gm = unique.get("goal_match") if isinstance(unique.get("goal_match"), dict) else {}
++        interp = unique.get("interpretation") if isinstance(unique.get("interpretation"), dict) else {}
++        contras = [str(c) for c in list(interp.get("contradictions") or [])]
++        # unknown ≠ negative: missing sender stays explorable. Hard reject only
++        # on explicit impossibility (self vs required sender, distractor host).
++        hard_role_reject = bool(gm) and not bool(gm.get("binding_eligible")) and (
++            "explicit_self_vs_required_sender" in contras
++            or "url_host_contradicts_query" in contras
++            or any(
++                "originator_mismatch" in c and "self" in c.lower() for c in contras
++            )
++        )
++        if hard_role_reject:
+             just_rejected_unique = True
+             status = "ranking"
+             chosen_label = str(unique.get("label") or unique.get("text") or "")
+@@ -472,6 +487,7 @@ def advance_search_with_candidates(
+             if chosen_label and chosen_label not in role_rejected_labels:
+                 role_rejected_labels.append(chosen_label)
+         else:
++            # May be commit-ready or only explore-ready (unknown evidence).
+             status = "complete"
+             chosen_label = str(unique.get("label") or unique.get("text") or "")
+             chosen_id = unique.get("id")
+@@ -494,6 +510,28 @@ def advance_search_with_candidates(
+     scope = _space_to_scope(str(ep.get("space") or "ui_filter"))
+     if scope and scope not in explored:
+         explored = explored + [scope]
++    from plugin.agent.capabilities.search_hypothesis import hypothesis_ledger_entries
++
++    ledger = hypothesis_ledger_entries(filtered or rows)
++    if ledger and status in {"complete", "ranking"} and not chosen_label:
++        # Exploration pointer: top hypothesis without forcing commit.
++        top = (filtered or rows)[0] if (filtered or rows) else None
++        if isinstance(top, dict):
++            ep_explore_label = str(top.get("label") or top.get("text") or "")
++        else:
++            ep_explore_label = ""
++    else:
++        ep_explore_label = chosen_label
++    for entry in ledger:
++        if chosen_label and str(entry.get("label") or "") == chosen_label:
++            entry["selected_for_exploration"] = True
++        elif (
++            not chosen_label
++            and ep_explore_label
++            and str(entry.get("label") or "") == ep_explore_label
++        ):
++            entry["selected_for_exploration"] = True
++
+     ep = {
+         **ep,
+         "status": status,
+@@ -504,11 +542,13 @@ def advance_search_with_candidates(
+         "candidate_fingerprint": _fingerprint(filtered or rows),
+         "chosen_label": chosen_label,
+         "chosen_id": chosen_id,
++        "explore_label": ep_explore_label or chosen_label,
+         "filtered_count": len(filtered),
+         "raw_count": len(rows),
+         "explored_scopes": explored,
+         "role_rejected_ids": role_rejected_ids,
+         "role_rejected_labels": role_rejected_labels,
++        "hypothesis_ledger": ledger[:16],
+     }
+     if just_rejected_unique:
+         gm = unique.get("goal_match") if isinstance(unique, dict) else None
+@@ -543,10 +583,15 @@ def advance_search_with_candidates(
+             {
+                 "label": str(c.get("label") or c.get("text") or "")[:120],
+                 "id": c.get("id"),
++                "rank_position": (c.get("interpretation") or {}).get("rank_position"),
++                "rank_reason": str(
++                    (c.get("interpretation") or {}).get("rank_reason") or ""
++                )[:120],
+             }
+             for c in (filtered or rows)[:12]
+             if isinstance(c, dict)
+         ]
++        ep["result"]["hypothesis_ledger"] = list(ep.get("hypothesis_ledger") or [])[:16]
+     try:
+         execution_state.search_episode = ep
+         if status == "failed":
+@@ -1046,8 +1091,17 @@ def filter_search_candidates(
+     query: str = "",
+     evidence_tokens: Optional[Sequence[str]] = None,
+     episode: Optional[Dict[str, Any]] = None,
++    expected_originator: str = "",
++    expected_container: str = "",
++    role: str = "",
+ ) -> List[Dict[str, Any]]:
+-    """Filter + soft-rank: demote query echoes when better fits exist."""
++    """Filter + hypothesis-rank using role-conditioned interpretation.
++
++    Replaces the old 4-feature arithmetic soft-rank. Echoes are demoted when
++    better fits exist. ``unknown`` originator is not treated as negative.
++    """
++    from plugin.agent.capabilities.search_hypothesis import rank_search_hypotheses
++
+     tokens = [_norm(t) for t in (evidence_tokens or []) if _norm(t)]
+     ref_n = _norm(referent)
+     if ref_n and ref_n not in tokens:
+@@ -1056,40 +1110,30 @@ def filter_search_candidates(
+     if not rows:
+         return []
+ 
+-    scored: List[Tuple[float, Dict[str, Any]]] = []
+-    for row in rows:
+-        label = str(row.get("label") or row.get("text") or "")
+-        blob = f"{label} {row.get('id') or ''}"
+-        score = 0.0
+-        fits = False
+-        if tokens:
+-            fits = content_target_fits_referents(
+-                target_label=label, object_blob=blob, goal_referents=tokens
+-            ) or _text_matches_goal(blob, tokens)
+-            if fits:
+-                score += 10.0
+-        if row.get("matches_goal"):
+-            score += 3.0
+-        low = _norm(label)
+-        if "http://" in low or "https://" in low or "www." in low or ".com" in low:
+-            score += 4.0
+-        if query and _is_query_echo(label, query):
+-            score -= 8.0
+-            row = dict(row)
+-            row["_echo"] = True
+-        else:
+-            row = dict(row)
+-        row["_search_score"] = score
+-        scored.append((score, row))
+-
+-    scored.sort(key=lambda x: x[0], reverse=True)
+-    has_fit = any(s > 0 for s, _ in scored)
+-    out: List[Dict[str, Any]] = []
+-    for s, row in scored:
+-        if has_fit and (s < 0 or row.get("_echo")):
+-            continue
+-        out.append(row)
+-    return out or [r for _, r in scored[:8]]
++    ep = episode if isinstance(episode, dict) else {}
++    role_s = str(role or ep.get("role") or "content").strip().lower() or "content"
++    # Content hunts: originator/container from episode referent / tokens.
++    origin = str(expected_originator or "").strip()
++    container = str(expected_container or "").strip()
++    if not origin:
++        # Prefer a person-like token distinct from the query string.
++        qn = _norm(query or ep.get("query") or "")
++        for t in tokens:
++            tn = _norm(t)
++            if tn and tn != qn and "http" not in tn and "." not in tn:
++                origin = str(t).strip()
++                break
++    if not container:
++        container = origin
++
++    ranked = rank_search_hypotheses(
++        rows,
++        query=str(query or ep.get("query") or referent or "").strip(),
++        expected_container=container,
++        expected_originator=origin,
++        role=role_s,
++    )
++    return ranked
+ 
+ 
+ def unique_fitting_candidate(
+@@ -1145,9 +1189,15 @@ def candidates_from_world_document(document: Optional[Dict[str, Any]]) -> List[D
+             "point": obj.get("point"),
+             "matches_goal": bool(obj.get("matches_goal")),
+         }
++        for key in ("sender", "originator", "role", "field_role"):
++            if obj.get(key) not in (None, ""):
++                row[key] = obj.get(key)
+         gm = obj.get("goal_match")
+         if isinstance(gm, dict):
+             row["goal_match"] = gm
++        interp = obj.get("interpretation")
++        if isinstance(interp, dict):
++            row["interpretation"] = interp
+         rows.append(row)
+     return rows
+ 
+diff --git a/plugin/agent/capabilities/search_hypothesis.py b/plugin/agent/capabilities/search_hypothesis.py
+new file mode 100644
+index 000000000..06fd84213
+--- /dev/null
++++ b/plugin/agent/capabilities/search_hypothesis.py
+@@ -0,0 +1,430 @@
++"""Role-conditioned SEARCH hypothesis interpretation (explore-order).
++
++Separates:
++  relevance / compatibility / commit_readiness (advisory)
++
++from RoleBinder authority (commit only).
++
++Does **not** introduce a large weighted score table. Ranking is lexicographic
++over structured evidence tiers so unknown ≠ negative and relation contradictions
++demote without inventing domain-specific bonuses.
++"""
++
++from __future__ import annotations
++
++import re
++from typing import Any, Dict, List, Optional, Sequence, Tuple
++
++from plugin.agent.source_query_binding import (
++    _DISTRACTOR_HOSTS,
++    evaluate_source_object_match,
++    extract_urls,
++    host_contradicts_query,
++    infer_message_originator,
++    query_supported_by_text,
++    url_host,
++)
++
++
++def _norm(text: Any) -> str:
++    return re.sub(r"\s+", " ", str(text or "").strip().lower())
++
++
++def _is_query_echo(label: str, query: str) -> bool:
++    """Local echo detector aligned with search_episode._is_query_echo."""
++    lab = _norm(label)
++    q = _norm(query)
++    if not lab or not q or len(q) < 4:
++        return False
++    if lab == q:
++        return True
++    stripped = re.sub(r"^(you|me)\s*:\s*", "", lab)
++    if stripped == q:
++        return True
++    if q in lab and (
++        "you:" in lab
++        or lab.startswith(q)
++        or re.search(rf"\byou:\s*{re.escape(q)}\b", lab)
++    ):
++        if "http://" in lab or "https://" in lab or "www." in lab or ".com" in lab:
++            return False
++        return True
++    qt = {t for t in re.split(r"\W+", q) if len(t) >= 4}
++    lt = {t for t in re.split(r"\W+", lab) if len(t) >= 4}
++    if qt and qt <= lt and len(lt) <= len(qt) + 2:
++        if "http://" in lab or "https://" in lab or "www." in lab or ".com" in lab:
++            return False
++        return True
++    return False
++
++
++def _url_relevance_tier(text: str, query: str) -> Tuple[int, str]:
++    """3=direct object URL, 2=related entity URL, 1=non-URL content, 0=none."""
++    q = _norm(query)
++    blob = _norm(text)
++    urls = extract_urls(text)
++    if not urls:
++        if q and query_supported_by_text(blob, query):
++            return 1, "text_match"
++        return 0, "no_query_support"
++    brand = (q.split() or [""])[0]
++    best = 0
++    reason = "url_present"
++    for url in urls:
++        host = url_host(url)
++        path = _norm(url)
++        if host in _DISTRACTOR_HOSTS or any(
++            host.endswith("." + d) for d in _DISTRACTOR_HOSTS if "." in d
++        ):
++            # Related account/path — not the sought direct object.
++            if brand and brand in path:
++                best = max(best, 2)
++                reason = "related_distractor_host"
++            else:
++                best = max(best, 1)
++                reason = "distractor_host"
++            continue
++        if brand and brand in host:
++            best = max(best, 3)
++            reason = "direct_brand_host"
++        elif brand and brand in path:
++            best = max(best, 2)
++            reason = "query_in_url_path"
++        else:
++            best = max(best, 2 if query_supported_by_text(path, query) else 1)
++            reason = "url_other"
++    return best, reason
++
++
++def interpret_search_candidate(
++    candidate: Dict[str, Any],
++    *,
++    query: str = "",
++    expected_container: str = "",
++    expected_originator: str = "",
++    role: str = "content",
++) -> Dict[str, Any]:
++    """Build structured interpretation; does not bind."""
++    label = str(
++        candidate.get("label") or candidate.get("text") or candidate.get("name") or ""
++    ).strip()
++    kind = str(candidate.get("kind") or "").strip().lower()
++    sender = candidate.get("sender") or candidate.get("originator")
++    gm_in = candidate.get("goal_match") if isinstance(candidate.get("goal_match"), dict) else None
++
++    role_l = str(role or "content").strip().lower() or "content"
++    contradictions: List[str] = []
++    unknowns: List[str] = []
++    gm = None
++    echo = bool(query and _is_query_echo(label, query))
++    url_tier, url_reason = _url_relevance_tier(label, query)
++    origin = infer_message_originator(label, sender=sender, kind=kind)
++
++    # Contact/source hunts: do not apply content-patient GoalMatch (that was
++    # rejecting chat_rows that merely name the contact).
++    if role_l == "source":
++        contact = _norm(expected_container or expected_originator or "")
++        lab = _norm(label)
++        name_hit = bool(contact and contact in lab)
++        groupish = any(
++            t in lab for t in (" created this group", "added you", "group")
++        )
++        if groupish and name_hit:
++            contradictions.append("group_shaped_for_person_role")
++        relevance_tier = 3 if name_hit and not groupish else (1 if name_hit else 0)
++        if candidate.get("matches_goal") and name_hit:
++            relevance_tier = max(relevance_tier, 3)
++        relation_tier = 2 if not origin else (3 if name_hit else 1)
++        rank_key = (
++            0 if echo else 1,
++            relevance_tier,
++            relation_tier,
++            1 if name_hit and not groupish else 0,
++            0,
++        )
++        return {
++            "relevance": {
++                "query_match": name_hit,
++                "url_tier": 0,
++                "url_reason": "source_contact_hunt",
++                "object_type_fit": kind,
++                "query_echo": echo,
++                "matches_goal_recall": bool(candidate.get("matches_goal")),
++            },
++            "relation_evidence": {
++                "originator": origin or "",
++                "originator_match": None,
++                "container": expected_container,
++                "container_match": name_hit,
++                "role": "source",
++            },
++            "contradictions": contradictions,
++            "unknowns": unknowns,
++            "exploration_value": {
++                "can_more_evidence_be_acquired": True,
++                "explorable": not echo and not groupish,
++            },
++            "commit_readiness": {
++                "binding_eligible": bool(name_hit and not groupish),
++                "advisory_only": True,
++            },
++            "rank_key": list(rank_key),
++            "rank_reason": (
++                f"source_hunt; name_hit={name_hit}; groupish={groupish}; echo={echo}"
++            )[:240],
++            "goal_match": gm_in,
++        }
++
++    if query:
++        gm = evaluate_source_object_match(
++            text=label,
++            kind=kind or "message_bubble",
++            query=query,
++            container_open=expected_container,
++            expected_container=expected_container,
++            expected_originator=expected_originator or expected_container,
++            sender=sender,
++            perception_matches_goal=bool(candidate.get("matches_goal")),
++            role=str(candidate.get("role") or ""),
++        )
++
++    if gm is not None:
++        contradictions.extend(list(gm.contradictions or []))
++    if expected_originator:
++        want = _norm(expected_originator)
++        if not origin:
++            unknowns.append("sender_unknown")
++        elif _norm(origin) in {"self", "you", "me"} and want not in {"self", "you", "me"}:
++            contradictions.append("explicit_self_vs_required_sender")
++        elif _norm(origin) != want and _norm(origin) not in {"self", "you", "me"}:
++            if want and _norm(origin) and want not in _norm(origin) and _norm(origin) not in want:
++                contradictions.append("originator_name_mismatch")
++    elif not origin:
++        unknowns.append("sender_unknown")
++
++    if expected_container and gm is not None and not gm.container_match:
++        if "container" not in " ".join(contradictions):
++            contradictions.append("wrong_container")
++
++    query_match = bool(gm.query_match) if gm is not None else bool(
++        query and query_supported_by_text(label, query)
++    )
++
++    relevance = {
++        "query_match": query_match,
++        "url_tier": url_tier,
++        "url_reason": url_reason,
++        "object_type_fit": kind,
++        "query_echo": echo,
++        "matches_goal_recall": bool(candidate.get("matches_goal")),
++    }
++    relation_evidence = {
++        "originator": origin or "",
++        "originator_match": bool(gm.originator_match) if gm is not None else None,
++        "container": expected_container,
++        "container_match": bool(gm.container_match) if gm is not None else None,
++        "role": str(candidate.get("role") or ""),
++    }
++    commit_readiness = {
++        "binding_eligible": bool(gm.binding_eligible) if gm is not None else False,
++        "advisory_only": True,
++    }
++    exploration_value = {
++        "can_more_evidence_be_acquired": bool(
++            "sender_unknown" in unknowns or url_tier >= 2
++        ),
++        "explorable": not echo,
++    }
++
++    if "explicit_self_vs_required_sender" in contradictions:
++        relation_tier = 0
++    elif relation_evidence.get("originator_match") is True:
++        relation_tier = 3
++    elif "sender_unknown" in unknowns or not origin:
++        relation_tier = 2
++    else:
++        relation_tier = 1
++
++    relevance_tier = 0
++    if echo:
++        relevance_tier = 0
++    elif url_tier >= 3 and query_match:
++        relevance_tier = 4
++    elif url_tier == 2 and query_match:
++        relevance_tier = 3
++    elif query_match:
++        relevance_tier = 2
++    elif candidate.get("matches_goal"):
++        relevance_tier = 1
++
++    rank_key = (
++        0 if echo else 1,
++        relevance_tier,
++        relation_tier,
++        1 if commit_readiness["binding_eligible"] else 0,
++        url_tier,
++    )
++    rank_reason = (
++        f"echo={echo}; rel_tier={relevance_tier}; origin_tier={relation_tier}; "
++        f"url={url_reason}; unknowns={unknowns[:2]}; contra={contradictions[:2]}"
++    )
++
++    return {
++        "relevance": relevance,
++        "relation_evidence": relation_evidence,
++        "contradictions": contradictions,
++        "unknowns": unknowns,
++        "exploration_value": exploration_value,
++        "commit_readiness": commit_readiness,
++        "rank_key": list(rank_key),
++        "rank_reason": rank_reason[:240],
++        "goal_match": gm.to_dict() if gm is not None and hasattr(gm, "to_dict") else gm_in,
++    }
++
++
++def attach_interpretations(
++    candidates: Sequence[Dict[str, Any]],
++    *,
++    query: str = "",
++    expected_container: str = "",
++    expected_originator: str = "",
++    role: str = "content",
++) -> List[Dict[str, Any]]:
++    out: List[Dict[str, Any]] = []
++    for raw in candidates:
++        if not isinstance(raw, dict):
++            continue
++        row = dict(raw)
++        interp = interpret_search_candidate(
++            row,
++            query=query,
++            expected_container=expected_container,
++            expected_originator=expected_originator,
++            role=role,
++        )
++        row["interpretation"] = interp
++        if isinstance(interp.get("goal_match"), dict):
++            row["goal_match"] = interp["goal_match"]
++        out.append(row)
++    return out
++
++
++def rank_search_hypotheses(
++    candidates: Sequence[Dict[str, Any]],
++    *,
++    query: str = "",
++    expected_container: str = "",
++    expected_originator: str = "",
++    role: str = "content",
++) -> List[Dict[str, Any]]:
++    """Order candidates for exploration; echoes demoted when better fits exist."""
++    rows = attach_interpretations(
++        candidates,
++        query=query,
++        expected_container=expected_container,
++        expected_originator=expected_originator,
++        role=role,
++    )
++    if not rows:
++        return []
++
++    def _key(row: Dict[str, Any]) -> Tuple:
++        interp = row.get("interpretation") or {}
++        rk = interp.get("rank_key") or [0, 0, 0, 0, 0]
++        # Negate for sort descending via positive tuple already "higher better"
++        return tuple(int(x) for x in rk)
++
++    ranked = sorted(rows, key=_key, reverse=True)
++    has_non_echo = any(
++        not bool((r.get("interpretation") or {}).get("relevance", {}).get("query_echo"))
++        and _key(r)[1] > 0
++        for r in ranked
++    )
++    out: List[Dict[str, Any]] = []
++    for i, row in enumerate(ranked):
++        interp = dict(row.get("interpretation") or {})
++        interp["rank_position"] = i + 1
++        echo = bool((interp.get("relevance") or {}).get("query_echo"))
++        if has_non_echo and echo:
++            interp["rejected_reason"] = "query_echo_while_better_fit_exists"
++            row = dict(row)
++            row["interpretation"] = interp
++            # Drop echoes from explore set when better fits exist.
++            continue
++        row = dict(row)
++        row["interpretation"] = interp
++        row["_search_score"] = float(
++            1000 * _key(row)[0]
++            + 100 * _key(row)[1]
++            + 10 * _key(row)[2]
++            + _key(row)[3]
++            + 0.1 * _key(row)[4]
++        )
++        out.append(row)
++    return out or ranked[:8]
++
++
++def hypothesis_ledger_entries(ranked: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
++    """Mandatory per-candidate SEARCH instrumentation rows."""
++    entries: List[Dict[str, Any]] = []
++    for row in ranked:
++        if not isinstance(row, dict):
++            continue
++        interp = row.get("interpretation") or {}
++        entries.append(
++            {
++                "candidate_id": row.get("id"),
++                "label": str(row.get("label") or row.get("text") or "")[:120],
++                "evidence_vector": {
++                    "relevance": interp.get("relevance"),
++                    "relation_evidence": interp.get("relation_evidence"),
++                    "commit_readiness": interp.get("commit_readiness"),
++                },
++                "contradictions": list(interp.get("contradictions") or [])[:6],
++                "unknowns": list(interp.get("unknowns") or [])[:6],
++                "rank_key": list(interp.get("rank_key") or []),
++                "rank_reason": str(interp.get("rank_reason") or "")[:240],
++                "rank_position": interp.get("rank_position"),
++                "selected_for_exploration": bool(interp.get("rank_position") == 1),
++                "rejected_reason": str(interp.get("rejected_reason") or ""),
++            }
++        )
++    return entries
++
++
++def legacy_soft_rank_scores(
++    candidates: Sequence[Dict[str, Any]],
++    *,
++    query: str = "",
++    evidence_tokens: Optional[Sequence[str]] = None,
++) -> List[Tuple[float, str]]:
++    """Frozen comparison helper: old 4-feature arithmetic (for tests only)."""
++    from plugin.agent.capabilities.revert_effects import (
++        _text_matches_goal,
++        content_target_fits_referents,
++    )
++
++    tokens = [_norm(t) for t in (evidence_tokens or []) if _norm(t)]
++    scored: List[Tuple[float, str]] = []
++    for row in candidates:
++        if not isinstance(row, dict):
++            continue
++        label = str(row.get("label") or row.get("text") or "")
++        blob = f"{label} {row.get('id') or ''}"
++        score = 0.0
++        if tokens:
++            fits = content_target_fits_referents(
++                target_label=label, object_blob=blob, goal_referents=tokens
++            ) or _text_matches_goal(blob, tokens)
++            if fits:
++                score += 10.0
++        if row.get("matches_goal"):
++            score += 3.0
++        low = _norm(label)
++        if "http://" in low or "https://" in low or "www." in low or ".com" in low:
++            score += 4.0
++        if query and _is_query_echo(label, query):
++            score -= 8.0
++        scored.append((score, label[:80]))
++    scored.sort(key=lambda x: -x[0])
++    return scored
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index f7f9afec7..4afa738bc 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -1047,11 +1047,25 @@ def build_decision_brief(
+             "focused_field_role": str(doc.get("focused_field_role") or ""),
+             "objects": [
+                 {
+-                    "id": o.get("id"),
+-                    "text": str(o.get("text") or ""),
+-                    "kind": str(o.get("kind") or ""),
+-                    "matches_goal": bool(o.get("matches_goal")),
+-                    "point": o.get("point"),
++                    **{
++                        "id": o.get("id"),
++                        "text": str(o.get("text") or ""),
++                        "kind": str(o.get("kind") or ""),
++                        "matches_goal": bool(o.get("matches_goal")),
++                        "point": o.get("point"),
++                    },
++                    **{
++                        k: o.get(k)
++                        for k in (
++                            "sender",
++                            "originator",
++                            "role",
++                            "field_role",
++                            "goal_match",
++                            "interpretation",
++                        )
++                        if o.get(k) not in (None, "", [], {})
++                    },
+                 }
+                 for o in (doc.get("objects") or [])[:16]
+                 if isinstance(o, dict)
+@@ -2164,35 +2178,50 @@ def _canonical_capability(raw: Any) -> str:
+ 
+ 
+ def _open_entity_target_from_brief(brief: "DecisionBrief") -> str:
+-    """Best search-result / chat-row label to open when sanitize demands open_entity."""
++    """Resolve open target — SEARCH owns semantic choice; ACT does not re-rank.
++
++    Merge-blocker contract: if the search episode already chose a hypothesis
++    (``chosen_label`` / ``explore_label``), return that. Never silently
++    substitute a different row via a second coarse scorer.
++    """
+     goal = brief.goal if isinstance(brief.goal, dict) else {}
+     contact = str(goal.get("source_conversation") or "").strip()
+-    link_q = str(goal.get("source_query") or "").strip().lower()
++    ep = brief.search_episode if isinstance(brief.search_episode, dict) else {}
++    chosen = str(
++        ep.get("chosen_label") or ep.get("explore_label") or ""
++    ).strip()
++    if chosen:
++        return chosen
++    # No SEARCH choice yet — fall back to top interpreted hypothesis if present.
+     doc = brief.world if isinstance(brief.world, dict) else {}
+-    best: Optional[Tuple[float, str]] = None
+-    for obj in doc.get("objects") or []:
+-        if not isinstance(obj, dict):
+-            continue
+-        text = str(obj.get("text") or obj.get("label") or obj.get("id") or "").strip()
+-        if not text:
+-            continue
+-        kind = str(obj.get("kind") or "").strip().lower()
+-        score = 0.0
+-        if obj.get("matches_goal"):
+-            score += 10.0
+-        if kind in {"search_result", "chat_row", "row", "list_row", "result"}:
+-            score += 2.0
+-        low = text.lower()
+-        if link_q and link_q in low:
+-            score += 5.0
+-        if contact and contact.lower() in low:
+-            score += 3.0
+-        if "http://" in low or "https://" in low or "www." in low:
+-            score += 2.0
+-        if score > 0.0 and (best is None or score > best[0]):
+-            best = (score, text)
+-    if best is not None:
+-        return best[1]
++    link_q = str(goal.get("source_query") or goal.get("link_query") or "").strip()
++    try:
++        from plugin.agent.capabilities.search_hypothesis import rank_search_hypotheses
++
++        ranked = rank_search_hypotheses(
++            [
++                {
++                    "id": o.get("id"),
++                    "label": str(o.get("text") or o.get("label") or ""),
++                    "kind": o.get("kind"),
++                    "matches_goal": bool(o.get("matches_goal")),
++                    "sender": o.get("sender") or o.get("originator"),
++                    "role": o.get("role") or o.get("field_role"),
++                    "goal_match": o.get("goal_match"),
++                }
++                for o in (doc.get("objects") or [])
++                if isinstance(o, dict)
++                and str(o.get("text") or o.get("label") or "").strip()
++            ],
++            query=link_q,
++            expected_container=contact,
++            expected_originator=contact,
++            role="content" if link_q else "source",
++        )
++        if ranked:
++            return str(ranked[0].get("label") or ranked[0].get("text") or contact)
++    except Exception:
++        pass
+     return contact
+ 
+ 
+diff --git a/plugin/agent/source_query_binding.py b/plugin/agent/source_query_binding.py
+index 09527268e..64cec9cae 100644
+--- a/plugin/agent/source_query_binding.py
++++ b/plugin/agent/source_query_binding.py
+@@ -193,13 +193,13 @@ def host_contradicts_query(text: str, query: str) -> bool:
+         host = url_host(url)
+         if not host:
+             continue
+-        # Explicit distractor platforms with no query token in host/path.
++        # Explicit distractor platforms are never the direct content object,
++        # even when the query appears as an account/path token.
+         path_blob = _norm(url)
+         if host in _DISTRACTOR_HOSTS or any(
+             host.endswith("." + d) for d in _DISTRACTOR_HOSTS if "." in d
+         ):
+-            if not query_supported_by_text(path_blob, query):
+-                return True
++            return True
+         # Brand/domain query: host must contain the brand token.
+         if q and ("." in q or len(tokens) == 1):
+             brand = tokens[0]
+diff --git a/plugin/evals/gates.py b/plugin/evals/gates.py
+index 6d02f471a..e2be30598 100644
+--- a/plugin/evals/gates.py
++++ b/plugin/evals/gates.py
+@@ -4645,6 +4645,73 @@ def _wrong_field_locus_forbids_type_when_composer_focused() -> Tuple[bool, str]:
+     return True, "wrong field locus forbids type/locate on composer"
+ 
+ 
++def _search_hypothesis_ranking_contracts() -> Tuple[bool, str]:
++    """Role-conditioned SEARCH explore-order; ACT must not re-rank SEARCH choice."""
++    from plugin.agent.capabilities.search_hypothesis import (
++        hypothesis_ledger_entries,
++        legacy_soft_rank_scores,
++        rank_search_hypotheses,
++    )
++    from plugin.agent.decision_consultation import DecisionBrief, _open_entity_target_from_brief
++
++    inv = [
++        {
++            "id": "direct",
++            "label": "Alice https://www.acme.com/invoice.pdf",
++            "matches_goal": True,
++            "sender": "Alice",
++        },
++        {
++            "id": "related",
++            "label": "Alice https://www.instagram.com/acme",
++            "matches_goal": True,
++            "sender": "Alice",
++        },
++        {
++            "id": "you",
++            "label": "You: https://www.acme.com/invoice.pdf",
++            "matches_goal": True,
++            "sender": "You",
++        },
++        {
++            "id": "unk",
++            "label": "https://www.acme.com/invoice.pdf",
++            "matches_goal": True,
++        },
++    ]
++    ranked = rank_search_hypotheses(
++        inv,
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    ids = [r["id"] for r in ranked]
++    if not ids or ids[0] != "direct":
++        return False, f"direct object must rank first, got {ids}"
++    if ids.index("direct") > ids.index("related"):
++        return False, "related must not outrank direct"
++    if ids.index("unk") > ids.index("you"):
++        return False, "unknown must remain explorable above self contradiction"
++    legacy = legacy_soft_rank_scores(inv, query="acme", evidence_tokens=["Alice", "acme"])
++    if len({int(s) for s, _ in legacy[:3]}) > 2:
++        pass  # legacy may or may not tie; new ranker must still separate
++    ledger = hypothesis_ledger_entries(ranked)
++    if not ledger or "rank_position" not in ledger[0]:
++        return False, "hypothesis ledger missing"
++    brief = DecisionBrief(
++        goal={"source_conversation": "Alice", "source_query": "acme"},
++        world={"surface": "search", "objects": inv},
++        search_episode={
++            "status": "complete",
++            "chosen_label": "Alice https://www.acme.com/invoice.pdf",
++        },
++    )
++    if _open_entity_target_from_brief(brief) != "Alice https://www.acme.com/invoice.pdf":
++        return False, "ACT must preserve SEARCH chosen_label"
++    return True, "search hypothesis ranking contracts ok"
++
++
+ def _locate_effect_unknown_contracts() -> Tuple[bool, str]:
+     """185549: blind locate → UNKNOWN; trustworthy negative → NOT_ACHIEVED.
+ 
+@@ -5702,6 +5769,11 @@ GATES: Tuple[Gate, ...] = (
+         "Can locate/type still run when composer is the focused locus?",
+         _wrong_field_locus_forbids_type_when_composer_focused,
+     ),
++    Gate(
++        "search_hypothesis_ranking_contracts",
++        "Does SEARCH still tie direct/related/self URL hits and let ACT re-rank chosen_label?",
++        _search_hypothesis_ranking_contracts,
++    ),
+     Gate(
+         "locate_effect_unknown_contracts",
+         "Does AX-blind locate (ok+found=False) still allow same-method SEARCH replay (185549)?",
+diff --git a/tests/plugin/test_decision_consultation.py b/tests/plugin/test_decision_consultation.py
+index ba7c0b636..007384ba6 100644
+--- a/tests/plugin/test_decision_consultation.py
++++ b/tests/plugin/test_decision_consultation.py
+@@ -673,14 +673,15 @@ def test_reveal_on_search_rewrites_to_open_entity_not_observe():
+             {
+                 "id": "obj_msg_link_1",
+                 "kind": "chat_row",
+-                "text": "You: https://www.zarooratwala.com/?...",
++                "text": "Pallavi https://www.zarooratwala.com/?...",
+                 "point": [308, 355],
+                 "matches_goal": True,
++                "sender": "Pallavi",
+             },
+             {
+                 "id": "obj_msg_link_2",
+                 "kind": "chat_row",
+-                "text": "You: https://www.instagram.com/zarooratwala?...",
++                "text": "https://www.instagram.com/zarooratwala?...",
+                 "point": [308, 630],
+                 "matches_goal": False,
+             },
+@@ -702,7 +703,7 @@ def test_reveal_on_search_rewrites_to_open_entity_not_observe():
+         def choose(self, system: str, packet: dict) -> dict:
+             return {
+                 "capability": "reveal_actions",
+-                "target": "You: https://www.zarooratwala.com/?...",
++                "target": "Pallavi https://www.zarooratwala.com/?...",
+                 "why": "right-click for Forward",
+                 "confidence": 0.95,
+             }
+@@ -751,6 +752,7 @@ def test_observe_on_search_results_promotes_to_open_entity():
+                 "text": "Pallavi - https://www.zarooratwala.com/",
+                 "point": [207, 360],
+                 "matches_goal": True,
++                "sender": "Pallavi",
+             }
+         ],
+     }
+@@ -773,7 +775,7 @@ def test_observe_on_search_results_promotes_to_open_entity():
+     trace = apply_decision_consultation(
+         proposal,
+         _goal(),
+-        features=_features(wa_screen="SEARCH"),
++        features=_features(wa_screen="SEARCH", search_query="zarooratwala"),
+         chooser=_ObserveChooser(),
+     )
+     assert proposal.next_action.get("family") == "open_entity", proposal.next_action
+diff --git a/tests/plugin/test_search_episode.py b/tests/plugin/test_search_episode.py
+index ea5bbd2af..e3eff8359 100644
+--- a/tests/plugin/test_search_episode.py
++++ b/tests/plugin/test_search_episode.py
+@@ -51,8 +51,9 @@ def test_unique_fit_completes_and_opens():
+                 {
+                     "id": "row1",
+                     "kind": "chat_row",
+-                    "text": "You: https://www.zarooratwala.com/?x=1",
++                    "text": "Pallavi https://www.zarooratwala.com/?x=1",
+                     "matches_goal": True,
++                    "sender": "Pallavi",
+                 }
+             ],
+         },
+@@ -69,6 +70,37 @@ def test_unique_fit_completes_and_opens():
+     assert state.search_episode and state.search_episode.get("status") == "complete"
+ 
+ 
++def test_unique_self_authored_vs_required_sender_does_not_auto_commit():
++    """You: URL with required Pallavi originator is a hard relation contradiction."""
++    state = ExecutionState()
++    brief = DecisionBrief(
++        goal={
++            "source_conversation": "Pallavi",
++            "source_query": "zarooratwala",
++        },
++        world={
++            "surface": "search",
++            "objects": [
++                {
++                    "id": "row1",
++                    "kind": "chat_row",
++                    "text": "You: https://www.zarooratwala.com/?x=1",
++                    "matches_goal": True,
++                }
++            ],
++        },
++        task_state=TaskState(
++            phase="reach_source",
++            search_query="zarooratwala",
++        ),
++        capabilities=["open_entity", "resolve_entity", "observe", "search"],
++    )
++    cap, tgt, why = search_continue_capability(state, brief)
++    assert cap != "open_entity" or "you:" not in (tgt or "").lower()
++    assert state.search_episode
++    assert state.search_episode.get("status") in {"exhausted", "ranking", "failed"}
++
++
+ def test_multi_candidate_does_not_open_echo():
+     state = ExecutionState()
+     start_search_episode(
+@@ -121,9 +153,10 @@ def test_observe_on_search_promotes_ranked_not_thrash():
+             {
+                 "id": "row1",
+                 "kind": "chat_row",
+-                "text": "You: https://www.zarooratwala.com/?...",
++                "text": "Pallavi https://www.zarooratwala.com/?...",
+                 "point": [308, 355],
+                 "matches_goal": True,
++                "sender": "Pallavi",
+             }
+         ],
+     }
+diff --git a/tests/plugin/test_search_hypothesis_ranking.py b/tests/plugin/test_search_hypothesis_ranking.py
+new file mode 100644
+index 000000000..cc46ed812
+--- /dev/null
++++ b/tests/plugin/test_search_hypothesis_ranking.py
+@@ -0,0 +1,303 @@
++"""SEARCH hypothesis ranking — role-conditioned explore-order (not weight tuning)."""
++
++from __future__ import annotations
++
++from plugin.agent.capabilities.search_episode import (
++    advance_search_with_candidates,
++    filter_search_candidates,
++    start_search_episode,
++)
++from plugin.agent.capabilities.search_hypothesis import (
++    hypothesis_ledger_entries,
++    interpret_search_candidate,
++    legacy_soft_rank_scores,
++    rank_search_hypotheses,
++)
++from plugin.agent.decision_consultation import (
++    DecisionBrief,
++    TaskState,
++    _open_entity_target_from_brief,
++)
++from plugin.agent.runtime.state import ExecutionState
++from plugin.agent.source_query_binding import evaluate_source_object_match
++
++
++def _frozen_inventory():
++    """Representative search-surface inventory (frozen world — ranker isolation)."""
++    return [
++        {
++            "id": "echo",
++            "kind": "search_result",
++            "label": "Alice invoice Alice",
++            "text": "invoice Alice",
++            "matches_goal": False,
++            "sender": "Alice",
++        },
++        {
++            "id": "direct",
++            "kind": "search_result",
++            "label": "Alice https://www.acme.com/invoice.pdf Acme Invoice",
++            "text": "https://www.acme.com/invoice.pdf Acme Invoice",
++            "matches_goal": True,
++            "sender": "Alice",
++        },
++        {
++            "id": "related",
++            "kind": "search_result",
++            "label": "Alice https://www.instagram.com/acme?igsh=1",
++            "text": "https://www.instagram.com/acme?igsh=1",
++            "matches_goal": True,
++            "sender": "Alice",
++        },
++        {
++            "id": "you",
++            "kind": "search_result",
++            "label": "You: https://www.acme.com/invoice.pdf",
++            "text": "You: https://www.acme.com/invoice.pdf",
++            "matches_goal": True,
++            "sender": "You",
++        },
++        {
++            "id": "unknown",
++            "kind": "search_result",
++            "label": "https://www.acme.com/invoice.pdf",
++            "text": "https://www.acme.com/invoice.pdf",
++            "matches_goal": True,
++        },
++    ]
++
++
++def test_direct_object_beats_merely_related_object():
++    ranked = rank_search_hypotheses(
++        _frozen_inventory(),
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    ids = [r["id"] for r in ranked]
++    assert ids[0] == "direct"
++    assert ids.index("direct") < ids.index("related")
++
++
++def test_relation_contradiction_demotes_lexical_perfect_match():
++    ranked = rank_search_hypotheses(
++        _frozen_inventory(),
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    ids = [r["id"] for r in ranked]
++    assert ids.index("direct") < ids.index("you")
++    you = next(r for r in ranked if r["id"] == "you")
++    assert "explicit_self_vs_required_sender" in (
++        you.get("interpretation") or {}
++    ).get("contradictions", [])
++
++
++def test_unknown_evidence_not_contradiction_still_explorable():
++    ranked = rank_search_hypotheses(
++        _frozen_inventory(),
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    unk = next(r for r in ranked if r["id"] == "unknown")
++    interp = unk["interpretation"]
++    assert "sender_unknown" in interp["unknowns"]
++    assert "explicit_self_vs_required_sender" not in interp["contradictions"]
++    assert interp["exploration_value"]["explorable"] is True
++    # Unknown ranks below known-Alice direct, above self contradiction.
++    ids = [r["id"] for r in ranked]
++    assert ids.index("direct") < ids.index("unknown") < ids.index("you")
++
++
++def test_query_echo_not_patient_content():
++    ranked = rank_search_hypotheses(
++        _frozen_inventory(),
++        query="acme invoice",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    ids = [r["id"] for r in ranked]
++    assert "echo" not in ids or ids.index("direct") < ids.index("echo")
++
++
++def test_same_lexical_match_stronger_relation_evidence_wins():
++    ranked = rank_search_hypotheses(
++        [
++            {
++                "id": "alice",
++                "label": "invoice.pdf",
++                "text": "invoice.pdf",
++                "kind": "message_bubble",
++                "sender": "Alice",
++                "matches_goal": True,
++            },
++            {
++                "id": "unk",
++                "label": "invoice.pdf",
++                "text": "invoice.pdf",
++                "kind": "message_bubble",
++                "matches_goal": True,
++            },
++        ],
++        query="invoice",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    assert [r["id"] for r in ranked][:2] == ["alice", "unk"]
++
++
++def test_ranking_does_not_equal_binding():
++    ranked = rank_search_hypotheses(
++        _frozen_inventory(),
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    top = ranked[0]
++    # Explore order set; commit still RoleBinder's job.
++    assert top["interpretation"]["commit_readiness"]["advisory_only"] is True
++    # Related Instagram must not be binding_eligible.
++    related = next(r for r in ranked if r["id"] == "related")
++    gm = evaluate_source_object_match(
++        text=related["text"],
++        kind="message_bubble",
++        query="acme",
++        container_open="Alice",
++        expected_container="Alice",
++        expected_originator="Alice",
++        sender="Alice",
++        perception_matches_goal=True,
++    )
++    assert gm.binding_eligible is False
++
++
++def test_binder_authority_high_rank_does_not_write_resolved_entity():
++    state = ExecutionState()
++    start_search_episode(
++        state,
++        role="content",
++        referent="acme",
++        query="acme",
++        evidence_tokens=["Alice", "acme"],
++    )
++    advance_search_with_candidates(
++        state,
++        _frozen_inventory(),
++        referent="acme",
++        query="acme",
++        evidence_tokens=["Alice", "acme"],
++    )
++    assert getattr(state, "resolved_entity_id", None) in (None, "", 0)
++    assert "hypothesis_ledger" in (state.search_episode or {})
++
++
++def test_open_entity_preserves_search_chosen_label():
++    brief = DecisionBrief(
++        goal={"source_conversation": "Alice", "source_query": "acme"},
++        world={
++            "surface": "search",
++            "objects": [
++                {
++                    "id": "b",
++                    "text": "https://www.instagram.com/acme",
++                    "kind": "search_result",
++                    "matches_goal": True,
++                },
++                {
++                    "id": "a",
++                    "text": "https://www.acme.com/invoice.pdf",
++                    "kind": "search_result",
++                    "matches_goal": True,
++                },
++            ],
++        },
++        search_episode={
++            "status": "complete",
++            "chosen_label": "https://www.acme.com/invoice.pdf",
++        },
++        task_state=TaskState(phase="reach_source"),
++        capabilities=["open_entity"],
++    )
++    assert _open_entity_target_from_brief(brief) == "https://www.acme.com/invoice.pdf"
++
++
++def test_omitted_candidate_is_recall_failure_not_rank_blame():
++    # Correct inbound missing from inventory — Rank@K N/A; Recall@K miss.
++    inventory = [c for c in _frozen_inventory() if c["id"] != "direct"]
++    ranked = rank_search_hypotheses(
++        inventory,
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    assert all(r["id"] != "direct" for r in ranked)
++    recall_at_k = any(r["id"] == "direct" for r in ranked)
++    assert recall_at_k is False
++
++
++def test_frozen_world_old_vs_new_ranking_separates_ties():
++    inv = _frozen_inventory()
++    legacy = legacy_soft_rank_scores(
++        inv, query="acme", evidence_tokens=["Alice", "acme"]
++    )
++    # Legacy collapses URL hits to the same score band.
++    top_legacy_scores = [s for s, _ in legacy[:3]]
++    assert len(set(int(s) for s in top_legacy_scores)) <= 2
++
++    ranked = rank_search_hypotheses(
++        inv,
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    assert ranked[0]["id"] == "direct"
++    assert ranked[0]["id"] != "you"
++    assert ranked[0]["id"] != "related"
++
++
++def test_hypothesis_ledger_mandatory_fields():
++    ranked = rank_search_hypotheses(
++        _frozen_inventory(),
++        query="acme",
++        expected_container="Alice",
++        expected_originator="Alice",
++        role="content",
++    )
++    ledger = hypothesis_ledger_entries(ranked)
++    assert ledger
++    row = ledger[0]
++    for key in (
++        "candidate_id",
++        "evidence_vector",
++        "contradictions",
++        "unknowns",
++        "rank_reason",
++        "rank_position",
++        "selected_for_exploration",
++        "rejected_reason",
++    ):
++        assert key in row
++
++
++def test_filter_search_candidates_uses_hypothesis_rank():
++    out = filter_search_candidates(
++        _frozen_inventory(),
++        referent="acme",
++        query="acme",
++        evidence_tokens=["Alice", "acme"],
++        expected_originator="Alice",
++        expected_container="Alice",
++        role="content",
++    )
++    assert out[0]["id"] == "direct"
++    assert "interpretation" in out[0]
+-- 
+2.39.5 (Apple Git-154)
+

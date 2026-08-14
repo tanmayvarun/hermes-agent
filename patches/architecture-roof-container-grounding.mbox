@@ -1,0 +1,4865 @@
+From cf01afe603f3bca876f2059fbe0659444dea6208 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 13:44:43 +0530
+Subject: [PATCH 1/3] fix(agent): type navigation so content hits cannot fake
+ container identity
+
+Search-result evidence is no longer treated as a safe source_container open.
+Wrong settles become NAVIGATION_MISMATCH, invalidate that path, and block
+reveal until the required container is verified.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/action.py                      |   2 +
+ plugin/agent/apps/whatsapp.py               |  25 +-
+ plugin/agent/capabilities/locus_contract.py |  22 ++
+ plugin/agent/capabilities/search_episode.py |  85 ++++-
+ plugin/agent/controller.py                  | 117 ++++++-
+ plugin/agent/decision_consultation.py       | 179 ++++++++++-
+ plugin/agent/executive/intention_frame.py   | 142 ++++++++-
+ plugin/agent/executive/sync.py              |   6 +
+ plugin/agent/procedures/forward_message.py  | 336 +++++++++++++++++++-
+ plugin/agent/unified_cognition.py           |   1 +
+ tests/plugin/test_container_navigation.py   | 317 ++++++++++++++++++
+ 11 files changed, 1186 insertions(+), 46 deletions(-)
+ create mode 100644 tests/plugin/test_container_navigation.py
+
+diff --git a/plugin/agent/action.py b/plugin/agent/action.py
+index 1561e7d0d..27c984588 100644
+--- a/plugin/agent/action.py
++++ b/plugin/agent/action.py
+@@ -49,6 +49,8 @@ class Action:
+     legacy_semantics: bool = False
+     # locate_content MethodFrontier preference (native_find / scroll_scan).
+     prefer_realization: str = ""
++    # Typed navigation: required container after settle (content hit ≠ container).
++    expected_container: str = ""
+ 
+ 
+ # Backward-compatible alias for one release
+diff --git a/plugin/agent/apps/whatsapp.py b/plugin/agent/apps/whatsapp.py
+index 8630ad088..eb445e58c 100644
+--- a/plugin/agent/apps/whatsapp.py
++++ b/plugin/agent/apps/whatsapp.py
+@@ -1917,7 +1917,24 @@ class WhatsAppOverlay:
+             )
+         target = (goal.target_contact or "").strip().lower()
+         query = (goal.link_query or "").strip().lower()
+-        open_c = (view.open_conversation or "").lower()
++        # Authoritative settled world document dominates stale view cache when
++        # they disagree (live 123703: view=Pallavi while document=ZarooratWala).
++        open_raw = str(view.open_conversation or "").strip()
++        try:
++            hints = getattr(world, "overlay_hints", None) or {}
++            doc = hints.get("unified_world_document") if isinstance(hints, dict) else None
++            if not isinstance(doc, dict):
++                doc = getattr(world, "unified_world_document", None)
++            if isinstance(doc, dict):
++                doc_open = str(doc.get("open_conversation") or "").strip()
++                if doc_open and (
++                    not open_raw
++                    or open_raw.lower() != doc_open.lower()
++                ):
++                    open_raw = doc_open
++        except Exception:
++            pass
++        open_c = open_raw.lower()
+         on_target = _on_named_conversation(open_c, target)
+         has_query = _query_in_conversation_timeline(world, query) if query else False
+         # Also accept query anywhere if already forwarded into dest chat
+@@ -1937,14 +1954,16 @@ class WhatsAppOverlay:
+                     "forward_chrome": forward_chrome,
+                 },
+             )
++        evidence = dict(view.to_dict() or {})
++        evidence["open_conversation"] = open_raw
+         return GoalStatus(
+             succeeded=False,
+             reason=(
+                 f"forward pending source={goal.contact!r} query={goal.link_query!r} "
+-                f"target={goal.target_contact!r} open={view.open_conversation!r} "
++                f"target={goal.target_contact!r} open={open_raw!r} "
+                 f"has_query={has_query}"
+             ),
+-            evidence=view.to_dict(),
++            evidence=evidence,
+         )
+ 
+     def resolve_target(self, world: WorldModel, semantic: str, action: str) -> Optional[Entity]:
+diff --git a/plugin/agent/capabilities/locus_contract.py b/plugin/agent/capabilities/locus_contract.py
+index d9a61f62d..f096466ac 100644
+--- a/plugin/agent/capabilities/locus_contract.py
++++ b/plugin/agent/capabilities/locus_contract.py
+@@ -274,6 +274,28 @@ def wrong_locus_forbidden(
+ 
+     # --- patient locus (commitment) ----------------------------------------
+     if cap in _PATIENT_CAPS:
++        # Content actions require verified source container. Foreign open
++        # (leave_wrong owed) must not authorize reveal/select/invoke.
++        if brief is not None:
++            foreign, open_c, source = _foreign_container(brief)
++            phase = _norm(getattr(getattr(brief, "task_state", None), "phase", ""))
++            dest_phases = {
++                "choose_destination",
++                "pick_dest",
++                "invoke_forward",
++            }
++            if foreign and phase not in dest_phases:
++                r = LocusRequirement(
++                    desired_effect="source_container_open",
++                    required_locus="open_matches_referent(source)",
++                    forbidden_loci=("foreign_container",),
++                    kind=LocusKind.CONTAINER,
++                )
++                return (
++                    True,
++                    f"wrong_locus:container:foreign_open:{open_c!r}!={source!r}",
++                    r,
++                )
+         if role in COMPOSER_FIELD_ROLES or label_looks_like_composer(lab):
+             r = LocusRequirement(
+                 desired_effect="affordance_invoked",
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index 2e880476e..a6a7bcde2 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -1184,6 +1184,77 @@ def exclude_role_rejected_candidates(
+     return out
+ 
+ 
++def reject_navigation_mismatch_candidate(
++    execution_state: Any,
++    *,
++    click_label: str = "",
++    observed_container: str = "",
++    required_container: str = "",
++    candidate_id: Any = None,
++) -> Dict[str, Any]:
++    """Invalidate a content-hit open that landed in the wrong container.
++
++    Content relevance ≠ container identity. After NAVIGATION_MISMATCH the same
++    hit must not be re-opened without new evidence.
++    """
++    out: Dict[str, Any] = {"rejected": False}
++    label = str(click_label or "").strip()
++    if execution_state is None or not label:
++        return out
++    try:
++        holder = _episode_holder(execution_state)
++        ep = search_episode_of(holder) or {}
++        if not isinstance(ep, dict):
++            ep = {}
++        rejected_ids = [x for x in list(ep.get("role_rejected_ids") or []) if x is not None]
++        rejected_labels = [
++            str(x).strip()
++            for x in list(ep.get("role_rejected_labels") or [])
++            if str(x).strip()
++        ]
++        reasons = [
++            str(x).strip()
++            for x in list(ep.get("role_rejected_reasons") or [])
++            if str(x).strip()
++        ]
++        if candidate_id is not None and candidate_id not in rejected_ids:
++            rejected_ids.append(candidate_id)
++        if label not in rejected_labels:
++            rejected_labels.append(label)
++        reason = (
++            f"navigation_mismatch:expected={required_container!r}"
++            f":observed={observed_container!r}"
++        )
++        if reason not in reasons:
++            reasons.append(reason)
++        ep = {
++            **ep,
++            "role_rejected_ids": rejected_ids[:24],
++            "role_rejected_labels": rejected_labels[:24],
++            "role_rejected_reasons": reasons[:24],
++            "chosen_label": "",
++            "chosen_id": None,
++            "choice_confidence": "",
++            "status": "ranking" if rejected_labels else str(ep.get("status") or ""),
++            "role_resolved": False,
++            "last_navigation_mismatch": {
++                "click_label": label[:160],
++                "observed_container": str(observed_container or "")[:120],
++                "required_container": str(required_container or "")[:120],
++            },
++        }
++        # Clear complete-commit so SEARCH does not reseal the same hit.
++        ep["retrieval_complete"] = False
++        if hasattr(holder, "search_episode"):
++            holder.search_episode = ep
++        elif isinstance(holder, dict):
++            holder["search_episode"] = ep
++        out.update({"rejected": True, "reason": reason, "episode": ep})
++    except Exception as exc:
++        out["error"] = str(exc)[:120]
++    return out
++
++
+ def filter_search_candidates(
+     candidates: Sequence[Dict[str, Any]],
+     *,
+@@ -1622,10 +1693,22 @@ def search_continue_capability(
+             # Ranking done — do not re-resolve or open under SEARCH; next meta ACT.
+             # status=complete is retrieval/choice complete, not RoleBinder resolved.
+             return "", "", "search complete; await ACT open"
++        chosen = str(ep.get("chosen_label") or "")
++        # NAVIGATION_MISMATCH invalidation: do not reseal the same content hit.
++        rejected = exclude_role_rejected_candidates(
++            [{"label": chosen, "text": chosen, "id": ep.get("chosen_id")}],
++            ep,
++        )
++        if not rejected:
++            return (
++                "",
++                "",
++                "chosen hit invalidated by NAVIGATION_MISMATCH — re-establish container",
++            )
+         if "open_entity" in allowed:
+             return (
+                 "open_entity",
+-                str(ep.get("chosen_label") or ""),
++                chosen,
+                 "search complete; explore/open chosen hypothesis (not role bind)",
+             )
+         return "", "", ""
+diff --git a/plugin/agent/controller.py b/plugin/agent/controller.py
+index a6f26e7e6..a16928975 100644
+--- a/plugin/agent/controller.py
++++ b/plugin/agent/controller.py
+@@ -6615,8 +6615,8 @@ def _forward_predicate_gate_after_transition(
+                                     status="ok",
+                                 )
+                         elif contact_ref:
+-                            # Settled wrong container — mismatch on destination
+-                            # identity, never on the content click label.
++                            # Settled wrong container — NAVIGATION_MISMATCH when
++                            # a content hit opened an incompatible context.
+                             new_ft = apply_referent_mismatch(
+                                 runtime.execution_state,
+                                 role=role,
+@@ -6626,6 +6626,112 @@ def _forward_predicate_gate_after_transition(
+                             )
+                             if isinstance(new_ft, dict):
+                                 hints["forward_task"] = new_ft
++                            nav_class = "REFERENT_MISMATCH"
++                            if bool(sem.get("is_navigation")) or bool(
++                                getattr(decision, "action_is_navigation", False)
++                            ):
++                                nav_class = "NAVIGATION_MISMATCH"
++                                try:
++                                    from plugin.agent.capabilities.search_episode import (
++                                        reject_navigation_mismatch_candidate,
++                                    )
++
++                                    reject_navigation_mismatch_candidate(
++                                        runtime.execution_state,
++                                        click_label=click_label,
++                                        observed_container=open_name,
++                                        required_container=contact_ref,
++                                    )
++                                except Exception:
++                                    pass
++                                try:
++                                    runtime.execution_state.leave_wrong_conversation_owed = (
++                                        True
++                                    )
++                                    runtime.execution_state.leave_wrong_conversation_open = (
++                                        open_name
++                                    )
++                                    runtime.execution_state.leave_wrong_conversation_source = (
++                                        contact_ref
++                                    )
++                                except Exception:
++                                    pass
++                                # Ledger: motor ok + wrong semantic container.
++                                # Same-method retry is forbidden without new evidence.
++                                try:
++                                    from plugin.agent.executive.intention_frame import (
++                                        AttemptRecord,
++                                        AttemptValidity,
++                                        FailureClass,
++                                        MethodOutcome,
++                                        MethodStatus,
++                                        active_intention_frame,
++                                        apply_derived_status,
++                                        mark_method_attempted,
++                                        record_method_status,
++                                    )
++                                    from plugin.agent.executive.effect_implications import (
++                                        method_context_from_state,
++                                    )
++
++                                    iframe = active_intention_frame(
++                                        runtime.execution_state
++                                    )
++                                    if iframe is not None:
++                                        mid = (
++                                            f"{fam}:{click_label[:80]}"
++                                            if click_label
++                                            else fam
++                                        )
++                                        mark_method_attempted(iframe, mid)
++                                        ctx = method_context_from_state(
++                                            runtime.execution_state,
++                                            world={
++                                                "surface": str(
++                                                    (
++                                                        hints.get("unified_world_document")
++                                                        or {}
++                                                    ).get("surface")
++                                                    or ""
++                                                ),
++                                                "open_conversation": open_name,
++                                            },
++                                        )
++                                        record_method_status(
++                                            iframe,
++                                            mid,
++                                            MethodStatus.INEFFECTIVE.value,
++                                            method_context=ctx,
++                                            world_signature=ctx.signature(),
++                                        )
++                                        iframe.attempts.append(
++                                            AttemptRecord(
++                                                method_id=mid,
++                                                execution_status="motor_ok",
++                                                observation_quality=0.9,
++                                                method_outcome=(
++                                                    MethodOutcome.UNEXPECTED_EFFECT.value
++                                                ),
++                                                failure_class=(
++                                                    FailureClass.NAVIGATION_MISMATCH.value
++                                                ),
++                                                attempt_validity=(
++                                                    AttemptValidity.VALID.value
++                                                ),
++                                                method_status=(
++                                                    MethodStatus.INEFFECTIVE.value
++                                                ),
++                                                evidence_refs=[
++                                                    (
++                                                        f"expected={contact_ref!r}"
++                                                        f" observed={open_name!r}"
++                                                    )[:160]
++                                                ],
++                                            )
++                                        )
++                                        apply_derived_status(iframe)
++                                except Exception:
++                                    pass
+                             _log_cycle(
+                                 log,
+                                 iteration=iteration,
+@@ -6636,7 +6742,12 @@ def _forward_predicate_gate_after_transition(
+                                     "click_target": click_label[:120],
+                                     "attempt_id": attempt_id,
+                                     "proposal": proposal.to_dict(),
+-                                    "class": "REFERENT_MISMATCH",
++                                    "class": nav_class,
++                                    "failure_class": (
++                                        "navigation_mismatch"
++                                        if nav_class == "NAVIGATION_MISMATCH"
++                                        else "referent_mismatch"
++                                    ),
+                                 },
+                                 status="fail",
+                             )
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index b09291b6e..202fbace9 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -1153,6 +1153,75 @@ def _llm_required_observe(why: str, *, realization: str) -> DecisionOutcome:
+     )
+ 
+ 
++def _stamp_open_navigation_semantics(
++    outcome: DecisionOutcome, brief: "DecisionBrief"
++) -> DecisionOutcome:
++    """Type open_entity/open_contact with content≠container navigation semantics.
++
++    Search-commit and sanitize rewrites must not remain ``legacy_semantics`` —
++    without establishes_roles + is_navigation, settle cannot detect
++    NAVIGATION_MISMATCH when a content hit opens the wrong container.
++    """
++    cap = str(getattr(outcome, "capability", "") or "").strip().lower()
++    if cap not in {"open_entity", "open_contact"}:
++        return outcome
++    if bool(getattr(outcome, "legacy_semantics", False)) and bool(
++        getattr(outcome, "establishes_roles", None)
++    ):
++        # Already typed; do not downgrade.
++        pass
++    target = str(getattr(outcome, "target", "") or "").strip()
++    if not target:
++        return outcome
++    try:
++        from plugin.agent.procedures.forward_message import action_open_semantics
++
++        phase = str(getattr(brief.task_state, "phase", "") or "")
++        # Prefer forward_task derived phase when present (OPEN_SOURCE etc.).
++        ft = (
++            (brief.world or {}).get("forward_task")
++            if isinstance(brief.world, dict)
++            else None
++        )
++        if isinstance(ft, dict) and str(ft.get("derived_phase") or "").strip():
++            phase = str(ft.get("derived_phase") or phase)
++        cand: Dict[str, Any] = {"label": target, "text": target}
++        # Attach world object kind when the target matches a visible row.
++        for obj in (brief.world or {}).get("objects") or []:
++            if not isinstance(obj, dict):
++                continue
++            lab = str(obj.get("text") or obj.get("label") or "").strip()
++            if lab and lab.lower() == target.lower():
++                cand = dict(obj)
++                cand.setdefault("label", lab)
++                break
++        sem = action_open_semantics(
++            cap,
++            phase=phase,
++            candidate=cand,
++            target=target,
++            target_kind=str(
++                getattr(outcome, "target_kind", "") or cand.get("kind") or ""
++            ),
++        )
++        est = [str(r) for r in (sem.get("establishes_roles") or []) if str(r).strip()]
++        if not est and not sem.get("is_navigation"):
++            # Still untyped — leave as-is (caller may mark legacy).
++            return outcome
++        outcome.target_kind = str(sem.get("target_kind") or outcome.target_kind or "")
++        outcome.establishes_roles = est
++        outcome.action_is_navigation = bool(sem.get("is_navigation"))
++        outcome.legacy_semantics = False
++        if sem.get("content_hit_not_container"):
++            why = str(outcome.why or "")
++            note = "content_hit≠container; expect source_container verify"
++            if note not in why:
++                outcome.why = f"{why}; {note}"[:200]
++    except Exception:
++        return outcome
++    return outcome
++
++
+ @dataclass
+ class LlmDecisionChooser:
+     """Default realization: one short bounded text call."""
+@@ -1246,6 +1315,17 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+     target = str(payload.get("target") or payload.get("text") or "").strip()
+     if capability in {"invoke_affordance", "commit_irreversible", "reveal_actions"}:
+         target = _affordance_label(target)
++        # State/provenance markers are not actionable controls (live 123703).
++        tok = str(target or "").strip().lower()
++        tok = tok.lstrip("•·▪●◦-–— ").strip()
++        if tok.startswith("forwarded") or tok in {"forwarded", "• forwarded"}:
++            return DecisionOutcome(
++                ok=False,
++                why=(
++                    f"{capability} target {target!r} is message metadata "
++                    "(Forwarded badge), not the Forward affordance"
++                ),
++            )
+     if capability == "resolve_entity" and not brief.candidates:
+         return DecisionOutcome(ok=False, why="resolve_entity chosen with an empty candidate_set")
+     # RoleBinder owns identity. resolve_* may propose a binding; open/act
+@@ -1306,6 +1386,34 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+             target=target,
+         )
+         role = str(sem.get("target_role") or "")
++        # Do not retry a content hit already invalidated by NAVIGATION_MISMATCH.
++        try:
++            from plugin.agent.capabilities.search_episode import (
++                exclude_role_rejected_candidates,
++            )
++
++            ep = (
++                brief.search_episode
++                if isinstance(getattr(brief, "search_episode", None), dict)
++                else None
++            )
++            if isinstance(ep, dict) and (
++                ep.get("role_rejected_labels") or ep.get("role_rejected_ids")
++            ):
++                surviving = exclude_role_rejected_candidates(
++                    [{"label": target, "text": target, "id": cand.get("id")}],
++                    ep,
++                )
++                if not surviving:
++                    return DecisionOutcome(
++                        ok=False,
++                        why=(
++                            f"open candidate {target!r} invalidated by prior "
++                            "NAVIGATION_MISMATCH — re-establish required container"
++                        ),
++                    )
++        except Exception:
++            pass
+         # Navigation via content: click target is not a container identity claim.
+         # Allow open; RoleBinder will verify established roles after settle.
+         # Must NOT auto-bind source_object from this click.
+@@ -1669,8 +1777,11 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+         tgt_l = target.strip().lower()
+         dest_l = dest.lower()
+         looks_like_dest = bool(dest_l) and (dest_l in tgt_l or tgt_l in dest_l)
++        # Exact / menu-verb match only — "Forwarded" must not count as Forward
++        # (startswith("forward") is a false positive on provenance badges).
++        tok = tgt_l.lstrip("•·▪●◦-–— ").strip()
+         is_forward_verb = (not looks_like_dest) and (
+-            tgt_l
++            tok
+             in {
+                 "forward",
+                 "forward message",
+@@ -1678,7 +1789,10 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+                 "share",
+                 "send",
+             }
+-            or tgt_l.startswith("forward")
++            or (
++                tok.startswith("forward ")
++                and not tok.startswith("forwarded")
++            )
+         )
+         if is_forward_verb and dest:
+             selected = False
+@@ -1822,14 +1936,38 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+                 "(desired-effect selection pending)"
+             ),
+         )
+-    # Message actions need an open conversation; on chat_list/search the same
+-    # URL often appears as a preview row — revealing there is a dead end.
+-    if capability in {"reveal_actions", "select_content", "invoke_affordance"} and surface in {
+-        "chat_list",
+-        "search",
+-        "search_results",
+-    }:
+-        if not brief.task_state.source_chat_open:
++    # Message actions need a *verified* source container. Content relevance on
++    # search rows / wrong chats must not authorize reveal/select/invoke.
++    # Destination-picker invoke (Send) is past source establishment.
++    if capability in {"reveal_actions", "select_content", "invoke_affordance"}:
++        dest_surfaces = {
++            "forward_picker",
++            "destination_picker",
++            "send_to",
++            "share_sheet",
++        }
++        source_ref = str(
++            (brief.goal or {}).get("contact")
++            or (brief.goal or {}).get("source_conversation")
++            or ""
++        ).strip()
++        if (
++            source_ref
++            and not bool(brief.task_state.source_chat_open)
++            and surface not in dest_surfaces
++            and str(brief.task_state.phase or "").strip().lower()
++            not in {"choose_destination", "pick_dest", "invoke_forward"}
++        ):
++            return DecisionOutcome(
++                ok=False,
++                why=(
++                    f"{capability} requires verified source container "
++                    f"{source_ref!r}; current open="
++                    f"{brief.task_state.open_conversation!r} — "
++                    "ResolveContext / open_entity first"
++                ),
++            )
++        if surface in {"chat_list", "search", "search_results"}:
+             return DecisionOutcome(
+                 ok=False,
+                 why=f"{capability} before the source chat is open; open_entity first",
+@@ -3677,6 +3815,8 @@ def apply_decision_consultation(
+                     confidence=max(0.7, float(outcome.confidence or 0.0)),
+                     realization=f"{outcome.realization or 'decision'}+search_commit_chosen",
+                 )
++            # Always type search-commit opens (content hit ≠ container identity).
++            outcome = _stamp_open_navigation_semantics(outcome, brief)
+ 
+     # Final SEARCH→type_query seal: sanitize/barren/search_continue must not
+     # leave Observe or Forward as the realization of an entity-resolution gap.
+@@ -4354,16 +4494,16 @@ def apply_decision_consultation(
+                     }
+         if outcome.capability in {"locate_content", "type_query"} and outcome.target:
+             next_action["text"] = outcome.target
+-        # Preserve already-typed navigation semantics. Legacy untyped opens must
+-        # NOT acquire role-establishing navigation authority via re-inference.
++        # Type open navigation (content hit ≠ container). Prefer typing over
++        # legacy so settle can detect NAVIGATION_MISMATCH.
+         if outcome.capability in {"open_entity", "open_contact"}:
+             try:
++                outcome = _stamp_open_navigation_semantics(outcome, brief)
+                 typed = (
+                     bool(getattr(outcome, "action_is_navigation", False))
+                     or bool(getattr(outcome, "establishes_roles", None))
+-                    or bool(str(getattr(outcome, "target_kind", "") or "").strip())
+-                )
+-                if typed and not bool(getattr(outcome, "legacy_semantics", False)):
++                ) and not bool(getattr(outcome, "legacy_semantics", False))
++                if typed:
+                     next_action["target_kind"] = str(
+                         getattr(outcome, "target_kind", "") or ""
+                     )
+@@ -4374,6 +4514,14 @@ def apply_decision_consultation(
+                         getattr(outcome, "action_is_navigation", False)
+                     )
+                     next_action["legacy_semantics"] = False
++                    # Required container for post-settle verification.
++                    src = str(
++                        (brief.goal or {}).get("contact")
++                        or (brief.goal or {}).get("source_conversation")
++                        or ""
++                    ).strip()
++                    if src and bool(outcome.action_is_navigation):
++                        next_action["expected_container"] = src
+                 else:
+                     import logging as _logging
+ 
+@@ -4385,7 +4533,6 @@ def apply_decision_consultation(
+                     outcome.legacy_semantics = True
+                     outcome.action_is_navigation = False
+                     outcome.establishes_roles = []
+-                    # Keep any explicit target_kind; do not invent one.
+                     next_action["target_kind"] = str(
+                         getattr(outcome, "target_kind", "")
+                         or next_action.get("target_kind")
+diff --git a/plugin/agent/executive/intention_frame.py b/plugin/agent/executive/intention_frame.py
+index a0ea4e9aa..4617a64f6 100644
+--- a/plugin/agent/executive/intention_frame.py
++++ b/plugin/agent/executive/intention_frame.py
+@@ -64,6 +64,8 @@ class FailureClass(str, Enum):
+     METHOD_INEFFECTIVE = "method_ineffective"
+     PRECONDITION_MISSING = "precondition_missing"
+     UNEXPECTED_WORLD = "unexpected_world"
++    # Motor ok + world changed, but to an incompatible semantic container.
++    NAVIGATION_MISMATCH = "navigation_mismatch"
+     LOCAL_ROUTE_EXHAUSTED = "local_route_exhausted"
+     UNSAFE = "unsafe"
+ 
+@@ -308,9 +310,14 @@ class MethodContext:
+ 
+     Prefer this over opaque textual world hashes so irrelevant churn
+     (e.g. message timestamps) does not resurrect every failed method.
++
++    ``semantic_container`` is the locus of action (conversation/folder/tab),
++    not the UI surface alone — so failures in Alice's chat do not suppress
++    the same method in Bob's chat.
+     """
+ 
+     surface: str = ""
++    semantic_container: str = ""
+     target_selected: bool = False
+     action_surface_visible: bool = False
+     overlay: str = ""
+@@ -318,6 +325,7 @@ class MethodContext:
+     def signature(self) -> str:
+         return (
+             f"surface={str(self.surface or '').strip().lower()}"
++            f"|ctr={str(self.semantic_container or '').strip().lower()}"
+             f"|sel={int(bool(self.target_selected))}"
+             f"|act={int(bool(self.action_surface_visible))}"
+             f"|ov={str(self.overlay or '').strip().lower()}"
+@@ -326,6 +334,7 @@ class MethodContext:
+     def to_dict(self) -> Dict[str, Any]:
+         return {
+             "surface": self.surface,
++            "semantic_container": self.semantic_container,
+             "target_selected": bool(self.target_selected),
+             "action_surface_visible": bool(self.action_surface_visible),
+             "overlay": self.overlay,
+@@ -339,6 +348,9 @@ class MethodContext:
+         if isinstance(raw, dict):
+             return cls(
+                 surface=str(raw.get("surface") or ""),
++                semantic_container=str(
++                    raw.get("semantic_container") or raw.get("ctr") or ""
++                ),
+                 target_selected=bool(raw.get("target_selected")),
+                 action_surface_visible=bool(raw.get("action_surface_visible")),
+                 overlay=str(raw.get("overlay") or ""),
+@@ -353,6 +365,7 @@ class MethodContext:
+             )
+             return cls(
+                 surface=str(parts.get("surface") or ""),
++                semantic_container=str(parts.get("ctr") or ""),
+                 target_selected=str(parts.get("sel") or "0") in {"1", "true"},
+                 action_surface_visible=str(parts.get("act") or "0") in {"1", "true"},
+                 overlay=str(parts.get("ov") or ""),
+@@ -633,7 +646,10 @@ def score_method(
+     *,
+     attempted: bool = False,
+     grounding_confidence: float = 0.7,
++    locus_forbidden: bool = False,
+ ) -> float:
++    if locus_forbidden:
++        return 0.0
+     info = 0.8 if "reveal" in spec.capability or spec.gesture else 0.4
+     progress = 0.3 if "reveal" in spec.capability else 0.5
+     if spec.provenance == MethodProvenance.OBSERVED.value:
+@@ -655,10 +671,40 @@ def score_method(
+     )
+ 
+ 
++def apply_wrong_locus_ineligibility(
++    frame: IntentionFrame,
++    *,
++    brief: Any = None,
++    state: Any = None,
++    field_role: str = "",
++) -> List[str]:
++    """Mark methods whose actuation locus is currently forbidden ineligible.
++
++    Returns the method ids newly marked ineligible.
++    """
++    from plugin.agent.capabilities.locus_contract import method_locus_ineligible
++
++    marked: List[str] = []
++    fr = frame.method_frontier
++    for mid, spec in list(fr.catalog.items()):
++        cap = str(getattr(spec, "capability", "") or mid or "").strip().lower()
++        if not method_locus_ineligible(
++            cap, brief=brief, state=state, field_role=field_role
++        ):
++            continue
++        if mid not in fr.currently_ineligible:
++            fr.currently_ineligible.append(mid)
++            marked.append(mid)
++    return marked
++
++
+ def rank_eligible(
+     frame: IntentionFrame,
+     *,
+     demote_ids: Optional[Sequence[str]] = None,
++    brief: Any = None,
++    state: Any = None,
++    field_role: str = "",
+ ) -> List[Tuple[str, float]]:
+     frontier = frame.method_frontier
+     demote = {str(x) for x in (demote_ids or ()) if str(x or "").strip()}
+@@ -667,6 +713,19 @@ def rank_eligible(
+         spec = frontier.catalog.get(mid)
+         if spec is None:
+             continue
++        cap = str(getattr(spec, "capability", "") or mid or "").strip().lower()
++        locus_bad = False
++        if brief is not None or state is not None or field_role:
++            try:
++                from plugin.agent.capabilities.locus_contract import (
++                    method_locus_ineligible,
++                )
++
++                locus_bad = method_locus_ineligible(
++                    cap, brief=brief, state=state, field_role=field_role
++                )
++            except Exception:
++                locus_bad = False
+         ranked.append(
+             (
+                 mid,
+@@ -674,6 +733,7 @@ def rank_eligible(
+                     spec,
+                     frame.scoring_policy,
+                     attempted=mid in frontier.attempted,
++                    locus_forbidden=locus_bad,
+                 ),
+             )
+         )
+@@ -736,6 +796,23 @@ def is_local_route_exhausted(frame: IntentionFrame) -> bool:
+     return True
+ 
+ 
++def world_with_prerequisite_evidence(
++    state: Any,
++    world: Optional[Dict[str, Any]] = None,
++) -> Dict[str, Any]:
++    """Annotate world with downstream evidence that retires obsolete prerequisites.
++
++    Domain implications (which surfaces/capabilities entail which predicates)
++    live in ``effect_implications`` — this helper only merges evidence.
++    Motor/executor success alone never retires a prerequisite.
++    """
++    from plugin.agent.executive.effect_implications import (
++        annotate_world_with_effect_evidence,
++    )
++
++    return annotate_world_with_effect_evidence(state, world)
++
++
+ def evaluate_intention_success(
+     frame: IntentionFrame,
+     *,
+@@ -744,10 +821,16 @@ def evaluate_intention_success(
+     grounded_forward: bool = False,
+ ) -> bool:
+     """Re-evaluate success_predicate after every world update (before next method)."""
++    from plugin.agent.executive.effect_implications import (
++        collect_effect_evidence,
++        predicate_satisfied_by_evidence,
++    )
++
+     pred = str(frame.intention.success_predicate or "").strip().lower()
+     stance = str(affordance_stance or "").strip().lower()
+     doc = world if isinstance(world, dict) else {}
+     surface = str(doc.get("surface") or "").strip().lower()
++    evidence = collect_effect_evidence(None, doc)
+     if pred in {
+         "forward_affordance_grounded",
+         "usable_forwarding_route_discovered",
+@@ -755,8 +838,10 @@ def evaluate_intention_success(
+     }:
+         if grounded_forward or stance == "act_clear":
+             return True
+-        if surface in {"context_menu", "action_menu", "selection_mode", "forward_picker"}:
+-            # Surface alone is not enough — need Forward-ish control when possible.
++        if predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence):
++            return True
++        if surface in {"context_menu", "action_menu", "selection_mode"}:
++            # Menu/selection alone: need Forward-ish control or act_clear.
+             objs = doc.get("objects") or []
+             for o in objs if isinstance(objs, list) else []:
+                 if not isinstance(o, dict):
+@@ -764,18 +849,19 @@ def evaluate_intention_success(
+                 text = str(o.get("text") or o.get("label") or "").strip().lower()
+                 if text in {"forward", "share"} or "forward" in text:
+                     return True
+-            # selection_mode / menu with act_clear handled above
+             if stance == "act_clear":
+                 return True
+         return False
+     if pred == "message_action_surface_visible":
++        if predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence):
++            return True
+         return surface in {"context_menu", "action_menu", "selection_mode"}
+     if pred == "source_object_selected":
+         if bool(doc.get("source_object_selected")):
+             return True
+-        if surface == "selection_mode":
++        if bool(doc.get("downstream_implies_source_selected")):
+             return True
+-        return False
++        return predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence)
+     # Effect-keyed child success predicates (storage / operational / stubs).
+     if pred.startswith("storage:available_bytes_at_least") or pred == "free_storage_satisfied":
+         from plugin.agent.executive.blocking import (
+@@ -820,24 +906,30 @@ def method_preconditions_met(
+     predicates: Optional[Dict[str, Any]] = None,
+ ) -> bool:
+     """True when every named precondition holds in world/predicates."""
++    from plugin.agent.executive.effect_implications import (
++        collect_effect_evidence,
++        predicate_satisfied_by_evidence,
++    )
++
+     preds = predicates if isinstance(predicates, dict) else {}
+     doc = world if isinstance(world, dict) else {}
++    evidence = collect_effect_evidence(None, doc)
+     for p in spec.preconditions or []:
+         key = str(p or "").strip()
+         if not key:
+             continue
+-        if key == "source_object_selected":
+-            if bool(preds.get("source_object_selected")) or bool(
+-                doc.get("source_object_selected")
+-            ):
+-                continue
+-            if str(doc.get("surface") or "").strip().lower() == "selection_mode":
+-                continue
+-            return False
++        if bool(preds.get(key)) or predicate_satisfied_by_evidence(
++            key, world=doc, evidence=evidence
++        ):
++            continue
+         if key in preds and not bool(preds.get(key)):
+             return False
+         if key in doc and not bool(doc.get(key)):
+             return False
++        # Absent from both: selection-style preconditions fail closed; others
++        # remain vacuous (legacy MethodSpec keys without world facts).
++        if key not in preds and key not in doc and key == "source_object_selected":
++            return False
+     return True
+ 
+ 
+@@ -1225,16 +1317,32 @@ def ensure_prereq_child_or_next_method(
+     predicates: Optional[Dict[str, Any]] = None,
+ ) -> Optional[MethodSpec]:
+     """Pick next method; spawn child when top-ranked method lacks preconditions."""
++    evidence_world = world_with_prerequisite_evidence(state, world)
++    if isinstance(predicates, dict):
++        # Explicit predicates win when True; do not let False erase downstream.
++        for k, v in predicates.items():
++            if v:
++                evidence_world[k] = v
+     if frame.suspended_by_child:
+         child = active_intention_frame(state)
+         if child is not None and child.intention.id != frame.intention.id:
+-            return next_reveal_method(child)
++            # Downstream may have already satisfied the child's effect.
++            if evaluate_intention_success(child, world=evidence_world):
++                resume_parent_after_child(state, world=evidence_world)
++                frame = active_intention_frame(state) or frame
++            else:
++                return next_reveal_method(child)
+     ranked = rank_eligible(frame)
+     for mid, _score in ranked:
+         spec = frame.method_frontier.catalog.get(mid)
+         if spec is None:
+             continue
+-        if method_preconditions_met(spec, world=world, predicates=predicates):
++        # Prefer world evidence over stale False predicates from task state.
++        if method_preconditions_met(spec, world=evidence_world, predicates=None):
++            return spec
++        if method_preconditions_met(
++            spec, world=evidence_world, predicates=predicates
++        ):
+             return spec
+         # First unmet → spawn child for that precondition (v1: select only).
+         if "source_object_selected" in (spec.preconditions or []):
+@@ -1318,6 +1426,10 @@ def recommend_recovery(
+         return RecoveryAction.RETURN_TO_EXECUTIVE.value
+     if failure_class == FailureClass.UNEXPECTED_WORLD.value:
+         return RecoveryAction.RETURN_TO_EXECUTIVE.value
++    # Motor worked but landed in the wrong semantic container — do not
++    # re-try the same navigation method; escalate for alternate context path.
++    if failure_class == FailureClass.NAVIGATION_MISMATCH.value:
++        return RecoveryAction.RETURN_TO_EXECUTIVE.value
+     if failure_class == FailureClass.PRECONDITION_MISSING.value:
+         return RecoveryAction.SPAWN_CHILD_INTENTION.value
+     if failure_class == FailureClass.EFFECT_UNCERTAIN.value:
+diff --git a/plugin/agent/executive/sync.py b/plugin/agent/executive/sync.py
+index 51d35a36a..7b600b05b 100644
+--- a/plugin/agent/executive/sync.py
++++ b/plugin/agent/executive/sync.py
+@@ -910,6 +910,12 @@ def assess_executive_judgement(
+             "reach_source",
+             "open_source",
+             "preclear",
++            # Content/reveal phases still require the source container —
++            # foreign open must not authorize reveal (live 123703).
++            "find_link",
++            "hunt_content",
++            "act_on_content",
++            "open_forward",
+         }
+         source_row_ready = bool(referent_signals.get("source_contact_open_ready"))
+         if (
+diff --git a/plugin/agent/procedures/forward_message.py b/plugin/agent/procedures/forward_message.py
+index 6fb885589..8d1ce405e 100644
+--- a/plugin/agent/procedures/forward_message.py
++++ b/plugin/agent/procedures/forward_message.py
+@@ -2,14 +2,54 @@
+ 
+ Supplies RoleBindingSpec and action-family → role maps for forward-style goals.
+ Other procedures (email, move-file, …) get their own modules.
++
++Action family alone does not determine semantic role. Prefer
++``action_open_semantics`` so target role and effect-established roles stay
++distinct (content search hit may navigate into a container without *being*
++that container).
+ """
+ 
+ from __future__ import annotations
+ 
+-from typing import Any, Dict
++from typing import Any, Dict, Optional, Set
+ 
+ from plugin.agent.role_binding import Constraint, RoleBindingSpec
+ 
++# Resolved *semantic* content kinds — not UI presentation kinds.
++_CONTENT_ENTITY_KINDS: Set[str] = {
++    "message",
++    "message_row",
++    "message_bubble",
++    "message_with_link",
++    "link",
++    "content_item",
++    "attachment",
++    "document",
++}
++# Presentation/unknown — must not be treated as semantic content by themselves.
++_PRESENTATION_KINDS: Set[str] = {
++    "search_result",
++    "search_result_row",
++    "picker_row",
++}
++_CONTAINER_ENTITY_KINDS: Set[str] = {
++    "conversation",
++    "conversation_row",
++    "chat",
++    "chat_row",
++    "thread",
++    "container",
++    "contact",
++}
++# Phases where opening content may establish source_container via navigation.
++_SOURCE_REACHING_PHASES: Set[str] = {
++    "",
++    "open_source",
++    "reach_source",
++    # Search-surface commits often still owe the source container.
++    "find_link",
++}
++
+ 
+ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
+     """Typed roles for a forward-style goal. Values come from the goal object."""
+@@ -43,7 +83,16 @@ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
+     return {
+         "source_container": RoleBindingSpec(
+             role="source_container",
+-            expected_entity_kinds={"conversation", "thread", "container", "contact"},
++            expected_entity_kinds={
++                "conversation",
++                "conversation_row",
++                "chat_row",
++                "chat",
++                "thread",
++                "container",
++                "contact",
++                "contact_row",
++            },
+             identity_constraints=[
+                 Constraint(
+                     relation="same_identity",
+@@ -80,14 +129,285 @@ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
+     }
+ 
+ 
+-def role_for_action_family(family: str, *, phase: str = "") -> str:
+-    """Map a forward-procedure action family onto a typed role."""
++def _norm_kind(value: Any) -> str:
++    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
++
++
++def _norm_phase(phase: str) -> str:
++    return str(phase or "").strip().lower().replace("-", "_")
++
++
++def _has_ownership(candidate: Optional[Dict[str, Any]]) -> bool:
++    cand = candidate if isinstance(candidate, dict) else {}
++    for key in ("belongs_to", "container", "owner_conversation", "owning_conversation"):
++        if str(cand.get(key) or "").strip():
++            return True
++    return False
++
++
++def _candidate_kind(candidate: Optional[Dict[str, Any]] = None, *, target: str = "") -> str:
++    """Return resolved semantic kind; presentation kinds are unknown (\"\")."""
++    cand = candidate if isinstance(candidate, dict) else {}
++    for key in ("entity_kind", "object_type", "kind", "type"):
++        kind = _norm_kind(cand.get(key))
++        if not kind:
++            continue
++        if kind in _PRESENTATION_KINDS:
++            continue  # UI row type ≠ semantic entity type
++        return kind
++    # ui_role alone is presentation — never semantic.
++    return ""
++
++
++def _label_content_heuristic(label: str) -> bool:
++    low = str(label or "").strip().lower()
++    if not low:
++        return False
++    if low.startswith("you:"):
++        return True
++    if "https://" in low or "http://" in low:
++        return True
++    if " - you:" in low:
++        return True
++    return False
++
++
++def looks_like_content_open_target(
++    *,
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> bool:
++    """True only for resolved semantic content kinds (message/link/…).
++
++    Presentation rows (``search_result_row``) are unknown — ownership and
++    URL/``You:`` label heuristics are evidence only and must **not** authorize
++    RoleBinder bypass / navigation typing by themselves.
++    """
++    cand = candidate if isinstance(candidate, dict) else {}
++    kind = _norm_kind(target_kind) or _candidate_kind(cand, target=target)
++    # Explicit represents/relation may already resolve to a content kind.
++    represents = _norm_kind(cand.get("represents") or cand.get("semantic_kind"))
++    if represents in _CONTENT_ENTITY_KINDS:
++        return True
++    if kind in _CONTENT_ENTITY_KINDS:
++        return True
++    if kind in _CONTAINER_ENTITY_KINDS or kind in _PRESENTATION_KINDS:
++        return False
++    ui = _norm_kind(cand.get("ui_role") or cand.get("kind") or cand.get("type"))
++    if ui in _PRESENTATION_KINDS:
++        return False
++    # Empty kind: label/owner heuristics are non-authoritative (do not bypass).
++    _ = target
++    return False
++
++
++def looks_like_content_evidence_hit(
++    *,
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> bool:
++    """Search/content hit that carries content evidence, not container identity.
++
++    A result like ``You: https://zarooratwala.com/...`` may be a
++    ``source_object_candidate`` without being a safe ``source_container`` open.
++    Opening it is a *navigation hypothesis* whose settled container must still
++    be verified against the required referent.
++    """
++    if looks_like_content_open_target(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        return True
++    if looks_like_container_open_target(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        return False
++    cand = candidate if isinstance(candidate, dict) else {}
++    kind = _norm_kind(target_kind) or _candidate_kind(cand, target=target)
++    blob = " ".join(
++        str(x)
++        for x in (
++            target,
++            cand.get("text"),
++            cand.get("label"),
++            cand.get("title"),
++        )
++        if str(x or "").strip()
++    )
++    if not blob.strip():
++        return False
++    # Presentation / unknown rows with URL or "You:" message preview evidence.
++    if kind in _PRESENTATION_KINDS or not kind:
++        return _label_content_heuristic(blob)
++    return False
++
++
++def looks_like_container_open_target(
++    *,
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> bool:
++    """True only for explicit container/conversation semantic kinds."""
++    cand = candidate if isinstance(candidate, dict) else {}
++    kind = _norm_kind(target_kind) or _candidate_kind(cand, target=target)
++    represents = _norm_kind(cand.get("represents") or cand.get("semantic_kind"))
++    if represents in _CONTAINER_ENTITY_KINDS or kind in _CONTAINER_ENTITY_KINDS:
++        return True
++    return False
++
++
++def _phase_allows_container_navigation(phase: str) -> bool:
++    return _norm_phase(phase) in _SOURCE_REACHING_PHASES
++
++
++def action_open_semantics(
++    family: str,
++    *,
++    phase: str = "",
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> Dict[str, Any]:
++    """Separate click-target role from roles the settled effect may establish.
++
++    A content search hit may be opened as a navigation address into its owning
++    container without claiming ``target_role=source_container``. Settled
++    destination identity is verified later via RoleBinder.
++
++    ``establishes_roles=["source_container"]`` only when phase is source-reaching;
++    content opens while already in-chat do not re-establish the container.
++    Unknown kinds stay unknown — never invent ``conversation`` from “not content”.
++    """
++    fam = str(family or "").strip().lower().replace("-", "_")
++    ph = _norm_phase(phase)
++    kind_hint = _norm_kind(target_kind) or _candidate_kind(candidate, target=target)
++    if fam not in {"open_entity", "open_contact", "resolve_entity"}:
++        return {
++            "family": fam,
++            "target_role": "",
++            "establishes_roles": [],
++            "is_navigation": False,
++            "target_kind": kind_hint,
++        }
++    if ph in {"choose_destination", "pick_dest", "invoke_forward"}:
++        return {
++            "family": fam,
++            "target_role": "destination",
++            "establishes_roles": ["destination"],
++            "is_navigation": False,
++            "target_kind": kind_hint if kind_hint in _CONTAINER_ENTITY_KINDS else kind_hint,
++        }
++    if fam == "resolve_entity":
++        # Resolve commits identity of the named target — not navigation-via-content.
++        if looks_like_content_open_target(
++            candidate=candidate, target=target, target_kind=target_kind
++        ):
++            return {
++                "family": fam,
++                "target_role": "source_object",
++                "establishes_roles": ["source_object"],
++                "is_navigation": False,
++                "target_kind": kind_hint or "message",
++            }
++        if looks_like_container_open_target(
++            candidate=candidate, target=target, target_kind=target_kind
++        ):
++            return {
++                "family": fam,
++                "target_role": "source_container",
++                "establishes_roles": ["source_container"],
++                "is_navigation": False,
++                "target_kind": kind_hint,
++            }
++        # Unknown: RoleBinder may still evaluate as container, but kind stays empty.
++        return {
++            "family": fam,
++            "target_role": "source_container",
++            "establishes_roles": [],
++            "is_navigation": False,
++            "target_kind": "",
++            "unknown_kind": True,
++        }
++    if looks_like_content_evidence_hit(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        # Content / search-hit evidence ≠ container identity. During
++        # source-reaching, opening it is a navigation hypothesis whose
++        # settled open_conversation must still match the required referent.
++        content_kind = kind_hint or (
++            "message"
++            if looks_like_content_open_target(
++                candidate=candidate, target=target, target_kind=target_kind
++            )
++            else "search_result"
++        )
++        if _phase_allows_container_navigation(ph):
++            return {
++                "family": fam,
++                "target_role": "",  # click target is not a container identity claim
++                "establishes_roles": ["source_container"],
++                "is_navigation": True,
++                "target_kind": content_kind,
++                "content_hit_not_container": True,
++            }
++        # Content-shaped open outside source-reaching: do not establish container.
++        return {
++            "family": fam,
++            "target_role": "",
++            "establishes_roles": [],
++            "is_navigation": False,
++            "target_kind": content_kind,
++            "content_hit_not_container": True,
++        }
++    if looks_like_container_open_target(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        return {
++            "family": fam,
++            "target_role": "source_container",
++            "establishes_roles": ["source_container"],
++            "is_navigation": False,
++            "target_kind": kind_hint,
++        }
++    # Unknown semantic kind — not content, not therefore conversation.
++    return {
++        "family": fam,
++        "target_role": "source_container",
++        "establishes_roles": [],
++        "is_navigation": False,
++        "target_kind": "",
++        "unknown_kind": True,
++    }
++
++
++def role_for_action_family(
++    family: str,
++    *,
++    phase: str = "",
++    target_kind: str = "",
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++) -> str:
++    """Map a forward-procedure action onto the *target* role (not effect role).
++
++    Prefer ``action_open_semantics`` when callers need establishes/navigation.
++    Content-shaped ``open_entity`` returns ``\"\"`` — no container claim on the
++    clicked label.
++    """
+     fam = str(family or "").strip().lower().replace("-", "_")
+-    ph = str(phase or "").strip().lower().replace("-", "_")
+     if fam in {"open_entity", "open_contact", "resolve_entity"}:
+-        if ph in {"choose_destination", "pick_dest", "invoke_forward"}:
+-            return "destination"
+-        return "source_container"
++        return str(
++            action_open_semantics(
++                fam,
++                phase=phase,
++                candidate=candidate,
++                target=target,
++                target_kind=target_kind,
++            ).get("target_role")
++            or ""
++        )
+     if fam in {"select_content", "reveal_actions", "locate_content"}:
+         return "source_object"
+     if fam in {"type_query", "compose_search_query"}:
+diff --git a/plugin/agent/unified_cognition.py b/plugin/agent/unified_cognition.py
+index a443a603f..096374f67 100644
+--- a/plugin/agent/unified_cognition.py
++++ b/plugin/agent/unified_cognition.py
+@@ -5738,6 +5738,7 @@ def proposal_to_action(
+         attempt_id=str(na.get("attempt_id") or "").strip(),
+         legacy_semantics=bool(na.get("legacy_semantics")),
+         prefer_realization=str(na.get("prefer_realization") or "").strip(),
++        expected_container=str(na.get("expected_container") or "").strip(),
+     )
+     # The prediction, in the shape the transition and experience layers read. It
+     # was empty on every model-chosen action, so record_outcome() compared each
+diff --git a/tests/plugin/test_container_navigation.py b/tests/plugin/test_container_navigation.py
+new file mode 100644
+index 000000000..3fb4ad2c9
+--- /dev/null
++++ b/tests/plugin/test_container_navigation.py
+@@ -0,0 +1,317 @@
++"""Content-hit ≠ container identity; NAVIGATION_MISMATCH after wrong open."""
++
++from __future__ import annotations
++
++from plugin.agent.capabilities.search_episode import (
++    exclude_role_rejected_candidates,
++    reject_navigation_mismatch_candidate,
++)
++from plugin.agent.decision_consultation import (
++    DecisionBrief,
++    NavigationInfo,
++    TaskState,
++    _stamp_open_navigation_semantics,
++    sanitize_decision,
++)
++from plugin.agent.executive.intention_frame import FailureClass
++from plugin.agent.procedures.forward_message import (
++    action_open_semantics,
++    looks_like_content_evidence_hit,
++    looks_like_container_open_target,
++)
++from plugin.agent.runtime.state import ExecutionState
++from plugin.agent.world_critic import _label_looks_like_menu_verb
++
++
++def test_content_hit_does_not_imply_container_identity():
++    hit = "You: https://www.zarooratwala.com/?utm_source=ig..."
++    assert looks_like_content_evidence_hit(target=hit) is True
++    assert looks_like_container_open_target(target=hit) is False
++    sem = action_open_semantics(
++        "open_entity",
++        phase="OPEN_SOURCE",
++        target=hit,
++        target_kind="search_result",
++    )
++    assert sem["is_navigation"] is True
++    assert sem.get("content_hit_not_container") is True
++    assert sem["target_role"] == ""  # click is not a container claim
++    assert "source_container" in sem["establishes_roles"]
++
++
++def test_navigation_mismatch_recovery_does_not_retry_same_method():
++    from plugin.agent.executive.intention_frame import (
++        FailureClass,
++        Intention,
++        IntentionFrame,
++        MethodOutcome,
++        RecoveryAction,
++        recommend_recovery,
++    )
++
++    frame = IntentionFrame(
++        intention=Intention(id="i1", objective="open source", success_predicate="p")
++    )
++    assert (
++        recommend_recovery(
++            frame,
++            failure_class=FailureClass.NAVIGATION_MISMATCH.value,
++            method_outcome=MethodOutcome.UNEXPECTED_EFFECT.value,
++        )
++        == RecoveryAction.RETURN_TO_EXECUTIVE.value
++    )
++
++
++def test_search_hit_opening_wrong_container_is_navigation_mismatch():
++    """Stamp types the open so settle can classify NAVIGATION_MISMATCH."""
++    from plugin.agent.decision_consultation import DecisionOutcome
++
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={
++            "surface": "search",
++            "objects": [
++                {
++                    "id": "r1",
++                    "kind": "search_result",
++                    "text": "You: https://www.zarooratwala.com/",
++                }
++            ],
++            "forward_task": {"derived_phase": "OPEN_SOURCE"},
++        },
++        task_state=TaskState(phase="reach_source", source_chat_open=False),
++        capabilities=["open_entity", "observe"],
++        meta_action="act",
++    )
++    outcome = DecisionOutcome(
++        ok=True,
++        capability="open_entity",
++        target="You: https://www.zarooratwala.com/",
++        why="search complete; explore/open chosen hypothesis",
++        realization="search_commit_chosen",
++    )
++    typed = _stamp_open_navigation_semantics(outcome, brief)
++    assert typed.legacy_semantics is False
++    assert typed.action_is_navigation is True
++    assert "source_container" in typed.establishes_roles
++    assert FailureClass.NAVIGATION_MISMATCH.value == "navigation_mismatch"
++
++
++def test_wrong_transition_invalidates_candidate_for_context_establishment():
++    state = ExecutionState()
++    state.search_episode = {
++        "status": "complete",
++        "chosen_label": "You: https://www.zarooratwala.com/",
++        "chosen_id": "r1",
++        "role": "content",
++        "retrieval_complete": True,
++    }
++    out = reject_navigation_mismatch_candidate(
++        state,
++        click_label="You: https://www.zarooratwala.com/",
++        observed_container="ZarooratWala - Fresh Groceries Delivered",
++        required_container="Pallavi",
++        candidate_id="r1",
++    )
++    assert out.get("rejected") is True
++    ep = state.search_episode
++    assert "You: https://www.zarooratwala.com/" in (ep.get("role_rejected_labels") or [])
++    surviving = exclude_role_rejected_candidates(
++        [
++            {
++                "id": "r1",
++                "label": "You: https://www.zarooratwala.com/",
++                "text": "You: https://www.zarooratwala.com/",
++            }
++        ],
++        ep,
++    )
++    assert surviving == []
++
++
++def test_same_navigation_mismatch_is_not_retried_without_new_evidence():
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={"surface": "search", "objects": []},
++        task_state=TaskState(phase="reach_source", source_chat_open=False),
++        capabilities=["open_entity", "observe", "reveal_actions"],
++        meta_action="act",
++        search_episode={
++            "status": "ranking",
++            "role_rejected_labels": ["You: https://www.zarooratwala.com/"],
++            "role_rejected_reasons": [
++                "navigation_mismatch:expected='Pallavi':observed='ZarooratWala'"
++            ],
++        },
++    )
++    rejected = sanitize_decision(
++        {
++            "capability": "open_entity",
++            "target": "You: https://www.zarooratwala.com/",
++            "why": "retry same hit",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert rejected.ok is False
++    assert "NAVIGATION_MISMATCH" in rejected.why
++
++
++def test_world_container_contradiction_clears_task_container_binding():
++    """task_state.source_chat_open must follow authoritative open_conversation."""
++    from plugin.agent.decision_consultation import task_state_from_context
++    from types import SimpleNamespace
++
++    goal = SimpleNamespace(
++        contact="Pallavi",
++        link_query="zarooratwala",
++        target_contact="Tanmay",
++        originator="",
++    )
++    # Document says ZarooratWala — must not report Pallavi source open.
++    ts = task_state_from_context(
++        goal,
++        world_document={
++            "surface": "conversation",
++            "open_conversation": "ZarooratWala - Fresh Groceries Delivered",
++        },
++        features=SimpleNamespace(
++            conversation_open=True,
++            extras={},
++        ),
++    )
++    assert ts.source_chat_open is False
++    assert "ZarooratWala" in ts.open_conversation
++
++
++def test_reveal_requires_verified_source_container():
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={
++            "surface": "conversation",
++            "open_conversation": "ZarooratWala - Fresh Groceries Delivered",
++        },
++        task_state=TaskState(
++            phase="hunt_content",
++            source_chat_open=False,
++            open_conversation="ZarooratWala - Fresh Groceries Delivered",
++            content_located=False,
++        ),
++        capabilities=["reveal_actions", "open_entity", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="conversation"),
++    )
++    out = sanitize_decision(
++        {
++            "capability": "reveal_actions",
++            "target": "You: https://www.zarooratwala.com/",
++            "why": "forward",
++            "confidence": 0.95,
++        },
++        brief,
++    )
++    assert out.ok is False
++    assert (
++        "verified source container" in out.why
++        or "foreign_open" in out.why
++    )
++
++
++def test_forwarded_badge_is_not_forward_affordance():
++    assert _label_looks_like_menu_verb("• Forwarded") is False
++    assert _label_looks_like_menu_verb("Forwarded") is False
++    assert _label_looks_like_menu_verb("Forward") is True
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={"surface": "conversation", "open_conversation": "Pallavi"},
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            open_conversation="Pallavi",
++            content_located=True,
++        ),
++        capabilities=["invoke_affordance", "reveal_actions", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="conversation"),
++    )
++    out = sanitize_decision(
++        {
++            "capability": "invoke_affordance",
++            "target": "• Forwarded",
++            "why": "forward",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert out.ok is False
++    assert "metadata" in out.why or "Forwarded" in out.why
++
++
++def test_foreign_container_locus_forbids_reveal():
++    """Defense in depth: locus_contract blocks patient caps on foreign open."""
++    from plugin.agent.capabilities.locus_contract import wrong_locus_forbidden
++
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={
++            "surface": "conversation",
++            "open_conversation": "ZarooratWala - Fresh Groceries Delivered",
++        },
++        task_state=TaskState(
++            phase="hunt_content",
++            source_chat_open=False,
++            open_conversation="ZarooratWala - Fresh Groceries Delivered",
++        ),
++        capabilities=["reveal_actions", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="conversation"),
++    )
++    bad, why, _ = wrong_locus_forbidden("reveal_actions", brief=brief)
++    assert bad is True
++    assert "foreign_open" in why
++    out = sanitize_decision(
++        {
++            "capability": "reveal_actions",
++            "target": "You: https://www.zarooratwala.com/",
++            "why": "forward",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert out.ok is False
++
++
++def test_forwarded_startswith_forward_is_not_picker_verb():
++    """Picker dest-gate must not treat Forwarded as Forward via startswith."""
++    brief = DecisionBrief(
++        goal={
++            "contact": "Pallavi",
++            "destination": "Tanmay",
++            "target_contact": "Tanmay",
++            "source_query": "zarooratwala",
++        },
++        world={"surface": "forward_picker", "open_conversation": ""},
++        task_state=TaskState(
++            phase="choose_destination",
++            source_chat_open=True,
++            open_conversation="Pallavi",
++        ),
++        capabilities=["invoke_affordance", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="forward_picker"),
++    )
++    # If Forwarded were treated as a forward verb, sanitize would demand
++    # destination selection. Provenance badges must fall through / fail cleanly
++    # as non-verbs (metadata reject or not dest-selected for true Forward).
++    out = sanitize_decision(
++        {
++            "capability": "invoke_affordance",
++            "target": "Forwarded",
++            "why": "forward",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert out.ok is False
++    assert "destination not selected" not in out.why
++    assert "metadata" in out.why or "Forwarded" in out.why
+-- 
+2.39.5 (Apple Git-154)
+
+
+From 8dde6a38f13658256efc2b657409c5ffe0418532 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 15:28:25 +0530
+Subject: [PATCH 2/3] fix(agent): reject reveal grounding in input loci without
+ killing the run
+
+Treat composer-band context clicks as GROUNDING_WRONG_LOCUS: invalidate the
+point, preserve reveal method and patient, and escalate health to stall_hard
+only after recovery is ignored or exhausted.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/actor.py                         |  39 ++
+ plugin/agent/affordance_frontier.py           | 189 +++++-
+ plugin/agent/capabilities/locus_contract.py   | 173 ++++-
+ plugin/agent/capabilities/resolve_entity.py   | 102 ++-
+ plugin/agent/capabilities/reveal_actions.py   |  87 +++
+ .../agent/executive/affordance_commitment.py  |  86 +++
+ plugin/agent/executive/executability_gate.py  |  42 +-
+ plugin/agent/grounding_validity.py            |  32 +-
+ plugin/agent/role_binding.py                  | 321 +++++++++-
+ plugin/agent/task_binding.py                  |  18 +-
+ plugin/agent/world_critic.py                  |  44 ++
+ plugin/experiments/run_forward_message.py     |  39 +-
+ plugin/experiments/runs/live_health.py        | 598 ++++++++++++++++++
+ tests/plugin/test_grounding_wrong_locus.py    | 248 ++++++++
+ 14 files changed, 1981 insertions(+), 37 deletions(-)
+ create mode 100644 plugin/experiments/runs/live_health.py
+ create mode 100644 tests/plugin/test_grounding_wrong_locus.py
+
+diff --git a/plugin/agent/actor.py b/plugin/agent/actor.py
+index dd7193fac..029e2f112 100644
+--- a/plugin/agent/actor.py
++++ b/plugin/agent/actor.py
+@@ -738,6 +738,32 @@ def validate_brief(brief: ActorBrief) -> Tuple[bool, str]:
+     )
+     if locus_bad:
+         return False, locus_why
++    # Point-in-region: reveal/select must not ground into input/composer loci
++    # (live 134636: semantic patient ok, point landed in composer).
++    try:
++        from plugin.agent.capabilities.locus_contract import (
++            point_locus_forbidden_for_capability,
++        )
++
++        pt = brief.point
++        if pt is None and brief.bounds is not None:
++            try:
++                b = brief.bounds
++                pt = (float(b[0]) + float(b[2]) / 2.0, float(b[1]) + float(b[3]) / 2.0)
++            except (TypeError, ValueError, IndexError):
++                pt = None
++        audit = brief.geometry_audit if isinstance(brief.geometry_audit, dict) else {}
++        point_bad, point_why, _ = point_locus_forbidden_for_capability(
++            str(brief.capability or ""),
++            pt,
++            scene_graph=audit.get("scene_graph") or audit.get("scene_regions"),
++            objects=audit.get("document_objects") or audit.get("objects"),
++            field_role=str(brief.field_role or ""),
++        )
++        if point_bad:
++            return False, point_why
++    except Exception:
++        pass
+     return True, "ok"
+ 
+ 
+@@ -1116,6 +1142,19 @@ def brief_from_brain_choice(
+         "geometry_source",
+         str(action.get("geometry_source") or winner_space or ""),
+     )
++    # Stamp semantic regions / objects so validate_brief can refuse input-locus
++    # points without WhatsApp Y heuristics (live 134636). Keep the point so the
++    # refusal why carries composer_point (do not silent-drop → capability fallthrough).
++    try:
++        doc = world_document if isinstance(world_document, dict) else {}
++        sg = doc.get("scene_graph") or doc.get("regions")
++        if sg is not None:
++            geometry_audit.setdefault("scene_graph", sg)
++        objs = [o for o in (doc.get("objects") or []) if isinstance(o, dict)]
++        if objs:
++            geometry_audit.setdefault("document_objects", objs[:48])
++    except Exception:
++        pass
+     if geometry_audit.get("grounding_uncertain"):
+         # Fail closed: do not emit a clickable brief with invented coordinates.
+         point = None
+diff --git a/plugin/agent/affordance_frontier.py b/plugin/agent/affordance_frontier.py
+index 80747458e..96835d5cf 100644
+--- a/plugin/agent/affordance_frontier.py
++++ b/plugin/agent/affordance_frontier.py
+@@ -134,6 +134,9 @@ class Affordance:
+     coordinate_space: str = ""
+     geometry_source: str = ""
+     owner_surface: str = ""
++    # Temporal provenance: WHEN the geometry was true (not current world time).
++    capture_id: str = ""
++    frame_id: str = ""
+ 
+     def to_dict(self) -> Dict[str, Any]:
+         out: Dict[str, Any] = {
+@@ -173,6 +176,10 @@ class Affordance:
+             out["geometry_source"] = str(self.geometry_source)[:40]
+         if self.owner_surface:
+             out["owner_surface"] = str(self.owner_surface)[:40]
++        if self.capture_id:
++            out["capture_id"] = str(self.capture_id)[:80]
++        if self.frame_id:
++            out["frame_id"] = str(self.frame_id)[:80]
+         return out
+ 
+ 
+@@ -448,12 +455,60 @@ def _center(bounds: Any) -> Optional[Tuple[int, int]]:
+ # --- observed ---------------------------------------------------------------
+ 
+ 
++def _temporal_from_item(
++    item: Optional[Dict[str, Any]],
++    *,
++    default_capture_id: str = "",
++) -> Tuple[str, str]:
++    """Producer capture/frame stamps — never invent current-world freshness.
++
++    ``frame_id`` is returned raw; callers must resolve it against
++    ``coordinate_space`` via :func:`resolve_frame_id_for_space`.
++    """
++    row = item if isinstance(item, dict) else {}
++    cid = str(
++        row.get("capture_id")
++        or row.get("grounding_capture_id")
++        or default_capture_id
++        or ""
++    ).strip()[:80]
++    fid = str(
++        row.get("frame_id") or row.get("coordinate_frame_id") or ""
++    ).strip()[:80]
++    return cid, fid
++
++
++def _coerce_frame_graph(raw: Any) -> Any:
++    if raw is None:
++        return None
++    try:
++        from plugin.perception.coordinate_frame import FrameGraph
++
++        if isinstance(raw, FrameGraph):
++            return raw
++        if isinstance(raw, dict):
++            return FrameGraph.from_dict(raw)
++    except Exception:
++        return None
++    return None
++
++
+ def observed_from_ax(
+     ax_evidence: Iterable[Dict[str, Any]],
+     *,
+     goal_kind: str = "forward_message",
++    capture_id: str = "",
++    frame_graph: Any = None,
+ ) -> Tuple[List[Affordance], List[Dict[str, str]]]:
+-    """Turn AX evidence into affordances that are true right now."""
++    """Turn AX evidence into affordances that are true right now.
++
++    ``capture_id`` / ``frame_graph`` are producer stamps for this observation.
++    AX geometry is screen-space: ``frame_id`` is always the graph's screen
++    frame (never a generic document frame / image frame).
++    """
++    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
++
++    graph = _coerce_frame_graph(frame_graph)
+     found: List[Affordance] = []
+     excluded: List[Dict[str, str]] = []
+     for item in ax_evidence:
+@@ -483,6 +538,13 @@ def observed_from_ax(
+         if actions:
+             evidence.insert(0, Evidence(SOURCE_AX_ACTION, ",".join(actions[:3])))
+         reversible = family != "commit_irreversible"
++        cid, raw_fid = _temporal_from_item(item, default_capture_id=capture_id)
++        # Screen space only — never inherit an image/document frame id.
++        fid = resolve_frame_id_for_space(
++            frame_id=raw_fid,
++            coordinate_space="screen",
++            graph=graph,
++        )
+         found.append(
+             Affordance(
+                 id=f"ax_{entity_id if entity_id is not None else len(found)}_{family}",
+@@ -495,12 +557,14 @@ def observed_from_ax(
+                 risk=0.4 if not reversible else 0.05,
+                 reversible=reversible,
+                 evidence=evidence,
+-                # AX measured bounds are pointer/screen space by producer contract.
+-                coordinate_space="screen" if point is not None else "",
++                # AX measured geometry is screen-space by producer contract.
++                coordinate_space="screen",
+                 geometry_source="ax_action" if actions else "ax_role",
+                 owner_surface=str(item.get("owner_surface") or item.get("surface") or "")[
+                     :40
+                 ],
++                capture_id=cid,
++                frame_id=fid,
+             )
+         )
+     return found, excluded
+@@ -512,6 +576,7 @@ def observed_from_objects(
+     goal_kind: str = "forward_message",
+     point_scale: float = 1.0,
+     point_origin: Tuple[float, float] = (0.0, 0.0),
++    frame_graph: Any = None,
+ ) -> List[Affordance]:
+     """Affordances on things only the model can see.
+ 
+@@ -519,6 +584,9 @@ def observed_from_objects(
+     without this the frontier would claim the only actionable things on a
+     conversation are the window's chrome buttons.
+     """
++    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
++
++    graph = _coerce_frame_graph(frame_graph)
+     found: List[Affordance] = []
+     for index, item in enumerate(objects):
+         if not isinstance(item, dict):
+@@ -559,6 +627,14 @@ def observed_from_objects(
+         # Keep untagged objects for probe/latent discovery. Executable publish
+         # requires stamped coordinate_space — never invent it here.
+         # matches_goal is recall-only; do not let it dominate affordance rank.
++        cid, raw_fid = _temporal_from_item(item)
++        fid = ""
++        if space in {"screen", "image"}:
++            fid = resolve_frame_id_for_space(
++                frame_id=raw_fid,
++                coordinate_space=space,
++                graph=graph,
++            )
+         found.append(
+             Affordance(
+                 id=f"obj_{index}_{family}",
+@@ -579,6 +655,8 @@ def observed_from_objects(
+                 coordinate_space=space if space in {"screen", "image"} else "",
+                 geometry_source=geo_src[:40],
+                 owner_surface=owner[:40],
++                capture_id=cid,
++                frame_id=fid,
+             )
+         )
+     return found
+@@ -841,8 +919,10 @@ def _best_per_label(latents: Sequence[Affordance]) -> List[Affordance]:
+     return sorted(best.values(), key=lambda a: -float(a.confidence))
+ 
+ 
+-def _provenance_from_grounded(match: Any) -> Tuple[str, str, str]:
+-    """Copy producer stamps from a reveal Action target — never invent space."""
++def _provenance_from_grounded(match: Any) -> Tuple[str, str, str, str, str]:
++    """Copy producer stamps from a reveal Action target — never invent space/time."""
++    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
++
+     target = getattr(match, "target", None) or {}
+     if not isinstance(target, dict):
+         target = {}
+@@ -851,7 +931,15 @@ def _provenance_from_grounded(match: Any) -> Tuple[str, str, str]:
+         space = ""
+     geo = str(target.get("geometry_source") or "").strip()[:40]
+     owner = str(target.get("owner_surface") or target.get("surface") or "").strip()[:40]
+-    return space, geo, owner
++    cid, raw_fid = _temporal_from_item(target)
++    fid = ""
++    if space:
++        fid = resolve_frame_id_for_space(
++            frame_id=raw_fid,
++            coordinate_space=space,
++            graph=None,
++        )
++    return space, geo, owner, cid, fid
+ 
+ 
+ def _actuators_from_grounded(match: Any) -> Tuple[List[Dict[str, Any]], Optional[int]]:
+@@ -911,7 +999,7 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
+         if not actuators:
+             still_latent.append(latent)
+             continue
+-        space, geo, owner = _provenance_from_grounded(match)
++        space, geo, owner, cid, fid = _provenance_from_grounded(match)
+         promoted.append(
+             Affordance(
+                 id=f"revealed_{_norm(latent.target_label)}",
+@@ -928,6 +1016,8 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
+                 coordinate_space=space,
+                 geometry_source=geo,
+                 owner_surface=owner,
++                capture_id=cid,
++                frame_id=fid,
+             )
+         )
+         grounded.pop(_norm(latent.target_label), None)
+@@ -942,7 +1032,7 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
+             continue
+         label = str(getattr(match, "label", "") or key)
+         irreversible = is_irreversible_affordance(label)
+-        space, geo, owner = _provenance_from_grounded(match)
++        space, geo, owner, cid, fid = _provenance_from_grounded(match)
+         promoted.append(
+             Affordance(
+                 id=f"revealed_{key}",
+@@ -958,6 +1048,8 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
+                 coordinate_space=space,
+                 geometry_source=geo,
+                 owner_surface=owner,
++                capture_id=cid,
++                frame_id=fid,
+             )
+         )
+     frontier.observed_actions = frontier.observed_actions + promoted
+@@ -973,12 +1065,24 @@ def ground_revealed(frontier: AffordanceFrontier, reveal_result: Any) -> Afforda
+ def publish_grounded_affordance_set(
+     execution_state: Any, frontier: Optional[AffordanceFrontier]
+ ) -> List[Dict[str, Any]]:
+-    """Persist grounded menu controls as the affordance_set substrate.
++    """Persist *currently executable* grounded controls.
++
++    Frontier / historical observed rows may retain stale capture provenance.
++    This set means controls executable **now**, so publication requires:
+ 
+-    Preserves producer provenance only. Unknown coordinate_space → not
+-    executable (skipped). May stamp capture_id for freshness, never invent
+-    coordinate_space or owner_surface.
++    * actionable actuators
++    * known coordinate_space (screen|image)
++    * known current capture
++    * affordance.capture_id == current capture
++    * authoritative FrameGraph
++    * frame_id that resolves for that coordinate_space
++
++    Unknown freshness / missing graph → fail closed (empty executable set).
++    Never invents or restamps coordinate_space / owner_surface / capture_id /
++    frame_id onto older geometry.
+     """
++    from plugin.perception.coordinate_frame import resolve_frame_id_for_space
++
+     out: List[Dict[str, Any]] = []
+     if frontier is None:
+         if execution_state is not None:
+@@ -987,21 +1091,23 @@ def publish_grounded_affordance_set(
+             except Exception:
+                 pass
+         return out
+-    capture_id = ""
++    active_cid = ""
++    graph = None
+     if execution_state is not None:
+         try:
+-            from plugin.agent.grounding_validity import current_capture_id_from_state
++            from plugin.agent.grounding_validity import resolve_active_frame_graph
+ 
+-            capture_id = current_capture_id_from_state(execution_state)
++            graph, _, active_cid = resolve_active_frame_graph(execution_state)
+         except Exception:
+-            capture_id = ""
+-        doc = getattr(execution_state, "unified_world_document", None) or {}
+-        if isinstance(doc, dict):
+-            if not capture_id:
+-                capture_id = str(doc.get("capture_id") or "").strip()
+-            ts = doc.get("task_surface")
+-            if not capture_id and isinstance(ts, dict):
+-                capture_id = str(ts.get("capture_id") or "").strip()
++            graph, active_cid = None, ""
++    # Cannot establish "now" → nothing is currently executable.
++    if not active_cid or graph is None:
++        if execution_state is not None:
++            try:
++                execution_state.last_grounded_affordance_set = []
++            except Exception:
++                pass
++        return out
+     for aff in frontier.observed_actions:
+         if aff.family not in {"invoke_affordance", "commit_irreversible"}:
+             continue
+@@ -1012,8 +1118,21 @@ def publish_grounded_affordance_set(
+         if space not in {"screen", "image"}:
+             # Unknown provenance stays ungrounded — publisher never invents space.
+             continue
+-        if capture_id:
+-            row["capture_id"] = capture_id
++        row_cid = str(row.get("capture_id") or "").strip()
++        # Preserve stale evidence in the frontier; do not expose it as executable.
++        if not row_cid or row_cid != active_cid:
++            continue
++        row_fid = str(row.get("frame_id") or "").strip()
++        if not row_fid:
++            continue
++        resolved = resolve_frame_id_for_space(
++            frame_id=row_fid,
++            coordinate_space=space,
++            graph=graph,
++        )
++        # Fail closed: do not restamp expected frame into the published row.
++        if resolved != row_fid:
++            continue
+         out.append(row)
+     if execution_state is not None:
+         try:
+@@ -1209,17 +1328,33 @@ def build_affordance_frontier(
+     memory: Optional[TransitionMemory] = None,
+     point_scale: float = 1.0,
+     point_origin: Tuple[float, float] = (0.0, 0.0),
++    capture_id: str = "",
++    frame_graph: Any = None,
+ ) -> AffordanceFrontier:
+     """Assemble the frontier for the active surface and one action beyond it.
+ 
+     Scope is the point of the signature: the current surface, what is on it,
+     and what one interaction reaches. Shipping the whole application's action
+     space is what produced the polluted graphs this replaces.
++
++    ``capture_id`` / ``frame_graph`` are producer stamps for this observation.
++    Frame IDs are derived per ``coordinate_space`` from the graph — never from
++    a generic document ``frame_id``.
+     """
+     surface = _norm(surface)
+-    ax_actions, excluded = observed_from_ax(ax_evidence or (), goal_kind=goal_kind)
++    graph = _coerce_frame_graph(frame_graph)
++    ax_actions, excluded = observed_from_ax(
++        ax_evidence or (),
++        goal_kind=goal_kind,
++        capture_id=capture_id,
++        frame_graph=graph,
++    )
+     object_actions = observed_from_objects(
+-        objects or (), goal_kind=goal_kind, point_scale=point_scale, point_origin=point_origin
++        objects or (),
++        goal_kind=goal_kind,
++        point_scale=point_scale,
++        point_origin=point_origin,
++        frame_graph=graph,
+     )
+     observed = object_actions + ax_actions
+ 
+diff --git a/plugin/agent/capabilities/locus_contract.py b/plugin/agent/capabilities/locus_contract.py
+index f096466ac..ba78ac6ce 100644
+--- a/plugin/agent/capabilities/locus_contract.py
++++ b/plugin/agent/capabilities/locus_contract.py
+@@ -9,7 +9,7 @@ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ from enum import Enum
+-from typing import Any, Dict, FrozenSet, Optional, Tuple
++from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple
+ 
+ from plugin.agent.capabilities.action_area import (
+     COMPOSER_KINDS,
+@@ -21,6 +21,33 @@ from plugin.agent.capabilities.action_area import (
+     validate_actuation_grounding,
+ )
+ 
++# Semantic region kinds that are input loci — not patient/content actuation sites.
++_INPUT_REGION_KINDS: FrozenSet[str] = frozenset(
++    {
++        "composer",
++        "input",
++        "message_composer",
++        "chat_composer",
++        "message_input",
++        "textarea",
++        "search_field",
++        "filter_field",
++        "address_bar",
++        "terminal",
++    }
++)
++# Content / patient loci (message body, timeline, result list, etc.).
++_CONTENT_REGION_KINDS: FrozenSet[str] = frozenset(
++    {
++        "timeline",
++        "conversation",
++        "content",
++        "main_pane",
++        "result_list",
++        "message_list",
++    }
++)
++
+ FILTER_FIELD_ROLES: FrozenSet[str] = frozenset(
+     {"in_chat_find", "sidebar_search", "destination_filter"}
+ )
+@@ -81,6 +108,150 @@ def _norm(s: Any) -> str:
+     return str(s or "").strip().lower()
+ 
+ 
++def _as_xy(point: Any) -> Optional[Tuple[float, float]]:
++    if not isinstance(point, (list, tuple)) or len(point) < 2:
++        return None
++    try:
++        return float(point[0]), float(point[1])
++    except (TypeError, ValueError):
++        return None
++
++
++def _bounds_rect(bounds: Any) -> Optional[Tuple[float, float, float, float]]:
++    """Normalize bounds to ``(x0, y0, x1, y1)``.
++
++    Accepts xywh or x0y0x1y1. Does not invent geometry from Y-fraction heuristics.
++    """
++    if not isinstance(bounds, (list, tuple)) or len(bounds) < 4:
++        return None
++    try:
++        a, b, c, d = (
++            float(bounds[0]),
++            float(bounds[1]),
++            float(bounds[2]),
++            float(bounds[3]),
++        )
++    except (TypeError, ValueError):
++        return None
++    # x0y0x1y1 when c,d look like absolute corners past the origin.
++    if c > a and d > b and (c - a) >= 4 and (d - b) >= 4:
++        return (a, b, c, d)
++    # Otherwise xywh.
++    if c > 0 and d > 0:
++        return (a, b, a + c, b + d)
++    return None
++
++
++def _point_in_rect(point: Tuple[float, float], rect: Tuple[float, float, float, float]) -> bool:
++    x, y = point
++    x0, y0, x1, y1 = rect
++    return x0 <= x <= x1 and y0 <= y <= y1
++
++
++def _iter_scene_regions(scene_graph: Any) -> List[Dict[str, Any]]:
++    if isinstance(scene_graph, dict):
++        raw = scene_graph.get("regions") or []
++    elif isinstance(scene_graph, (list, tuple)):
++        raw = scene_graph
++    else:
++        return []
++    return [r for r in raw if isinstance(r, dict)]
++
++
++def semantic_region_at_point(
++    point: Any,
++    *,
++    scene_graph: Any = None,
++    objects: Optional[Sequence[Dict[str, Any]]] = None,
++) -> str:
++    """Return the semantic region kind containing ``point``, or ``\"\"``.
++
++    Authority order:
++    1. Explicit scene-graph region bounds (composer / timeline / …)
++    2. Perceived object kinds whose bounds contain the point (composer input, etc.)
++
++    Bare screen-Y heuristics are intentionally not used — a message near the
++    composer boundary must stay valid when it sits in a content/timeline region.
++    """
++    xy = _as_xy(point)
++    if xy is None:
++        return ""
++    # Prefer the most specific input match, else first content match.
++    hit_input = ""
++    hit_content = ""
++    hit_other = ""
++    for reg in _iter_scene_regions(scene_graph):
++        kind = _norm(reg.get("kind") or reg.get("role") or reg.get("region_kind"))
++        rect = _bounds_rect(reg.get("bounds") or reg.get("rect"))
++        if not kind or rect is None:
++            continue
++        if not _point_in_rect(xy, rect):
++            continue
++        if kind in _INPUT_REGION_KINDS or kind in COMPOSER_KINDS:
++            hit_input = kind
++            break
++        if kind in _CONTENT_REGION_KINDS and not hit_content:
++            hit_content = kind
++        elif not hit_other:
++            hit_other = kind
++    if hit_input:
++        return hit_input
++    for obj in objects or ():
++        if not isinstance(obj, dict):
++            continue
++        kind = _norm(obj.get("kind") or obj.get("role"))
++        if kind not in _INPUT_REGION_KINDS and kind not in COMPOSER_KINDS:
++            continue
++        rect = _bounds_rect(obj.get("bounds") or obj.get("rect"))
++        if rect is None:
++            continue
++        if _point_in_rect(xy, rect):
++            return kind or "composer"
++    if hit_content:
++        return hit_content
++    return hit_other
++
++
++def point_locus_forbidden_for_capability(
++    capability: str,
++    point: Any,
++    *,
++    scene_graph: Any = None,
++    objects: Optional[Sequence[Dict[str, Any]]] = None,
++    field_role: str = "",
++) -> Tuple[bool, str, Optional[LocusRequirement]]:
++    """Pre-motor: patient/content acts may not ground into input loci.
++
++    Returns ``(forbidden, why, requirement)``.
++    """
++    cap = _norm(capability).replace("-", "_")
++    if cap not in _PATIENT_CAPS and cap not in {"select_content"}:
++        return False, "ok", None
++    # Destination-picker invoke is not a content-patient reveal.
++    role = _norm(field_role)
++    if role in COMPOSER_FIELD_ROLES:
++        # Role already forbids; point check reinforces when role unset.
++        pass
++    region = semantic_region_at_point(
++        point, scene_graph=scene_graph, objects=objects
++    )
++    if not region:
++        return False, "ok", None
++    if region in _INPUT_REGION_KINDS or region in COMPOSER_KINDS:
++        r = LocusRequirement(
++            desired_effect="affordance_invoked",
++            required_locus="patient/content region",
++            forbidden_loci=("composer", "input"),
++            kind=LocusKind.PATIENT,
++        )
++        return (
++            True,
++            f"wrong_locus:patient:composer_point:{cap}:{region}",
++            r,
++        )
++    return False, "ok", None
++
++
+ def requirement_for_capability(
+     capability: str,
+     *,
+diff --git a/plugin/agent/capabilities/resolve_entity.py b/plugin/agent/capabilities/resolve_entity.py
+index bed7e419c..3b82797f1 100644
+--- a/plugin/agent/capabilities/resolve_entity.py
++++ b/plugin/agent/capabilities/resolve_entity.py
+@@ -20,7 +20,7 @@ import logging
+ import os
+ import re
+ from dataclasses import dataclass, field
+-from typing import Any, Dict, List, Optional, Protocol, Sequence, runtime_checkable
++from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, runtime_checkable
+ 
+ from plugin.agent.capabilities.base import CapabilityOutcome
+ 
+@@ -320,6 +320,106 @@ def open_matches_referent(open_title: str, referent: str) -> bool:
+     return False
+ 
+ 
++_SOURCE_CONTACT_ROW_KINDS = frozenset(
++    {
++        "chat_row",
++        "conversation",
++        "conversation_row",
++        "contact",
++        "contact_row",
++        "row",
++        "list_row",
++        "thread",
++        "container",
++        "chat",
++        "search_result",
++        "search_result_row",
++        "picker_row",
++        "result",
++    }
++)
++
++
++def row_matches_source_contact(label: str, source: str) -> bool:
++    """Whether a list/search row is the source contact (name head, not preview)."""
++    if not source or not label:
++        return False
++    head = _row_contact_name(label)
++    if open_matches_referent(head, source):
++        return True
++    return open_matches_referent(_clean_label(label), source)
++
++
++def _object_has_actuatable_geometry(obj: Dict[str, Any]) -> bool:
++    point = obj.get("point") or obj.get("target_point")
++    if isinstance(point, (list, tuple)) and len(point) >= 2:
++        try:
++            float(point[0])
++            float(point[1])
++            return True
++        except (TypeError, ValueError):
++            pass
++    bounds = obj.get("bounds")
++    if isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
++        try:
++            return float(bounds[2]) > 0 and float(bounds[3]) > 0
++        except (TypeError, ValueError):
++            return False
++    return False
++
++
++def actuatable_source_contact_row(
++    document: Optional[Dict[str, Any]],
++    source: str,
++) -> Optional[Dict[str, Any]]:
++    """Best actuatable chat/contact row matching ``source``, or None.
++
++    Live 145943: Pallavi chat_row already visible while a foreign pane is open —
++    opening that row is the required next effect; link-query compose is a child
++    of being in the right conversation.
++    """
++    src = _clean_label(source)
++    doc = document if isinstance(document, dict) else {}
++    if not src:
++        return None
++    best: Optional[Tuple[float, Dict[str, Any]]] = None
++    for obj in doc.get("objects") or []:
++        if not isinstance(obj, dict):
++            continue
++        if not _object_has_actuatable_geometry(obj):
++            continue
++        kind = str(obj.get("kind") or obj.get("entity_kind") or obj.get("type") or "").strip().lower()
++        text = _clean_label(obj.get("text") or obj.get("label") or obj.get("name") or "")
++        if not text or not row_matches_source_contact(text, src):
++            continue
++        # Prefer explicit chat/contact rows; reject message/link content kinds.
++        if kind in {
++            "message",
++            "message_row",
++            "message_bubble",
++            "link",
++            "content_item",
++            "attachment",
++            "document",
++            "search_field",
++            "search_input",
++            "textfield",
++            "composer",
++        }:
++            continue
++        if kind and kind not in _SOURCE_CONTACT_ROW_KINDS:
++            # Unknown presentation kinds still OK when name head matches exactly.
++            head = _row_contact_name(text)
++            if not open_matches_referent(head, src):
++                continue
++        score = 2.0 if kind in {"chat_row", "conversation", "conversation_row", "contact"} else 1.0
++        if obj.get("matches_goal"):
++            score += 0.5
++        if best is None or score > best[0]:
++            best = (score, dict(obj))
++    return best[1] if best else None
++
++
+ def allow_keyboard_search_open(
+     *,
+     hint: str,
+diff --git a/plugin/agent/capabilities/reveal_actions.py b/plugin/agent/capabilities/reveal_actions.py
+index 3f125c9c9..abbaf45d3 100644
+--- a/plugin/agent/capabilities/reveal_actions.py
++++ b/plugin/agent/capabilities/reveal_actions.py
+@@ -226,6 +226,16 @@ def visible_actions_from_context(context: Optional[Dict[str, Any]]) -> List[Acti
+             owner = str(obj.get("owner_surface") or obj.get("surface") or "").strip()
+             if owner:
+                 target["owner_surface"] = owner[:40]
++            cid = str(
++                obj.get("capture_id") or obj.get("grounding_capture_id") or ""
++            ).strip()
++            if cid:
++                target["capture_id"] = cid[:80]
++            fid = str(
++                obj.get("frame_id") or obj.get("coordinate_frame_id") or ""
++            ).strip()
++            if fid:
++                target["frame_id"] = fid[:80]
+             out.append(
+                 Action(
+                     label=label,
+@@ -256,6 +266,21 @@ def visible_actions_from_context(context: Optional[Dict[str, Any]]) -> List[Acti
+                 if isinstance(act, dict) and act.get("point"):
+                     target["point"] = list(act["point"])
+                     break
++            space = str(aff.get("coordinate_space") or "").strip().lower()
++            if space in {"screen", "image"}:
++                target["coordinate_space"] = space
++            geo = str(aff.get("geometry_source") or "").strip()
++            if geo:
++                target["geometry_source"] = geo[:40]
++            owner = str(aff.get("owner_surface") or "").strip()
++            if owner:
++                target["owner_surface"] = owner[:40]
++            cid = str(aff.get("capture_id") or "").strip()
++            if cid:
++                target["capture_id"] = cid[:80]
++            fid = str(aff.get("frame_id") or "").strip()
++            if fid:
++                target["frame_id"] = fid[:80]
+             out.append(
+                 Action(
+                     label=label,
+@@ -404,6 +429,68 @@ def reveal_actions(
+             )
+     except Exception:
+         pass
++    # Pre-motor locus: refuse input-region geometry (live 134636 composer band).
++    try:
++        from plugin.agent.capabilities.locus_contract import (
++            point_locus_forbidden_for_capability,
++        )
++
++        cx = cy = None
++        b = getattr(entity, "bounds", None)
++        if isinstance(b, (list, tuple)) and len(b) >= 4:
++            try:
++                # Support xywh and x0y0x1y1.
++                x0, y0, c, d = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
++                if c > x0 and d > y0:
++                    cx, cy = (x0 + c) / 2.0, (y0 + d) / 2.0
++                else:
++                    cx, cy = x0 + c / 2.0, y0 + d / 2.0
++            except (TypeError, ValueError):
++                cx = cy = None
++        pt = getattr(entity, "point", None)
++        if cx is None and isinstance(pt, (list, tuple)) and len(pt) >= 2:
++            cx, cy = float(pt[0]), float(pt[1])
++        ctx = context if isinstance(context, dict) else {}
++        sg = ctx.get("scene_graph")
++        objs = ctx.get("objects") if isinstance(ctx.get("objects"), list) else None
++        if cx is not None and cy is not None:
++            bad, why, _ = point_locus_forbidden_for_capability(
++                "reveal_actions",
++                (cx, cy),
++                scene_graph=sg,
++                objects=objs,
++            )
++            if bad:
++                est = ctx.get("execution_state")
++                if est is not None:
++                    try:
++                        from plugin.agent.executive.affordance_commitment import (
++                            arm_wrong_point_grounding_recovery,
++                        )
++
++                        arm_wrong_point_grounding_recovery(
++                            est,
++                            family="reveal_actions",
++                            label=str(getattr(entity, "label", "") or ""),
++                            patient_ref=str(getattr(entity, "label", "") or ""),
++                            point=(cx, cy),
++                            why=why,
++                        )
++                    except Exception:
++                        pass
++                return RevealResult(
++                    ok=False,
++                    method=gesture,
++                    escalated=False,
++                    message=why,
++                    evidence={
++                        "label": getattr(entity, "label", ""),
++                        "mode": gesture,
++                        "grounding": "wrong_locus_input",
++                    },
++                )
++    except Exception:
++        pass
+     try:
+         runtime.activate(entity.app)
+         if gesture == "hover":
+diff --git a/plugin/agent/executive/affordance_commitment.py b/plugin/agent/executive/affordance_commitment.py
+index ce5de0fed..cec5a223b 100644
+--- a/plugin/agent/executive/affordance_commitment.py
++++ b/plugin/agent/executive/affordance_commitment.py
+@@ -375,6 +375,9 @@ def evidence_indicates_grounding_failure(
+             audit.get("reason"),
+             err.get("geometry_mismatch"),
+             err.get("failure_class"),
++            err.get("why"),
++            err.get("validation"),
++            err.get("message"),
+         )
+     )
+ 
+@@ -452,11 +455,94 @@ def evidence_indicates_grounding_failure(
+         except (TypeError, ValueError):
+             pass
+ 
++    # Pre-motor / post-act: grounded into input locus while patient act intended.
++    if (
++        "composer_point" in status_bits
++        or "wrong_locus:patient:composer" in status_bits
++    ):
++        reasons.append("point_in_input_locus")
++
+     if reasons:
+         return True, ",".join(reasons[:4])
+     return False, ""
+ 
+ 
++def arm_wrong_point_grounding_recovery(
++    state: Any,
++    *,
++    family: str = "reveal_actions",
++    label: str = "",
++    patient_ref: str = "",
++    point: Any = None,
++    why: str = "",
++) -> Dict[str, Any]:
++    """Invalidate a bad grounding hypothesis; keep semantic method + patient.
++
++    Used when pre-motor locus validation refuses a composer/input point
++    (live 134636). Does not mark the reveal method ineffective.
++    """
++    out: Dict[str, Any] = {"armed": False}
++    if state is None:
++        return out
++    fam = str(family or "reveal_actions").strip().lower() or "reveal_actions"
++    lab = str(label or "").strip()
++    patient = str(patient_ref or "").strip()
++    c = active_commitment(state)
++    if c is None or (
++        lab
++        and not _label_match(c.label, lab)
++        and semantic_method_id(fam, lab) != c.semantic_method_id
++    ):
++        c = upsert_commitment(
++            state,
++            family=fam,
++            label=lab or fam,
++            desired_effect="forward_picker" if "reveal" in fam else "",
++            patient_ref=patient,
++            owner_surface_expected="conversation",
++        )
++    invalidate_grounding_hypothesis(
++        state,
++        c,
++        point=point,
++        strategy="point_locus",
++        outcome="wrong_locus_input",
++    )
++    arm_grounding_recovery(state, c, reason=str(why or "wrong_locus:composer_point")[:200])
++    try:
++        from plugin.agent.capabilities.locus_contract import stamp_wrong_locus_debt
++
++        stamp_wrong_locus_debt(
++            state,
++            kind="patient",
++            forbidden="composer",
++            required="patient/content region",
++            why=str(why or "")[:240],
++        )
++    except Exception:
++        pass
++    # Preserve semantic method — force reground, not method exhaustion.
++    try:
++        closure = dict(getattr(state, "last_effect_closure", None) or {})
++        closure["classified"] = "grounding"
++        closure["failure_class"] = "grounding"
++        closure["modes"] = ["INCONCLUSIVE_GROUNDING", "GROUNDING_WRONG_LOCUS"]
++        closure["preserve_semantic_method"] = True
++        closure["preserve_patient"] = True
++        state.last_effect_closure = closure
++    except Exception:
++        pass
++    out.update(
++        {
++            "armed": True,
++            "commitment_id": getattr(c, "commitment_id", ""),
++            "patient_ref": patient or getattr(c, "patient_ref", ""),
++            "why": str(why or "")[:200],
++        }
++    )
++    return out
++
++
+ def invalidate_grounding_hypothesis(
+     state: Any,
+     commitment: AffordanceCommitment,
+diff --git a/plugin/agent/executive/executability_gate.py b/plugin/agent/executive/executability_gate.py
+index 4b34f5637..7682a6af9 100644
+--- a/plugin/agent/executive/executability_gate.py
++++ b/plugin/agent/executive/executability_gate.py
+@@ -25,6 +25,7 @@ from plugin.agent.executive.intention_frame import (
+     evaluate_intention_success,
+     push_intention_frame,
+     resume_parent_after_child,
++    world_with_prerequisite_evidence,
+ )
+ from plugin.agent.executive.meta_action import MetaAction, MetaChoice
+ 
+@@ -57,6 +58,28 @@ class ExecutabilityGateResult:
+         }
+ 
+ 
++def mandatory_epistemic_debt(state: Any) -> str:
++    """Non-empty reason when ACT is inadmissible until a look/repair is paid.
++
++    Mandatory epistemic debts outrank instrumental intentions (including
++    ACT-producing prerequisite children). Ordering:
++
++    1. terminal safety / stop (controller)
++    2. mandatory post-action verification / reground  ← here
++    3. active prerequisite child
++    4. normal executability / meta selection
++    """
++    if state is None:
++        return ""
++    if bool(getattr(state, "must_executive_reperceive", False)) or bool(
++        getattr(state, "post_action_reperceive_pending", False)
++    ):
++        return "mandatory_post_action_verification"
++    if bool(getattr(state, "grounding_reground_only", False)):
++        return "must_reground"
++    return ""
++
++
+ def run_executability_gate(
+     state: Any,
+     *,
+@@ -74,6 +97,23 @@ def run_executability_gate(
+     view = view if isinstance(view, dict) else {}
+     result = ExecutabilityGateResult()
+ 
++    # Epistemic debt preempts every ACT-producing interruption, including
++    # skip_normal_meta prerequisite children. Child remains on the stack.
++    debt = mandatory_epistemic_debt(state)
++    if debt:
++        iframe = active_intention_frame(state)
++        result.meta = MetaChoice(
++            action=MetaAction.PERCEIVE,
++            reason=debt,
++            capability="",
++        )
++        result.skip_normal_meta = True
++        result.phase = "mandatory_verification"
++        if iframe is not None:
++            result.child_id = str(iframe.intention.id or "")
++            result.effect_key = str(iframe.prerequisite_effect_key or "")
++        return result
++
+     iframe = active_intention_frame(state)
+     intent_id = (
+         str(iframe.intention.id)
+@@ -117,7 +157,7 @@ def run_executability_gate(
+         and iframe.parent_intention_id
+         and str(iframe.prerequisite_effect_key or "")
+     ):
+-        child_world = dict(view)
++        child_world = world_with_prerequisite_evidence(state, view)
+         child_world.setdefault("surface", child_world.get("screen") or "")
+         last_ev = getattr(state, "last_housekeeping_evidence", None)
+         if isinstance(last_ev, dict):
+diff --git a/plugin/agent/grounding_validity.py b/plugin/agent/grounding_validity.py
+index f8e2c7ce4..14aa34162 100644
+--- a/plugin/agent/grounding_validity.py
++++ b/plugin/agent/grounding_validity.py
+@@ -197,21 +197,44 @@ def grounding_is_executable(
+ 
+ 
+ def grounding_repair_satisfied(state: Any) -> bool:
+-    """True only when the named reground target is fresh + executable now."""
++    """True only when the named reground target is fresh + executable now.
++
++    When a commitment_id is armed, same label on a different patient must not
++    satisfy the debt (commitment-scoped identity).
++    """
+     target = str(getattr(state, "grounding_reground_target", "") or "").strip().lower()
+     if not target:
+         return False
++    patient = str(
++        getattr(state, "grounding_reground_patient_ref", "") or ""
++    ).strip().lower()
++    cid = str(getattr(state, "grounding_reground_commitment_id", "") or "").strip()
+     doc = getattr(state, "unified_world_document", None) or {}
+     if not isinstance(doc, dict):
+         return False
+     active_surface = str(doc.get("surface") or "").strip().lower()
+     graph, surface, current_capture_id = resolve_active_frame_graph(state)
+ 
++    def _patient_ok(item: Dict[str, Any]) -> bool:
++        if not patient:
++            return True
++        blob = " ".join(
++            str(item.get(k) or "").lower()
++            for k in ("patient_ref", "patient", "source", "owner", "belongs_to")
++        )
++        if not any(item.get(k) for k in ("patient_ref", "patient", "source", "owner", "belongs_to")):
++            # No patient metadata on item — accept only when commitment has no
++            # patient either (already handled) or when cid unset.
++            return not cid
++        return patient in blob or blob in patient
++
+     for obj in doc.get("objects") or []:
+         if not isinstance(obj, dict):
+             continue
+         if not _label_exact(str(obj.get("text") or obj.get("label") or ""), target):
+             continue
++        if not _patient_ok(obj):
++            continue
+         if not belongs_to_active_surface(
+             obj, active_surface=active_surface, require_owner=True
+         ):
+@@ -231,6 +254,8 @@ def grounding_repair_satisfied(state: Any) -> bool:
+             str(aff.get("target_label") or aff.get("label") or ""), target
+         ):
+             continue
++        if not _patient_ok(aff):
++            continue
+         if not (aff.get("actuators") or []):
+             continue
+         if not belongs_to_active_surface(
+@@ -249,6 +274,9 @@ def grounding_repair_satisfied(state: Any) -> bool:
+ 
+ 
+ def current_capture_id_from_state(state: Any) -> str:
+-    """Capture id for stamping affordance sets at publish time."""
++    """Active FrameGraph / document capture id (freshness comparison only).
++
++    Must not be used to restamp older affordance geometry as current.
++    """
+     _graph, _surface, cid = resolve_active_frame_graph(state)
+     return cid
+diff --git a/plugin/agent/role_binding.py b/plugin/agent/role_binding.py
+index 821ac4b16..02085f544 100644
+--- a/plugin/agent/role_binding.py
++++ b/plugin/agent/role_binding.py
+@@ -1144,14 +1144,30 @@ class RoleBinder:
+             return False, "identity_contract_unsatisfied", proposal
+         return False, "no_valid_binding", None
+ 
++    def commit_effect(
++        self,
++        execution_state: Any,
++        *,
++        proposal: BindingProposal,
++        forward_task: Optional[Dict[str, Any]] = None,
++        evidence: str = "settled_destination_verified",
++    ) -> Optional[Dict[str, Any]]:
++        """Authoritative commit API for settled effect → role binding."""
++        return _commit_effect_binding(
++            execution_state,
++            proposal=proposal,
++            forward_task=forward_task,
++            evidence=evidence,
++        )
++
+ 
+-def role_for_action_family(family: str, *, phase: str = "") -> str:
++def role_for_action_family(family: str, *, phase: str = "", **kwargs: Any) -> str:
+     """DEPRECATED shim — import procedures.forward_message.role_for_action_family."""
+     from plugin.agent.procedures.forward_message import (
+         role_for_action_family as _proc_role,
+     )
+ 
+-    return _proc_role(family, phase=phase)
++    return _proc_role(family, phase=phase, **kwargs)
+ 
+ 
+ def verify_bound_identity(
+@@ -1186,10 +1202,19 @@ def record_negative_evidence(
+     role: str,
+     candidate_label: str,
+     reason: str = REFERENT_MISMATCH,
++    attempt_id: str = "",
+ ) -> None:
+     if execution_state is None:
+         return
++    aid = str(
++        attempt_id
++        or getattr(execution_state, "active_attempt_id", "")
++        or getattr(execution_state, "last_effect_attempt_id", "")
++        or ""
++    ).strip()
+     key = f"{_norm(role)}|{_norm(candidate_label)}"
++    if aid:
++        key = f"{key}|{aid}"
+     try:
+         bag = getattr(execution_state, "binding_negative_evidence", None)
+         if not isinstance(bag, dict):
+@@ -1198,6 +1223,7 @@ def record_negative_evidence(
+         entry["role"] = role
+         entry["label"] = candidate_label
+         entry["reason"] = reason
++        entry["attempt_id"] = aid
+         entry["count"] = int(entry.get("count") or 0) + 1
+         bag[key] = entry
+         execution_state.binding_negative_evidence = bag
+@@ -1212,6 +1238,8 @@ def record_negative_evidence(
+         closure["modes"] = modes
+         closure["referent_mismatch_role"] = role
+         closure["referent_mismatch_label"] = str(candidate_label or "")[:160]
++        if aid:
++            closure["referent_mismatch_attempt_id"] = aid
+         if _norm(role) in {"source_container", "destination"}:
+             closure["referent_repair_owed"] = False
+             closure["referent_search_needed"] = True
+@@ -1241,9 +1269,13 @@ def apply_referent_mismatch(
+     role: str,
+     candidate_label: str,
+     forward_task: Optional[Dict[str, Any]] = None,
++    attempt_id: str = "",
+ ) -> Optional[Dict[str, Any]]:
+     record_negative_evidence(
+-        execution_state, role=role, candidate_label=candidate_label
++        execution_state,
++        role=role,
++        candidate_label=candidate_label,
++        attempt_id=attempt_id,
+     )
+     if not isinstance(forward_task, dict):
+         return forward_task
+@@ -1272,6 +1304,289 @@ def apply_referent_mismatch(
+         return forward_task
+ 
+ 
++def note_transition_pending(
++    execution_state: Any,
++    *,
++    establishes_roles: Optional[list] = None,
++    target_label: str = "",
++    reason: str = "expected_transition_not_settled_yet",
++    attempt_id: str = "",
++) -> None:
++    """Record a non-terminal early-frame miss for one navigation/open attempt.
++
++    Requires an explicit ``attempt_id`` from the Action — ambient ExecutionState
++    ids are never used (would reintroduce cross-attempt attribution).
++    Foreign mismatch debt for another attempt stays; same-attempt provisional
++    mismatch may be retracted (unsettled frame does not owe SEARCH).
++    """
++    if execution_state is None:
++        return
++    aid = str(attempt_id or "").strip()
++    if not aid:
++        return
++    try:
++        closure = dict(getattr(execution_state, "last_effect_closure", None) or {})
++        modes = list(closure.get("modes") or [])
++        if reason not in modes:
++            modes.append(reason)
++        closure["modes"] = modes
++        closure["transition_pending"] = True
++        closure["pending_attempt_id"] = aid
++        closure["pending_establishes_roles"] = [
++            str(r) for r in (establishes_roles or []) if str(r).strip()
++        ]
++        if target_label:
++            closure["pending_open_target"] = str(target_label)[:160]
++        try:
++            closure["pending_since_frame"] = int(
++                getattr(execution_state, "unified_frame", 0) or 0
++            )
++        except Exception:
++            closure["pending_since_frame"] = 0
++        # Retract only this attempt's own provisional mismatch — never foreign debt.
++        mismatch_aid = str(closure.get("referent_mismatch_attempt_id") or "").strip()
++        if mismatch_aid and mismatch_aid == aid:
++            modes = [
++                m
++                for m in list(closure.get("modes") or [])
++                if str(m) not in {REFERENT_MISMATCH, "referent_mismatch"}
++            ]
++            closure["modes"] = modes
++            closure.pop("referent_search_needed", None)
++            closure.pop("referent_mismatch_role", None)
++            closure.pop("referent_mismatch_label", None)
++            closure.pop("referent_mismatch_attempt_id", None)
++            closure["referent_repair_owed"] = False
++            # Negative evidence stays but is no longer terminal until settle.
++            try:
++                bag = getattr(execution_state, "binding_negative_evidence", None)
++                if isinstance(bag, dict):
++                    for entry in bag.values():
++                        if not isinstance(entry, dict):
++                            continue
++                        if str(entry.get("attempt_id") or "").strip() != aid:
++                            continue
++                        if str(entry.get("status") or "") == "superseded":
++                            continue
++                        entry["status"] = "pending_settle"
++            except Exception:
++                pass
++        execution_state.last_effect_closure = closure
++    except Exception:
++        pass
++
++
++def clear_referent_mismatch_debt(
++    execution_state: Any,
++    *,
++    role: str = "source_container",
++    verified_label: str = "",
++    attempt_id: str = "",
++) -> bool:
++    """Supersede pending / mismatch debt for one attempt only.
++
++    Requires explicit ``attempt_id`` (Action-scoped). Ambient ExecutionState
++    fallback is forbidden. Pending and mismatch ids checked independently.
++    """
++    if execution_state is None:
++        return False
++    role_n = _norm(role)
++    aid = str(attempt_id or "").strip()
++    if not aid:
++        return False
++    cleared = False
++    try:
++        closure = dict(getattr(execution_state, "last_effect_closure", None) or {})
++        pending_aid = str(closure.get("pending_attempt_id") or "").strip()
++        mismatch_aid = str(closure.get("referent_mismatch_attempt_id") or "").strip()
++        if not aid:
++            return False
++        if pending_aid == aid:
++            closure["transition_pending"] = False
++            closure.pop("pending_establishes_roles", None)
++            closure.pop("pending_open_target", None)
++            closure.pop("pending_attempt_id", None)
++            modes = [
++                m
++                for m in list(closure.get("modes") or [])
++                if str(m) != "expected_transition_not_settled_yet"
++            ]
++            closure["modes"] = modes
++            cleared = True
++        if mismatch_aid == aid:
++            if _norm(closure.get("referent_mismatch_role")) == role_n or not closure.get(
++                "referent_mismatch_role"
++            ):
++                closure.pop("referent_mismatch_role", None)
++                closure.pop("referent_mismatch_label", None)
++                closure.pop("referent_mismatch_attempt_id", None)
++                closure["referent_search_needed"] = False
++                closure["referent_repair_owed"] = False
++                modes = [
++                    m
++                    for m in list(closure.get("modes") or [])
++                    if str(m) not in {REFERENT_MISMATCH, "referent_mismatch"}
++                ]
++                closure["modes"] = modes
++                cleared = True
++        if not cleared:
++            return False
++        if verified_label:
++            closure["verified_container_label"] = str(verified_label)[:160]
++        execution_state.last_effect_closure = closure
++    except Exception:
++        return False
++    # Supersede (do not delete) negative evidence for this attempt_id + role.
++    try:
++        bag = getattr(execution_state, "binding_negative_evidence", None)
++        if isinstance(bag, dict) and aid:
++            for _key, entry in bag.items():
++                if not isinstance(entry, dict):
++                    continue
++                if _norm(entry.get("role")) != role_n:
++                    continue
++                if str(entry.get("attempt_id") or "").strip() != aid:
++                    continue
++                entry["status"] = "superseded"
++                entry["superseded_by"] = (
++                    f"verified:{verified_label[:80]}" if verified_label else aid
++                )
++            execution_state.binding_negative_evidence = bag
++    except Exception:
++        pass
++    return True
++
++
++def _commit_effect_binding(
++    execution_state: Any,
++    *,
++    proposal: BindingProposal,
++    forward_task: Optional[Dict[str, Any]] = None,
++    evidence: str = "settled_destination_verified",
++) -> Optional[Dict[str, Any]]:
++    """Internal implementation — production callers use ``RoleBinder.commit_effect``.
++
++    Writes a ``BindingRecord`` and syncs ``ForwardTaskState``. Never touches
++    ``source_object`` when committing ``source_container``. Confirmed status
++    requires ``resolved_entity_id`` or ``resolved_label``.
++    """
++    if proposal is None or not proposal.required_constraints_satisfied:
++        return forward_task
++    role = str(proposal.role or "").strip()
++    label = str(proposal.candidate_label or "").strip()
++    if not role or not label:
++        return forward_task
++    if _norm(role) == "source_object":
++        return forward_task
++    record = BindingRecord(
++        role=role,
++        entity_id=str(proposal.candidate_id or ""),
++        label=label,
++        status="confirmed",
++        confidence=max(float(proposal.confidence or 0.0), 0.9),
++        evidence=[e.detail for e in (proposal.supporting_evidence or []) if e.detail]
++        + [f"{evidence}:{label[:80]}"],
++    )
++    try:
++        bag = getattr(execution_state, "role_bindings", None)
++        if not isinstance(bag, dict):
++            bag = {}
++        bag[role] = record.to_dict() if hasattr(record, "to_dict") else {
++            "role": record.role,
++            "entity_id": record.entity_id,
++            "label": record.label,
++            "status": record.status,
++            "confidence": record.confidence,
++            "evidence": list(record.evidence or []),
++        }
++        if execution_state is not None:
++            execution_state.role_bindings = bag
++    except Exception:
++        pass
++    if not isinstance(forward_task, dict):
++        return forward_task
++    try:
++        from plugin.agent.task_binding import ForwardTaskState
++
++        state = ForwardTaskState.from_dict(forward_task)
++        slot = {
++            "source_container": "source_conversation",
++            "source_object": "source_object",
++            "destination": "destination",
++        }.get(role, role)
++        if slot == "source_object":
++            return forward_task
++        b = state.binding(slot)
++        eid = None
++        try:
++            if str(proposal.candidate_id or "").strip().isdigit():
++                eid = int(proposal.candidate_id)
++        except (TypeError, ValueError):
++            eid = None
++        b.resolved_entity_id = eid
++        b.resolved_label = label[:160]
++        b.status = "confirmed"
++        b.confidence = max(float(b.confidence or 0.0), float(record.confidence or 0.9))
++        b.evidence = list(b.evidence or []) + [f"{evidence}:{label[:80]}"]
++        if slot == "source_conversation":
++            state.predicates.source_conversation_open = True
++        state.binding_repair = False
++        state.derive_phase(leftover=False)
++        return state.to_dict()
++    except Exception:
++        return forward_task
++
++
++def commit_effect_binding(
++    execution_state: Any,
++    *,
++    proposal: BindingProposal,
++    forward_task: Optional[Dict[str, Any]] = None,
++    evidence: str = "settled_destination_verified",
++) -> Optional[Dict[str, Any]]:
++    """Deprecated compatibility shim — routes through ``RoleBinder.commit_effect``."""
++    return RoleBinder().commit_effect(
++        execution_state,
++        proposal=proposal,
++        forward_task=forward_task,
++        evidence=evidence,
++    )
++
++
++def confirm_established_role(
++    forward_task: Optional[Dict[str, Any]],
++    *,
++    role: str,
++    label: str,
++    evidence: str = "settled_destination_verified",
++    execution_state: Any = None,
++    proposal: Optional[BindingProposal] = None,
++) -> Optional[Dict[str, Any]]:
++    """Back-compat wrapper — prefer ``RoleBinder.commit_effect`` with a proposal."""
++    binder = RoleBinder()
++    if proposal is not None:
++        return binder.commit_effect(
++            execution_state,
++            proposal=proposal,
++            forward_task=forward_task,
++            evidence=evidence,
++        )
++    fake = BindingProposal(
++        role=role,
++        candidate_id="",
++        candidate_label=label,
++        confidence=0.9,
++        required_constraints_satisfied=True,
++        supporting_evidence=[],
++    )
++    return binder.commit_effect(
++        execution_state,
++        proposal=fake,
++        forward_task=forward_task,
++        evidence=evidence,
++    )
++
++
+ # Back-compat aliases used by earlier wiring / tests.
+ Evidence = EvidenceNote
+ RoleBindingPolicy = RoleBindingSpec
+diff --git a/plugin/agent/task_binding.py b/plugin/agent/task_binding.py
+index b75d9e43f..414713704 100644
+--- a/plugin/agent/task_binding.py
++++ b/plugin/agent/task_binding.py
+@@ -27,6 +27,8 @@ class TaskBinding:
+     constraints: Dict[str, Any] = field(default_factory=dict)
+     candidate_entity_ids: List[int] = field(default_factory=list)
+     resolved_entity_id: Optional[int] = None
++    # Identity label when semantic commit has no persistent entity handle yet.
++    resolved_label: str = ""
+     confidence: float = 0.0
+     status: BindingStatus = "unresolved"
+     evidence: List[str] = field(default_factory=list)
+@@ -43,14 +45,28 @@ class TaskBinding:
+             resolved_entity_id=(
+                 int(d["resolved_entity_id"]) if d.get("resolved_entity_id") is not None else None
+             ),
++            resolved_label=str(d.get("resolved_label") or ""),
+             confidence=float(d.get("confidence") or 0.0),
+             status=str(d.get("status") or "unresolved"),  # type: ignore[arg-type]
+             evidence=[str(x) for x in (d.get("evidence") or [])],
+         )
+ 
++    @property
++    def is_identity_established(self) -> bool:
++        """Semantic identity committed (entity handle and/or authoritative label)."""
++        if self.status not in {"provisional", "confirmed"}:
++            return False
++        return self.resolved_entity_id is not None or bool(
++            str(self.resolved_label or "").strip()
++        )
++
+     @property
+     def is_grounded(self) -> bool:
+-        return self.status in {"provisional", "confirmed"} and self.resolved_entity_id is not None
++        """Persistent/usable entity handle exists — required for irreversible acts."""
++        return (
++            self.status in {"provisional", "confirmed"}
++            and self.resolved_entity_id is not None
++        )
+ 
+ 
+ @dataclass
+diff --git a/plugin/agent/world_critic.py b/plugin/agent/world_critic.py
+index 83ccc5725..a3c4229ab 100644
+--- a/plugin/agent/world_critic.py
++++ b/plugin/agent/world_critic.py
+@@ -1138,6 +1138,28 @@ def _grounded_from_objects(
+     """
+     from types import SimpleNamespace
+ 
++    from plugin.perception.coordinate_frame import (
++        FrameGraph,
++        resolve_frame_id_for_space,
++    )
++
++    graph = None
++    raw_graph = document.get("frame_graph")
++    if isinstance(raw_graph, FrameGraph):
++        graph = raw_graph
++    elif isinstance(raw_graph, dict):
++        try:
++            graph = FrameGraph.from_dict(raw_graph)
++        except Exception:
++            graph = None
++    if graph is None:
++        surface_meta = document.get("task_surface")
++        if isinstance(surface_meta, dict) and surface_meta.get("frame_graph"):
++            try:
++                graph = FrameGraph.from_dict(surface_meta.get("frame_graph"))
++            except Exception:
++                graph = None
++
+     out: List[Any] = []
+     for obj in _iter_document_objects(document):
+         label = str(obj.get("text") or obj.get("label") or "").strip()
+@@ -1163,6 +1185,28 @@ def _grounded_from_objects(
+         owner = str(obj.get("owner_surface") or obj.get("surface") or "").strip()
+         if owner:
+             target["owner_surface"] = owner[:40]
++        cid = str(
++            obj.get("capture_id") or obj.get("grounding_capture_id") or ""
++        ).strip()
++        if cid:
++            target["capture_id"] = cid[:80]
++        # Document-level WHEN stamp when object row omitted it (same observe).
++        # Frame IDs are space-specific — never copy a generic document.frame_id.
++        if not target.get("capture_id"):
++            doc_cid = str(document.get("capture_id") or "").strip()
++            if doc_cid:
++                target["capture_id"] = doc_cid[:80]
++        if space in {"screen", "image"}:
++            raw_fid = str(
++                obj.get("frame_id") or obj.get("coordinate_frame_id") or ""
++            ).strip()
++            fid = resolve_frame_id_for_space(
++                frame_id=raw_fid,
++                coordinate_space=space,
++                graph=graph,
++            )
++            if fid:
++                target["frame_id"] = fid[:80]
+         out.append(
+             SimpleNamespace(
+                 label=label,
+diff --git a/plugin/experiments/run_forward_message.py b/plugin/experiments/run_forward_message.py
+index a90da58be..b8d934831 100644
+--- a/plugin/experiments/run_forward_message.py
++++ b/plugin/experiments/run_forward_message.py
+@@ -767,7 +767,7 @@ def run_forward_message_live(
+                     app=APP,
+                     execution_state=runtime.execution_state,
+                 )
+-                brief_ok, _why = validate_brief(brief)
++                brief_ok, brief_why = validate_brief(brief)
+                 # Ranking / query-authorship are judgment capabilities — never
+                 # shortcut them to a click brief (resolve_entity→click skipped
+                 # fail_search_episode and re-entered SEARCH; live 212533).
+@@ -784,6 +784,43 @@ def run_forward_message_live(
+                     "locate_content",
+                     "locatecontent",
+                 }
++                # Bad point in input locus: invalidate grounding, keep method —
++                # do NOT fall through to capability motor with the same geometry.
++                if (not brief_ok) and "composer_point" in str(brief_why or ""):
++                    try:
++                        from plugin.agent.executive.affordance_commitment import (
++                            arm_wrong_point_grounding_recovery,
++                        )
++
++                        arm_wrong_point_grounding_recovery(
++                            runtime.execution_state,
++                            family=str(
++                                getattr(step, "action_family", None)
++                                or getattr(step, "action", None)
++                                or "reveal_actions"
++                            ),
++                            label=str(
++                                getattr(step, "semantic_target", None)
++                                or brief.label
++                                or ""
++                            ),
++                            patient_ref=str(
++                                (doc if isinstance(doc, dict) else {}).get(
++                                    "source_object_label"
++                                )
++                                or getattr(step, "semantic_target", None)
++                                or ""
++                            ),
++                            point=brief.point,
++                            why=str(brief_why or ""),
++                        )
++                    except Exception:
++                        pass
++                    return ExecResult(
++                        ok=False,
++                        backend="actor",
++                        message=str(brief_why or "wrong_locus:composer_point"),
++                    )
+                 _use_actor = (
+                     brief_ok
+                     and brief.gesture
+diff --git a/plugin/experiments/runs/live_health.py b/plugin/experiments/runs/live_health.py
+new file mode 100644
+index 000000000..8ac2e50c0
+--- /dev/null
++++ b/plugin/experiments/runs/live_health.py
+@@ -0,0 +1,598 @@
++"""Live-run health: stall / slowness / thrash signals for monitors.
++
++UI capture alone cannot see that the agent is spinning. This module reads the
++JSONL + console + process liveness and produces a compact health snapshot the
++UI monitor, supervise attach-mode, and a human watcher can all share.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import subprocess
++import time
++from collections import Counter
++from pathlib import Path
++from typing import Any, Dict, List, Optional, Sequence, Tuple
++
++from plugin.experiments.runs.live_paths import (
++    forward_console_path,
++    forward_log_path,
++    forward_status_path,
++    live_run_dir,
++    resolve_forward_log,
++    resolve_forward_status,
++)
++
++
++def _pids_for(stamp: str) -> List[int]:
++    out = subprocess.run(
++        ["pgrep", "-f", stamp], capture_output=True, text=True, check=False
++    )
++    pids: List[int] = []
++    for tok in (out.stdout or "").split():
++        try:
++            pids.append(int(tok))
++        except ValueError:
++            continue
++    return pids
++
++
++def _agent_alive(stamp: str) -> bool:
++    """True when the forward runner (not just monitor) is still up."""
++    out = subprocess.run(
++        ["pgrep", "-fl", "run_forward_message"],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    text = out.stdout or ""
++    if stamp in text:
++        return True
++    # Fallback: any run_forward_message while this stamp's log is hot.
++    return bool(text.strip()) and bool(_pids_for(stamp))
++
++
++def _tail_events(log: Path, *, max_bytes: int = 2_000_000) -> List[Dict[str, Any]]:
++    if not log.is_file():
++        return []
++    try:
++        raw = log.read_bytes()
++        if len(raw) > max_bytes:
++            raw = raw[-max_bytes:]
++        text = raw.decode("utf-8", errors="replace")
++    except Exception:
++        return []
++    events: List[Dict[str, Any]] = []
++    for line in text.splitlines():
++        line = line.strip()
++        if not line:
++            continue
++        try:
++            events.append(json.loads(line))
++        except Exception:
++            continue
++    return events
++
++
++def _last(events: Sequence[Dict[str, Any]], kind: str) -> Optional[Dict[str, Any]]:
++    for ev in reversed(events):
++        if str(ev.get("kind") or "") == kind:
++            return ev
++    return None
++
++
++def _meta_trail(events: Sequence[Dict[str, Any]], *, n: int = 12) -> List[str]:
++    trail: List[str] = []
++    for ev in events:
++        if str(ev.get("kind") or "") != "executive_judgement":
++            continue
++        ma = ev.get("meta_action") or {}
++        trail.append(f"{ma.get('action') or '-'}/{ma.get('capability') or '-'}")
++    return trail[-n:]
++
++
++def _thrash_score(trail: Sequence[str]) -> Tuple[float, str]:
++    """Detect meta ping-pong without progress (act/search/explore ↔ perceive/think)."""
++    if len(trail) < 6:
++        return 0.0, ""
++    recent = list(trail[-8:])
++    actions = [t.split("/", 1)[0].lower() for t in recent]
++    info = {"perceive", "explore", "think"}
++    commit = {"act", "search"}
++    pairs = 0
++    for a, b in zip(actions, actions[1:]):
++        if a == b:
++            continue
++        if (a in commit and b in info) or (a in info and b in commit) or (
++            a in info and b in info and {a, b} != {"think"}
++        ):
++            pairs += 1
++    uniq = len(set(actions))
++    # Pure observe/explore/think churn with no ACT/SEARCH (live 210526).
++    if uniq and not (set(actions) & commit) and len(actions) >= 6:
++        return (
++            0.85,
++            f"meta_info_only_churn actions={uniq} trail={'→'.join(recent[-6:])}",
++        )
++    if pairs >= 5 and uniq <= 3:
++        return 1.0, f"meta_pingpong pairs={pairs} actions={uniq} trail={'→'.join(recent[-6:])}"
++    if pairs >= 3 and uniq <= 3:
++        return 0.6, f"meta_oscillation pairs={pairs} trail={'→'.join(recent[-6:])}"
++    return 0.0, ""
++
++
++def _surface_contradiction_score(
++    events: Sequence[Dict[str, Any]],
++) -> Tuple[float, str, int]:
++    """Repeated prediction_error: predicted conversation, observed search.
++
++    Live 210526: world_patch stayed conversation while looks reported search —
++    health must surface that, not only goal-clock stall.
++    """
++    n = 0
++    last_why = ""
++    for ev in events:
++        if str(ev.get("kind") or "") != "prediction_error":
++            continue
++        pred = str(ev.get("predicted_surface") or "").strip().lower()
++        obs = str(ev.get("observed_surface") or "").strip().lower()
++        matched = ev.get("matched")
++        if matched is False and pred == "conversation" and obs in {
++            "search",
++            "search_results",
++        }:
++            n += 1
++            last_why = f"pred={pred} obs={obs}"
++    if n >= 6:
++        return 1.0, f"surface_contradiction_x{n} ({last_why})", n
++    if n >= 3:
++        return 0.7, f"surface_contradiction_x{n} ({last_why})", n
++    return 0.0, "", n
++
++
++def _events_show_grounding_recovery(events: Sequence[Dict[str, Any]]) -> bool:
++    """True when the runtime armed grounding / wrong-locus recovery (not ignore)."""
++    for ev in events:
++        blob = json.dumps(ev, default=str).lower()
++        if any(
++            tok in blob
++            for tok in (
++                "grounding_repair",
++                "grounding_wrong_locus",
++                "inconclusive_grounding",
++                "composer_point",
++                "wrong_locus:patient:composer",
++                "arm_wrong_point",
++                "commitment_reground",
++                "preserve_semantic_method",
++                "wrong_locus_recovery_owed",
++            )
++        ):
++            return True
++    return False
++
++
++def _composer_mistype_score(
++    events: Sequence[Dict[str, Any]], console_tail: str
++) -> Tuple[float, str, int]:
++    """Detect typing/context-click on chat composer while hunting content.
++
++    Live 181132: source chat open, agent typed zarooratwala into "Type a message"
++    then context-clicked the draft → spellcheck menu thrash.
++
++    Live 134636: a single context-click in the composer band is a *recoverable*
++    grounding failure when the executive invalidates that point. Health watch
++    must not hard-kill until recovery is ignored / exhausted.
++    """
++    n = 0
++    last_why = ""
++    for ev in events:
++        kind = str(ev.get("kind") or "")
++        blob = json.dumps(ev, default=str).lower()
++        if kind == "execution":
++            msg = str(ev.get("message") or "").lower()
++            # Context-click near composer band / draft query echo.
++            if "context click" in msg and any(
++                tok in msg for tok in ("zarooratwala", "type a message", "composer")
++            ):
++                # Bottom-of-window Y is a weak watchdog hint only (+1, not +2).
++                if "center=(" in msg:
++                    try:
++                        y = float(msg.split("center=(")[1].split(",")[1].split(")")[0])
++                        if y >= 900:
++                            n += 1
++                            last_why = "context_click_composer_band"
++                            continue
++                    except (IndexError, ValueError, TypeError):
++                        pass
++                n += 1
++                last_why = "context_click_query_echo"
++            if "type" in msg and "type a message" in blob:
++                n += 2
++                last_why = "type_into_message_composer"
++        # Pre-motor refusal counts as a detected wrong-locus event (not a kill).
++        if "composer_point" in blob or "wrong_locus:patient:composer" in blob:
++            n += 1
++            last_why = last_why or "composer_point_rejected"
++        if "no guesses found" in blob or "ignore spelling" in blob or "learn spelling" in blob:
++            n += 2
++            last_why = "spellcheck_menu_on_composer"
++        if "reveal_actions on message composer" in blob or "composer draft" in blob:
++            n += 1
++            last_why = last_why or "composer_reveal_gate"
++    console_l = console_tail.lower()
++    if "no guesses found" in console_l or "ignore spelling" in console_l:
++        n = max(n, 3)
++        last_why = "spellcheck_menu_console"
++    recovered = _events_show_grounding_recovery(events)
++    # Hard kill only when mistypes accumulate *and* recovery is absent/exhausted.
++    if n >= 4 or (n >= 3 and not recovered):
++        return 1.0, f"composer_mistype_hard ({last_why}) x{n}", n
++    if n >= 2 and not recovered:
++        return (
++            0.85,
++            f"composer_mistype ({last_why}) x{n}",
++            n,
++        )
++    if n >= 1:
++        # Recoverable wrong-locus repetition — executive should reground.
++        return (
++            0.55,
++            f"wrong_locus_repetition ({last_why}) x{n}"
++            + ("; recovery_armed" if recovered else ""),
++            n,
++        )
++    return 0.0, "", n
++
++
++def _observe_decline_score(
++    events: Sequence[Dict[str, Any]], console_tail: str
++) -> Tuple[float, str, int]:
++    """unified_declined → Observe loops with no open_entity after resolve."""
++    n = 0
++    for ev in events:
++        if str(ev.get("kind") or "") != "decision_engine":
++            continue
++        blob = json.dumps(ev, default=str).lower()
++        if "unified_declined_no_legacy_fallthrough" in blob:
++            n += 1
++    console_n = console_tail.lower().count("unified_declined_no_legacy_fallthrough")
++    n = max(n, console_n)
++    # Did we ever open after a successful resolve?
++    resolved = any(
++        str(e.get("kind") or "") == "execution"
++        and "resolved source" in str(e.get("message") or "").lower()
++        for e in events
++    )
++    opened = any(
++        str(e.get("kind") or "") == "execution"
++        and (
++            str(e.get("action_family") or "").lower() == "open_entity"
++            or "open_entity" in str(e.get("message") or "").lower()
++        )
++        for e in events
++    )
++    if resolved and not opened and n >= 3:
++        return (
++            0.9,
++            f"resolve_without_open + observe_decline_x{n}",
++            n,
++        )
++    if n >= 6:
++        return 0.75, f"observe_decline_x{n}", n
++    if n >= 3:
++        return 0.5, f"observe_decline_x{n}", n
++    return 0.0, "", n
++
++
++def snapshot_health(
++    stamp: str,
++    *,
++    stall_warn_s: float = 90.0,
++    stall_hard_s: float = 180.0,
++    slow_log_s: float = 45.0,
++    slow_aux_s: float = 60.0,
++) -> Dict[str, Any]:
++    """Return a health dict: level ∈ ok|slow|stall_warn|stall_hard|dead|done."""
++    now = time.time()
++    log = resolve_forward_log(stamp)
++    status = resolve_forward_status(stamp)
++    console = forward_console_path(stamp)
++    run_dir = live_run_dir(stamp)
++
++    events = _tail_events(log)
++    clock = _last(events, "progress_clock") or {}
++    goal = _last(events, "goal_status") or {}
++    forward = _last(events, "forward_task") or {}
++    last_exec = _last(events, "execution") or {}
++    last_meta = _last(events, "executive_judgement") or {}
++
++    log_age = (now - log.stat().st_mtime) if log.is_file() else None
++    console_age = (now - console.stat().st_mtime) if console.is_file() else None
++    since_prog = float(clock.get("elapsed_since_progress_s") or 0.0)
++    elapsed = float(clock.get("elapsed_s") or 0.0)
++    step = clock.get("step")
++    no_progress_n = sum(1 for e in events if str(e.get("kind") or "") == "no_progress_replan")
++    semantic_repeat_n = sum(
++        1 for e in events if str(e.get("kind") or "") == "semantic_repeat_replan"
++    )
++    trail = _meta_trail(events)
++    thrash, thrash_why = _thrash_score(trail)
++
++    console_tail = ""
++    if console.is_file():
++        try:
++            console_tail = console.read_bytes()[-8000:].decode("utf-8", errors="replace")
++        except Exception:
++            console_tail = ""
++    aux_hang = "Auxiliary request payload" in console_tail and (
++        console_age is not None and console_age > slow_aux_s
++    )
++    surf_score, surf_why, surf_n = _surface_contradiction_score(events)
++    decline_score, decline_why, decline_n = _observe_decline_score(events, console_tail)
++    composer_score, composer_why, composer_n = _composer_mistype_score(events, console_tail)
++    outcome = ""
++    if "OK=True" in console_tail:
++        outcome = "converged"
++    elif "OK=False" in console_tail:
++        outcome = "failed"
++
++    status_text = ""
++    if status.is_file():
++        try:
++            status_text = status.read_text(errors="replace")
++        except Exception:
++            status_text = ""
++    for marker in (
++        "status=done",
++        "status=ok",
++        "status=fail",
++        "status=stalled",
++        "status=timeout",
++        "status=exited",
++    ):
++        if marker in status_text:
++            outcome = outcome or marker.split("=", 1)[1]
++            break
++
++    alive = _agent_alive(stamp)
++    ma = last_meta.get("meta_action") or {}
++    phase = str((forward.get("forward_task") or forward).get("derived_phase") or "")
++    if not phase and isinstance(forward.get("derived_phase"), str):
++        phase = str(forward.get("derived_phase") or "")
++
++    alerts: List[str] = []
++    level = "ok"
++
++    # Structural signals always computed for the snapshot; applied as alerts
++    # even on terminal/dead so postmortems still show why the run rotted.
++    structural: List[str] = []
++    if surf_why:
++        structural.append(surf_why)
++    if decline_why:
++        structural.append(decline_why)
++    if composer_why:
++        structural.append(composer_why)
++    if thrash_why:
++        structural.append(thrash_why)
++    if no_progress_n >= 8:
++        structural.append(f"no_progress_replan_count={no_progress_n}")
++    if semantic_repeat_n >= 8:
++        structural.append(f"semantic_repeat_replan_count={semantic_repeat_n}")
++
++    if outcome in {"converged", "ok", "done"}:
++        level = "done"
++    elif outcome in {"failed", "fail", "stalled", "timeout", "exited"}:
++        level = "dead" if not alive else outcome
++        alerts.append(f"terminal_outcome={outcome}")
++        alerts.extend(structural)
++    elif not alive and events:
++        level = "dead"
++        alerts.append("agent_process_gone")
++        alerts.extend(structural)
++    else:
++        if since_prog >= stall_hard_s:
++            level = "stall_hard"
++            alerts.append(f"no_goal_progress_for={since_prog:.0f}s (hard≥{stall_hard_s:.0f})")
++        elif since_prog >= stall_warn_s:
++            level = "stall_warn"
++            alerts.append(f"no_goal_progress_for={since_prog:.0f}s (warn≥{stall_warn_s:.0f})")
++        if log_age is not None and log_age >= slow_log_s:
++            if level == "ok":
++                level = "slow"
++            alerts.append(f"log_silent={log_age:.0f}s (likely LLM/aux hang)")
++        if aux_hang:
++            if level == "ok":
++                level = "slow"
++            alerts.append(f"aux_request_hang console_age={console_age:.0f}s")
++        if thrash >= 0.6:
++            if level == "ok":
++                level = "slow"
++            alerts.append(thrash_why)
++        if surf_score >= 0.7:
++            if level in {"ok", "slow"}:
++                level = "stall_warn" if surf_score < 1.0 else "stall_hard"
++            alerts.append(surf_why)
++        elif surf_score >= 0.5 and level == "ok":
++            level = "slow"
++            alerts.append(surf_why)
++        if decline_score >= 0.75:
++            if level in {"ok", "slow"}:
++                level = "stall_warn"
++            alerts.append(decline_why)
++        elif decline_score >= 0.5 and level == "ok":
++            level = "slow"
++            alerts.append(decline_why)
++        # Composer / input wrong-locus: recoverable by default (live 134636).
++        # Hard kill only when score says recovery ignored / exhausted (≥0.85).
++        if composer_score >= 0.85:
++            level = "stall_hard"
++            alerts.append(composer_why)
++        elif composer_score >= 0.55:
++            if level in {"ok", "slow"}:
++                level = "stall_warn"
++            alerts.append(composer_why)
++        if no_progress_n >= 8 and level == "ok":
++            level = "slow"
++            alerts.append(f"no_progress_replan_count={no_progress_n}")
++        if semantic_repeat_n >= 8 and level == "ok":
++            level = "slow"
++            alerts.append(f"semantic_repeat_replan_count={semantic_repeat_n}")
++
++    # Responsiveness milestones from JSONL (epistemic / affordance / commit).
++    milestones = _milestone_timings(events)
++    snap: Dict[str, Any] = {
++        "ts": now,
++        "stamp": stamp,
++        "level": level,
++        "alerts": alerts,
++        "alive": alive,
++        "outcome": outcome,
++        "elapsed_s": elapsed,
++        "since_progress_s": since_prog,
++        "log_age_s": round(log_age, 1) if log_age is not None else None,
++        "console_age_s": round(console_age, 1) if console_age is not None else None,
++        "step": step,
++        "phase": phase,
++        "goal_reason": str(goal.get("reason") or "")[:160],
++        "last_exec": str(last_exec.get("message") or "")[:160],
++        "last_meta": f"{ma.get('action') or '-'}/{ma.get('capability') or '-'}",
++        "meta_trail": trail,
++        "no_progress_replan": no_progress_n,
++        "semantic_repeat_replan": semantic_repeat_n,
++        "surface_contradiction_n": surf_n,
++        "observe_decline_n": decline_n,
++        "composer_mistype_n": composer_n,
++        "composer_mistype_score": composer_score,
++        "thrash": thrash,
++        "event_tail_n": len(events),
++        "kinds": dict(Counter(str(e.get("kind") or "") for e in events).most_common(8)),
++        "milestones": milestones,
++        "paths": {
++            "log": str(log),
++            "console": str(console),
++            "status": str(status),
++            "run_dir": str(run_dir),
++        },
++    }
++    return snap
++
++
++def _milestone_timings(events: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
++    """time-to-epistemic / affordance / instrumental from event stream."""
++    t0 = None
++    for e in events:
++        if e.get("ts") is not None:
++            try:
++                t0 = float(e["ts"])
++                break
++            except (TypeError, ValueError):
++                pass
++    out: Dict[str, Any] = {
++        "time_to_epistemic_s": None,
++        "time_to_affordance_grounded_s": None,
++        "time_to_referent_selected_s": None,
++        "time_to_instrumental_commit_s": None,
++        "reveal_gesture_attempts": 0,
++    }
++    if t0 is None:
++        return out
++
++    def _age(ev: Dict[str, Any]) -> Optional[float]:
++        try:
++            return max(0.0, float(ev.get("ts")) - t0)
++        except (TypeError, ValueError):
++            return None
++
++    reveal_n = 0
++    for e in events:
++        k = str(e.get("kind") or "")
++        if k == "execution":
++            msg = str(e.get("message") or "").lower()
++            fam = str(e.get("action_family") or e.get("family") or "").lower()
++            if "typed" in msg and out["time_to_epistemic_s"] is None:
++                # Weak: first successful compose often precedes chosen.
++                pass
++            if fam in {"reveal_actions", "context_click", "right_click"} or "context click" in msg:
++                reveal_n += 1
++            if "forward" in msg and "picker" in msg and out["time_to_instrumental_commit_s"] is None:
++                out["time_to_instrumental_commit_s"] = _age(e)
++        if k == "reveal_handoff":
++            reveal_n += 1
++        if k == "executive_judgement" and out["time_to_epistemic_s"] is None:
++            search = (e.get("search") or {}) if isinstance(e.get("search"), dict) else {}
++            ref = search.get("referent_search") if isinstance(search.get("referent_search"), dict) else {}
++            chosen = str(ref.get("chosen_label") or "").strip()
++            if chosen:
++                out["time_to_epistemic_s"] = _age(e)
++        if k in {"perception_settled", "affordance_frontier"}:
++            blob = json.dumps(e, default=str).lower()
++            if "grounded_affordance" in blob or (
++                "affordance_set" in blob and "empty" not in blob
++            ):
++                if out["time_to_affordance_grounded_s"] is None:
++                    out["time_to_affordance_grounded_s"] = _age(e)
++        if k == "forward_task" and out["time_to_referent_selected_s"] is None:
++            ft = e.get("forward_task") if isinstance(e.get("forward_task"), dict) else {}
++            preds = ft.get("predicates") if isinstance(ft.get("predicates"), dict) else {}
++            if preds.get("source_object_selected"):
++                out["time_to_referent_selected_s"] = _age(e)
++        if k == "execution" and out["time_to_epistemic_s"] is None:
++            msg = str(e.get("message") or "")
++            if msg.startswith("resolved source") or "resolved source referent" in msg.lower():
++                out["time_to_epistemic_s"] = _age(e)
++    out["reveal_gesture_attempts"] = reveal_n
++    return out
++
++
++def write_health(stamp: str, snap: Optional[Dict[str, Any]] = None, *, out_dir: Optional[Path] = None) -> Dict[str, Any]:
++    snap = snap or snapshot_health(stamp)
++    root = out_dir or live_run_dir(stamp)
++    root.mkdir(parents=True, exist_ok=True)
++    (root / "health.json").write_text(
++        json.dumps(snap, indent=2, default=str) + "\n", encoding="utf-8"
++    )
++    alerts = snap.get("alerts") or []
++    lines = [
++        f"level={snap.get('level')} stamp={stamp} ts={int(snap.get('ts') or time.time())}",
++        f"alive={snap.get('alive')} elapsed_s={snap.get('elapsed_s')} "
++        f"since_progress_s={snap.get('since_progress_s')} "
++        f"log_age_s={snap.get('log_age_s')} step={snap.get('step')}",
++        f"phase={snap.get('phase')!r} meta={snap.get('last_meta')} "
++        f"thrash={snap.get('thrash')} no_progress_replan={snap.get('no_progress_replan')} "
++        f"semantic_repeat={snap.get('semantic_repeat_replan')} "
++        f"surface_contra={snap.get('surface_contradiction_n')} "
++        f"observe_decline={snap.get('observe_decline_n')}",
++        f"goal={snap.get('goal_reason')}",
++        f"exec={snap.get('last_exec')}",
++        f"trail={' → '.join(snap.get('meta_trail') or [])}",
++    ]
++    if alerts:
++        lines.append("ALERTS: " + " | ".join(str(a) for a in alerts))
++    text = "\n".join(lines) + "\n"
++    (root / "health.txt").write_text(text, encoding="utf-8")
++    # Also mirror under ui_monitor for the frame watcher.
++    try:
++        ui = root / "ui_monitor"
++        ui.mkdir(parents=True, exist_ok=True)
++        (ui / "health.txt").write_text(text, encoding="utf-8")
++        (ui / "health.json").write_text(
++            json.dumps(snap, indent=2, default=str) + "\n", encoding="utf-8"
++        )
++    except Exception:
++        pass
++    return snap
++
++
++def format_alert_line(snap: Dict[str, Any]) -> str:
++    level = str(snap.get("level") or "ok")
++    alerts = snap.get("alerts") or []
++    base = (
++        f"health level={level} since_prog={snap.get('since_progress_s')}s "
++        f"log_age={snap.get('log_age_s')}s meta={snap.get('last_meta')} "
++        f"phase={snap.get('phase')!r}"
++    )
++    if alerts:
++        return base + " :: " + " | ".join(str(a) for a in alerts)
++    return base
+diff --git a/tests/plugin/test_grounding_wrong_locus.py b/tests/plugin/test_grounding_wrong_locus.py
+new file mode 100644
+index 000000000..5ee23e34f
+--- /dev/null
++++ b/tests/plugin/test_grounding_wrong_locus.py
+@@ -0,0 +1,248 @@
++"""GROUNDING_WRONG_LOCUS: bad point is cheap; intent + patient survive."""
++
++from __future__ import annotations
++
++from plugin.agent.actor import ActorBrief, brief_from_brain_choice, validate_brief
++from plugin.agent.capabilities.locus_contract import (
++    point_locus_forbidden_for_capability,
++    semantic_region_at_point,
++)
++from plugin.agent.executive.affordance_commitment import (
++    arm_wrong_point_grounding_recovery,
++    upsert_commitment,
++)
++from plugin.agent.executive.intention_frame import (
++    AttemptValidity,
++    FailureClass,
++    Intention,
++    IntentionFrame,
++    MethodOutcome,
++    MethodSpec,
++    MethodStatus,
++    close_attempt,
++    begin_attempt,
++    mark_method_attempted,
++    recommend_recovery,
++    RecoveryAction,
++)
++from plugin.agent.runtime.state import ExecutionState
++from plugin.experiments.runs.live_health import _composer_mistype_score
++
++
++def _composer_scene(*, composer_y0: float = 920.0) -> dict:
++    return {
++        "regions": [
++            {
++                "kind": "timeline",
++                "bounds": [400.0, 80.0, 1400.0, 900.0],  # x0y0x1y1
++            },
++            {
++                "kind": "composer",
++                "bounds": [400.0, composer_y0, 1400.0, 1100.0],
++            },
++        ]
++    }
++
++
++def test_reveal_grounding_in_input_locus_is_rejected_before_motor():
++    scene = _composer_scene()
++    bad, why, _ = point_locus_forbidden_for_capability(
++        "reveal_actions",
++        (700.0, 990.0),
++        scene_graph=scene,
++    )
++    assert bad is True
++    assert "composer_point" in why
++    brief = ActorBrief(
++        gesture="context_click",
++        capability="reveal_actions",
++        point=(700.0, 990.0),
++        label="zarooratwala lasawethe se",
++        target_kind="message",
++        geometry_audit={"scene_graph": scene},
++    )
++    ok, vwhy = validate_brief(brief)
++    assert ok is False
++    assert "composer_point" in vwhy
++
++
++def test_message_near_composer_boundary_not_rejected_by_y_alone():
++    """Reject only when semantic region says input — not because Y is low."""
++    scene = {
++        "regions": [
++            # Timeline extends into the lower screen; composer below it.
++            {"kind": "timeline", "bounds": [400.0, 80.0, 1400.0, 995.0]},
++            {"kind": "composer", "bounds": [400.0, 1000.0, 1400.0, 1100.0]},
++        ]
++    }
++    # Low Y but still inside timeline (above composer). Must remain valid.
++    region = semantic_region_at_point((700.0, 980.0), scene_graph=scene)
++    assert region == "timeline"
++    bad, why, _ = point_locus_forbidden_for_capability(
++        "reveal_actions",
++        (700.0, 980.0),
++        scene_graph=scene,
++    )
++    assert bad is False
++    assert why == "ok"
++    # Same low band, but inside composer → reject.
++    bad2, why2, _ = point_locus_forbidden_for_capability(
++        "reveal_actions",
++        (700.0, 1050.0),
++        scene_graph=scene,
++    )
++    assert bad2 is True
++    assert "composer_point" in why2
++
++
++def test_wrong_locus_invalidates_grounding_not_semantic_method():
++    state = ExecutionState()
++    c = upsert_commitment(
++        state,
++        family="reveal_actions",
++        label="zarooratwala lasawethe se",
++        desired_effect="forward_picker",
++        patient_ref="zarooratwala.com",
++        owner_surface_expected="conversation",
++    )
++    out = arm_wrong_point_grounding_recovery(
++        state,
++        family="reveal_actions",
++        label="zarooratwala lasawethe se",
++        patient_ref="zarooratwala.com",
++        point=(700.0, 990.0),
++        why="wrong_locus:patient:composer_point:reveal_actions:composer",
++    )
++    assert out.get("armed") is True
++    assert state.grounding_reground_only is True
++    assert state.grounding_reground_patient_ref == "zarooratwala.com"
++    keys = list(c.invalid_grounding_keys) if hasattr(c, "invalid_grounding_keys") else []
++    # Commitment object may be reloaded — check via state list.
++    from plugin.agent.executive.affordance_commitment import list_commitments
++
++    c2 = list_commitments(state)[-1]
++    assert any("700" in k and "990" in k for k in (c2.invalid_grounding_keys or []))
++    closure = state.last_effect_closure or {}
++    assert closure.get("preserve_semantic_method") is True
++    assert "GROUNDING_WRONG_LOCUS" in (closure.get("modes") or [])
++
++
++def test_wrong_locus_recovery_preserves_patient():
++    state = ExecutionState()
++    arm_wrong_point_grounding_recovery(
++        state,
++        family="reveal_actions",
++        label="msg",
++        patient_ref="zarooratwala.com",
++        point=(700.0, 990.0),
++        why="composer_point",
++    )
++    assert state.grounding_reground_patient_ref == "zarooratwala.com"
++    assert state.wrong_locus_recovery_owed is True
++    assert state.wrong_locus_forbidden == "composer"
++
++
++def test_second_grounding_source_can_recover_same_reveal_intention():
++    frame = IntentionFrame(
++        intention=Intention(id="i1", objective="reveal", success_predicate="p")
++    )
++    mid = "reveal_actions:zarooratwala"
++    frame.method_frontier.catalog[mid] = MethodSpec(id=mid, capability="reveal_actions")
++    frame.method_frontier.known_untried = [mid]
++    mark_method_attempted(frame, mid)
++    att = begin_attempt(method_id=mid)
++    close_attempt(
++        att,
++        attempt_validity=AttemptValidity.INCONCLUSIVE_GROUNDING.value,
++        failure_class=FailureClass.GROUNDING.value,
++        method_outcome=MethodOutcome.EFFECT_UNCERTAIN.value,
++    )
++    # Inconclusive grounding must not kill the semantic method.
++    assert mid in frame.method_frontier.eligible_methods() or mid in (
++        frame.method_frontier.known_untried or []
++    ) or frame.method_frontier.method_status.get(mid) in {
++        MethodStatus.UNTRIED.value,
++        "",
++        None,
++    }
++    assert (
++        recommend_recovery(
++            frame,
++            failure_class=FailureClass.GROUNDING.value,
++            method_outcome=MethodOutcome.EFFECT_UNCERTAIN.value,
++        )
++        == RecoveryAction.CONTINUE_INTENTION.value
++    )
++
++
++def test_health_watch_recoverable_wrong_locus_does_not_immediately_kill():
++    # One composer-band context click + recovery armed → soft/recoverable.
++    events = [
++        {
++            "kind": "execution",
++            "message": "context click 'zarooratwala lasawethe se' center=(700.0, 990.0)",
++        },
++        {
++            "kind": "effect_closure",
++            "modes": ["GROUNDING_WRONG_LOCUS"],
++            "grounding_repair": "commitment_reground",
++            "preserve_semantic_method": True,
++        },
++    ]
++    score, why, n = _composer_mistype_score(events, "")
++    assert n >= 1
++    assert score < 0.85
++    assert "wrong_locus_repetition" in why or "recovery" in why
++
++
++def test_repeated_wrong_locus_after_recovery_exhaustion_can_stall_hard():
++    events = [
++        {
++            "kind": "execution",
++            "message": "context click 'zarooratwala' center=(700.0, 990.0)",
++        },
++        {
++            "kind": "execution",
++            "message": "context click 'zarooratwala' center=(705.0, 995.0)",
++        },
++        {
++            "kind": "execution",
++            "message": "context click 'zarooratwala' center=(710.0, 1000.0)",
++        },
++        # No grounding_repair / recovery tokens → treated as ignored recovery.
++    ]
++    score, why, n = _composer_mistype_score(events, "")
++    assert n >= 3
++    assert score >= 0.85
++    assert "composer_mistype" in why
++
++
++def test_brief_from_world_stamps_regions_for_validate():
++    doc = {
++        "surface": "conversation",
++        "scene_graph": _composer_scene(),
++        "objects": [
++            {
++                "id": "66",
++                "kind": "message",
++                "text": "zarooratwala lasawethe se",
++                "point": [627.0, 993.0],
++            }
++        ],
++    }
++    brief = brief_from_brain_choice(
++        {
++            "family": "reveal_actions",
++            "gesture": "context_click",
++            "target_label": "zarooratwala lasawethe se",
++            "target_point": [700.0, 990.0],
++            "coordinate_space": "screen",
++        },
++        doc,
++        capability="reveal_actions",
++        allow_legacy_geometry=True,
++    )
++    assert brief.geometry_audit.get("scene_graph")
++    ok, why = validate_brief(brief)
++    assert ok is False
++    assert "composer_point" in why
+-- 
+2.39.5 (Apple Git-154)
+
+
+From 15b78a7dfd6f94da77a5bfebf6ad967022d7e713 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 15:31:55 +0530
+Subject: [PATCH 3/3] docs(design): lock Hermes architecture roof (clients,
+ memory, substrates)
+
+Document one-runtime / multi-client stance with Executive beside MemorySystem,
+authority reconciliation, Capability to Method to Substrate, and Slice 2a as
+ownership-policy exemplar before ComputerUseExecutor encapsulation.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ docs/design/agent-design.md                   |   3 +
+ docs/design/belief-centric-control-loop.md    |   1 +
+ docs/design/executive-runtime.md              |   8 +
+ docs/design/interface-foundation.md           |   7 +
+ .../personal-agent-brain-and-substrates.md    | 593 ++++++++++++++++++
+ 5 files changed, 612 insertions(+)
+ create mode 100644 docs/design/personal-agent-brain-and-substrates.md
+
+diff --git a/docs/design/agent-design.md b/docs/design/agent-design.md
+index 086eab08b..4870232df 100644
+--- a/docs/design/agent-design.md
++++ b/docs/design/agent-design.md
+@@ -9,6 +9,9 @@ Related code: [`plugin/agent/executive/meta_action.py`](../../plugin/agent/execu
+ [`plugin/agent/executive/meta_contract.py`](../../plugin/agent/executive/meta_contract.py),
+ [`plugin/agent/capabilities/search_episode.py`](../../plugin/agent/capabilities/search_episode.py).
+ 
++Architecture roof (clients, MemorySystem, capability/method/substrate):
++[`personal-agent-brain-and-substrates.md`](personal-agent-brain-and-substrates.md).
++
+ ---
+ 
+ ## Key design rule
+diff --git a/docs/design/belief-centric-control-loop.md b/docs/design/belief-centric-control-loop.md
+index ef0ff172b..008e3abd0 100644
+--- a/docs/design/belief-centric-control-loop.md
++++ b/docs/design/belief-centric-control-loop.md
+@@ -413,5 +413,6 @@ This design does not treat every action as safe experimentation. Interventional
+ - `content-object-discovery.md`: Defines how relevant objects are resolved from visible and latent content.
+ - `whatsapp-evaluation-ladder.md`: Defines staged WhatsApp training and regression evaluation.
+ - `task-model-routing.md`: Defines how model families are selected for a task.
++- `personal-agent-brain-and-substrates.md`: Architecture roof — WorldState / TaskState / WorkingContext / LongTermMemory authorities; MemorySystem beside Executive; retrieved memory is evidence, never automatic world or task truth.
+ 
+ This specification: Defines the connective runtime contract: how evidence becomes beliefs, how uncertainty produces experiments, and how consequences revise the world model.
+diff --git a/docs/design/executive-runtime.md b/docs/design/executive-runtime.md
+index cec69399f..0dc3261f2 100644
+--- a/docs/design/executive-runtime.md
++++ b/docs/design/executive-runtime.md
+@@ -115,6 +115,14 @@ correlating each recorded `executive_judgement` with what the loop then did:
+ match a simple oracle?), and `skip_safety` (were skipped re-perceives followed
+ by clean transitions?). Run with `python -m plugin.evals.run --executive`.
+ 
++## Architecture roof
++
++See [`personal-agent-brain-and-substrates.md`](personal-agent-brain-and-substrates.md)
++for the locked layering: ClientAdapter → TaskIngress → HermesRuntime
++(Executive ∥ MemorySystem) → Capability / Method / ExecutionSubstrate. This
++document remains the detailed executive-runtime contract; the roof places it
++beside MemorySystem and under a single multi-client ingress.
++
+ ## Deliberately deferred
+ 
+ - The remaining WhatsApp forward controller branches (`_note_forward_observe`,
+diff --git a/docs/design/interface-foundation.md b/docs/design/interface-foundation.md
+index bb808e7c4..eb39a849b 100644
+--- a/docs/design/interface-foundation.md
++++ b/docs/design/interface-foundation.md
+@@ -30,6 +30,13 @@ but they must not own separate task semantics or separate notions of progress.
+ Run-relative clocks and no-progress watchdogs belong to the shared work loop,
+ while the UI turn clock is only a presentation aid.
+ 
++**Client vs runtime (locked roof):** see
++[`personal-agent-brain-and-substrates.md`](personal-agent-brain-and-substrates.md).
++Clients are adapters; cognition and execution policy live in HermesRuntime.
++Current code still has chat (`AIAgent`) vs executive closed-loop
++(`run_goal_closed_loop`) divergence — documented there as debt to converge
++behavior-preservingly, not as a second architecture.
++
+ ## Core principle
+ 
+ - Core learning stays generic across apps.
+diff --git a/docs/design/personal-agent-brain-and-substrates.md b/docs/design/personal-agent-brain-and-substrates.md
+new file mode 100644
+index 000000000..06eabfdff
+--- /dev/null
++++ b/docs/design/personal-agent-brain-and-substrates.md
+@@ -0,0 +1,593 @@
++# Hermes runtime — clients, executive, memory, substrates
++
++**Status:** Architecture roof (design locked for incremental implementation).  
++**Related:** [agent-design.md](agent-design.md), [executive-runtime.md](executive-runtime.md),
++[representation-capability-substrate.md](representation-capability-substrate.md),
++[belief-centric-control-loop.md](belief-centric-control-loop.md),
++[interface-foundation.md](interface-foundation.md).
++
++---
++
++## Stance
++
++> Hermes is **one agent/runtime** with multiple clients. TUI, console/UI app,
++> future voice/mobile, and background automation are presentation/control
++> surfaces over the same brain — not separate agent architectures.
++
++> **The brain does not own stored memory; it owns the decision about when
++> memory is relevant. A MemorySystem owns durable knowledge, retrieval,
++> provenance, consolidation, and forgetting.**
++
++```text
++One runtime.
++One semantic task model.
++One MemorySystem.
++One capability / method / substrate model.
++Many clients.
++```
++
++Central cognition invariant:
++
++```text
++Brain reasons in goals, facts, questions, intentions, desired effects.
++Execution substrates reason in mechanisms.
++MemorySystem supplies evidence-bearing durable knowledge.
++```
++
++---
++
++## Four authorities (must not collapse)
++
++```text
++WorldState       = observed current reality
++TaskState        = authoritative state of the current task
++WorkingContext   = temporary reasoning / hypotheses / recent evidence (Executive)
++LongTermMemory   = durable knowledge via MemorySystem
++```
++
++### Authority reconciliation
++
++> WorldState, TaskState, WorkingContext, and LongTermMemory are distinct
++> authorities. Evidence from one may contradict another, but cross-authority
++> changes require **explicit reconciliation** with provenance-aware
++> invalidation/supersession; **no authority silently overwrites another**.
++
++Example:
++
++```text
++TaskState:
++  source_container = Pallavi
++  evidence = search navigation attempt A
++
++WorldState:
++  settled_open_container = ZarooratWala
++  evidence = fresh observation
++
++Reconciliation:
++  Task binding contradicted
++  → invalidate / stale binding
++  → source_container unresolved
++```
++
++The principle is not that TaskState beats WorldState (or the reverse).
++**Contradictions cause explicit belief revision.**
++
++Hypotheses and memory never silently become task truth:
++
++```text
++WorkingContext: "I suspect this hit belongs to Pallavi."
++TaskState:      source_conversation = unresolved
++
++LongTermMemory: "Pallavi is usually relevant for ZarooratWala."
++TaskState:      source_conversation = unresolved
++
++Memory:         "WhatsApp was installed last time."
++WorldState:     "WhatsApp is running now."
++```
++
++---
++
++## Three layers (+ TaskIngress)
++
++```text
++ClientAdapter → TaskIngress → HermesRuntime{Executive ∥ MemorySystem}
++                            → CapabilityRegistry → MethodFrontier
++                            → ExecutionSubstrate
++```
++
++```text
++                         CLIENTS
++           TUI / UI / CLI / Voice / Automation
++                            │
++                      ClientAdapter
++                            │
++                       TaskIngress
++                            │
++                     HERMES RUNTIME
++                 ┌──────────┴──────────┐
++                 │                     │
++             Executive             MemorySystem
++                 │                     │
++       goal / intention /          retrieve
++       questions / progress        remember
++       decision problems           consolidate
++       WorkingContext              invalidate/forget
++                 │                     │
++                 └──────────┬──────────┘
++                            │
++                    CapabilityRegistry
++                            │
++                     MethodFrontier
++                            │
++          ┌─────────┬───────┼───────┬──────────┐
++          ▼         ▼       ▼       ▼          ▼
++        MCP/API   Files   Shell   Browser   ComputerUse
++                                             Specialists
++```
++
++| Layer | Owns | Must not own |
++| --- | --- | --- |
++| **ClientAdapter** | user IO, rendering, approvals UI, notifications, attachments, interaction capabilities | meta-action, phase, capability choice, retry policy, world/task truth, durable memory |
++| **TaskIngress** | normalize request, attach session, expose session/memory **handles** | long-term memory relevance / `retrieve` decisions |
++| **Executive** | Goal, TaskState, WorkingContext, intentions, DecisionProblem, progress, **when** to retrieve memory, effect/method choice | MemoryRecord durability, consolidation jobs, motor geometry |
++| **MemorySystem** | retrieve / remember / consolidate / invalidate; provenance; scopes | current-world truth, task bindings, execution mechanics |
++| **ExecutionSubstrate** | mechanisms; local recovery under unchanged intention+target+effect | reinterpret goal / change semantic target / change desired effect |
++
++**MemorySystem is neither a client feature nor an execution substrate.** It is a
++persistent cognitive service of HermesRuntime, shared by every client, session,
++and substrate.
++
++### Client ≠ AgentSession
++
++Sessions/tasks belong to the runtime. Clients **attach**. The same session may
++move TUI ↔ Console later. UI chrome (selected tab, expanded panel) is client
++state — not agent intention.
++
++Memory scopes:
++
++```text
++user → workspace → agent → session → task
++```
++
++**Not** TUI memory / Console memory / ComputerUse memory. Clients may keep
++presentation history; that is not Hermes cognitive memory.
++
++### Same-task invariant
++
++> The same TaskRequest presented through different clients must traverse the
++> same semantic runtime path; client differences appear only as interaction
++> capabilities/constraints, not different cognition.
++
++Interactive command, scheduled task, and background continuation are all
++requests to the **same** runtime.
++
++---
++
++## Capability / Method / ExecutionSubstrate
++
++Normative distinction (do not collapse):
++
++```text
++Capability         = what Hermes can accomplish (effect class)
++Method             = a concrete strategy for accomplishing an effect
++ExecutionSubstrate = mechanism/environment through which a method executes
++```
++
++Example:
++
++```text
++Capability:
++    send_message
++
++Desired effect:
++    message_sent(recipient, content)
++
++Methods:
++    gmail_api_send
++    browser_gmail_send
++    native_mail_send
++
++Substrates:
++    MCP/API
++    browser
++    computer_use
++```
++
++Flow:
++
++```text
++CapabilityRegistry
++       ↓
++candidate capabilities
++       ↓
++MethodFrontier
++       ↓
++MethodSpec(substrate=...)
++       ↓
++ExecutionSubstrate
++```
++
++The brain reasons about **effects and methods**, not “use computer” as a goal.
++Computer use is a realization when it is the best currently available method —
++not an intention.
++
++Substrates (initial set): `mcp`, `filesystem`, `shell`, `browser`,
++`computer_use`, `specialist_agent`. Structured local tools (filesystem/shell)
++are first-class and cheap; GUI substrates are higher latency / uncertainty.
++
++---
++
++## TaskIngress (cognition stays out)
++
++```text
++TaskRequest
++    ↓
++TaskIngress
++    ↓
++normalize + session attach + expose handles
++    ↓
++Executive initial DecisionProblem
++    ↓
++memory need / retrieval policy (Executive)
++    ↓
++MemorySystem.retrieve(...)
++```
++
++TaskIngress may attach **session-scoped existing context / memory handles**.
++It must **not** decide which long-term memories are relevant.
++
++Otherwise ingress becomes cognition. Example:
++
++```text
++User: "Send this to Sarah."
++```
++
++Ingress must not independently retrieve every Sarah memory before Executive
++has determined whether “Sarah” is a person, document, or project.
++
++Target request / event shapes (design only):
++
++```text
++TaskRequest {
++  user_turn, attachments,
++  client_context,                 # streaming, rich UI, notifications…
++  permissions / ExecutionConstraints,
++  interaction_capabilities
++}
++
++ExecutionConstraints {
++  foreground_allowed, destructive_actions_allowed,
++  approval_mode, network_allowed, …
++}
++
++AgentEvent:
++  thought_status | progress | question | approval_request
++  | task_update | artifact | completion | error
++```
++
++No `if client == "tui"` inside executive logic. Permissions enter as
++constraints; the client does not choose a different agent strategy.
++
++---
++
++## Executive ownership
++
++Executive owns:
++
++```text
++Goal, TaskState, CurrentIntention
++KnownFacts, OpenQuestions, Bindings
++WorkingContext
++Progress facts (target shape; not implemented in this roof PR)
++Semantic AttemptHistory
++Constraints
++Decision about when MemorySystem is relevant
++```
++
++**Semantic AttemptHistory** (brain) =
++
++```text
++intention | method | effect sought | effect result | failure class
++```
++
++Raw grounding/motor attempt logs (points, bounds, AX/OCR/VLM retries) belong
++to the substrate — not the brain.
++
++Meta-actions remain the frozen v1 eight from [agent-design.md](agent-design.md):
++THINK / PERCEIVE / SEARCH / EXPLORE / ACT / ASK / DELEGATE / WAIT.
++Purpose, not mechanism.
++
++Phases (e.g. OPEN_SOURCE) may remain as **derived diagnostics**; they must not
++become self-validating semantic evidence or control authority long-term.
++
++---
++
++## Recovery ownership
++
++| Failure level | Owner |
++| --- | --- |
++| transient motor miss | executor / substrate |
++| bad/stale grounding | executor / substrate |
++| alternate local method (same target + effect) | executor / substrate |
++| substrate unavailable | capability layer |
++| desired effect still valid but method exhausted | Executive |
++| goal / semantic target reinterpretation | Executive |
++| user permission / safety | Executive / ASK |
++
++### Local recovery invariant
++
++> A substrate may recover locally only while **parent intention, semantic
++> target, and desired effect** remain unchanged. Changing any of these returns
++> control to Executive.
++
++Allowed:
++
++```text
++reveal_actions(message_A)
++  AX point fails → re-ground message_A with VLM → retry context-click
++```
++
++Forbidden (semantic replanning disguised as motor recovery):
++
++```text
++reveal_actions(message_A) fails
++  → executor clicks similar message_B
++```
++
++---
++
++## ComputerUseExecutor (target boundary)
++
++Computer use is a **runtime capability**, not Console-specific or a parallel
++“personal agent.”
++
++Target façade (later code):
++
++```text
++execute_ui_effect(desired_effect, target, context, constraints)
++→ ExecutionResult(
++      execution_status,   # motor / dispatch
++      effect_status,      # achieved | absent | uncertain | unexpected
++      failure_class,      # grounding | wrong_context | blocked | …
++      evidence,
++      world_updates,
++      recoverability,     # local_ok | escalate_brain | ask_user
++    )
++```
++
++Use a **structured** result — not one ever-growing flat enum — so that
++`execution_ok + effect_unknown` and `execution_ok + wrong_transition` stay
++first-class (locate EffectStatus UNKNOWN; NAVIGATION_MISMATCH).
++
++Internally the executor may own perception, grounding, motor, short local
++recovery, and effect verification. The parent receives structured outcomes.
++
++### Slice 2a exemplar (landed; ownership policy before encapsulation)
++
++Commit `8dde6a38f` implements GROUNDING_WRONG_LOCUS in **today’s stack**
++(actor / reveal / commitment / live harness / health watch). That proves the
++ownership policy; it does **not** mean `ComputerUseExecutor` already exists.
++
++> Slice 2a proves the ownership policy in today's stack.
++> Slice 2 later creates the actual encapsulation boundary.
++
++---
++
++## MemorySystem (first-class — design only here)
++
++### Placement
++
++```text
++HermesRuntime
++├── Executive
++│   ├── TaskState
++│   └── WorkingContext
++└── MemorySystem (LongTerm)
++    ├── Episodic
++    ├── Semantic
++    ├── Entity / relationship
++    ├── Preference
++    ├── Procedural
++    └── Environment
++```
++
++WorkingContext may be checkpointed by runtime infrastructure; it is **not**
++LongTermMemory. Session history may later produce episodic MemoryCandidates
++(consolidation). `MemorySystem.retrieve()` does **not** retrieve the current
++hypothesis ledger.
++
++### Taxonomy (durable)
++
++| Kind | Answers | Notes |
++| --- | --- | --- |
++| Episodic | What happened / tried / worked / failed? | Experience records |
++| Semantic | What do I know? | Provenance + temporal validity required |
++| Entity / relationship | Who/what is this entity? | Candidate identity for RoleBinder; task bindings stay task-local |
++| Preference | What does the user prefer? | Distinct update/forget semantics |
++| Procedural | How have we done this before? | **Proposes** methods; MethodFrontier decides executability |
++| Environment | What is installed / where / which accounts? | Never substitutes for fresh WorldState when freshness matters |
++
++**Personal memory** vs **operational/agent-learning memory** may share
++MemorySystem with different scopes and retention (e.g. “Tanmay prefers concise
++email” vs “AX menu grounding unreliable on WhatsApp X”).
++
++### MemoryRecord (minimum)
++
++Architecture requires at least: **identity + type + provenance + time +
++confidence + scope**.
++
++Target shape (not frozen field-for-field):
++
++```text
++MemoryRecord {
++  memory_id, kind,
++  subject / entities, content,
++  provenance, evidence_refs,
++  created_at, observed_at, valid_from, valid_until,
++  confidence, scope, sensitivity,
++  supersedes, contradictions,
++  retrieval_metadata
++}
++```
++
++### MemoryCandidate ≠ MemoryRecord
++
++```text
++Task experience / significant event
++     ↓
++MemoryCandidate          # "may be worth remembering"
++     ↓
++Memory write policy      # dedupe, contradict, transient, sensitive,
++                         # scope, merge, supersede, retain?
++     ↓
++MemoryRecord             # durable only if policy accepts
++```
++
++The Executive/runtime emits candidates. MemorySystem decides persistence.
++Do not make the Executive a memory database manager.
++
++### Operations
++
++```text
++retrieve(query, context)  → MemoryEvidence[]
++remember(MemoryCandidate)
++consolidate(...)
++forget / invalidate(...)
++```
++
++**Invariant:** Retrieved memory is **evidence**, never automatic current-world
++truth and never task truth.
++
++Do **not** add REMEMBER / RECALL meta-actions. Memory is an information source
++available to DecisionProblem / capability selection.
++
++### Progress ↔ Memory (future)
++
++```text
++ProgressLedger / significant events → MemoryCandidate → MemorySystem
++MemoryEvidence → cognition → TaskState
++NOT every ProgressFact → permanent memory
++NOT Memory → ProgressLedger direct mutate
++```
++
++### Two loops (do not conflate)
++
++```text
++FAST TASK LOOP                         LONG MEMORY LOOP
++World → Perceive/Search/Act            episodes / outcomes / corrections
++  → Executive                            → MemoryCandidates
++  → TaskState / Progress                 → consolidate
++  → next decision                        → LongTermMemory
++                                         → retrieve into future DecisionProblems
++```
++
++Fast loop: low latency, current-world correctness.  
++Long loop: slower consolidation, contradiction resolution, summarization.
++
++---
++
++## Locked ontology
++
++```text
++Client
++TaskIngress
++Session
++AgentRuntime
++
++WorldState
++TaskState
++WorkingContext
++MemorySystem
++
++Goal
++Intention
++ProgressFact
++DecisionProblem
++
++Capability
++Method
++ExecutionSubstrate
++ExecutionResult
++
++MemoryCandidate
++MemoryRecord
++```
++
++---
++
++## Current client / runtime map (debt)
++
++Code today still has parallel surfaces (audit snapshot):
++
++```text
++TUI / Web+Desktop chat → tui_gateway → AIAgent.run_conversation
++Classic CLI            → cli.py → AIAgent
++hermes console         → HermesConsoleEngine (ops REPL — NOT the agent)
++Live zarooratwala      → plugin/experiments → run_goal_closed_loop  (third path)
++```
++
++Known divergences (document; converge behavior-preservingly later):
++
++1. Design “one work loop for every surface” ≠ code: closed loop is
++   experiment/tool, not every chat prompt.
++2. Goal inference on chat is **TUI-gateway-only**; classic CLI skips
++   `Goal.infer_from_text`.
++3. TUI Goal path injects system context; does **not** call
++   `run_goal_closed_loop`.
++4. Call has `plugin_call_whatsapp`; forward/zarooratwala stays experiment-only.
++5. Chat persistence (`SessionDB`) and plugin run logs (`EventLogger`) are
++   separate ownership planes.
++6. No `client == tui|console` branches inside plugin executive (good);
++   platform hints live in chat prompt builder.
++
++Target: one `TaskRequest` into AgentRuntime; chat gateway and live harnesses
++both attach. This document locks that target; it does not refactor clients.
++
++---
++
++## Roadmap (conceptual)
++
++```text
++Current packaging:
++  architecture roof + GROUNDING_WRONG_LOCUS exemplar (landed)
++
++A. Common runtime / TaskIngress seam
++B. Capability / Method / Substrate contract
++C. MemorySystem minimal seam (retrieve / submit_candidate / invalidate)
++D. ComputerUseExecutor boundary
++E. Executive / Progress evolution (ProgressLedger target shape)
++F. Additional substrates / specialists (CodingAgent as large tool)
++```
++
++MemorySystem is **not** “after everything else.” A minimal interface can land
++early once seams exist; storage/consolidation improve independently.
++
++Specialist agents (coding, research) are **large tools** with episode-local
++retries. Parent owns objective and acceptance criteria; specialist owns
++mechanics. Do not build an in-Hermes coding engine now.
++
++WhatsApp forward remains the adversarial **computer-use benchmark**, not the
++definition of Hermes.
++
++---
++
++## Explicit non-goals for the roof packaging PR
++
++- No MemorySystem storage, embeddings, schemas, or consolidation jobs
++- No ProgressLedger / DecisionProblem / MethodFrontier rewrite
++- No broad TUI/Console client refactor
++- No CodingAgent / Agent Desktop / cloud VM
++- No further expansion of this architecture roof in the same PR
++
++---
++
++## Acceptance for this document
++
++- Clients / TaskIngress / Executive ∥ MemorySystem / Capability→Method→Substrate
++  are explicit
++- Authority reconciliation (provenance-aware) is explicit
++- TaskIngress does not auto-retrieve long-term memory
++- WorkingContext is under Executive; durable taxonomy starts at Episodic
++- Local recovery requires intention + semantic target + desired effect
++- MemoryCandidate ≠ MemoryRecord write-policy boundary is documented
++- Slice 2a framed as ownership-policy exemplar before ComputerUseExecutor exists
+-- 
+2.39.5 (Apple Git-154)
+

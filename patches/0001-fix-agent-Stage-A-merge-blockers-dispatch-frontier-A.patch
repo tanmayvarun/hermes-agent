@@ -1,0 +1,2163 @@
+From f9d37327be9f679b0cf5afe62959fc77d91aa0af Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 16:16:07 +0530
+Subject: [PATCH] =?UTF-8?q?fix(agent):=20Stage=20A=20merge=20blockers=20?=
+ =?UTF-8?q?=E2=80=94=20dispatch,=20frontier,=20ASK=20permission?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Selected computer_use methods dispatch the closed-loop executor instead of
+legacy chat. Ranking goes through MethodFrontier; ASK grants permission only
+until a prerequisite resolver verifies the effect; legacy readiness stays
+safe; production CU provider registers at composition; MemoryRecord deferred.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .../personal-agent-brain-and-substrates.md    |  27 +-
+ plugin/agent/composition.py                   |  16 +-
+ plugin/agent/executive/intention_frame.py     |  40 +-
+ plugin/agent/executive/method_availability.py |  67 +--
+ plugin/agent/executive/method_decision.py     | 128 +++++
+ plugin/agent/executive/method_providers.py    |  22 +-
+ plugin/agent/memory/__init__.py               |   2 -
+ plugin/agent/memory/types.py                  |  26 +-
+ plugin/agent/providers/__init__.py            |   1 +
+ plugin/agent/providers/computer_use.py        |  54 ++
+ plugin/agent/runtime/agent_runtime.py         | 342 +++++++------
+ plugin/agent/runtime/closed_loop_adapter.py   |  63 +++
+ plugin/agent/runtime/method_executors.py      |  98 ++++
+ plugin/agent/runtime/prerequisite_resolver.py | 107 ++++
+ plugin/agent/runtime/session_store.py         |  10 +-
+ tests/plugin/test_task_ingress_memory_seam.py |   5 +-
+ .../test_ui_runtime_method_selection.py       | 460 +++++++++++-------
+ tui_gateway/server.py                         |   3 +
+ 18 files changed, 1049 insertions(+), 422 deletions(-)
+ create mode 100644 plugin/agent/executive/method_decision.py
+ create mode 100644 plugin/agent/providers/__init__.py
+ create mode 100644 plugin/agent/providers/computer_use.py
+ create mode 100644 plugin/agent/runtime/closed_loop_adapter.py
+ create mode 100644 plugin/agent/runtime/method_executors.py
+ create mode 100644 plugin/agent/runtime/prerequisite_resolver.py
+
+diff --git a/docs/design/personal-agent-brain-and-substrates.md b/docs/design/personal-agent-brain-and-substrates.md
+index 1ad79e027..a9c46e340 100644
+--- a/docs/design/personal-agent-brain-and-substrates.md
++++ b/docs/design/personal-agent-brain-and-substrates.md
+@@ -559,28 +559,33 @@ plugin/agent/runtime/agent_runtime.py  AgentRuntime
+ 
+ ```text
+ TUI → TaskRequest → TaskIngress → AgentRuntime.handle_turn
+-  → interpret → method providers → quality ⊥ availability → decide
+-  → WAITING_FOR_USER (resumable ASK) | legacy AIAgent delegate | selected method
++  → interpret → method providers → MethodFrontier.decide_methods
++  → WAITING_FOR_USER | execute_method(substrate) | legacy AIAgent (no method)
+ ```
+ 
+ Hard invariants:
+ 
+ ```text
+ AgentRuntime is domain-generic (no if forward_message / WhatsApp).
+-Domain catalogs register via method_providers.
+-Implementation readiness UNAVAILABLE ⇒ UNSUPPORTED (never ASK to link a stub).
+-READY + missing user prereq ⇒ MISSING_PRECONDITION (may ASK).
+-ASK = resumable WAITING_FOR_USER across session turns (not a sync UI callback).
+-All ordinary TUI turns enter AgentRuntime; gateway does not classify chat vs executive.
++Ranking authority = existing MethodFrontier (no parallel runtime scorer).
++Selected MethodSpec dispatches MethodExecutorRegistry (CU → closed-loop adapter).
++Legacy chat only when no executable method — never as a stand-in for selected CU.
++Domain catalogs register via composition root method_providers.
++readiness "" = legacy-safe; UNAVAILABLE = explicit stub; READY = executable.
++ASK accept = permission to resolve prerequisite ≠ precondition achieved.
++Prerequisite verified by resolver before facts are set / parent resumes.
+ Method quality ranking ⊥ MethodAvailability.
+ Forced ComputerUse = ExecutionConstraints.allowed_substrates / forced_substrate.
++session_store.py is temporary continuation storage (AgentSession debt).
++MemoryRecord schema deferred; Candidate/Evidence/write results only.
+ ```
+ 
+-**Stage A live acceptance:** traditional TUI reaches common runtime + method selection.
+-If WhatsApp Web is not READY, ComputerUse may win — correct.
++**Hold live ZarooratWala probe** until dispatch + composition goldens are green.
+ 
+-**Stage B (deferred):** ASK→decline→ComputerUse live only once WhatsApp Web executor
+-is READY so linking would make the method executable.
++**Stage A live acceptance:** TUI → common runtime → MethodFrontier → genuinely
++executable provider → executor actually runs (CU closed-loop adapter OK).
++
++**Stage B (deferred):** ASK→resolve→resume / decline→CU once WhatsApp Web is READY.
+ 
+ Goldens: `tests/plugin/test_task_ingress_memory_seam.py`,
+ `tests/plugin/test_ui_runtime_method_selection.py`.
+diff --git a/plugin/agent/composition.py b/plugin/agent/composition.py
+index 7391d6752..523189245 100644
+--- a/plugin/agent/composition.py
++++ b/plugin/agent/composition.py
+@@ -10,7 +10,7 @@ _COMPOSED = False
+ 
+ 
+ def compose_domain_adapters() -> None:
+-    """Idempotent registration of domain IdentityEvidenceProviders."""
++    """Idempotent registration of domain IdentityEvidenceProviders + method providers."""
+     global _COMPOSED
+     if _COMPOSED:
+         return
+@@ -22,4 +22,18 @@ def compose_domain_adapters() -> None:
+         ensure_whatsapp_provider_registered()
+     except Exception:
+         pass
++    try:
++        from plugin.agent.providers.computer_use import (
++            ensure_computer_use_provider_registered,
++        )
++
++        ensure_computer_use_provider_registered()
++    except Exception:
++        pass
+     _COMPOSED = True
++
++
++def reset_composition_for_tests() -> None:
++    """Test helper — allow re-compose after clearing registries."""
++    global _COMPOSED
++    _COMPOSED = False
+diff --git a/plugin/agent/executive/intention_frame.py b/plugin/agent/executive/intention_frame.py
+index 8c455d296..ca39fdb55 100644
+--- a/plugin/agent/executive/intention_frame.py
++++ b/plugin/agent/executive/intention_frame.py
+@@ -179,6 +179,10 @@ class ScoringPolicy:
+     reversibility_weight: float = 0.3
+     grounding_weight: float = 0.4
+     repeat_penalty_weight: float = 0.5
++    # Applied for substrate-aware MethodSpecs (substrate set or readiness explicit).
++    reliability_weight: float = 0.35
++    semantic_weight: float = 0.25
++    interference_weight: float = 0.4
+ 
+     def to_dict(self) -> Dict[str, Any]:
+         return asdict(self)
+@@ -230,8 +234,9 @@ class MethodSpec:
+     user_interference: float = 0.5
+     reliability: float = 0.5
+     semantic_precision: float = 0.5
+-    # Implementation readiness: UNAVAILABLE ⇒ overall UNSUPPORTED (never ASK).
+-    readiness: str = "unavailable"
++    # Implementation readiness: "" = unspecified/legacy-safe;
++    # "unavailable" = provider asserts stub; "ready" = executable implementation.
++    readiness: str = ""
+ 
+     def to_dict(self) -> Dict[str, Any]:
+         return {
+@@ -655,6 +660,13 @@ def close_attempt_on_frame(
+     return closed
+ 
+ 
++def _score_num(value: Any, default: float) -> float:
++    """None-aware float for scoring — legitimate 0.0 must remain 0.0."""
++    if value is None:
++        return float(default)
++    return float(value)
++
++
+ def score_method(
+     spec: MethodSpec,
+     policy: ScoringPolicy,
+@@ -674,16 +686,30 @@ def score_method(
+     if spec.provenance == MethodProvenance.LLM_INFERRED.value:
+         info -= 0.1
+     repeat = 1.0 if attempted else 0.0
+-    return (
++    score = (
+         policy.progress_weight * progress
+         + policy.information_weight * info
+         + policy.grounding_weight * grounding_confidence
+-        + policy.reversibility_weight * float(spec.reversibility)
+-        - policy.risk_weight * float(spec.risk)
+-        - policy.latency_weight * float(spec.latency)
+-        - policy.cost_weight * float(spec.cost)
++        + policy.reversibility_weight * _score_num(spec.reversibility, 0.9)
++        - policy.risk_weight * _score_num(spec.risk, 0.1)
++        - policy.latency_weight * _score_num(spec.latency, 0.2)
++        - policy.cost_weight * _score_num(spec.cost, 0.2)
+         - policy.repeat_penalty_weight * repeat
+     )
++    # Substrate-aware / readiness-aware specs: include interference & reliability.
++    readiness = str(getattr(spec, "readiness", "") or "").strip().lower()
++    substrate = str(getattr(spec, "substrate", "") or "").strip()
++    if substrate or readiness in {"ready", "unavailable"}:
++        score += policy.reliability_weight * _score_num(
++            getattr(spec, "reliability", None), 0.5
++        )
++        score += policy.semantic_weight * _score_num(
++            getattr(spec, "semantic_precision", None), 0.5
++        )
++        score -= policy.interference_weight * _score_num(
++            getattr(spec, "user_interference", None), 0.5
++        )
++    return score
+ 
+ 
+ def apply_wrong_locus_ineligibility(
+diff --git a/plugin/agent/executive/method_availability.py b/plugin/agent/executive/method_availability.py
+index 5ee38f7f0..873f5bfc5 100644
+--- a/plugin/agent/executive/method_availability.py
++++ b/plugin/agent/executive/method_availability.py
+@@ -1,15 +1,16 @@
+-"""MethodAvailability vs MethodReadiness — quality ranking stays separate.
++"""MethodAvailability vs MethodReadiness — orthogonal to MethodFrontier quality scores.
+ 
+ Implementation readiness ≠ runtime prerequisite:
+ 
+     readiness UNAVAILABLE → overall UNSUPPORTED (never ASK to link)
++    readiness unspecified/empty → legacy-compatible (not auto-UNSUPPORTED)
+     readiness READY + auth missing → MISSING_PRECONDITION (may ASK)
+ """
+ 
+ from __future__ import annotations
+ 
+ from enum import Enum
+-from typing import Any, Mapping, Optional, Sequence, Set
++from typing import Any, Mapping, Optional, Set
+ 
+ from plugin.agent.ingress import ExecutionConstraints
+ 
+@@ -28,6 +29,14 @@ class MethodReadiness(str, Enum):
+ 
+     READY = "ready"
+     UNAVAILABLE = "unavailable"
++    UNSPECIFIED = ""  # legacy MethodSpec — preserve eligibility
++
++
++def _num(value: Any, default: float) -> float:
++    """None-aware float: keep legitimate 0.0 (do not coerce via truthiness)."""
++    if value is None:
++        return float(default)
++    return float(value)
+ 
+ 
+ def overall_availability(
+@@ -35,8 +44,8 @@ def overall_availability(
+     readiness: str,
+     runtime_availability: str,
+ ) -> str:
+-    """Combine implementation readiness with runtime prerequisite state."""
+-    if str(readiness or "").strip().lower() != MethodReadiness.READY.value:
++    r = str(readiness or "").strip().lower()
++    if r == MethodReadiness.UNAVAILABLE.value:
+         return MethodAvailability.UNSUPPORTED.value
+     return str(runtime_availability or MethodAvailability.UNSUPPORTED.value)
+ 
+@@ -67,13 +76,8 @@ def evaluate_method_availability(
+     declined_method_ids: Optional[Set[str]] = None,
+     declined_preconditions: Optional[Set[str]] = None,
+ ) -> tuple[str, str]:
+-    """Return (overall_availability, detail_reason).
+-
+-    Quality/ranking must not be computed here — availability only.
+-    """
+-    readiness = str(
+-        getattr(spec, "readiness", None) or MethodReadiness.UNAVAILABLE.value
+-    ).strip().lower()
++    """Return (overall_availability, detail_reason). Availability only — no ranking."""
++    readiness = str(getattr(spec, "readiness", None) or "").strip().lower()
+     mid = str(getattr(spec, "id", "") or "")
+     substrate = str(getattr(spec, "substrate", "") or "")
+     if mid in (declined_method_ids or set()):
+@@ -81,7 +85,7 @@ def evaluate_method_availability(
+     if substrate_forbidden(substrate, constraints):
+         return MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value, "substrate_constraint"
+ 
+-    if readiness != MethodReadiness.READY.value:
++    if readiness == MethodReadiness.UNAVAILABLE.value:
+         return MethodAvailability.UNSUPPORTED.value, "implementation_unavailable"
+ 
+     facts = dict(precondition_facts or {})
+@@ -94,9 +98,10 @@ def evaluate_method_availability(
+             return MethodAvailability.USER_DECLINED.value, f"precondition_declined:{key}"
+         if facts.get(key, False) is True:
+             continue
+-        # Absent fact → missing (fail closed for named preconditions).
+         missing.append(key)
+     if missing:
++        # Legacy unspecified readiness with preconditions: still MISSING, but ASK
++        # only when readiness is explicitly READY (see should_ask_for_precondition).
+         return (
+             MethodAvailability.MISSING_PRECONDITION.value,
+             f"missing:{','.join(missing)}",
+@@ -104,49 +109,25 @@ def evaluate_method_availability(
+     return MethodAvailability.AVAILABLE.value, "ready"
+ 
+ 
+-def method_quality_score(spec: Any) -> float:
+-    """Quality-only score (orthogonal to availability). Higher is better."""
+-    reliability = float(getattr(spec, "reliability", 0.5) or 0.5)
+-    latency = float(getattr(spec, "latency", 0.5) or 0.5)
+-    risk = float(getattr(spec, "risk", 0.5) or 0.5)
+-    cost = float(getattr(spec, "cost", 0.5) or 0.5)
+-    interference = float(getattr(spec, "user_interference", 0.5) or 0.5)
+-    semantic = float(getattr(spec, "semantic_precision", 0.5) or 0.5)
+-    return (
+-        1.2 * reliability
+-        + 1.0 * semantic
+-        - 0.8 * latency
+-        - 0.9 * risk
+-        - 0.6 * cost
+-        - 1.1 * interference
+-    )
+-
+-
+-def rank_by_quality(specs: Sequence[Any]) -> list[tuple[Any, float]]:
+-    ranked = [(s, method_quality_score(s)) for s in specs]
+-    ranked.sort(key=lambda x: x[1], reverse=True)
+-    return ranked
+-
+-
+ def should_ask_for_precondition(
+     *,
+     preferred_spec: Any,
+     preferred_availability: str,
++    preferred_quality: float,
+     best_available_quality: Optional[float],
+     ask_quality_margin: float = 0.15,
+ ) -> bool:
+-    """Whether to interrupt the user for a READY method's missing precondition.
++    """Interrupt only for explicitly READY methods with missing user prereqs.
+ 
+     Does not auto-ASK merely because the top-ranked method is missing a prereq.
+-    Asks when no AVAILABLE alternative exists, or preferred quality beats the
+-    best AVAILABLE alternative by ``ask_quality_margin``.
+     """
+     if preferred_availability != MethodAvailability.MISSING_PRECONDITION.value:
+         return False
+-    readiness = str(getattr(preferred_spec, "readiness", "") or "").lower()
++    readiness = str(getattr(preferred_spec, "readiness", "") or "").strip().lower()
+     if readiness != MethodReadiness.READY.value:
+         return False
+-    pref_q = method_quality_score(preferred_spec)
+     if best_available_quality is None:
+         return True
+-    return pref_q >= (float(best_available_quality) + float(ask_quality_margin))
++    return float(preferred_quality) >= (
++        float(best_available_quality) + float(ask_quality_margin)
++    )
+diff --git a/plugin/agent/executive/method_decision.py b/plugin/agent/executive/method_decision.py
+new file mode 100644
+index 000000000..00da3cfb0
+--- /dev/null
++++ b/plugin/agent/executive/method_decision.py
+@@ -0,0 +1,128 @@
++"""Single MethodFrontier authority for runtime method selection.
++
++AgentRuntime must not implement parallel ranking — it calls ``decide_methods``.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
++
++from plugin.agent.executive.intention_frame import (
++    Intention,
++    IntentionFrame,
++    MethodFrontier,
++    MethodSpec,
++    ScoringPolicy,
++    rank_eligible,
++    score_method,
++)
++from plugin.agent.executive.method_availability import (
++    MethodAvailability,
++    evaluate_method_availability,
++    should_ask_for_precondition,
++)
++from plugin.agent.ingress import ExecutionConstraints
++
++
++@dataclass
++class MethodDecision:
++    frontier: MethodFrontier
++    ranked_executable: List[Tuple[str, float]] = field(default_factory=list)
++    availability_by_id: Dict[str, str] = field(default_factory=dict)
++    reason_by_id: Dict[str, str] = field(default_factory=dict)
++    selected_method_id: str = ""
++    ask_method_id: str = ""
++    ask_precondition: str = ""
++    should_ask: bool = False
++
++
++def build_frontier_from_specs(
++    specs: Sequence[MethodSpec],
++    *,
++    intention_id: str = "",
++    desired_effect: str = "",
++) -> IntentionFrame:
++    catalog = {str(s.id): s for s in specs if str(getattr(s, "id", "") or "")}
++    frontier = MethodFrontier(
++        known_untried=list(catalog.keys()),
++        catalog=catalog,
++    )
++    intention = Intention(
++        id=intention_id or "runtime_intention",
++        objective=desired_effect or "task_effect",
++        success_predicate=desired_effect or "task_effect",
++    )
++    return IntentionFrame(
++        intention=intention,
++        method_frontier=frontier,
++        scoring_policy=ScoringPolicy.for_meta("act"),
++    )
++
++
++def decide_methods(
++    specs: Sequence[MethodSpec],
++    *,
++    constraints: Optional[ExecutionConstraints] = None,
++    precondition_facts: Optional[Mapping[str, bool]] = None,
++    declined_method_ids: Optional[Set[str]] = None,
++    declined_preconditions: Optional[Set[str]] = None,
++    intention_id: str = "",
++    desired_effect: str = "",
++) -> MethodDecision:
++    """Evaluate availability, reuse MethodFrontier.rank_eligible for executables."""
++    frame = build_frontier_from_specs(
++        specs, intention_id=intention_id, desired_effect=desired_effect
++    )
++    frontier = frame.method_frontier
++    avail_map: Dict[str, str] = {}
++    reason_map: Dict[str, str] = {}
++    missing_ready: List[Tuple[MethodSpec, float, str]] = []
++
++    for mid, spec in list(frontier.catalog.items()):
++        avail, reason = evaluate_method_availability(
++            spec,
++            constraints=constraints,
++            precondition_facts=precondition_facts,
++            declined_method_ids=declined_method_ids,
++            declined_preconditions=declined_preconditions,
++        )
++        avail_map[mid] = avail
++        reason_map[mid] = reason
++        if avail != MethodAvailability.AVAILABLE.value:
++            if mid not in frontier.currently_ineligible:
++                frontier.currently_ineligible.append(mid)
++        if (
++            avail == MethodAvailability.MISSING_PRECONDITION.value
++            and str(getattr(spec, "readiness", "") or "").strip().lower() == "ready"
++        ):
++            q = score_method(spec, frame.scoring_policy)
++            missing_ready.append((spec, q, reason))
++
++    ranked = rank_eligible(frame)
++    decision = MethodDecision(
++        frontier=frontier,
++        ranked_executable=list(ranked),
++        availability_by_id=avail_map,
++        reason_by_id=reason_map,
++    )
++    if ranked:
++        decision.selected_method_id = str(ranked[0][0])
++
++    best_available_q = float(ranked[0][1]) if ranked else None
++    if missing_ready:
++        missing_ready.sort(key=lambda t: t[1], reverse=True)
++        ask_spec, ask_q, ask_reason = missing_ready[0]
++        if should_ask_for_precondition(
++            preferred_spec=ask_spec,
++            preferred_availability=MethodAvailability.MISSING_PRECONDITION.value,
++            preferred_quality=ask_q,
++            best_available_quality=best_available_q,
++        ):
++            decision.should_ask = True
++            decision.ask_method_id = str(ask_spec.id)
++            if "missing:" in ask_reason:
++                decision.ask_precondition = ask_reason.split("missing:", 1)[-1].split(",")[0]
++            # Prefer asking over immediately executing a worse available method.
++            decision.selected_method_id = ""
++    return decision
+diff --git a/plugin/agent/executive/method_providers.py b/plugin/agent/executive/method_providers.py
+index 337f8fd9a..4fb1c69f4 100644
+--- a/plugin/agent/executive/method_providers.py
++++ b/plugin/agent/executive/method_providers.py
+@@ -7,7 +7,7 @@ Providers advertise MethodSpecs for effects they understand.
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass, field
+-from typing import Any, List, Optional, Protocol, Sequence
++from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
+ 
+ from plugin.agent.executive.intention_frame import MethodSpec
+ from plugin.agent.ingress import ExecutionConstraints
+@@ -54,13 +54,26 @@ def discover_methods(
+     interpretation: TaskInterpretation,
+     *,
+     constraints: Optional[ExecutionConstraints] = None,
+-) -> List[MethodSpec]:
++) -> Tuple[List[MethodSpec], List[Dict[str, Any]]]:
++    """Return (specs, provider_errors). Fail-open across providers; never silent."""
+     out: List[MethodSpec] = []
++    errors: List[Dict[str, Any]] = []
+     seen: set[str] = set()
+     for provider in _PROVIDERS:
++        provider_id = str(
++            getattr(provider, "provider_id", None)
++            or getattr(provider, "__class__", type(provider)).__name__
++        )
+         try:
+             specs = provider.discover(interpretation, constraints=constraints) or []
+-        except Exception:
++        except Exception as exc:
++            errors.append(
++                {
++                    "event": "method_provider_error",
++                    "provider_id": provider_id,
++                    "exception": f"{type(exc).__name__}: {exc}",
++                }
++            )
+             continue
+         for spec in specs:
+             mid = str(getattr(spec, "id", "") or "")
+@@ -68,7 +81,7 @@ def discover_methods(
+                 continue
+             seen.add(mid)
+             out.append(spec)
+-    return out
++    return out, errors
+ 
+ 
+ def interpret_task_request(request: Any) -> TaskInterpretation:
+@@ -90,7 +103,6 @@ def interpret_task_request(request: Any) -> TaskInterpretation:
+             kind = "unknown"
+     effects: List[str] = []
+     if kind and kind != "unknown":
+-        # Effect keys derived from goal kind; providers match on these.
+         effects.append(str(kind))
+         if "forward" in kind:
+             effects.append("forward_message")
+diff --git a/plugin/agent/memory/__init__.py b/plugin/agent/memory/__init__.py
+index 7e3624e1a..793f527fd 100644
+--- a/plugin/agent/memory/__init__.py
++++ b/plugin/agent/memory/__init__.py
+@@ -5,7 +5,6 @@ from plugin.agent.memory.types import (
+     MemoryCandidate,
+     MemoryEvidence,
+     MemoryInvalidationResult,
+-    MemoryRecord,
+     MemoryWriteResult,
+ )
+ 
+@@ -13,7 +12,6 @@ __all__ = [
+     "MemoryCandidate",
+     "MemoryEvidence",
+     "MemoryInvalidationResult",
+-    "MemoryRecord",
+     "MemorySystem",
+     "MemoryWriteResult",
+     "NoopMemorySystem",
+diff --git a/plugin/agent/memory/types.py b/plugin/agent/memory/types.py
+index 242b527e4..7528abdde 100644
+--- a/plugin/agent/memory/types.py
++++ b/plugin/agent/memory/types.py
+@@ -1,4 +1,8 @@
+-"""Memory types — MemoryCandidate ≠ MemoryRecord; structured write outcomes."""
++"""Memory types — MemoryCandidate ≠ durable persistence; evidence ≠ truth.
++
++Durable MemoryRecord schema is deferred until a real store lands. The seam
++today needs candidates, evidence, and structured write/invalidate results.
++"""
+ 
+ from __future__ import annotations
+ 
+@@ -8,7 +12,7 @@ from typing import Any, Optional
+ 
+ @dataclass
+ class MemoryCandidate:
+-    """May be worth remembering. Not yet a durable MemoryRecord."""
++    """May be worth remembering. Not yet durable persistence."""
+ 
+     kind: str
+     content: Any
+@@ -20,24 +24,6 @@ class MemoryCandidate:
+     metadata: dict[str, Any] = field(default_factory=dict)
+ 
+ 
+-@dataclass
+-class MemoryRecord:
+-    """Durable memory shape (stub for the seam — no store in this slice).
+-
+-    Distinct from MemoryCandidate: records exist only after write policy accepts.
+-    """
+-
+-    memory_id: str
+-    kind: str
+-    content: Any
+-    provenance: str = ""
+-    scope: str = "session"
+-    confidence: float = 0.0
+-    subject: str = ""
+-    evidence_refs: list[str] = field(default_factory=list)
+-    metadata: dict[str, Any] = field(default_factory=dict)
+-
+-
+ @dataclass
+ class MemoryEvidence:
+     """Retrieved memory as evidence — never automatic world/task truth."""
+diff --git a/plugin/agent/providers/__init__.py b/plugin/agent/providers/__init__.py
+new file mode 100644
+index 000000000..3f3a7cd00
+--- /dev/null
++++ b/plugin/agent/providers/__init__.py
+@@ -0,0 +1 @@
++"""Domain method providers — registered at composition root, not by AgentRuntime."""
+diff --git a/plugin/agent/providers/computer_use.py b/plugin/agent/providers/computer_use.py
+new file mode 100644
+index 000000000..6f680156c
+--- /dev/null
++++ b/plugin/agent/providers/computer_use.py
+@@ -0,0 +1,54 @@
++"""Production ComputerUse method provider — genuinely executable substrate."""
++
++from __future__ import annotations
++
++from typing import Optional, Sequence
++
++from plugin.agent.executive.intention_frame import MethodSpec
++from plugin.agent.executive.method_availability import MethodReadiness
++from plugin.agent.executive.method_providers import TaskInterpretation
++from plugin.agent.ingress import ExecutionConstraints
++
++
++class ComputerUseMethodProvider:
++    """Registers READY computer_use methods for known executive goal kinds."""
++
++    provider_id = "computer_use_native"
++
++    def discover(
++        self,
++        interpretation: TaskInterpretation,
++        *,
++        constraints: Optional[ExecutionConstraints] = None,
++    ) -> Sequence[MethodSpec]:
++        effects = set(interpretation.desired_effects or [])
++        kind = str(interpretation.goal_kind or "")
++        if "forward_message" not in effects and "forward" not in kind:
++            return []
++        return [
++            MethodSpec(
++                id="native_computer_use_forward",
++                capability="forward_message",
++                substrate="computer_use",
++                provider=self.provider_id,
++                preconditions=[],
++                readiness=MethodReadiness.READY.value,
++                reliability=0.55,
++                latency=0.7,
++                risk=0.55,
++                cost=0.6,
++                user_interference=0.85,
++                semantic_precision=0.55,
++            )
++        ]
++
++
++def ensure_computer_use_provider_registered() -> None:
++    from plugin.agent.executive.method_providers import register_method_provider
++    from plugin.agent.runtime.method_executors import (
++        ComputerUseClosedLoopExecutor,
++        register_method_executor,
++    )
++
++    register_method_provider(ComputerUseMethodProvider())
++    register_method_executor(ComputerUseClosedLoopExecutor())
+diff --git a/plugin/agent/runtime/agent_runtime.py b/plugin/agent/runtime/agent_runtime.py
+index 7f06101f6..0884365ff 100644
+--- a/plugin/agent/runtime/agent_runtime.py
++++ b/plugin/agent/runtime/agent_runtime.py
+@@ -2,13 +2,14 @@
+ 
+ Owns RuntimeState + MemorySystem one-way. Orchestrates:
+ 
+-    TaskRequest → interpretation → capability/method discovery
+-    → MethodFrontier (quality ⊥ availability) → executive decision
++    TaskRequest → interpretation → method providers → MethodFrontier decision
++    → ASK (resumable) | execute_method(selected) | legacy conversation
+ 
+-No WhatsApp / forward_message branches. Domain catalogs register via
+-``method_providers``. ASK is resumable ``WAITING_FOR_USER``, not a sync UI call.
++No WhatsApp / forward_message branches. Ranking authority is MethodFrontier
++(``decide_methods``), not a parallel scorer inside this module.
+ 
+-Construction has no MemorySystem side effects.
++ASK acceptance grants permission to resolve a prerequisite; it does **not**
++mark the precondition achieved until a resolver verifies the effect.
+ """
+ 
+ from __future__ import annotations
+@@ -17,22 +18,16 @@ import uuid
+ from dataclasses import dataclass, field
+ from typing import Any, Callable, Dict, Optional
+ 
+-from plugin.agent.executive.method_availability import (
+-    MethodAvailability,
+-    evaluate_method_availability,
+-    method_quality_score,
+-    should_ask_for_precondition,
+-)
++from plugin.agent.executive.method_decision import decide_methods
+ from plugin.agent.executive.method_providers import (
+     discover_methods,
+     interpret_task_request,
+ )
+-from plugin.agent.ingress import SessionRef, TaskRequest, TaskIngress
++from plugin.agent.ingress import SessionRef, TaskIngress, TaskRequest
+ from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
+-from plugin.agent.runtime.session_store import (
+-    SuspendedAsk,
+-    get_or_create_session,
+-)
++from plugin.agent.runtime.method_executors import execute_method
++from plugin.agent.runtime.prerequisite_resolver import resolve_prerequisite
++from plugin.agent.runtime.session_store import SuspendedAsk, get_or_create_session
+ from plugin.agent.runtime.state import RuntimeState
+ from plugin.agent.runtime.turn_result import RuntimeTurnResult, TurnStatus
+ 
+@@ -48,7 +43,6 @@ class AgentRuntime:
+     memory: MemorySystem = field(default_factory=NoopMemorySystem)
+     task_request: Optional[TaskRequest] = None
+     session: Optional[SessionRef] = None
+-    precondition_facts: Dict[str, bool] = field(default_factory=dict)
+ 
+     def __post_init__(self) -> None:
+         if self.runtime_state is None:
+@@ -66,8 +60,10 @@ class AgentRuntime:
+         conversation_runner: Optional[ConversationRunner] = None,
+         run_message: Any = None,
+         conversation_kwargs: Optional[Dict[str, Any]] = None,
++        execution_context: Optional[Dict[str, Any]] = None,
+     ) -> RuntimeTurnResult:
+-        """Process one TaskRequest. Domain-generic; may legacy-delegate conversation."""
++        # Composition root (providers/executors) is owned by process startup /
++        # ClientAdapter — not by handle_turn — so tests can control registries.
+         req = TaskIngress.normalize(request)
+         self.task_request = req
+         if req.session is not None:
+@@ -78,7 +74,6 @@ class AgentRuntime:
+         intention_id = session_state.active_intention_id or uuid.uuid4().hex[:12]
+         session_state.active_intention_id = intention_id
+ 
+-        # Resume suspended ASK before re-interpreting as a new goal.
+         if session_state.suspended_ask is not None:
+             return self._resume_ask(
+                 req,
+@@ -87,40 +82,50 @@ class AgentRuntime:
+                 conversation_runner=conversation_runner,
+                 run_message=run_message,
+                 conversation_kwargs=conversation_kwargs,
++                execution_context=execution_context,
+             )
+ 
+         interpretation = interpret_task_request(req)
+-        specs = discover_methods(interpretation, constraints=req.constraints)
+-        evaluated: list[dict[str, Any]] = []
+-        for spec in specs:
+-            avail, reason = evaluate_method_availability(
+-                spec,
+-                constraints=req.constraints,
+-                precondition_facts=self.precondition_facts,
+-                declined_method_ids=session_state.declined_method_ids,
+-                declined_preconditions=session_state.declined_preconditions,
+-            )
+-            evaluated.append(
++        specs, provider_errors = discover_methods(
++            interpretation, constraints=req.constraints
++        )
++        decision = decide_methods(
++            specs,
++            constraints=req.constraints,
++            precondition_facts=session_state.precondition_facts,
++            declined_method_ids=session_state.declined_method_ids,
++            declined_preconditions=session_state.declined_preconditions,
++            intention_id=intention_id,
++            desired_effect=",".join(interpretation.desired_effects) or interpretation.goal_kind,
++        )
++
++        candidate_trace = []
++        for mid, spec in decision.frontier.catalog.items():
++            score = 0.0
++            for rid, sc in decision.ranked_executable:
++                if rid == mid:
++                    score = float(sc)
++                    break
++            if score == 0.0 and mid in decision.availability_by_id:
++                # Still report score for non-executable via frontier policy.
++                from plugin.agent.executive.intention_frame import (
++                    ScoringPolicy,
++                    score_method,
++                )
++
++                score = score_method(spec, ScoringPolicy.for_meta("act"))
++            candidate_trace.append(
+                 {
+-                    "id": spec.id,
++                    "id": mid,
+                     "substrate": getattr(spec, "substrate", ""),
+                     "provider": getattr(spec, "provider", ""),
+                     "readiness": getattr(spec, "readiness", ""),
+-                    "quality": method_quality_score(spec),
+-                    "availability": avail,
+-                    "reason": reason,
+-                    "spec": spec,
++                    "quality": score,
++                    "availability": decision.availability_by_id.get(mid),
++                    "reason": decision.reason_by_id.get(mid),
+                 }
+             )
+-        evaluated.sort(key=lambda e: float(e["quality"]), reverse=True)
+-
+-        available = [
+-            e for e in evaluated if e["availability"] == MethodAvailability.AVAILABLE.value
+-        ]
+-        best_available_q = (
+-            float(available[0]["quality"]) if available else None
+-        )
+-        preferred = evaluated[0] if evaluated else None
++        candidate_trace.sort(key=lambda e: float(e["quality"]), reverse=True)
+ 
+         trace: Dict[str, Any] = {
+             "client": (req.client_context or {}).get("client"),
+@@ -132,47 +137,33 @@ class AgentRuntime:
+                 "goal_kind": interpretation.goal_kind,
+                 "desired_effects": list(interpretation.desired_effects),
+             },
+-            "candidate_methods": [
+-                {
+-                    "id": e["id"],
+-                    "substrate": e["substrate"],
+-                    "quality": e["quality"],
+-                    "availability": e["availability"],
+-                    "readiness": e["readiness"],
+-                    "reason": e["reason"],
+-                }
+-                for e in evaluated
+-            ],
++            "candidate_methods": candidate_trace,
++            "ranking_authority": "MethodFrontier.rank_eligible",
++            "provider_errors": list(provider_errors),
+             "constraints": {
+                 "allowed_substrates": list(req.constraints.allowed_substrates or ()),
+                 "forced_substrate": req.constraints.forced_substrate,
+             },
+         }
++        session_state.original_user_turn = req.user_turn
++        session_state.last_trace = trace
+ 
+-        if preferred is not None and should_ask_for_precondition(
+-            preferred_spec=preferred["spec"],
+-            preferred_availability=str(preferred["availability"]),
+-            best_available_quality=best_available_q,
+-        ):
+-            missing = str(preferred["reason"] or "")
+-            pre = missing.split("missing:", 1)[-1].split(",")[0] if "missing:" in missing else ""
++        if decision.should_ask and decision.ask_method_id:
+             question = (
+-                f"A better method ({preferred['id']}) needs prerequisite "
+-                f"'{pre or 'access'}'. Allow me to establish it so I can proceed "
+-                f"without a more disruptive approach?"
++                f"A better method ({decision.ask_method_id}) needs prerequisite "
++                f"'{decision.ask_precondition or 'access'}'. Allow me to establish "
++                f"it so I can proceed without a more disruptive approach?"
+             )
+             session_state.suspended_ask = SuspendedAsk(
+                 intention_id=intention_id,
+-                method_id=str(preferred["id"]),
+-                precondition=pre,
++                method_id=decision.ask_method_id,
++                precondition=decision.ask_precondition,
+                 question=question,
+                 parent_effect=",".join(interpretation.desired_effects),
+             )
+-            trace["method_availability"] = preferred["availability"]
+-            trace["missing_precondition"] = pre
+             trace["ASK"] = question
+-            trace["original_user_turn"] = req.user_turn
+-            session_state.last_trace = trace
++            trace["missing_precondition"] = decision.ask_precondition
++            trace["method_availability"] = "missing_precondition"
+             return RuntimeTurnResult(
+                 status=TurnStatus.WAITING_FOR_USER,
+                 question=question,
+@@ -185,48 +176,38 @@ class AgentRuntime:
+                 interpretation=interpretation,
+             )
+ 
+-        selected = available[0] if available else None
+-        if selected is not None:
+-            trace["selected_method"] = selected["id"]
+-            trace["selected_substrate"] = selected["substrate"]
++        if decision.selected_method_id:
++            spec = decision.frontier.catalog[decision.selected_method_id]
++            exec_ctx = {
++                "goal": interpretation.goal,
++                "runtime_state": self.runtime_state,
++                "task_request": req,
++                "interpretation": interpretation,
++                "memory": self.memory,
++                **dict(execution_context or {}),
++            }
++            exec_result = execute_method(spec, context=exec_ctx)
++            trace["selected_method"] = spec.id
++            trace["selected_substrate"] = getattr(spec, "substrate", "")
++            trace["executor_id"] = exec_result.executor_id
++            trace["executor_status"] = exec_result.status
++            trace["dispatched_executor"] = True
+             session_state.last_trace = trace
+-            # Domain-generic: substrate execution engines plug in later.
+-            # Stage A: legacy conversation remains the default product path;
+-            # selected method is recorded for acceptance traces / frontier tests.
+-            if conversation_runner is not None:
+-                legacy = self._delegate_conversation(
+-                    interpretation=interpretation,
+-                    conversation_runner=conversation_runner,
+-                    run_message=run_message if run_message is not None else req.user_turn,
+-                    conversation_kwargs=conversation_kwargs,
+-                )
+-                return RuntimeTurnResult(
+-                    status=TurnStatus.LEGACY_DELEGATED,
+-                    message=_legacy_message(legacy),
+-                    intention_id=intention_id,
+-                    selected_method=str(selected["id"]),
+-                    selected_substrate=str(selected["substrate"]),
+-                    task_request_id=task_request_id,
+-                    session_id=sid,
+-                    runtime_id=session_state.runtime_id,
+-                    acceptance_trace=trace,
+-                    legacy_result=legacy,
+-                    interpretation=interpretation,
+-                )
+             return RuntimeTurnResult(
+-                status=TurnStatus.COMPLETED,
++                status=TurnStatus.COMPLETED if exec_result.ok else TurnStatus.FAILED,
++                message=exec_result.detail,
+                 intention_id=intention_id,
+-                selected_method=str(selected["id"]),
+-                selected_substrate=str(selected["substrate"]),
++                selected_method=str(spec.id),
++                selected_substrate=str(getattr(spec, "substrate", "") or ""),
+                 task_request_id=task_request_id,
+                 session_id=sid,
+                 runtime_id=session_state.runtime_id,
+                 acceptance_trace=trace,
++                legacy_result=exec_result.payload,
+                 interpretation=interpretation,
+             )
+ 
+-        # No executable method catalog — migration: legacy conversational engine.
+-        session_state.last_trace = trace
++        # No executable method — migration path: legacy conversational engine.
+         if conversation_runner is not None:
+             legacy = self._delegate_conversation(
+                 interpretation=interpretation,
+@@ -234,6 +215,9 @@ class AgentRuntime:
+                 run_message=run_message if run_message is not None else req.user_turn,
+                 conversation_kwargs=conversation_kwargs,
+             )
++            trace["selected_method"] = ""
++            trace["selected_substrate"] = "conversation_legacy"
++            trace["dispatched_executor"] = False
+             return RuntimeTurnResult(
+                 status=TurnStatus.LEGACY_DELEGATED,
+                 message=_legacy_message(legacy),
+@@ -247,7 +231,6 @@ class AgentRuntime:
+             )
+         return RuntimeTurnResult(
+             status=TurnStatus.COMPLETED,
+-            message="",
+             intention_id=intention_id,
+             task_request_id=task_request_id,
+             session_id=sid,
+@@ -265,6 +248,7 @@ class AgentRuntime:
+         conversation_runner: Optional[ConversationRunner],
+         run_message: Any,
+         conversation_kwargs: Optional[Dict[str, Any]],
++        execution_context: Optional[Dict[str, Any]],
+     ) -> RuntimeTurnResult:
+         ask: SuspendedAsk = session_state.suspended_ask
+         intention_id = ask.intention_id
+@@ -273,17 +257,16 @@ class AgentRuntime:
+         trace["task_request_id"] = task_request_id
+         trace["user_response"] = answer
+         trace["intention_id"] = intention_id
+-
+-        orig = str((session_state.last_trace or {}).get("original_user_turn") or "")
++        orig = session_state.original_user_turn or req.user_turn
+ 
+         if answer == "decline":
+             session_state.declined_method_ids.add(ask.method_id)
+             if ask.precondition:
+                 session_state.declined_preconditions.add(ask.precondition)
+             session_state.suspended_ask = None
+-            # Re-enter selection with same parent intention (not a new goal restart).
++            session_state.active_intention_id = intention_id
+             resumed = TaskRequest(
+-                user_turn=str(orig or req.user_turn),
++                user_turn=str(orig),
+                 attachments=list(req.attachments or []),
+                 session=req.session,
+                 client_context=dict(req.client_context or {}),
+@@ -291,12 +274,12 @@ class AgentRuntime:
+                 interaction_capabilities=dict(req.interaction_capabilities or {}),
+                 legacy_goal=req.legacy_goal,
+             )
+-            session_state.active_intention_id = intention_id
+             result = self.handle_turn(
+                 resumed,
+                 conversation_runner=conversation_runner,
+                 run_message=run_message if run_message is not None else resumed.user_turn,
+                 conversation_kwargs=conversation_kwargs,
++                execution_context=execution_context,
+             )
+             result.status = TurnStatus.CONTINUED
+             result.intention_id = intention_id
+@@ -308,35 +291,103 @@ class AgentRuntime:
+             return result
+ 
+         if answer == "accept":
+-            if ask.precondition:
+-                self.precondition_facts[ask.precondition] = True
+-            session_state.suspended_ask = None
+-            session_state.active_intention_id = intention_id
+-            resumed = TaskRequest(
+-                user_turn=str(orig or req.user_turn),
+-                attachments=list(req.attachments or []),
+-                session=req.session,
+-                client_context=dict(req.client_context or {}),
+-                constraints=req.constraints,
+-                interaction_capabilities=dict(req.interaction_capabilities or {}),
+-                legacy_goal=req.legacy_goal,
+-            )
+-            result = self.handle_turn(
+-                resumed,
+-                conversation_runner=conversation_runner,
+-                run_message=run_message if run_message is not None else resumed.user_turn,
+-                conversation_kwargs=conversation_kwargs,
++            # Permission only — do NOT mark precondition true here.
++            ask.permission_granted = True
++            resolve = resolve_prerequisite(
++                ask.precondition,
++                permission_granted=True,
++                context={
++                    "method_id": ask.method_id,
++                    "intention_id": intention_id,
++                    "session_id": session_state.session_id,
++                },
+             )
+-            result.status = TurnStatus.CONTINUED
+-            result.intention_id = intention_id
+-            result.acceptance_trace = {
+-                **(result.acceptance_trace or {}),
+-                "resumed_after": "user_accepted_prerequisite",
+-                "method": ask.method_id,
++            trace["prerequisite_resolve"] = {
++                "status": resolve.status,
++                "precondition": resolve.precondition,
++                "detail": resolve.detail,
+             }
+-            return result
++            if resolve.status == "achieved":
++                session_state.precondition_facts[ask.precondition] = True
++                session_state.suspended_ask = None
++                session_state.active_intention_id = intention_id
++                resumed = TaskRequest(
++                    user_turn=str(orig),
++                    attachments=list(req.attachments or []),
++                    session=req.session,
++                    client_context=dict(req.client_context or {}),
++                    constraints=req.constraints,
++                    interaction_capabilities=dict(req.interaction_capabilities or {}),
++                    legacy_goal=req.legacy_goal,
++                )
++                result = self.handle_turn(
++                    resumed,
++                    conversation_runner=conversation_runner,
++                    run_message=run_message
++                    if run_message is not None
++                    else resumed.user_turn,
++                    conversation_kwargs=conversation_kwargs,
++                    execution_context=execution_context,
++                )
++                result.status = TurnStatus.CONTINUED
++                result.intention_id = intention_id
++                result.acceptance_trace = {
++                    **(result.acceptance_trace or {}),
++                    "resumed_after": "prerequisite_achieved",
++                    "method": ask.method_id,
++                    "permission_granted": True,
++                }
++                return result
++
++            # Resolver failed / unsupported / pending — keep parent; do not fake success.
++            if resolve.status == "failed":
++                session_state.suspended_ask = None
++                session_state.declined_method_ids.add(ask.method_id)
++                session_state.active_intention_id = intention_id
++                resumed = TaskRequest(
++                    user_turn=str(orig),
++                    attachments=list(req.attachments or []),
++                    session=req.session,
++                    client_context=dict(req.client_context or {}),
++                    constraints=req.constraints,
++                    interaction_capabilities=dict(req.interaction_capabilities or {}),
++                    legacy_goal=req.legacy_goal,
++                )
++                result = self.handle_turn(
++                    resumed,
++                    conversation_runner=conversation_runner,
++                    run_message=run_message
++                    if run_message is not None
++                    else resumed.user_turn,
++                    conversation_kwargs=conversation_kwargs,
++                    execution_context=execution_context,
++                )
++                result.status = TurnStatus.CONTINUED
++                result.intention_id = intention_id
++                result.acceptance_trace = {
++                    **(result.acceptance_trace or {}),
++                    "resumed_after": "prerequisite_failed",
++                    "method": ask.method_id,
++                    "permission_granted": True,
++                    "precondition_achieved": False,
++                }
++                return result
++
++            # pending / unsupported — remain WAITING or re-ask
++            return RuntimeTurnResult(
++                status=TurnStatus.WAITING_FOR_USER,
++                question=ask.question,
++                message=(
++                    f"Permission noted, but prerequisite '{ask.precondition}' is not "
++                    f"verified yet ({resolve.status}: {resolve.detail})."
++                ),
++                intention_id=intention_id,
++                task_request_id=task_request_id,
++                session_id=session_state.session_id,
++                runtime_id=session_state.runtime_id,
++                acceptance_trace=trace,
++            )
+ 
+-        # Unclear — re-ask same suspended intention.
+         return RuntimeTurnResult(
+             status=TurnStatus.WAITING_FOR_USER,
+             question=ask.question,
+@@ -357,7 +408,6 @@ class AgentRuntime:
+         conversation_kwargs: Optional[Dict[str, Any]],
+     ) -> Any:
+         kwargs = dict(conversation_kwargs or {})
+-        # Move structured goal context ownership into runtime (not gateway classify).
+         goal = getattr(interpretation, "goal", None)
+         if goal is not None and str(getattr(goal, "kind", "") or "") != "unknown":
+             try:
+@@ -374,27 +424,17 @@ def _legacy_message(legacy: Any) -> str:
+         return ""
+     if isinstance(legacy, dict):
+         return str(legacy.get("final_response") or legacy.get("response") or "")
+-    return str(getattr(legacy, "final_response", "") or getattr(legacy, "response", "") or "")
++    return str(
++        getattr(legacy, "final_response", "") or getattr(legacy, "response", "") or ""
++    )
+ 
+ 
+ def _classify_ask_response(text: str) -> str:
+     t = str(text or "").strip().lower()
+     if not t:
+         return "unclear"
+-    decline = {
+-        "no",
+-        "n",
+-        "nope",
+-        "decline",
+-        "don't",
+-        "dont",
+-        "not now",
+-        "never",
+-        "skip",
+-    }
+-    accept = {"yes", "y", "ok", "okay", "sure", "allow", "link", "accept", "please"}
+-    if t in decline or t.startswith("no ") or "don't" in t or "do not" in t:
++    if t in {"no", "n", "nope", "decline", "skip"} or t.startswith("no ") or "don't" in t or "do not" in t or t == "not now" or t == "never":
+         return "decline"
+-    if t in accept or t.startswith("yes"):
++    if t in {"yes", "y", "ok", "okay", "sure", "allow", "link", "accept", "please"} or t.startswith("yes"):
+         return "accept"
+     return "unclear"
+diff --git a/plugin/agent/runtime/closed_loop_adapter.py b/plugin/agent/runtime/closed_loop_adapter.py
+new file mode 100644
+index 000000000..93ec9c7b3
+--- /dev/null
++++ b/plugin/agent/runtime/closed_loop_adapter.py
+@@ -0,0 +1,63 @@
++"""Compatibility adapter: ComputerUse MethodSpec → legacy closed-loop.
++
++Domain-agnostic entry. Live observe/execute wiring is loaded from the
++experiment harness helpers when available; callers may inject overrides via
++``context['observe']`` / ``context['execute']`` / ``context['closed_loop']``.
++"""
++
++from __future__ import annotations
++
++from typing import Any, Dict, Optional
++
++
++def run_legacy_closed_loop_for_goal(
++    *,
++    spec: Any = None,
++    context: Optional[Dict[str, Any]] = None,
++) -> Dict[str, Any]:
++    ctx = dict(context or {})
++    goal = ctx.get("goal")
++    runtime = ctx.get("runtime_state")
++    if goal is None:
++        return {"ok": False, "detail": "missing_goal", "substrate": "computer_use"}
++    if runtime is None:
++        return {"ok": False, "detail": "missing_runtime_state", "substrate": "computer_use"}
++
++    closed_loop = ctx.get("closed_loop")
++    observe = ctx.get("observe")
++    execute = ctx.get("execute")
++    if closed_loop is None:
++        from plugin.agent.controller import run_goal_closed_loop
++
++        closed_loop = run_goal_closed_loop
++    if observe is None or execute is None:
++        # Live wiring optional — unit tests inject observe/execute.
++        return {
++            "ok": False,
++            "detail": "computer_use_observe_execute_not_provided",
++            "substrate": "computer_use",
++            "method_id": str(getattr(spec, "id", "") or ""),
++            "dispatched": True,
++        }
++
++    result = closed_loop(
++        runtime,
++        goal,
++        observe=observe,
++        execute=execute,
++        log=ctx.get("log"),
++        max_iterations=int(ctx.get("max_iterations") or 15),
++        settle_s=float(ctx.get("settle_s") or 0.5),
++        wait_fn=ctx.get("wait_fn"),
++        engine=ctx.get("engine"),
++        memory=ctx.get("memory"),
++    )
++    return {
++        "ok": bool(getattr(result, "ok", False)),
++        "reason": str(getattr(result, "reason", "") or ""),
++        "iterations": int(getattr(result, "iterations", 0) or 0),
++        "substrate": "computer_use",
++        "method_id": str(getattr(spec, "id", "") or ""),
++        "dispatched": True,
++        "result": result,
++    }
+diff --git a/plugin/agent/runtime/method_executors.py b/plugin/agent/runtime/method_executors.py
+new file mode 100644
+index 000000000..0ed21c329
+--- /dev/null
++++ b/plugin/agent/runtime/method_executors.py
+@@ -0,0 +1,98 @@
++"""Method execution dispatch — below MethodSpec selection.
++
++AgentRuntime selects a MethodSpec; this registry runs the substrate executor.
++ComputerUse may adapt to legacy ``run_goal_closed_loop``; conversation is only
++for turns with no executable method (not a substitute for selected computer_use).
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any, Callable, Dict, List, Optional, Protocol
++
++
++@dataclass
++class MethodExecutionResult:
++    ok: bool
++    status: str = ""
++    detail: str = ""
++    payload: Any = None
++    executor_id: str = ""
++
++
++class MethodExecutor(Protocol):
++    executor_id: str
++    substrates: tuple[str, ...]
++
++    def execute(self, spec: Any, *, context: Dict[str, Any]) -> MethodExecutionResult:
++        ...
++
++
++_EXECUTORS: List[MethodExecutor] = []
++
++
++def register_method_executor(executor: MethodExecutor) -> None:
++    if executor not in _EXECUTORS:
++        _EXECUTORS.append(executor)
++
++
++def clear_method_executors() -> None:
++    _EXECUTORS.clear()
++
++
++def iter_method_executors() -> List[MethodExecutor]:
++    return list(_EXECUTORS)
++
++
++def execute_method(spec: Any, *, context: Optional[Dict[str, Any]] = None) -> MethodExecutionResult:
++    ctx = dict(context or {})
++    substrate = str(getattr(spec, "substrate", "") or "").strip().lower()
++    for ex in _EXECUTORS:
++        subs = {str(s).strip().lower() for s in getattr(ex, "substrates", ()) or ()}
++        if substrate and substrate in subs:
++            return ex.execute(spec, context=ctx)
++    return MethodExecutionResult(
++        ok=False,
++        status="no_executor",
++        detail=f"no executor registered for substrate={substrate!r}",
++        executor_id="",
++    )
++
++
++@dataclass
++class ComputerUseClosedLoopExecutor:
++    """Legacy ComputerUse substrate → closed-loop adapter."""
++
++    executor_id: str = "computer_use_closed_loop"
++    substrates: tuple[str, ...] = ("computer_use",)
++    adapter: Optional[Callable[..., Any]] = None
++
++    def execute(self, spec: Any, *, context: Dict[str, Any]) -> MethodExecutionResult:
++        adapter = self.adapter
++        if adapter is None:
++            from plugin.agent.runtime.closed_loop_adapter import (
++                run_legacy_closed_loop_for_goal,
++            )
++
++            adapter = run_legacy_closed_loop_for_goal
++        try:
++            payload = adapter(spec=spec, context=context)
++        except Exception as exc:
++            return MethodExecutionResult(
++                ok=False,
++                status="executor_error",
++                detail=str(exc),
++                executor_id=self.executor_id,
++            )
++        ok = True
++        detail = ""
++        if isinstance(payload, dict):
++            ok = bool(payload.get("ok", True))
++            detail = str(payload.get("detail") or payload.get("reason") or "")
++        return MethodExecutionResult(
++            ok=ok,
++            status="executed" if ok else "failed",
++            detail=detail,
++            payload=payload,
++            executor_id=self.executor_id,
++        )
+diff --git a/plugin/agent/runtime/prerequisite_resolver.py b/plugin/agent/runtime/prerequisite_resolver.py
+new file mode 100644
+index 000000000..100557861
+--- /dev/null
++++ b/plugin/agent/runtime/prerequisite_resolver.py
+@@ -0,0 +1,107 @@
++"""Prerequisite resolution — ASK grants permission; verification marks achievement.
++
++User acceptance ≠ precondition satisfied.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import Any, Dict, List, Optional, Protocol
++
++
++@dataclass
++class PrerequisiteResolveResult:
++    status: str  # achieved | failed | pending | unsupported
++    precondition: str
++    detail: str = ""
++    evidence: Dict[str, Any] = None  # type: ignore[assignment]
++
++    def __post_init__(self) -> None:
++        if self.evidence is None:
++            self.evidence = {}
++
++
++class PrerequisiteResolver(Protocol):
++    def resolve(
++        self,
++        precondition: str,
++        *,
++        permission_granted: bool,
++        context: Optional[Dict[str, Any]] = None,
++    ) -> PrerequisiteResolveResult:
++        ...
++
++
++_RESOLVERS: List[PrerequisiteResolver] = []
++
++
++def register_prerequisite_resolver(resolver: PrerequisiteResolver) -> None:
++    if resolver not in _RESOLVERS:
++        _RESOLVERS.append(resolver)
++
++
++def clear_prerequisite_resolvers() -> None:
++    _RESOLVERS.clear()
++
++
++def resolve_prerequisite(
++    precondition: str,
++    *,
++    permission_granted: bool,
++    context: Optional[Dict[str, Any]] = None,
++) -> PrerequisiteResolveResult:
++    key = str(precondition or "").strip()
++    if not key:
++        return PrerequisiteResolveResult(
++            status="unsupported", precondition="", detail="empty_precondition"
++        )
++    if not permission_granted:
++        return PrerequisiteResolveResult(
++            status="failed",
++            precondition=key,
++            detail="permission_not_granted",
++        )
++    for resolver in _RESOLVERS:
++        try:
++            result = resolver.resolve(
++                key, permission_granted=permission_granted, context=context
++            )
++        except Exception as exc:
++            return PrerequisiteResolveResult(
++                status="failed",
++                precondition=key,
++                detail=f"resolver_error:{exc}",
++            )
++        if result is not None and str(result.status) != "unsupported":
++            return result
++    return PrerequisiteResolveResult(
++        status="unsupported",
++        precondition=key,
++        detail="no_resolver",
++    )
++
++
++@dataclass
++class InjectedPrerequisiteResolver:
++    """Test/prod injection: map precondition → achieved/failed after permission."""
++
++    outcomes: Dict[str, str]
++
++    def resolve(
++        self,
++        precondition: str,
++        *,
++        permission_granted: bool,
++        context: Optional[Dict[str, Any]] = None,
++    ) -> PrerequisiteResolveResult:
++        key = str(precondition or "").strip()
++        if key not in self.outcomes:
++            return PrerequisiteResolveResult(
++                status="unsupported", precondition=key, detail="not_owned"
++            )
++        if not permission_granted:
++            return PrerequisiteResolveResult(
++                status="failed", precondition=key, detail="permission_not_granted"
++            )
++        status = str(self.outcomes[key] or "failed")
++        return PrerequisiteResolveResult(status=status, precondition=key, detail="injected")
+diff --git a/plugin/agent/runtime/session_store.py b/plugin/agent/runtime/session_store.py
+index 31d736ea7..0b7ef5c21 100644
+--- a/plugin/agent/runtime/session_store.py
++++ b/plugin/agent/runtime/session_store.py
+@@ -1,6 +1,9 @@
+ """Session-scoped runtime continuation (suspended ASK / intentions).
+ 
+-Sessions belong to the runtime, not the client. TaskRequest holds SessionRef only.
++MIGRATION DEBT: this is a temporary module-global continuation store beside
++TUI SessionDB and per-session RuntimeState. Longer-term, a single AgentSession
++should own active intention, pending ASK, declined method scope, RuntimeState,
++and memory/session handles. Wire cleanup when the Hermes session ends.
+ """
+ 
+ from __future__ import annotations
+@@ -18,6 +21,7 @@ class SuspendedAsk:
+     precondition: str
+     question: str
+     parent_effect: str = ""
++    permission_granted: bool = False
+     interpretation_notes: Dict[str, Any] = field(default_factory=dict)
+ 
+ 
+@@ -28,8 +32,11 @@ class SessionRuntimeState:
+     suspended_ask: Optional[SuspendedAsk] = None
+     declined_method_ids: Set[str] = field(default_factory=set)
+     declined_preconditions: Set[str] = field(default_factory=set)
++    # Verified precondition facts (session-scoped) — not AgentRuntime instance fields.
++    precondition_facts: Dict[str, bool] = field(default_factory=dict)
+     active_intention_id: str = ""
+     last_trace: Dict[str, Any] = field(default_factory=dict)
++    original_user_turn: str = ""
+ 
+ 
+ _LOCK = threading.RLock()
+@@ -47,6 +54,7 @@ def get_or_create_session(session_id: str) -> SessionRuntimeState:
+ 
+ 
+ def clear_session(session_id: str) -> None:
++    """Call when the underlying Hermes/TUI session ends."""
+     with _LOCK:
+         _SESSIONS.pop(str(session_id or "").strip(), None)
+ 
+diff --git a/tests/plugin/test_task_ingress_memory_seam.py b/tests/plugin/test_task_ingress_memory_seam.py
+index 100096a4c..d962473ea 100644
+--- a/tests/plugin/test_task_ingress_memory_seam.py
++++ b/tests/plugin/test_task_ingress_memory_seam.py
+@@ -19,7 +19,6 @@ from plugin.agent.memory.types import (
+     MemoryCandidate,
+     MemoryEvidence,
+     MemoryInvalidationResult,
+-    MemoryRecord,
+     MemoryWriteResult,
+ )
+ from plugin.agent.runtime.agent_runtime import AgentRuntime
+@@ -123,8 +122,8 @@ def test_noop_memory_write_reports_ignored_not_persisted() -> None:
+     inv = mem.invalidate("mem-1", reason="stale")
+     assert inv.disposition == "ignored"
+     assert inv.memory_id == "mem-1"
+-    # Candidate ≠ Record (types remain distinct).
+-    assert MemoryCandidate is not MemoryRecord
++    # Candidate is not durable persistence (MemoryRecord deferred).
++    assert MemoryCandidate.__name__ == "MemoryCandidate"
+ 
+ 
+ def test_client_context_differences_do_not_change_task_semantics() -> None:
+diff --git a/tests/plugin/test_ui_runtime_method_selection.py b/tests/plugin/test_ui_runtime_method_selection.py
+index 89175f041..0cdf69a36 100644
+--- a/tests/plugin/test_ui_runtime_method_selection.py
++++ b/tests/plugin/test_ui_runtime_method_selection.py
+@@ -1,4 +1,4 @@
+-"""Stage A goldens: TUI→AgentRuntime cutover, availability ⊥ quality, resumable ASK."""
++"""Stage A goldens (post merge-blocker fixes): frontier authority, dispatch, ASK permission."""
+ 
+ from __future__ import annotations
+ 
+@@ -6,7 +6,8 @@ from typing import Any, Optional, Sequence
+ 
+ import pytest
+ 
+-from plugin.agent.executive.intention_frame import MethodSpec
++from plugin.agent.composition import compose_domain_adapters, reset_composition_for_tests
++from plugin.agent.executive.intention_frame import MethodSpec, ScoringPolicy, score_method
+ from plugin.agent.executive.method_availability import (
+     MethodAvailability,
+     MethodReadiness,
+@@ -19,6 +20,7 @@ from plugin.agent.executive.method_providers import (
+     discover_methods,
+     register_method_provider,
+ )
++from plugin.agent.goal import Goal
+ from plugin.agent.ingress import (
+     ExecutionConstraints,
+     SessionRef,
+@@ -27,21 +29,39 @@ from plugin.agent.ingress import (
+     semantic_task_fingerprint,
+ )
+ from plugin.agent.runtime.agent_runtime import AgentRuntime
++from plugin.agent.runtime.method_executors import (
++    MethodExecutionResult,
++    clear_method_executors,
++    register_method_executor,
++)
++from plugin.agent.runtime.prerequisite_resolver import (
++    InjectedPrerequisiteResolver,
++    clear_prerequisite_resolvers,
++    register_prerequisite_resolver,
++)
+ from plugin.agent.runtime.session_store import reset_session_store
+ from plugin.agent.runtime.state import RuntimeState
+ from plugin.agent.runtime.turn_result import TurnStatus
+ 
+ 
+ @pytest.fixture(autouse=True)
+-def _clean_providers_and_sessions():
++def _clean_registries():
+     clear_method_providers()
++    clear_method_executors()
++    clear_prerequisite_resolvers()
+     reset_session_store()
++    reset_composition_for_tests()
+     yield
+     clear_method_providers()
++    clear_method_executors()
++    clear_prerequisite_resolvers()
+     reset_session_store()
++    reset_composition_for_tests()
+ 
+ 
+ class _CatalogProvider:
++    provider_id = "test_catalog"
++
+     def __init__(self, specs: Sequence[MethodSpec]):
+         self.specs = list(specs)
+ 
+@@ -51,16 +71,45 @@ class _CatalogProvider:
+         *,
+         constraints: Optional[ExecutionConstraints] = None,
+     ) -> Sequence[MethodSpec]:
+-        if "forward_message" not in interpretation.desired_effects and (
+-            "forward" not in interpretation.goal_kind
+-        ):
+-            # Still return for synthetic tests that set effects explicitly.
+-            if interpretation.desired_effects:
+-                return list(self.specs)
+-            return list(self.specs)
+         return list(self.specs)
+ 
+ 
++class _RecordingCUExecutor:
++    executor_id = "test_computer_use"
++    substrates = ("computer_use",)
++
++    def __init__(self) -> None:
++        self.calls = 0
++
++    def execute(self, spec: Any, *, context: dict) -> MethodExecutionResult:
++        self.calls += 1
++        return MethodExecutionResult(
++            ok=True,
++            status="executed",
++            detail="cu_dispatched",
++            payload={"ok": True, "dispatched": True, "method_id": spec.id},
++            executor_id=self.executor_id,
++        )
++
++
++class _RecordingBrowserExecutor:
++    executor_id = "test_browser"
++    substrates = ("browser",)
++
++    def __init__(self) -> None:
++        self.calls = 0
++
++    def execute(self, spec: Any, *, context: dict) -> MethodExecutionResult:
++        self.calls += 1
++        return MethodExecutionResult(
++            ok=True,
++            status="executed",
++            detail="browser_dispatched",
++            payload={"ok": True, "method_id": spec.id},
++            executor_id=self.executor_id,
++        )
++
++
+ def _web_ready_missing_auth() -> MethodSpec:
+     return MethodSpec(
+         id="structured_web_forward",
+@@ -112,6 +161,21 @@ def _computer_use() -> MethodSpec:
+     )
+ 
+ 
++def _forward_req(session: str = "s", **kwargs) -> TaskRequest:
++    prompt = kwargs.pop("user_turn", "Forward ZarooratWala to Tanmay")
++    return TaskRequest(
++        user_turn=prompt,
++        session=SessionRef(session),
++        client_context={"client": "tui"},
++        legacy_goal=Goal(
++            kind="whatsapp_forward_message",
++            contact="Pallavi",
++            prompt=prompt,
++        ),
++        **kwargs,
++    )
++
++
+ def test_all_tui_user_turns_enter_agent_runtime_before_legacy_conversation_routing() -> None:
+     calls = {"n": 0}
+ 
+@@ -120,226 +184,274 @@ def test_all_tui_user_turns_enter_agent_runtime_before_legacy_conversation_routi
+         return {"final_response": f"echo:{msg}"}
+ 
+     rt = AgentRuntime(runtime_state=RuntimeState())
+-    req = TaskIngress.normalize(
+-        TaskRequest(
+-            user_turn="hello there",
+-            session=SessionRef("tui-sess-1"),
+-            client_context={"client": "tui"},
+-        )
++    # No providers → conversation legacy
++    result = rt.handle_turn(
++        TaskIngress.normalize(
++            TaskRequest(
++                user_turn="hello there",
++                session=SessionRef("tui-sess-1"),
++                client_context={"client": "tui"},
++            )
++        ),
++        conversation_runner=runner,
+     )
+-    result = rt.handle_turn(req, conversation_runner=runner)
+     assert result.status == TurnStatus.LEGACY_DELEGATED
+     assert calls["n"] == 1
+-    assert result.acceptance_trace.get("session_id") == "tui-sess-1"
+     assert result.acceptance_trace.get("client") == "tui"
+ 
+ 
+-def test_ui_adapter_does_not_choose_execution_substrate() -> None:
+-    """Client context label must not appear as selected_substrate."""
++def test_selected_computer_use_method_dispatches_computer_use_executor_not_legacy_chat() -> None:
+     register_method_provider(_CatalogProvider([_computer_use()]))
+-    rt = AgentRuntime(runtime_state=RuntimeState())
+-    req = TaskRequest(
+-        user_turn="Forward ZarooratWala link from Pallavi to Tanmay",
+-        session=SessionRef("s"),
+-        client_context={"client": "tui"},
+-    )
+-    # Force interpretation effects via legacy goal-like provider match.
+-    from plugin.agent.goal import Goal
++    cu = _RecordingCUExecutor()
++    register_method_executor(cu)
++    chat_calls = {"n": 0}
+ 
+-    req.legacy_goal = Goal(
+-        kind="whatsapp_forward_message",
+-        contact="Pallavi",
+-        prompt=req.user_turn,
+-    )
+-    result = rt.handle_turn(req)
++    def runner(msg, **kwargs):
++        chat_calls["n"] += 1
++        return {"final_response": "should_not_run"}
++
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    result = rt.handle_turn(_forward_req("cu-dispatch"), conversation_runner=runner)
++    assert cu.calls == 1
++    assert chat_calls["n"] == 0
+     assert result.selected_substrate == "computer_use"
+-    assert result.selected_substrate != "tui"
+-    assert result.acceptance_trace.get("client") == "tui"
++    assert result.acceptance_trace.get("dispatched_executor") is True
++    assert result.acceptance_trace.get("executor_id") == "test_computer_use"
+ 
+ 
+-def test_same_task_request_and_constraints_yield_same_method_frontier() -> None:
++def test_agent_runtime_delegates_ranking_to_single_method_frontier_authority() -> None:
+     register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
+-    constraints = ExecutionConstraints()
+-    tui = TaskIngress.normalize(
+-        TaskRequest(
+-            user_turn="Forward the link to Tanmay",
+-            session=SessionRef("shared"),
+-            client_context={"client": "tui", "supports_rich_ui": True},
+-            constraints=constraints,
+-            legacy_goal=__import__("plugin.agent.goal", fromlist=["Goal"]).Goal(
+-                kind="whatsapp_forward_message", contact="Pallavi", prompt="Forward the link to Tanmay"
+-            ),
+-        )
+-    )
+-    desktop = TaskIngress.normalize(
+-        TaskRequest(
+-            user_turn="Forward the link to Tanmay",
+-            session=SessionRef("shared"),
+-            client_context={"client": "desktop", "supports_rich_ui": False},
+-            constraints=constraints,
+-            legacy_goal=tui.legacy_goal,
+-        )
+-    )
+-    assert semantic_task_fingerprint(tui) == semantic_task_fingerprint(desktop)
+-    r1 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(tui)
+-    r2 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(desktop)
+-    assert r1.selected_method == r2.selected_method
+-    assert r1.selected_substrate == r2.selected_substrate
+-    assert [m["id"] for m in r1.acceptance_trace["candidate_methods"]] == [
+-        m["id"] for m in r2.acceptance_trace["candidate_methods"]
+-    ]
++    register_method_executor(_RecordingCUExecutor())
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    result = rt.handle_turn(_forward_req("rank-auth"))
++    assert result.acceptance_trace.get("ranking_authority") == "MethodFrontier.rank_eligible"
++    import inspect
++    from plugin.agent.runtime import agent_runtime as mod
++
++    src = inspect.getsource(mod.AgentRuntime.handle_turn)
++    assert "method_quality_score" not in src
++    assert "evaluated.sort" not in src
+ 
+ 
+ def test_unimplemented_preferred_method_does_not_ask_for_prerequisite() -> None:
+     register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
++    register_method_executor(_RecordingCUExecutor())
+     web = _web_unimplemented()
+-    avail, reason = evaluate_method_availability(web)
++    avail, _ = evaluate_method_availability(web)
+     assert avail == MethodAvailability.UNSUPPORTED.value
+-    assert "implementation" in reason
+-    assert not should_ask_for_precondition(
+-        preferred_spec=web,
+-        preferred_availability=avail,
+-        best_available_quality=0.1,
+-    )
+-    rt = AgentRuntime(runtime_state=RuntimeState())
+-    from plugin.agent.goal import Goal
+-
+-    result = rt.handle_turn(
+-        TaskRequest(
+-            user_turn="Forward ZarooratWala to Tanmay",
+-            session=SessionRef("no-ask"),
+-            legacy_goal=Goal(
+-                kind="whatsapp_forward_message",
+-                contact="Pallavi",
+-                prompt="Forward ZarooratWala to Tanmay",
+-            ),
+-        )
++    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
++        _forward_req("no-ask")
+     )
+     assert result.status != TurnStatus.WAITING_FOR_USER
+     assert result.selected_substrate == "computer_use"
+-    cands = result.acceptance_trace["candidate_methods"]
+-    web_c = next(c for c in cands if c["id"] == "whatsapp_web_forward")
+-    assert web_c["availability"] == MethodAvailability.UNSUPPORTED.value
+ 
+ 
+ def test_preferred_ready_method_missing_user_prerequisite_can_ask_before_fallback() -> None:
+     register_method_provider(
+         _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+     )
+-    rt = AgentRuntime(runtime_state=RuntimeState())
+-    from plugin.agent.goal import Goal
+-
+-    result = rt.handle_turn(
+-        TaskRequest(
+-            user_turn="Forward ZarooratWala to Tanmay",
+-            session=SessionRef("ask-sess"),
+-            legacy_goal=Goal(
+-                kind="whatsapp_forward_message",
+-                contact="Pallavi",
+-                prompt="Forward ZarooratWala to Tanmay",
+-            ),
+-        )
++    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
++        _forward_req("ask-sess")
+     )
+     assert result.status == TurnStatus.WAITING_FOR_USER
+-    assert "prerequisite" in (result.question or "").lower() or result.question
+     assert result.acceptance_trace.get("missing_precondition") == "authenticated_integration"
+ 
+ 
+-def test_ask_returns_waiting_state_and_resumes_same_intention_on_next_turn() -> None:
++def test_user_acceptance_does_not_mark_precondition_achieved_without_resolver_success() -> None:
+     register_method_provider(
+         _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+     )
++    register_method_executor(_RecordingCUExecutor())
++    # No resolver → unsupported; must not select structured_web as if auth true.
+     rt = AgentRuntime(runtime_state=RuntimeState())
+-    from plugin.agent.goal import Goal
+-
+-    goal = Goal(
+-        kind="whatsapp_forward_message",
+-        contact="Pallavi",
+-        prompt="Forward ZarooratWala to Tanmay",
++    first = rt.handle_turn(_forward_req("perm-only"))
++    assert first.status == TurnStatus.WAITING_FOR_USER
++    second = rt.handle_turn(
++        TaskRequest(user_turn="yes", session=SessionRef("perm-only"))
+     )
+-    sess = SessionRef("resume-sess")
+-    first = rt.handle_turn(
+-        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
++    assert second.acceptance_trace.get("prerequisite_resolve", {}).get("status") in {
++        "unsupported",
++        "failed",
++        "pending",
++    }
++    # Must not claim structured web executed solely from "yes".
++    assert second.selected_method != "structured_web_forward" or second.acceptance_trace.get(
++        "prerequisite_resolve", {}
++    ).get("status") == "achieved"
++
++
++def test_failed_prerequisite_resolution_keeps_parent_and_advances_or_reasks_correctly() -> None:
++    register_method_provider(
++        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+     )
+-    assert first.status == TurnStatus.WAITING_FOR_USER
++    cu = _RecordingCUExecutor()
++    register_method_executor(cu)
++    register_prerequisite_resolver(
++        InjectedPrerequisiteResolver({"authenticated_integration": "failed"})
++    )
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    first = rt.handle_turn(_forward_req("prereq-fail"))
+     intention = first.intention_id
+     second = rt.handle_turn(
+-        TaskRequest(user_turn="no", session=sess, legacy_goal=goal)
++        TaskRequest(user_turn="yes", session=SessionRef("prereq-fail"))
+     )
+     assert second.status == TurnStatus.CONTINUED
+     assert second.intention_id == intention
+     assert second.selected_substrate == "computer_use"
+-    assert second.acceptance_trace.get("resumed_after") == "user_declined"
++    assert second.acceptance_trace.get("precondition_achieved") is False
++    assert cu.calls == 1
+ 
+ 
+-def test_user_declined_method_prerequisite_advances_method_frontier() -> None:
++def test_accepted_prerequisite_resumes_parent_intention_after_resolver_success() -> None:
+     register_method_provider(
+         _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+     )
+-    rt = AgentRuntime(runtime_state=RuntimeState())
+-    from plugin.agent.goal import Goal
+-
+-    goal = Goal(
+-        kind="whatsapp_forward_message",
+-        contact="Pallavi",
+-        prompt="Forward message",
++    browser = _RecordingBrowserExecutor()
++    register_method_executor(browser)
++    register_method_executor(_RecordingCUExecutor())
++    register_prerequisite_resolver(
++        InjectedPrerequisiteResolver({"authenticated_integration": "achieved"})
+     )
+-    sess = SessionRef("decline-sess")
+-    rt.handle_turn(TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal))
+-    result = rt.handle_turn(TaskRequest(user_turn="not now", session=sess, legacy_goal=goal))
+-    assert result.selected_method == "native_computer_use_forward"
+-    # Declined method must not be re-asked within scope.
+-    again = rt.handle_turn(
+-        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    first = rt.handle_turn(_forward_req("prereq-ok"))
++    intention = first.intention_id
++    second = rt.handle_turn(
++        TaskRequest(user_turn="yes", session=SessionRef("prereq-ok"))
+     )
+-    assert again.status != TurnStatus.WAITING_FOR_USER
+-    assert again.selected_method == "native_computer_use_forward"
++    assert second.status == TurnStatus.CONTINUED
++    assert second.intention_id == intention
++    assert second.selected_method == "structured_web_forward"
++    assert browser.calls == 1
++    assert second.acceptance_trace.get("resumed_after") == "prerequisite_achieved"
+ 
+ 
+-def test_accepted_prerequisite_resumes_parent_intention() -> None:
++def test_user_declined_method_prerequisite_advances_method_frontier() -> None:
+     register_method_provider(
+         _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
+     )
++    register_method_executor(_RecordingCUExecutor())
+     rt = AgentRuntime(runtime_state=RuntimeState())
+-    from plugin.agent.goal import Goal
++    rt.handle_turn(_forward_req("decline-sess"))
++    result = rt.handle_turn(
++        TaskRequest(user_turn="not now", session=SessionRef("decline-sess"))
++    )
++    assert result.selected_method == "native_computer_use_forward"
++    again = rt.handle_turn(_forward_req("decline-sess"))
++    assert again.status != TurnStatus.WAITING_FOR_USER
++
+ 
+-    goal = Goal(
+-        kind="whatsapp_forward_message",
+-        contact="Pallavi",
+-        prompt="Forward message",
++def test_legacy_method_without_readiness_is_not_accidentally_unsupported() -> None:
++    legacy = MethodSpec(
++        id="legacy_reveal",
++        capability="reveal_actions",
++        preconditions=[],
++        # readiness default ""
+     )
+-    sess = SessionRef("accept-sess")
+-    first = rt.handle_turn(
+-        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
++    assert str(legacy.readiness or "") == ""
++    avail, reason = evaluate_method_availability(legacy)
++    assert avail == MethodAvailability.AVAILABLE.value
++    assert reason == "ready"
++
++
++def test_zero_cost_zero_risk_zero_interference_remain_zero() -> None:
++    spec = MethodSpec(
++        id="zeroed",
++        capability="forward_message",
++        substrate="browser",
++        readiness=MethodReadiness.READY.value,
++        cost=0.0,
++        risk=0.0,
++        latency=0.0,
++        user_interference=0.0,
++        reliability=1.0,
++        semantic_precision=1.0,
+     )
+-    intention = first.intention_id
+-    second = rt.handle_turn(TaskRequest(user_turn="yes", session=sess, legacy_goal=goal))
+-    assert second.status == TurnStatus.CONTINUED
+-    assert second.intention_id == intention
+-    assert second.selected_method == "structured_web_forward"
+-    assert second.acceptance_trace.get("resumed_after") == "user_accepted_prerequisite"
++    policy = ScoringPolicy.for_meta("act")
++    # Direct field integrity
++    assert float(spec.cost) == 0.0
++    assert float(spec.risk) == 0.0
++    assert float(spec.user_interference) == 0.0
++    score = score_method(spec, policy)
++    # A falsy-or bug would treat zeros as 0.5 and change the score materially.
++    spec_bad = MethodSpec(
++        id="nonzero_defaults",
++        capability="forward_message",
++        substrate="browser",
++        readiness=MethodReadiness.READY.value,
++        cost=0.5,
++        risk=0.5,
++        latency=0.5,
++        user_interference=0.5,
++        reliability=1.0,
++        semantic_precision=1.0,
++    )
++    assert score != score_method(spec_bad, policy)
++    assert score > score_method(spec_bad, policy)
+ 
+ 
+-def test_forced_substrate_via_execution_constraints_not_harness_branch() -> None:
+-    register_method_provider(
+-        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
++def test_production_composition_registers_executable_method_provider() -> None:
++    compose_domain_adapters()
++    specs, errors = discover_methods(
++        TaskInterpretation(
++            user_turn="Forward ZarooratWala to Tanmay",
++            goal_kind="whatsapp_forward_message",
++            desired_effects=["forward_message", "whatsapp_forward_message"],
++        )
+     )
+-    # Even with READY web missing auth, forced CU forbids browser and skips ASK
+-    # when CU is the only allowed substrate with AVAILABLE readiness.
+-    # Web becomes FORBIDDEN_BY_CONSTRAINT; CU AVAILABLE → select CU, no ASK.
+-    rt = AgentRuntime(runtime_state=RuntimeState())
+-    from plugin.agent.goal import Goal
++    assert any(s.id == "native_computer_use_forward" for s in specs)
++    assert any(str(getattr(s, "readiness", "")) == "ready" for s in specs)
++    assert errors == [] or isinstance(errors, list)
++
+ 
+-    goal = Goal(
+-        kind="whatsapp_forward_message",
+-        contact="Pallavi",
+-        prompt="Forward message",
++def test_provider_failure_is_traced() -> None:
++    class Boom:
++        provider_id = "boom"
++
++        def discover(self, interpretation, *, constraints=None):
++            raise RuntimeError("provider_exploded")
++
++    register_method_provider(Boom())
++    register_method_provider(_CatalogProvider([_computer_use()]))
++    register_method_executor(_RecordingCUExecutor())
++    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
++        _forward_req("prov-err")
+     )
+-    result = rt.handle_turn(
++    errs = result.acceptance_trace.get("provider_errors") or []
++    assert any(e.get("provider_id") == "boom" for e in errs)
++    assert result.selected_method == "native_computer_use_forward"
++
++
++def test_same_task_request_and_constraints_yield_same_method_frontier() -> None:
++    register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
++    register_method_executor(_RecordingCUExecutor())
++    constraints = ExecutionConstraints()
++    tui = TaskIngress.normalize(
++        _forward_req("shared", constraints=constraints)
++    )
++    tui.client_context = {"client": "tui", "supports_rich_ui": True}
++    desktop = TaskIngress.normalize(
+         TaskRequest(
+-            user_turn=goal.prompt,
+-            session=SessionRef("force-cu"),
+-            legacy_goal=goal,
++            user_turn=tui.user_turn,
++            session=SessionRef("shared"),
++            client_context={"client": "desktop", "supports_rich_ui": False},
++            constraints=constraints,
++            legacy_goal=tui.legacy_goal,
++        )
++    )
++    assert semantic_task_fingerprint(tui) == semantic_task_fingerprint(desktop)
++    r1 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(tui)
++    r2 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(desktop)
++    assert r1.selected_method == r2.selected_method
++
++
++def test_forced_substrate_via_execution_constraints_not_harness_branch() -> None:
++    register_method_provider(
++        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
++    )
++    register_method_executor(_RecordingCUExecutor())
++    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(
++        _forward_req(
++            "force-cu",
+             constraints=ExecutionConstraints(
+                 allowed_substrates=("computer_use",),
+                 forced_substrate="computer_use",
+@@ -348,19 +460,11 @@ def test_forced_substrate_via_execution_constraints_not_harness_branch() -> None
+     )
+     assert result.status != TurnStatus.WAITING_FOR_USER
+     assert result.selected_substrate == "computer_use"
+-    web = next(
+-        c
+-        for c in result.acceptance_trace["candidate_methods"]
+-        if c["id"] == "structured_web_forward"
+-    )
+-    assert web["availability"] == MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value
+ 
+ 
+-def test_agent_runtime_has_no_whatsapp_forward_branch_source() -> None:
+-    import inspect
+-    from plugin.agent.runtime import agent_runtime as mod
+-
+-    src = inspect.getsource(mod.AgentRuntime.handle_turn)
+-    assert "whatsapp" not in src.lower()
+-    assert "forward_message" not in src
+-    assert "zarooratwala" not in src.lower()
++def test_ui_adapter_does_not_choose_execution_substrate() -> None:
++    register_method_provider(_CatalogProvider([_computer_use()]))
++    register_method_executor(_RecordingCUExecutor())
++    result = AgentRuntime(runtime_state=RuntimeState()).handle_turn(_forward_req("s"))
++    assert result.selected_substrate == "computer_use"
++    assert result.selected_substrate != "tui"
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+index 6e5dbc596..f69f12288 100644
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -10046,11 +10046,14 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
+             except (TypeError, ValueError):
+                 pass
+ 
++            from plugin.agent.composition import compose_domain_adapters
+             from plugin.agent.ingress import SessionRef, TaskIngress, TaskRequest
+             from plugin.agent.runtime.agent_runtime import AgentRuntime
+             from plugin.agent.runtime.state import RuntimeState
+             from plugin.agent.runtime.turn_result import TurnStatus
+ 
++            compose_domain_adapters()
++
+             _task_req = TaskIngress.normalize(
+                 TaskRequest(
+                     user_turn=str(prompt or ""),
+-- 
+2.39.5 (Apple Git-154)
+

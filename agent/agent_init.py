@@ -182,15 +182,53 @@ def _record_codex_gpt55_autoraise_notice(autoraise: Dict[str, Any]) -> None:
         pass
 
 
-def _startup_provider_prewarm_min_successes() -> int:
-    """Minimum number of providers that must answer during startup."""
-    raw = os.environ.get("HERMES_PROVIDER_STARTUP_MIN_SUCCESS", "").strip()
-    if not raw:
-        return 3
+def _configured_unique_agent_providers() -> int | None:
+    """Count unique providers in primary + fallback_providers.
+
+    Used so an intentional single-stack config (e.g. ollama-cloud only) does
+    not fail startup by requiring three unrelated authenticated providers.
+    """
     try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 3
+        from hermes_cli.config import load_config
+        from hermes_cli.fallback_config import get_fallback_chain
+
+        cfg = load_config()
+        providers: set[str] = set()
+        model = cfg.get("model") if isinstance(cfg, dict) else None
+        if isinstance(model, dict):
+            primary = str(model.get("provider") or "").strip().lower()
+            if primary:
+                providers.add(primary)
+        for entry in get_fallback_chain(cfg) or []:
+            if isinstance(entry, dict):
+                slug = str(entry.get("provider") or "").strip().lower()
+            else:
+                slug = str(getattr(entry, "provider", "") or "").strip().lower()
+            if slug:
+                providers.add(slug)
+        return max(1, len(providers)) if providers else None
+    except Exception:
+        return None
+
+
+def _startup_provider_prewarm_min_successes() -> int:
+    """Minimum number of providers that must answer during startup.
+
+    Default is 3 for resilient multi-provider installs. When the user has
+    intentionally configured fewer unique providers (primary + fallbacks),
+    require only that many — otherwise an ollama-cloud-only pin fails with
+    "need at least 3" despite a healthy primary.
+    """
+    raw = os.environ.get("HERMES_PROVIDER_STARTUP_MIN_SUCCESS", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            pass
+    configured = _configured_unique_agent_providers()
+    if configured is not None:
+        return min(3, configured)
+    return 3
 
 
 def _prewarm_provider_apis_at_startup(

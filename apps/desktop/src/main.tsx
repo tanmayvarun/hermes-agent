@@ -1,3 +1,8 @@
+// Self-hosted Poppins (UI face) — load before styles so --dt-font-sans resolves.
+import '@fontsource/poppins/400.css'
+import '@fontsource/poppins/500.css'
+import '@fontsource/poppins/600.css'
+import '@fontsource/poppins/700.css'
 import './styles.css'
 // Side-effect: applies the persisted window translucency on load.
 import './store/translucency'

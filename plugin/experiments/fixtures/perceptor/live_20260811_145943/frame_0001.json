@@ -1,0 +1,2386 @@
+{
+  "frame": 1,
+  "captured_at": "2026-08-11T15:00:13",
+  "screenshot": "frame_0001.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "Find the zarooratwala link from Pallavi on WhatsApp and forward it to Tanmay"
+    },
+    "world_model": {
+      "frame": 0,
+      "surface": "",
+      "open_conversation": "",
+      "focused_field_role": "",
+      "objects": [],
+      "layers": [],
+      "beliefs": [],
+      "progress": {
+        "phase": "",
+        "objective": "",
+        "notes": ""
+      },
+      "attempts": [],
+      "exhausted": [],
+      "task_surface": {
+        "app": "WhatsApp",
+        "window_bounds": [
+          110.0,
+          25.0,
+          1581.0,
+          979.0
+        ],
+        "window_id": 7206,
+        "display_index": 0,
+        "display_count": 2,
+        "displays": [
+          {
+            "index": 0,
+            "bounds": [
+              0.0,
+              0.0,
+              1920.0,
+              1080.0
+            ],
+            "backing_scale": 1.0,
+            "is_main": true
+          },
+          {
+            "index": 1,
+            "bounds": [
+              1920.0,
+              -27.0,
+              1710.0,
+              1107.0
+            ],
+            "backing_scale": 2.0,
+            "is_main": false
+          }
+        ],
+        "capture_origin": [
+          110.0,
+          25.0
+        ],
+        "capture_scale": 1.0,
+        "point_scale": 1.0,
+        "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+      }
+    },
+    "observation": {
+      "frame": 1,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 0,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 8,
+          "role": "AXStaticText",
+          "label": "Pallavi",
+          "bounds": [
+            252,
+            204,
+            46,
+            13
+          ],
+          "description": "Pallavi"
+        },
+        {
+          "id": 9,
+          "role": "AXStaticText",
+          "label": "Draft: zarooratwala lasawe",
+          "bounds": [
+            252,
+            222,
+            165,
+            14
+          ],
+          "description": "Draft: zarooratwala lasawe"
+        },
+        {
+          "id": 5,
+          "role": "AXStaticText",
+          "label": "Q Search",
+          "bounds": [
+            194,
+            84,
+            66,
+            16
+          ],
+          "description": "Q Search"
+        },
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "‎WhatsApp",
+          "bounds": [
+            110,
+            25,
+            1581,
+            979
+          ]
+        },
+        {
+          "id": 4,
+          "role": "AXStaticText",
+          "label": "Chats",
+          "bounds": [
+            194,
+            43,
+            53,
+            18
+          ],
+          "description": "Chats"
+        },
+        {
+          "id": 6,
+          "role": "AXStaticText",
+          "label": "[CoE - IOT & AI] BLR Startups",
+          "bounds": [
+            252,
+            134,
+            199,
+            16
+          ],
+          "description": "[CoE - IOT & AI] BLR Startups"
+        },
+        {
+          "id": 7,
+          "role": "AXStaticText",
+          "label": "Draft: w",
+          "bounds": [
+            252,
+            153,
+            52,
+            11
+          ],
+          "description": "Draft: w"
+        },
+        {
+          "id": 10,
+          "role": "AXStaticText",
+          "label": "14/146",
+          "bounds": [
+            252,
+            273,
+            48,
+            14
+          ],
+          "description": "14/146"
+        },
+        {
+          "id": 11,
+          "role": "AXStaticText",
+          "label": "Papaji reacted",
+          "bounds": [
+            252,
+            291,
+            87,
+            14
+          ],
+          "description": "Papaji reacted"
+        },
+        {
+          "id": 12,
+          "role": "AXStaticText",
+          "label": "to \"Will not take chap….",
+          "bounds": [
+            360,
+            291,
+            142,
+            14
+          ],
+          "description": "to \"Will not take chap…."
+        },
+        {
+          "id": 13,
+          "role": "AXStaticText",
+          "label": "Happy New Year",
+          "bounds": [
+            252,
+            341,
+            114,
+            16
+          ],
+          "description": "Happy New Year"
+        },
+        {
+          "id": 14,
+          "role": "AXStaticText",
+          "label": "~Divya Bharti: & Voice message (0:03)|",
+          "bounds": [
+            252,
+            360,
+            243,
+            14
+          ],
+          "description": "~Divya Bharti: & Voice message (0:03)|"
+        },
+        {
+          "id": 15,
+          "role": "AXStaticText",
+          "label": "2:49 PM",
+          "bounds": [
+            482,
+            137,
+            50,
+            11
+          ],
+          "description": "2:49 PM"
+        },
+        {
+          "id": 16,
+          "role": "AXStaticText",
+          "label": "2:47 PM|",
+          "bounds": [
+            482,
+            206,
+            52,
+            11
+          ],
+          "description": "2:47 PM|"
+        },
+        {
+          "id": 17,
+          "role": "AXStaticText",
+          "label": "2:35 PM",
+          "bounds": [
+            482,
+            273,
+            52,
+            14
+          ],
+          "description": "2:35 PM"
+        },
+        {
+          "id": 18,
+          "role": "AXStaticText",
+          "label": "2:20 PM|",
+          "bounds": [
+            482,
+            344,
+            52,
+            11
+          ],
+          "description": "2:20 PM|"
+        },
+        {
+          "id": 19,
+          "role": "AXStaticText",
+          "label": "Al brainstorm [IITR, world)",
+          "bounds": [
+            252,
+            410,
+            181,
+            16
+          ],
+          "description": "Al brainstorm [IITR, world)"
+        },
+        {
+          "id": 20,
+          "role": "AXStaticText",
+          "label": "Sumit: Seeing this term floating a lot lot...",
+          "bounds": [
+            252,
+            429,
+            248,
+            14
+          ],
+          "description": "Sumit: Seeing this term floating a lot lot..."
+        },
+        {
+          "id": 21,
+          "role": "AXStaticText",
+          "label": "1:00 PM",
+          "bounds": [
+            482,
+            413,
+            50,
+            11
+          ],
+          "description": "1:00 PM"
+        },
+        {
+          "id": 22,
+          "role": "AXStaticText",
+          "label": "[CoE - loT & Al] BLR Startups",
+          "bounds": [
+            622,
+            38,
+            199,
+            14
+          ],
+          "description": "[CoE - loT & Al] BLR Startups"
+        },
+        {
+          "id": 23,
+          "role": "AXStaticText",
+          "label": "20 online",
+          "bounds": [
+            622,
+            54,
+            57,
+            11
+          ],
+          "description": "20 online"
+        },
+        {
+          "id": 24,
+          "role": "AXStaticText",
+          "label": "Read more",
+          "bounds": [
+            608,
+            77,
+            66,
+            11
+          ],
+          "description": "Read more"
+        },
+        {
+          "id": 25,
+          "role": "AXStaticText",
+          "label": "11:34 AM",
+          "bounds": [
+            1088,
+            79,
+            50,
+            12
+          ],
+          "description": "11:34 AM"
+        },
+        {
+          "id": 26,
+          "role": "AXStaticText",
+          "label": "- Dhrity",
+          "bounds": [
+            606,
+            114,
+            52,
+            14
+          ],
+          "description": "- Dhrity"
+        },
+        {
+          "id": 27,
+          "role": "AXStaticText",
+          "label": "+91 98832 26847",
+          "bounds": [
+            1040,
+            116,
+            98,
+            11
+          ],
+          "description": "+91 98832 26847"
+        },
+        {
+          "id": 28,
+          "role": "AXStaticText",
+          "label": "VYUHAA Naviga",
+          "bounds": [
+            608,
+            141,
+            98,
+            14
+          ],
+          "description": "VYUHAA Naviga"
+        },
+        {
+          "id": 29,
+          "role": "AXStaticText",
+          "label": "@ vyuhaanaviga.in",
+          "bounds": [
+            608,
+            167,
+            105,
+            16
+          ],
+          "description": "@ vyuhaanaviga.in"
+        },
+        {
+          "id": 30,
+          "role": "AXStaticText",
+          "label": "We've just opened up Vyuhaa Naviga, our open-source, free-to-use regulatory",
+          "bounds": [
+            606,
+            190,
+            477,
+            16
+          ],
+          "description": "We've just opened up Vyuhaa Naviga, our open-source, free-to-use regulatory"
+        },
+        {
+          "id": 31,
+          "role": "AXStaticText",
+          "label": "intelligence platform for the US and Indian medical device ecosystem.",
+          "bounds": [
+            606,
+            208,
+            425,
+            13
+          ],
+          "description": "intelligence platform for the US and Indian medical device ecosystem."
+        },
+        {
+          "id": 32,
+          "role": "AXStaticText",
+          "label": "Naviga is our small language model built around thousands of CDSCO+US FDA",
+          "bounds": [
+            606,
+            240,
+            477,
+            14
+          ],
+          "description": "Naviga is our small language model built around thousands of CDSCO+US FDA"
+        },
+        {
+          "id": 33,
+          "role": "AXStaticText",
+          "label": "regulatory documents and helps simplify a process that can otherwise involve digging",
+          "bounds": [
+            606,
+            259,
+            521,
+            13
+          ],
+          "description": "regulatory documents and helps simplify a process that can otherwise involve digging"
+        },
+        {
+          "id": 34,
+          "role": "AXStaticText",
+          "label": "through hundreds of pages, finding the right regulation, understanding the regulatory",
+          "bounds": [
+            606,
+            275,
+            519,
+            14
+          ],
+          "description": "through hundreds of pages, finding the right regulation, understanding the regulatory"
+        },
+        {
+          "id": 35,
+          "role": "AXStaticText",
+          "label": "pathway, figuring out documentation requirements, and getting to the relevant",
+          "bounds": [
+            606,
+            291,
+            475,
+            14
+          ],
+          "description": "pathway, figuring out documentation requirements, and getting to the relevant"
+        },
+        {
+          "id": 36,
+          "role": "AXStaticText",
+          "label": "information faster.",
+          "bounds": [
+            606,
+            307,
+            114,
+            14
+          ],
+          "description": "information faster."
+        },
+        {
+          "id": 37,
+          "role": "AXStaticText",
+          "label": "Think of it as an Al co-pilot for CDSCO / US FDA medical device regulatory navigation.",
+          "bounds": [
+            606,
+            341,
+            521,
+            14
+          ],
+          "description": "Think of it as an Al co-pilot for CDSCO / US FDA medical device regulatory navigation."
+        },
+        {
+          "id": 38,
+          "role": "AXStaticText",
+          "label": "https://vyuhaanaviga.in/",
+          "bounds": [
+            606,
+            376,
+            149,
+            13
+          ],
+          "description": "https://vyuhaanaviga.in/"
+        },
+        {
+          "id": 39,
+          "role": "AXStaticText",
+          "label": "Free to use. Open source. Built for the health-tech community. To be deployed by",
+          "bounds": [
+            606,
+            408,
+            496,
+            13
+          ],
+          "description": "Free to use. Open source. Built for the health-tech community. To be deployed by"
+        },
+        {
+          "id": 40,
+          "role": "AXStaticText",
+          "label": "Indian Council for Medical Research and MEITY shortly.",
+          "bounds": [
+            606,
+            424,
+            335,
+            14
+          ],
+          "description": "Indian Council for Medical Research and MEITY shortly."
+        },
+        {
+          "id": 41,
+          "role": "AXStaticText",
+          "label": "Read more",
+          "bounds": [
+            606,
+            447,
+            68,
+            11
+          ],
+          "description": "Read more"
+        },
+        {
+          "id": 42,
+          "role": "AXStaticText",
+          "label": "11:50 AM|",
+          "bounds": [
+            1088,
+            450,
+            50,
+            11
+          ],
+          "description": "11:50 AM|"
+        },
+        {
+          "id": 43,
+          "role": "AXStaticText",
+          "label": "Prestige Group",
+          "bounds": [
+            252,
+            479,
+            103,
+            16
+          ],
+          "description": "Prestige Group"
+        },
+        {
+          "id": 44,
+          "role": "AXStaticText",
+          "label": "• Bangalore's Top Developer presents...",
+          "bounds": [
+            254,
+            498,
+            241,
+            14
+          ],
+          "description": "• Bangalore's Top Developer presents..."
+        },
+        {
+          "id": 45,
+          "role": "AXStaticText",
+          "label": "12:50 PM",
+          "bounds": [
+            475,
+            482,
+            57,
+            11
+          ],
+          "description": "12:50 PM"
+        },
+        {
+          "id": 46,
+          "role": "AXStaticText",
+          "label": "Coe lot Hema Shree",
+          "bounds": [
+            606,
+            507,
+            128,
+            13
+          ],
+          "description": "Coe lot Hema Shree"
+        },
+        {
+          "id": 47,
+          "role": "AXStaticText",
+          "label": "IIT Ventures @ BLR",
+          "bounds": [
+            252,
+            548,
+            130,
+            16
+          ],
+          "description": "IIT Ventures @ BLR"
+        },
+        {
+          "id": 48,
+          "role": "AXStaticText",
+          "label": "~Sunil Khanna: @ Calling all early-s…..",
+          "bounds": [
+            252,
+            567,
+            232,
+            16
+          ],
+          "description": "~Sunil Khanna: @ Calling all early-s….."
+        },
+        {
+          "id": 49,
+          "role": "AXStaticText",
+          "label": "12:07 PM",
+          "bounds": [
+            475,
+            551,
+            57,
+            11
+          ],
+          "description": "12:07 PM"
+        },
+        {
+          "id": 50,
+          "role": "AXStaticText",
+          "label": "Owners including Family- God... 10:44 AM",
+          "bounds": [
+            254,
+            617,
+            278,
+            16
+          ],
+          "description": "Owners including Family- God... 10:44 AM"
+        },
+        {
+          "id": 51,
+          "role": "AXStaticText",
+          "label": "Godrej Vishwas: @",
+          "bounds": [
+            252,
+            636,
+            114,
+            14
+          ],
+          "description": "Godrej Vishwas: @"
+        },
+        {
+          "id": 52,
+          "role": "AXStaticText",
+          "label": "1 An Address with...",
+          "bounds": [
+            374,
+            636,
+            128,
+            14
+          ],
+          "description": "1 An Address with..."
+        },
+        {
+          "id": 53,
+          "role": "AXStaticText",
+          "label": "Plugin IOS Users",
+          "bounds": [
+            252,
+            686,
+            114,
+            16
+          ],
+          "description": "Plugin IOS Users"
+        },
+        {
+          "id": 54,
+          "role": "AXStaticText",
+          "label": "10:36 AM",
+          "bounds": [
+            473,
+            689,
+            59,
+            11
+          ],
+          "description": "10:36 AM"
+        },
+        {
+          "id": 55,
+          "role": "AXStaticText",
+          "label": "~Yadav G H: • This message was delete..",
+          "bounds": [
+            252,
+            705,
+            252,
+            14
+          ],
+          "description": "~Yadav G H: • This message was delete.."
+        },
+        {
+          "id": 56,
+          "role": "AXStaticText",
+          "label": "apna",
+          "bounds": [
+            201,
+            762,
+            36,
+            13
+          ],
+          "description": "apna"
+        },
+        {
+          "id": 57,
+          "role": "AXStaticText",
+          "label": "Apna Updates!",
+          "bounds": [
+            252,
+            755,
+            103,
+            16
+          ],
+          "description": "Apna Updates!"
+        },
+        {
+          "id": 58,
+          "role": "AXStaticText",
+          "label": "Hey, we've added 30 complimentary dat…..",
+          "bounds": [
+            252,
+            774,
+            250,
+            16
+          ],
+          "description": "Hey, we've added 30 complimentary dat….."
+        },
+        {
+          "id": 59,
+          "role": "AXStaticText",
+          "label": "10:32 AM|",
+          "bounds": [
+            473,
+            758,
+            62,
+            11
+          ],
+          "description": "10:32 AM|"
+        },
+        {
+          "id": 60,
+          "role": "AXStaticText",
+          "label": "Godrej Nurture - Care & Share",
+          "bounds": [
+            254,
+            824,
+            202,
+            16
+          ],
+          "description": "Godrej Nurture - Care & Share"
+        },
+        {
+          "id": 61,
+          "role": "AXStaticText",
+          "label": "~Kavii: • Photo",
+          "bounds": [
+            252,
+            843,
+            103,
+            14
+          ],
+          "description": "~Kavii: • Photo"
+        },
+        {
+          "id": 62,
+          "role": "AXStaticText",
+          "label": "Isha Electronic City",
+          "bounds": [
+            252,
+            893,
+            130,
+            16
+          ],
+          "description": "Isha Electronic City"
+        },
+        {
+          "id": 63,
+          "role": "AXStaticText",
+          "label": "~Sreekanth: @",
+          "bounds": [
+            250,
+            912,
+            94,
+            14
+          ],
+          "description": "~Sreekanth: @"
+        },
+        {
+          "id": 64,
+          "role": "AXStaticText",
+          "label": "10:12 AM",
+          "bounds": [
+            475,
+            827,
+            57,
+            11
+          ],
+          "description": "10:12 AM"
+        },
+        {
+          "id": 65,
+          "role": "AXStaticText",
+          "label": "9:16 AM|",
+          "bounds": [
+            484,
+            895,
+            50,
+            11
+          ],
+          "description": "9:16 AM|"
+        },
+        {
+          "id": 66,
+          "role": "AXStaticText",
+          "label": "Shivanga Spurthi..",
+          "bounds": [
+            390,
+            912,
+            112,
+            16
+          ],
+          "description": "Shivanga Spurthi.."
+        },
+        {
+          "id": 67,
+          "role": "AXStaticText",
+          "label": "Ritwik_Sharma_CV.pdf",
+          "bounds": [
+            638,
+            629,
+            142,
+            16
+          ],
+          "description": "Ritwik_Sharma_CV.pdf"
+        },
+        {
+          "id": 68,
+          "role": "AXStaticText",
+          "label": "2 pages • 123 KB • pdf|",
+          "bounds": [
+            638,
+            650,
+            124,
+            11
+          ],
+          "description": "2 pages • 123 KB • pdf|"
+        },
+        {
+          "id": 69,
+          "role": "AXStaticText",
+          "label": "Sharing for anyone looking for an",
+          "bounds": [
+            606,
+            682,
+            202,
+            16
+          ],
+          "description": "Sharing for anyone looking for an"
+        },
+        {
+          "id": 70,
+          "role": "AXStaticText",
+          "label": "Ops / Programme / Product leader",
+          "bounds": [
+            606,
+            698,
+            209,
+            16
+          ],
+          "description": "Ops / Programme / Product leader"
+        },
+        {
+          "id": 71,
+          "role": "AXStaticText",
+          "label": "in Bengaluru:",
+          "bounds": [
+            606,
+            716,
+            82,
+            14
+          ],
+          "description": "in Bengaluru:"
+        },
+        {
+          "id": 72,
+          "role": "AXStaticText",
+          "label": "6+ yrs across 4 B2B SaaS cos ||",
+          "bounds": [
+            606,
+            746,
+            193,
+            16
+          ],
+          "description": "6+ yrs across 4 B2B SaaS cos ||"
+        },
+        {
+          "id": 73,
+          "role": "AXStaticText",
+          "label": "Managed {300Cr+ portfolio ||",
+          "bounds": [
+            606,
+            762,
+            179,
+            14
+          ],
+          "description": "Managed {300Cr+ portfolio ||"
+        },
+        {
+          "id": 74,
+          "role": "AXStaticText",
+          "label": "Scaled teams to 120 | 3x revenue",
+          "bounds": [
+            606,
+            778,
+            204,
+            13
+          ],
+          "description": "Scaled teams to 120 | 3x revenue"
+        },
+        {
+          "id": 75,
+          "role": "AXStaticText",
+          "label": "growth | Clients incl. Yatra, MMT,",
+          "bounds": [
+            606,
+            794,
+            199,
+            13
+          ],
+          "description": "growth | Clients incl. Yatra, MMT,"
+        },
+        {
+          "id": 76,
+          "role": "AXStaticText",
+          "label": "EY, McKinsey, BCG, Sun Pharma &",
+          "bounds": [
+            606,
+            810,
+            211,
+            16
+          ],
+          "description": "EY, McKinsey, BCG, Sun Pharma &"
+        },
+        {
+          "id": 77,
+          "role": "AXStaticText",
+          "label": "Rolls-Royce.",
+          "bounds": [
+            606,
+            827,
+            78,
+            13
+          ],
+          "description": "Rolls-Royce."
+        },
+        {
+          "id": 78,
+          "role": "AXStaticText",
+          "label": "Currently leading Product at",
+          "bounds": [
+            606,
+            843,
+            174,
+            16
+          ],
+          "description": "Currently leading Product at"
+        },
+        {
+          "id": 79,
+          "role": "AXStaticText",
+          "label": "Finkraft.ai, after 18 months in",
+          "bounds": [
+            606,
+            859,
+            181,
+            16
+          ],
+          "description": "Finkraft.ai, after 18 months in"
+        },
+        {
+          "id": 80,
+          "role": "AXStaticText",
+          "label": "Ops.",
+          "bounds": [
+            606,
+            875,
+            29,
+            13
+          ],
+          "description": "Ops."
+        },
+        {
+          "id": 81,
+          "role": "AXStaticText",
+          "label": "Please DM me if you know of any",
+          "bounds": [
+            606,
+            891,
+            202,
+            14
+          ],
+          "description": "Please DM me if you know of any"
+        },
+        {
+          "id": 82,
+          "role": "AXStaticText",
+          "label": "relevant openings/referrals",
+          "bounds": [
+            606,
+            907,
+            165,
+            14
+          ],
+          "description": "relevant openings/referrals"
+        },
+        {
+          "id": 83,
+          "role": "AXStaticText",
+          "label": "2:40 PM",
+          "bounds": [
+            771,
+            928,
+            43,
+            11
+          ],
+          "description": "2:40 PM"
+        },
+        {
+          "id": 84,
+          "role": "AXStaticText",
+          "label": "Airtel Care",
+          "bounds": [
+            252,
+            964,
+            73,
+            14
+          ],
+          "description": "Airtel Care"
+        },
+        {
+          "id": 85,
+          "role": "AXStaticText",
+          "label": "Bill Payment Reminder To continue enjo...",
+          "bounds": [
+            252,
+            981,
+            248,
+            13
+          ],
+          "description": "Bill Payment Reminder To continue enjo..."
+        },
+        {
+          "id": 86,
+          "role": "AXStaticText",
+          "label": "9:02 AM",
+          "bounds": [
+            479,
+            964,
+            55,
+            12
+          ],
+          "description": "9:02 AM"
+        },
+        {
+          "id": 87,
+          "role": "AXStaticText",
+          "label": "+",
+          "bounds": [
+            567,
+            969,
+            22,
+            20
+          ],
+          "description": "+"
+        },
+        {
+          "id": 88,
+          "role": "AXStaticText",
+          "label": "Ov o",
+          "bounds": [
+            1596,
+            42,
+            75,
+            18
+          ],
+          "description": "Ov o"
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": 3,
+          "role": "AXUnknown",
+          "label": "",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "source": "screenshot",
+          "state": "on",
+          "why": "always supplied; the authoritative account of the screen"
+        },
+        {
+          "source": "accessibility",
+          "state": "empty",
+          "why": "the app exposed no accessibility tree this frame",
+          "node_count": 0,
+          "content_node_count": 0
+        },
+        {
+          "source": "ocr",
+          "state": "on",
+          "why": "text read from the screenshot, bounds in screen points; corroborates the pixels but may split or clip words",
+          "lines": [
+            {
+              "text": "Chats",
+              "bounds": [
+                194.9,
+                43.1,
+                53.0,
+                18.9
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Q Search",
+              "bounds": [
+                194.9,
+                84.3,
+                66.8,
+                16.9
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "[CoE - IOT & AI] BLR Startups",
+              "bounds": [
+                252.5,
+                134.9,
+                199.9,
+                17.0
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Draft: w",
+              "bounds": [
+                252.5,
+                153.7,
+                52.9,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Pallavi",
+              "bounds": [
+                252.4,
+                204.2,
+                46.0,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Draft: zarooratwala lasawe",
+              "bounds": [
+                252.5,
+                222.6,
+                165.5,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "14/146",
+              "bounds": [
+                252.4,
+                273.0,
+                48.4,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Papaji reacted",
+              "bounds": [
+                252.5,
+                291.6,
+                87.3,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "to \"Will not take chap….",
+              "bounds": [
+                360.5,
+                291.6,
+                142.5,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Happy New Year",
+              "bounds": [
+                252.5,
+                341.7,
+                114.9,
+                17.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "~Divya Bharti: & Voice message (0:03)|",
+              "bounds": [
+                252.5,
+                360.5,
+                243.6,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "2:49 PM",
+              "bounds": [
+                482.2,
+                137.5,
+                50.6,
+                11.7
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "2:47 PM|",
+              "bounds": [
+                482.2,
+                206.4,
+                52.9,
+                11.8
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "2:35 PM",
+              "bounds": [
+                482.2,
+                273.0,
+                52.9,
+                14.1
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "2:20 PM|",
+              "bounds": [
+                482.3,
+                344.4,
+                52.9,
+                11.5
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Al brainstorm [IITR, world)",
+              "bounds": [
+                252.5,
+                410.6,
+                181.5,
+                17.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Sumit: Seeing this term floating a lot lot...",
+              "bounds": [
+                252.5,
+                429.5,
+                248.2,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "1:00 PM",
+              "bounds": [
+                482.2,
+                413.2,
+                50.6,
+                11.8
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "[CoE - loT & Al] BLR Startups",
+              "bounds": [
+                622.4,
+                38.8,
+                199.9,
+                14.2
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "20 online",
+              "bounds": [
+                622.4,
+                54.9,
+                57.4,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Read more",
+              "bounds": [
+                608.7,
+                77.9,
+                66.6,
+                11.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "11:34 AM",
+              "bounds": [
+                1088.9,
+                79.9,
+                50.7,
+                12.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "- Dhrity",
+              "bounds": [
+                606.4,
+                114.6,
+                52.9,
+                14.3
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "+91 98832 26847",
+              "bounds": [
+                1040.7,
+                116.9,
+                98.8,
+                12.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "VYUHAA Naviga",
+              "bounds": [
+                608.7,
+                141.9,
+                98.8,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "@ vyuhaanaviga.in",
+              "bounds": [
+                608.7,
+                167.5,
+                105.7,
+                16.4
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "We've just opened up Vyuhaa Naviga, our open-source, free-to-use regulatory",
+              "bounds": [
+                606.4,
+                190.5,
+                478.0,
+                16.3
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "intelligence platform for the US and Indian medical device ecosystem.",
+              "bounds": [
+                606.4,
+                208.8,
+                425.1,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Naviga is our small language model built around thousands of CDSCO+US FDA",
+              "bounds": [
+                606.4,
+                240.8,
+                478.0,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "regulatory documents and helps simplify a process that can otherwise involve digging",
+              "bounds": [
+                606.4,
+                259.4,
+                521.6,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "through hundreds of pages, finding the right regulation, understanding the regulatory",
+              "bounds": [
+                606.4,
+                275.5,
+                519.3,
+                14.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "pathway, figuring out documentation requirements, and getting to the relevant",
+              "bounds": [
+                606.4,
+                291.6,
+                475.7,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "information faster.",
+              "bounds": [
+                606.4,
+                307.7,
+                114.9,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Think of it as an Al co-pilot for CDSCO / US FDA medical device regulatory navigation.",
+              "bounds": [
+                606.4,
+                341.7,
+                521.6,
+                14.3
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "https://vyuhaanaviga.in/",
+              "bounds": [
+                606.4,
+                376.6,
+                149.4,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Free to use. Open source. Built for the health-tech community. To be deployed by",
+              "bounds": [
+                606.4,
+                408.6,
+                496.4,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Indian Council for Medical Research and MEITY shortly.",
+              "bounds": [
+                606.4,
+                424.6,
+                335.5,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Read more",
+              "bounds": [
+                606.4,
+                447.6,
+                68.9,
+                12.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "11:50 AM|",
+              "bounds": [
+                1088.9,
+                450.2,
+                50.6,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Ov o",
+              "bounds": [
+                1596.8,
+                43.0,
+                75.8,
+                19.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Prestige Group",
+              "bounds": [
+                252.5,
+                479.5,
+                103.4,
+                17.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "• Bangalore's Top Developer presents...",
+              "bounds": [
+                254.8,
+                498.4,
+                241.3,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "12:50 PM",
+              "bounds": [
+                475.4,
+                482.3,
+                57.4,
+                11.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Coe lot Hema Shree",
+              "bounds": [
+                606.4,
+                507.5,
+                128.7,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "IIT Ventures @ BLR",
+              "bounds": [
+                252.5,
+                549.0,
+                131.0,
+                16.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "~Sunil Khanna: @ Calling all early-s…..",
+              "bounds": [
+                252.5,
+                567.4,
+                232.1,
+                16.1
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "12:07 PM",
+              "bounds": [
+                475.4,
+                551.3,
+                57.4,
+                11.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Owners including Family- God... 10:44 AM",
+              "bounds": [
+                254.8,
+                617.9,
+                278.1,
+                16.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Godrej Vishwas: @",
+              "bounds": [
+                252.5,
+                636.3,
+                114.9,
+                14.1
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "1 An Address with...",
+              "bounds": [
+                374.3,
+                636.3,
+                128.7,
+                14.1
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Plugin IOS Users",
+              "bounds": [
+                252.5,
+                686.9,
+                114.9,
+                16.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "10:36 AM",
+              "bounds": [
+                473.1,
+                689.2,
+                59.7,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "~Yadav G H: • This message was delete..",
+              "bounds": [
+                252.5,
+                705.2,
+                252.8,
+                14.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "apna",
+              "bounds": [
+                201.9,
+                762.7,
+                36.8,
+                13.8
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Apna Updates!",
+              "bounds": [
+                252.5,
+                755.8,
+                103.4,
+                16.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Hey, we've added 30 complimentary dat…..",
+              "bounds": [
+                252.5,
+                774.2,
+                250.5,
+                16.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "10:32 AM|",
+              "bounds": [
+                473.1,
+                758.1,
+                62.0,
+                11.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Godrej Nurture - Care & Share",
+              "bounds": [
+                254.8,
+                824.7,
+                202.2,
+                16.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "~Kavii: • Photo",
+              "bounds": [
+                252.5,
+                843.1,
+                103.4,
+                14.0
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Isha Electronic City",
+              "bounds": [
+                252.5,
+                893.7,
+                131.0,
+                16.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "~Sreekanth: @",
+              "bounds": [
+                250.2,
+                912.1,
+                94.2,
+                14.0
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "10:12 AM",
+              "bounds": [
+                475.4,
+                827.0,
+                57.4,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "9:16 AM|",
+              "bounds": [
+                484.6,
+                896.0,
+                50.6,
+                11.5
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Shivanga Spurthi..",
+              "bounds": [
+                390.4,
+                912.1,
+                112.6,
+                16.1
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Ritwik_Sharma_CV.pdf",
+              "bounds": [
+                638.5,
+                629.4,
+                142.5,
+                16.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "2 pages • 123 KB • pdf|",
+              "bounds": [
+                638.5,
+                650.1,
+                124.1,
+                11.5
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Sharing for anyone looking for an",
+              "bounds": [
+                606.4,
+                682.3,
+                202.2,
+                16.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Ops / Programme / Product leader",
+              "bounds": [
+                606.4,
+                698.3,
+                209.1,
+                16.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "in Bengaluru:",
+              "bounds": [
+                606.4,
+                716.3,
+                82.7,
+                14.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "6+ yrs across 4 B2B SaaS cos ||",
+              "bounds": [
+                606.4,
+                746.3,
+                193.0,
+                16.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Managed {300Cr+ portfolio ||",
+              "bounds": [
+                606.4,
+                762.2,
+                179.2,
+                14.2
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Scaled teams to 120 | 3x revenue",
+              "bounds": [
+                606.4,
+                778.8,
+                204.5,
+                13.8
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "growth | Clients incl. Yatra, MMT,",
+              "bounds": [
+                606.4,
+                794.9,
+                199.9,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "EY, McKinsey, BCG, Sun Pharma &",
+              "bounds": [
+                606.4,
+                811.0,
+                211.4,
+                16.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Rolls-Royce.",
+              "bounds": [
+                606.4,
+                827.0,
+                78.1,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Currently leading Product at",
+              "bounds": [
+                606.4,
+                843.1,
+                174.6,
+                16.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Finkraft.ai, after 18 months in",
+              "bounds": [
+                606.4,
+                859.1,
+                181.5,
+                16.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Ops.",
+              "bounds": [
+                606.4,
+                875.3,
+                29.9,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Please DM me if you know of any",
+              "bounds": [
+                606.4,
+                891.1,
+                202.2,
+                14.1
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "relevant openings/referrals",
+              "bounds": [
+                606.4,
+                907.1,
+                165.5,
+                14.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "2:40 PM",
+              "bounds": [
+                771.8,
+                928.1,
+                43.7,
+                12.0
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Airtel Care",
+              "bounds": [
+                252.4,
+                964.8,
+                73.6,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Bill Payment Reminder To continue enjo...",
+              "bounds": [
+                252.5,
+                981.0,
+                248.2,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "9:02 AM",
+              "bounds": [
+                479.9,
+                964.6,
+                55.3,
+                12.2
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "+",
+              "bounds": [
+                567.3,
+                969.5,
+                23.0,
+                20.7
+              ],
+              "confidence": 0.3
+            }
+          ]
+        }
+      ],
+      "image_size": [
+        554,
+        979
+      ],
+      "image_roi": [
+        110,
+        0,
+        664,
+        979
+      ],
+      "encoded_bytes": 110848
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "resolve_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "revert_effects",
+      "relieve_host_storage",
+      "recover_blocked_app",
+      "commit_irreversible"
+    ],
+    "affordance_frontier": {
+      "surface": "",
+      "observed_actions": [
+        {
+          "id": "ax_5_compose_search_query",
+          "family": "compose_search_query",
+          "status": "observed",
+          "confidence": 0.7,
+          "target_id": 5,
+          "target_label": "Q Search",
+          "actuators": [
+            {
+              "type": "coordinate_click",
+              "point": [
+                227,
+                92
+              ],
+              "confidence": 0.9
+            }
+          ],
+          "risk": 0.05,
+          "evidence": [
+            {
+              "source": "ax_role",
+              "detail": "AXStaticText"
+            }
+          ],
+          "coordinate_space": "screen",
+          "geometry_source": "ax_role"
+        }
+      ],
+      "latent_actions": [],
+      "probe_actions": [],
+      "known_transition_edges": [
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "forward_picker",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "forward_picker",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "context_menu",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "selection_mode",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "reveal_actions",
+          "to_surface": "selection_mode",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "open_entity",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "compose_search_query",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "open_entity",
+          "to_surface": "conversation",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        }
+      ],
+      "unknown_frontiers": [],
+      "excluded_actions": []
+    },
+    "perception_objective": {
+      "questions": [],
+      "focus": "",
+      "depth": "shallow",
+      "objective": "evidence sufficient to act",
+      "completion_condition": ""
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 1,
+      "surface": "chat_list",
+      "open_conversation": "",
+      "focused_field_role": "search",
+      "objects": [
+        {
+          "id": "pallavi_row",
+          "kind": "chat_row",
+          "text": "Pallavi",
+          "point": [
+            275,
+            210
+          ],
+          "matches_goal": true
+        },
+        {
+          "id": "search_field",
+          "kind": "search_input",
+          "text": "Search",
+          "point": [
+            227,
+            92
+          ],
+          "matches_goal": false
+        }
+      ],
+      "layers": [
+        {
+          "role": "list",
+          "name": "Chat List",
+          "state": "active",
+          "objects": [
+            {
+              "id": "pallavi_row",
+              "kind": "chat_row",
+              "text": "Pallavi",
+              "point": [
+                275,
+                210
+              ],
+              "matches_goal": true
+            },
+            {
+              "id": "search_field",
+              "kind": "search_input",
+              "text": "Search",
+              "point": [
+                227,
+                92
+              ],
+              "matches_goal": false
+            }
+          ]
+        }
+      ],
+      "beliefs": [],
+      "progress": {
+        "phase": "locating_source",
+        "objective": "Open the conversation with Pallavi to find the message containing 'zarooratwala'",
+        "notes": "Target chat 'Pallavi' is visible in the list with a draft preview matching the query keyword."
+      },
+      "attempts": [],
+      "exhausted": [],
+      "task_surface": {
+        "app": "WhatsApp",
+        "window_bounds": [
+          110.0,
+          25.0,
+          1581.0,
+          979.0
+        ],
+        "window_id": 7206,
+        "display_index": 0,
+        "display_count": 2,
+        "displays": [
+          {
+            "index": 0,
+            "bounds": [
+              0.0,
+              0.0,
+              1920.0,
+              1080.0
+            ],
+            "backing_scale": 1.0,
+            "is_main": true
+          },
+          {
+            "index": 1,
+            "bounds": [
+              1920.0,
+              -27.0,
+              1710.0,
+              1107.0
+            ],
+            "backing_scale": 2.0,
+            "is_main": false
+          }
+        ],
+        "capture_origin": [
+          220.0,
+          25.0
+        ],
+        "capture_scale": 1.0,
+        "point_scale": 1.0,
+        "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+      }
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "chat_list",
+      "open_conversation": "",
+      "target_object_visible": true,
+      "target_object_id": "pallavi_row",
+      "layers": [
+        {
+          "role": "list",
+          "name": "Chat List",
+          "state": "active",
+          "objects": [
+            {
+              "id": "pallavi_row",
+              "kind": "chat_row",
+              "text": "Pallavi",
+              "point": [
+                275,
+                210
+              ],
+              "matches_goal": true
+            },
+            {
+              "id": "search_field",
+              "kind": "search_input",
+              "text": "Search",
+              "point": [
+                227,
+                92
+              ],
+              "matches_goal": false
+            }
+          ]
+        }
+      ],
+      "focused_field_role": "search"
+    },
+    "belief_updates": [],
+    "next_action": {},
+    "next_actions": [
+      {
+        "rank": 1,
+        "family": "open_entity",
+        "target_id": null,
+        "text": "Click on the 'Pallavi' chat row",
+        "confidence": 0.95,
+        "why": "The target conversation 'Pallavi' is clearly visible in the chat list (OCR match). Opening it is the necessary first step to locate the specific message to forward."
+      }
+    ],
+    "suggested_actions": [
+      {
+        "rank": 1,
+        "family": "open_entity",
+        "target_id": null,
+        "text": "Click on the 'Pallavi' chat row",
+        "confidence": 0.95,
+        "why": "The target conversation 'Pallavi' is clearly visible in the chat list (OCR match). Opening it is the necessary first step to locate the specific message to forward."
+      }
+    ],
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "message_bubble",
+        "context_menu_trigger"
+      ]
+    },
+    "surprise_explanation": {
+      "cause": "unknown",
+      "locus": "unknown",
+      "transition_class": "unknown",
+      "confidence": 0.0,
+      "detail": "",
+      "evidence": [],
+      "repair": {
+        "kind": "reperceive"
+      },
+      "do_not_repeat": [],
+      "recommended_next": "reperceive",
+      "source": "model"
+    },
+    "visible_objects": [
+      {
+        "id": "pallavi_row",
+        "kind": "chat_row",
+        "text": "Pallavi",
+        "point": [
+          275,
+          210
+        ],
+        "matches_goal": true
+      },
+      {
+        "id": "search_field",
+        "kind": "search_input",
+        "text": "Search",
+        "point": [
+          227,
+          92
+        ],
+        "matches_goal": false
+      }
+    ],
+    "missing_evidence": [],
+    "evidence_gaps": [
+      "goal control label seen but lacking actuatable geometry (point/bounds)"
+    ],
+    "coverage": 0.9,
+    "missing_affordance_information": [],
+    "recommended_probe": {},
+    "affordance_qc": {
+      "expected_found": true,
+      "missing": [],
+      "notes": "The target chat row is visible and actionable."
+    },
+    "affordance_stance": "explore_needed",
+    "scene_summary": "WhatsApp chat list view. The conversation 'Pallavi' is visible near the top with a draft message preview containing 'zarooratwala'. The search bar is at the top.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 11.985
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open visible source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": true,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "[CoE - loT & Al] BLR Startups",
+    "wa_screen": "CONVERSATION"
+  }
+}

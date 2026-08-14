@@ -11,14 +11,99 @@ import type { DesktopTheme, DesktopThemeTypography } from './types'
 // Covers macOS, Windows, Linux, plus the `emoji` generic for anything else.
 export const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", emoji'
 
-const SYSTEM_SANS =
-  '"Segoe WPC", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif, ' +
+/** Default UI sans — Poppins (self-hosted via @fontsource/poppins in main.tsx). */
+const POPPINS_SANS =
+  '"Poppins", "Segoe WPC", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif, ' +
   EMOJI_FALLBACK
 
 const SYSTEM_MONO =
-  '"Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace, ' + EMOJI_FALLBACK
+  '"Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace, ' +
+  EMOJI_FALLBACK
 
-export const DEFAULT_TYPOGRAPHY: DesktopThemeTypography = { fontSans: SYSTEM_SANS, fontMono: SYSTEM_MONO }
+export const DEFAULT_TYPOGRAPHY: DesktopThemeTypography = {
+  fontSans: POPPINS_SANS,
+  fontMono: SYSTEM_MONO
+}
+
+const PLUGIN_GREEN = '#00B33E'
+const PLUGIN_DARK_GREEN = '#004d1a'
+const PLUGIN_ACCENT = '#49ee40'
+const PLUGIN_SOFT = '#DFF5E2'
+const PLUGIN_HEADER = '#EAF3E5'
+const PLUGIN_TEXT = '#333333'
+const PLUGIN_MUTED = '#7C7C7C'
+
+const pluginTint = (pct: number) => `color-mix(in srgb, ${PLUGIN_GREEN} ${pct}%, #FFFFFF)`
+const pluginTintTransparent = (pct: number) => `color-mix(in srgb, ${PLUGIN_GREEN} ${pct}%, transparent)`
+
+/**
+ * Plugin — white/green consumer brand (aligned with Plugin Android app).
+ * Default desktop identity.
+ */
+export const pluginTheme: DesktopTheme = {
+  name: 'plugin',
+  label: 'Plugin',
+  description: 'White surfaces with Plugin green accents',
+  colors: {
+    background: '#FFFFFF',
+    foreground: PLUGIN_TEXT,
+    card: '#FFFFFF',
+    cardForeground: PLUGIN_TEXT,
+    muted: '#f6f6f6',
+    mutedForeground: PLUGIN_MUTED,
+    popover: '#FFFFFF',
+    popoverForeground: PLUGIN_TEXT,
+    primary: PLUGIN_GREEN,
+    primaryForeground: '#FFFFFF',
+    secondary: pluginTint(8),
+    secondaryForeground: PLUGIN_DARK_GREEN,
+    accent: PLUGIN_SOFT,
+    accentForeground: PLUGIN_DARK_GREEN,
+    border: pluginTintTransparent(22),
+    input: pluginTintTransparent(28),
+    ring: PLUGIN_GREEN,
+    midground: PLUGIN_GREEN,
+    composerRing: PLUGIN_GREEN,
+    destructive: '#ff474c',
+    destructiveForeground: '#FFFFFF',
+    sidebarBackground: PLUGIN_HEADER,
+    sidebarBorder: pluginTintTransparent(18),
+    userBubble: pluginTint(8),
+    userBubbleBorder: pluginTintTransparent(24)
+  },
+  darkColors: {
+    background: '#0B1A10',
+    foreground: '#E8F5EC',
+    card: '#122418',
+    cardForeground: '#E8F5EC',
+    muted: '#1A2E20',
+    mutedForeground: '#9BB8A4',
+    popover: '#152A1C',
+    popoverForeground: '#E8F5EC',
+    primary: PLUGIN_ACCENT,
+    primaryForeground: '#0B1A10',
+    secondary: '#1E3A28',
+    secondaryForeground: '#D4F0DC',
+    accent: '#234832',
+    accentForeground: '#E8F5EC',
+    border: '#2A4A35',
+    input: '#0F2015',
+    ring: PLUGIN_ACCENT,
+    midground: PLUGIN_GREEN,
+    composerRing: PLUGIN_ACCENT,
+    destructive: '#ff474c',
+    destructiveForeground: '#FEF2F2',
+    sidebarBackground: '#08140C',
+    sidebarBorder: '#1A3022',
+    userBubble: '#1A3224',
+    userBubbleBorder: '#2E533C'
+  },
+  typography: {
+    fontSans: POPPINS_SANS,
+    fontMono: SYSTEM_MONO
+    // Poppins is bundled via @fontsource/poppins (see main.tsx) — no CDN.
+  }
+}
 
 const NOUS_BLUE = '#0053FD'
 const PSYCHE_BLUE = '#1540B1'
@@ -28,9 +113,7 @@ const nousTint = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, #FFF
 const nousTintTransparent = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, transparent)`
 
 /**
- * Nous — canonical Hermes desktop identity. The palette keeps the current
- * glass geometry neutral, then lets the old bb/gui blue and psyche cream
- * return as accent seeds.
+ * Nous — legacy blue glass skin (still available in Appearance).
  */
 export const nousTheme: DesktopTheme = {
   name: 'nous',
@@ -91,7 +174,7 @@ export const nousTheme: DesktopTheme = {
     userBubbleBorder: '#3A63BD'
   },
   typography: {
-    fontSans: SYSTEM_SANS,
+    fontSans: POPPINS_SANS,
     fontMono: `"Courier Prime", ${SYSTEM_MONO}`,
     fontUrl: 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'
   }
@@ -278,6 +361,7 @@ export const slateTheme: DesktopTheme = {
 }
 
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
+  plugin: pluginTheme,
   nous: nousTheme,
   midnight: midnightTheme,
   ember: emberTheme,
@@ -289,4 +373,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
 
 /** Skin used when nothing is persisted or the persisted name is retired. */
-export const DEFAULT_SKIN_NAME = 'nous'
+export const DEFAULT_SKIN_NAME = 'plugin'

@@ -1,0 +1,218 @@
+{
+  "world_model": {
+    "frame": 1,
+    "surface": "chat_list",
+    "open_conversation": "",
+    "focused_field_role": "sidebar_search",
+    "objects": [
+      {
+        "id": "pallavi_row",
+        "kind": "chat_row",
+        "text": "Pallavi",
+        "point": [
+          208,
+          291
+        ],
+        "matches_goal": true
+      },
+      {
+        "id": "search_field",
+        "kind": "search_field",
+        "text": "Search",
+        "point": [
+          160,
+          57
+        ],
+        "matches_goal": false
+      }
+    ],
+    "layers": [
+      {
+        "role": "list",
+        "name": "Chat List",
+        "state": "active",
+        "objects": [
+          {
+            "id": "pallavi_row",
+            "kind": "chat_row",
+            "text": "Pallavi",
+            "point": [
+              208,
+              291
+            ],
+            "matches_goal": true
+          },
+          {
+            "id": "search_field",
+            "kind": "search_field",
+            "text": "Search",
+            "point": [
+              160,
+              57
+            ],
+            "matches_goal": false
+          }
+        ]
+      }
+    ],
+    "beliefs": [],
+    "progress": {
+      "phase": "locating_source",
+      "objective": "Open Pallavi chat to find the link",
+      "notes": "Found 'Pallavi' in chat list with draft preview containing query keyword."
+    },
+    "attempts": [],
+    "exhausted": [],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": [
+        42.0,
+        39.0,
+        1581.0,
+        979.0
+      ],
+      "window_id": 12968,
+      "display_index": 0,
+      "display_count": 1,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": true
+        }
+      ],
+      "capture_origin": [
+        152.5,
+        39.0
+      ],
+      "capture_scale": 1.0,
+      "point_scale": 0.86484375,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "backtrack": {},
+  "observed_state": {
+    "surface": "chat_list",
+    "open_conversation": "",
+    "target_object_visible": true,
+    "target_object_id": "pallavi_row",
+    "layers": [
+      {
+        "role": "list",
+        "name": "Chat List",
+        "state": "active",
+        "objects": [
+          {
+            "id": "pallavi_row",
+            "kind": "chat_row",
+            "text": "Pallavi",
+            "point": [
+              208,
+              291
+            ],
+            "matches_goal": true
+          },
+          {
+            "id": "search_field",
+            "kind": "search_field",
+            "text": "Search",
+            "point": [
+              160,
+              57
+            ],
+            "matches_goal": false
+          }
+        ]
+      }
+    ],
+    "focused_field_role": "sidebar_search"
+  },
+  "belief_updates": [],
+  "next_action": {},
+  "next_actions": [
+    {
+      "rank": 1,
+      "family": "open_entity",
+      "target_id": null,
+      "text": "Click on 'Pallavi' chat row",
+      "confidence": 0.95,
+      "why": "The goal requires finding a link sent to Pallavi. The chat row for 'Pallavi' is visible at [208, 291] and matches the source conversation name."
+    }
+  ],
+  "suggested_actions": [
+    {
+      "rank": 1,
+      "family": "open_entity",
+      "target_id": null,
+      "text": "Click on 'Pallavi' chat row",
+      "confidence": 0.95,
+      "why": "The goal requires finding a link sent to Pallavi. The chat row for 'Pallavi' is visible at [208, 291] and matches the source conversation name."
+    }
+  ],
+  "expected_transition": {
+    "surface": "conversation",
+    "likely_controls": [
+      "message_bubble",
+      "context_menu_trigger"
+    ]
+  },
+  "surprise_explanation": {
+    "cause": "unknown",
+    "locus": "unknown",
+    "transition_class": "unknown",
+    "confidence": 0.0,
+    "detail": "",
+    "evidence": [],
+    "repair": {
+      "kind": "reperceive"
+    },
+    "do_not_repeat": [],
+    "recommended_next": "reperceive",
+    "source": "model"
+  },
+  "visible_objects": [
+    {
+      "id": "pallavi_row",
+      "kind": "chat_row",
+      "text": "Pallavi",
+      "point": [
+        208,
+        291
+      ],
+      "matches_goal": true
+    },
+    {
+      "id": "search_field",
+      "kind": "search_field",
+      "text": "Search",
+      "point": [
+        160,
+        57
+      ],
+      "matches_goal": false
+    }
+  ],
+  "missing_evidence": [],
+  "evidence_gaps": [
+    "goal control label seen but lacking actuatable geometry (point/bounds)"
+  ],
+  "coverage": 0.9,
+  "missing_affordance_information": [],
+  "recommended_probe": {},
+  "affordance_qc": {
+    "expected_found": true,
+    "missing": [],
+    "notes": "Target chat row identified."
+  },
+  "affordance_stance": "explore_needed",
+  "scene_summary": "WhatsApp chat list view. 'Pallavi' is visible as the third item with a draft message preview. No overlays or menus are present.",
+  "confidence": 0.95,
+  "model": "qwen3.5:397b",
+  "latency_s": 15.736
+}

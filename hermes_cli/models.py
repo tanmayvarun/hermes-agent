@@ -4782,3 +4782,96 @@ def validate_requested_model(
             f"If the service isn't down, this model may not be valid."
         ),
     }
+
+
+def _inventory_membership(model: str, inventory: list[str]) -> Optional[str]:
+    """Return the inventory id that matches ``model``, else None."""
+    requested = (model or "").strip()
+    if not requested or not inventory:
+        return None
+    if requested in inventory:
+        return requested
+    # Common cross-catalog sticky: OpenRouter-shaped id used on a native
+    # provider (e.g. nvidia/foo:free on ollama-cloud). Accept only when the
+    # bare stem is an exact inventory member — never invent a near-match.
+    bare = requested
+    if "/" in bare:
+        bare = bare.rsplit("/", 1)[-1]
+    for suffix in (":free", ":batch", ":extended", ":fast", ":cloud"):
+        if bare.endswith(suffix):
+            bare = bare[: -len(suffix)]
+            break
+    if bare and bare in inventory:
+        return bare
+    return None
+
+
+def coerce_model_for_provider(
+    model: str,
+    provider: Optional[str],
+    *,
+    default_model: Optional[str] = None,
+    inventory: Optional[list[str]] = None,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    """Ensure a session/composer model is advertiseable on ``provider``.
+
+    Provider startup prewarm only proves the *provider* answers; sticky desktop
+    picks can still ship a foreign catalog id (OpenRouter free id on
+    ollama-cloud). This remaps unavailable picks to a known inventory member
+    before the UI/agent advertise them.
+
+    Returns:
+      model, provider, remapped, reason, inventory_checked, original_model
+    """
+    requested = (model or "").strip()
+    normalized = normalize_provider(provider) or (provider or "").strip() or None
+    original = requested
+    result: dict[str, Any] = {
+        "model": requested,
+        "provider": normalized,
+        "remapped": False,
+        "reason": None,
+        "inventory_checked": False,
+        "original_model": original,
+    }
+    if not requested or not normalized:
+        return result
+
+    models = list(inventory) if inventory is not None else None
+    if models is None:
+        try:
+            models = cached_provider_model_ids(
+                normalized,
+                force_refresh=force_refresh,
+            )
+        except Exception:
+            models = []
+    result["inventory_checked"] = True
+    if not models:
+        # Cannot prove absence — leave sticky pick alone (same conservatism as
+        # desktop manualPickRemoved when the catalog is unloaded).
+        result["reason"] = "inventory_unavailable"
+        return result
+
+    matched = _inventory_membership(requested, models)
+    if matched:
+        if matched != requested:
+            result["model"] = matched
+            result["remapped"] = True
+            result["reason"] = "normalized_to_inventory_id"
+        return result
+
+    # Prefer configured default when it is actually on this provider.
+    default = (default_model or "").strip()
+    default_match = _inventory_membership(default, models) if default else None
+    if default_match:
+        result["model"] = default_match
+        result["remapped"] = True
+        result["reason"] = "sticky_not_in_inventory_use_default"
+        return result
+
+    result["model"] = models[0]
+    result["remapped"] = True
+    result["reason"] = "sticky_not_in_inventory_use_first_available"
+    return result

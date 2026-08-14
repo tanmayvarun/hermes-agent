@@ -1,0 +1,108 @@
+{
+  "version": "v1",
+  "layer": "golden",
+  "manifest": {
+    "version": "v1",
+    "frozen": true,
+    "eval_only": true,
+    "goal_fixture": "zarooratwala_forward",
+    "goal_description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay",
+    "sources": [
+      "plugin/evals/fixtures (open_source/find_link)",
+      "plugin/evals/annotations/overrides.jsonl",
+      "live failure forward_zarooratwala_live_20260805_111555 (AX settle Q Search|)",
+      "one-executive consolidation contract"
+    ],
+    "modules": {
+      "perceive": 3,
+      "critic": 2,
+      "meta_action": 3,
+      "brain": 2
+    },
+    "changelog": [
+      {
+        "date": "2026-08-05",
+        "note": "Initial v1 seed: zarooratwala open\u2192hunt frames + AX search-chrome critic trap + post-act meta/brain contract."
+      }
+    ],
+    "rules": [
+      "Do not edit existing case gold casually; add failure promotions or open v2.",
+      "Never use recorded model replies as gold for the field under score.",
+      "Screenshots referenced by name under live_forward; not committed here."
+    ]
+  },
+  "mean_accuracy": 1.0,
+  "modules": {
+    "perceive": {
+      "cases": 3,
+      "passed": 3,
+      "accuracy": 1.0,
+      "failures": []
+    },
+    "critic": {
+      "cases": 2,
+      "passed": 2,
+      "accuracy": 1.0,
+      "failures": []
+    },
+    "meta_action": {
+      "cases": 3,
+      "passed": 3,
+      "accuracy": 1.0,
+      "failures": []
+    },
+    "brain": {
+      "cases": 2,
+      "passed": 2,
+      "accuracy": 1.0,
+      "failures": []
+    }
+  },
+  "metrics": [
+    {
+      "name": "golden_perceive_accuracy",
+      "layer": "golden",
+      "value": 1.0,
+      "scored": 3,
+      "skipped": 0,
+      "question": "Does perceive match frozen golden_v1 decision structure?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "golden_critic_accuracy",
+      "layer": "golden",
+      "value": 1.0,
+      "scored": 2,
+      "skipped": 0,
+      "question": "Does critic match frozen golden_v1 decision structure?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "golden_meta_action_accuracy",
+      "layer": "golden",
+      "value": 1.0,
+      "scored": 3,
+      "skipped": 0,
+      "question": "Does meta_action match frozen golden_v1 decision structure?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "golden_brain_accuracy",
+      "layer": "golden",
+      "value": 1.0,
+      "scored": 2,
+      "skipped": 0,
+      "question": "Does brain match frozen golden_v1 decision structure?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    }
+  ],
+  "cases_total": 10
+}

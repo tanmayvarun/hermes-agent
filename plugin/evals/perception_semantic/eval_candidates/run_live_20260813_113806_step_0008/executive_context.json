@@ -1,0 +1,119 @@
+{
+  "goal": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay",
+  "goal_fields": {
+    "source_conversation": "Pallavi",
+    "destination": "Tanmay",
+    "source_query": "zarooratwala"
+  },
+  "current_intention": "Select the specific message to forward",
+  "perception_objective": {
+    "questions": [
+      "Did locate('msg_link_zarooratwala' via native_find) surface a binding-eligible content patient for the source query?"
+    ],
+    "focus": "searchable_surface_content",
+    "depth": "deep",
+    "objective": "locate_effect_verification",
+    "completion_condition": "Answer the locate-effect question explicitly: set world_model.locate_effect_answer to yes|no|unknown. If no and you can establish absence of the query patient, also set world_model.source_query_not_surfaced=true. Missing from the top-10 objects inventory alone is not enough for no — use unknown when unsure."
+  },
+  "active_app": "WhatsApp",
+  "active_interaction_surface": "conversation",
+  "known_bindings": {
+    "source_container": "Pallavi",
+    "source_object": "zarooratwala",
+    "originator": "Pallavi",
+    "destination": "Tanmay",
+    "open_conversation": "Pallavi"
+  },
+  "previous_action": {
+    "action": "LocateContent",
+    "family": "locate_content",
+    "target": "Search",
+    "text": "msg_link_zarooratwala",
+    "result": {
+      "ok": true,
+      "message": "realization=native_find steps=1 text_match_reachable=False surface_exhausted=False surface_changed=True message=queried via find; accessibility text unavailable"
+    },
+    "you_predicted": {
+      "surface": "context_menu",
+      "source": "act_intention",
+      "action_family": "locate_content",
+      "likely_controls": [
+        "Forward",
+        "Reply",
+        "Copy",
+        "Delete",
+        "Info"
+      ],
+      "semantic_target": "Search",
+      "attempt_id": "a_446a122933"
+    },
+    "prediction_error": {
+      "predicted_surface": "context_menu",
+      "observed_surface": "conversation",
+      "matched": false,
+      "verdict": "you predicted 'context_menu' and the screen is 'conversation'. Missing: reply, copy, delete, info.",
+      "controls_predicted": [
+        "forward",
+        "reply",
+        "copy",
+        "delete",
+        "info"
+      ],
+      "controls_present": [
+        "forward"
+      ],
+      "controls_absent": [
+        "reply",
+        "copy",
+        "delete",
+        "info"
+      ],
+      "action_family": "open_entity",
+      "attempt_id": "a_4dd5cc1915",
+      "target": "",
+      "effect_absent": true,
+      "consumed_by_reflect": true,
+      "suppressed_rearm": true,
+      "surprise_armed": false
+    },
+    "effect": "verified",
+    "failure_domain": "entity",
+    "world_change_score": 0.74,
+    "open_before": "https://www.zarooratwala.com/?",
+    "open_after": "https://www.zarooratwala.com/?",
+    "diagnosis_hints": [
+      "regression_implicates_entity_or_nav"
+    ],
+    "recent_surprises": [
+      {
+        "iteration": 4,
+        "action": "openentity",
+        "family": "open_entity",
+        "effect": "promising_unresolved",
+        "outcome": "promising_unresolved",
+        "failure_domain": "none",
+        "world_change_score": 1.0,
+        "predicted_surface": "conversation",
+        "observed_surface": "chat_list",
+        "notes": [
+          "promising_branch_explore_locally"
+        ]
+      },
+      {
+        "iteration": 6,
+        "action": "observe",
+        "family": "open_entity",
+        "effect": "verified",
+        "outcome": "verified",
+        "failure_domain": "none",
+        "world_change_score": 1.0,
+        "predicted_surface": "context_menu",
+        "observed_surface": "conversation",
+        "notes": [
+          "promising_branch_explore_locally"
+        ]
+      }
+    ]
+  },
+  "step": 8
+}

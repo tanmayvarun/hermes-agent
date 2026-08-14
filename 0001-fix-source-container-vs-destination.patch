@@ -1,0 +1,351 @@
+From 8e349770be8e6af48dead4ebfd5e21a5140f391a Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 11:32:59 +0530
+Subject: [PATCH] fix(agent): harden source-container vs destination contact
+ naming
+
+Prefer explicit source_conversation/container fields for SEARCH
+expected_container; never let destination or ambiguous contact win.
+Route self/You identity through IdentityResolver.canonical_identity.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py   | 23 +++++-
+ .../agent/capabilities/search_hypothesis.py   | 13 ++--
+ plugin/agent/role_binding.py                  | 23 +++++-
+ plugin/agent/source_query_binding.py          | 12 ++-
+ plugin/evals/gates.py                         | 23 ++++++
+ .../plugin/test_search_hypothesis_ranking.py  | 78 ++++++++++++++-----
+ tests/plugin/test_source_query_binding.py     | 13 ++++
+ 7 files changed, 146 insertions(+), 39 deletions(-)
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index 90bb01e08..ed8d82b94 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -1266,9 +1266,22 @@ def ensure_search_episode_from_brief(
+     # Authored/typed box string only — never fall back to goal link_query, or
+     # every reach_source brief arms a ranking episode before compose.
+     query = str(getattr(task, "search_query", "") or "").strip() if task else ""
+-    contact = str(goal.get("source_conversation") or goal.get("contact") or "").strip()
+     dest = str(goal.get("destination") or goal.get("target_contact") or "").strip()
+     link_q = str(goal.get("source_query") or goal.get("link_query") or "").strip()
++    # Source/container referent — never destination/general contact by accident.
++    source_container = str(
++        goal.get("source_conversation")
++        or goal.get("container")
++        or goal.get("conversation_with")
++        or goal.get("expected_container")
++        or ""
++    ).strip()
++    if not source_container:
++        # Legacy Goal.contact is usually source, but reject when it equals dest.
++        legacy = str(goal.get("contact") or "").strip()
++        if legacy and _norm(legacy) != _norm(dest):
++            source_container = legacy
++    contact = source_container
+ 
+     role = "source"
+     referent = contact or link_q
+@@ -1289,9 +1302,11 @@ def ensure_search_episode_from_brief(
+     tokens = [t for t in (referent, contact, link_q, query, dest) if t]
+     tokens = list(dict.fromkeys(tokens))
+     # Typed semantic roles from the goal — independent relations.
+-    # container ← conversation/contact; originator ← sent_by / "from X" / "I sent".
+-    # Never: expected_originator = contact/source_conversation.
+-    typed_container = contact
++    # container ← source conversation; originator ← typed sent_by / "from X".
++    # Never: expected_originator = container; never: container = destination.
++    typed_container = dest if role == "destination" else source_container
++    # Debt: normalize originator / expected_originator / sent_by upstream to one
++    # canonical Goal relation; SEARCH should eventually consume only "originator".
+     typed_originator = str(
+         goal.get("originator")
+         or goal.get("expected_originator")
+diff --git a/plugin/agent/capabilities/search_hypothesis.py b/plugin/agent/capabilities/search_hypothesis.py
+index 84f4b5be7..d1258fe15 100644
+--- a/plugin/agent/capabilities/search_hypothesis.py
++++ b/plugin/agent/capabilities/search_hypothesis.py
+@@ -232,13 +232,16 @@ def interpret_search_candidate(
+     if gm is not None:
+         contradictions.extend(list(gm.contradictions or []))
+     if expected_originator:
+-        want = _norm(expected_originator)
++        from plugin.agent.role_binding import IdentityResolver
++        from plugin.agent.source_query_binding import originator_matches
++
+         if not origin:
+             unknowns.append("sender_unknown")
+-        elif _norm(origin) in {"self", "you", "me"} and want not in {"self", "you", "me"}:
+-            contradictions.append("explicit_self_vs_required_sender")
+-        elif _norm(origin) != want and _norm(origin) not in {"self", "you", "me"}:
+-            if want and _norm(origin) and want not in _norm(origin) and _norm(origin) not in want:
++        elif not originator_matches(origin, expected_originator):
++            # Self vs required other, or named mismatch — IdentityResolver owns aliases.
++            if IdentityResolver.canonical_identity(origin) == "self":
++                contradictions.append("explicit_self_vs_required_sender")
++            else:
+                 contradictions.append("originator_name_mismatch")
+     elif not origin:
+         unknowns.append("sender_unknown")
+diff --git a/plugin/agent/role_binding.py b/plugin/agent/role_binding.py
+index a07652ae3..a53008e39 100644
+--- a/plugin/agent/role_binding.py
++++ b/plugin/agent/role_binding.py
+@@ -697,7 +697,7 @@ class IdentityResolver:
+         if not ref:
+             return False, supporting, [EvidenceNote("referent", detail="empty")]
+ 
+-        want_self = _norm(ref) in {"self", "me", "i", "you", "myself"}
++        want_self = self.canonical_identity(ref) == "self"
+         senders = [
+             e
+             for e in observation.identity_evidence
+@@ -724,8 +724,7 @@ class IdentityResolver:
+             return False, supporting, contradicting
+ 
+         for ev in senders:
+-            val = _norm(ev.value)
+-            is_self = val in {"self", "me", "i", "you", "myself"}
++            is_self = self.canonical_identity(ev.value) == "self"
+             if want_self and is_self:
+                 supporting.append(EvidenceNote(ev.kind, ev.value, "same_originator_self"))
+                 return True, supporting, contradicting
+@@ -742,6 +741,19 @@ class IdentityResolver:
+         )
+         return False, supporting, contradicting
+ 
++    # Pronouns / UI labels for the agent-operated account (outgoing messages).
++    SELF_ALIASES = frozenset({"self", "me", "i", "you", "myself", "outgoing", "mine"})
++
++    @classmethod
++    def canonical_identity(cls, value: Any) -> str:
++        """Normalize an identity label; self-aliases collapse to ``self``."""
++        n = _norm(value)
++        if not n:
++            return ""
++        if n in cls.SELF_ALIASES:
++            return "self"
++        return n
++
+     @staticmethod
+     def values_same_identity(value: Any, referent: Any) -> bool:
+         """Public value-level identity equality — not substring-of-content.
+@@ -749,8 +761,11 @@ class IdentityResolver:
+         Distinct from :meth:`same_identity`, which scores an observation against
+         a referent. Downstream modules (query matching) should call this API
+         instead of the private ``_values_same_identity`` helper.
++
++        ``self`` / ``You`` / ``me`` canonicalize to one identity.
+         """
+-        a, b = _norm(value), _norm(referent)
++        a = IdentityResolver.canonical_identity(value)
++        b = IdentityResolver.canonical_identity(referent)
+         if not a or not b:
+             return False
+         if a == b:
+diff --git a/plugin/agent/source_query_binding.py b/plugin/agent/source_query_binding.py
+index dac6e118f..de4a5755d 100644
+--- a/plugin/agent/source_query_binding.py
++++ b/plugin/agent/source_query_binding.py
+@@ -216,19 +216,17 @@ def infer_message_originator(
+ 
+ 
+ def originator_matches(observed: str, expected: str) -> bool:
+-    """Identity equivalence via IdentityResolver — no substring matching."""
++    """Identity equivalence via IdentityResolver — no substring matching.
++
++    Self-aliases (``self`` / ``You`` / ``me``) are owned by
++    ``IdentityResolver.canonical_identity``, not SEARCH string heuristics.
++    """
+     want = _norm(expected)
+     got = _norm(observed)
+     if not want:
+         return True
+     if not got:
+         return False
+-    want_self = want in _SELF_ORIGINATORS
+-    got_self = got in _SELF_ORIGINATORS
+-    if want_self:
+-        return got_self
+-    if got_self:
+-        return False
+     from plugin.agent.role_binding import IdentityResolver
+ 
+     return IdentityResolver.values_same_identity(observed, expected)
+diff --git a/plugin/evals/gates.py b/plugin/evals/gates.py
+index 138f07796..ee6f3919c 100644
+--- a/plugin/evals/gates.py
++++ b/plugin/evals/gates.py
+@@ -4757,6 +4757,29 @@ def _search_hypothesis_ranking_contracts() -> Tuple[bool, str]:
+         return False, "expected_container should be Alice"
+     if ep.get("expected_originator"):
+         return False, "contact must not imply expected_originator"
++    # Destination must not become search container.
++    st2 = ExecutionState()
++    ensure_search_episode_from_brief(
++        st2,
++        DecisionBrief(
++            goal={
++                "source_conversation": "Alice",
++                "destination": "Bob",
++                "contact": "Bob",
++                "source_query": "invoice",
++            },
++            world={
++                "surface": "search",
++                "objects": [
++                    {"id": "1", "text": "invoice.pdf", "matches_goal": True}
++                ],
++            },
++            task_state=_TaskState(phase="reach_source", search_query="invoice"),
++        ),
++    )
++    ep2 = getattr(st2, "search_episode", None) or {}
++    if ep2.get("expected_container") != "Alice":
++        return False, "source_conversation must win over destination/contact for container"
+     # Platform word in query alone must not yield sought_platform_host.
+     plat = rank_search_hypotheses(
+         [
+diff --git a/tests/plugin/test_search_hypothesis_ranking.py b/tests/plugin/test_search_hypothesis_ranking.py
+index 9ee1b711c..f9823be79 100644
+--- a/tests/plugin/test_search_hypothesis_ranking.py
++++ b/tests/plugin/test_search_hypothesis_ranking.py
+@@ -354,36 +354,35 @@ def test_instagram_can_be_direct_object_when_sought():
+ 
+ 
+ def test_platform_word_in_query_does_not_imply_platform_object_type():
+-    ranked = rank_search_hypotheses(
+-        [
+-            {
+-                "id": "ig",
+-                "label": "Alice https://www.instagram.com/acme",
+-                "matches_goal": True,
+-                "sender": "Alice",
+-            }
+-        ],
+-        # Free-form query may mention a platform as topic without seeking that
+-        # platform as the object type.
++    raw = [
++        {
++            "id": "ig",
++            "label": "Alice https://www.instagram.com/acme",
++            "matches_goal": True,
++            "sender": "Alice",
++        }
++    ]
++    # Same raw candidates; only sought_object semantics change.
++    untyped = rank_search_hypotheses(
++        raw,
+         query="report about Instagram growth",
+         expected_container="Alice",
+         expected_originator="Alice",
+-        sought_object="",  # UNKNOWN object semantics
++        sought_object="",
+         role="content",
+     )
+-    assert ranked[0]["interpretation"]["relevance"]["url_reason"] != (
+-        "sought_platform_host"
+-    )
+-    # Contrast: typed sought_object unlocks platform directness.
+-    sought = rank_search_hypotheses(
+-        ranked,
++    typed = rank_search_hypotheses(
++        raw,
+         query="report about Instagram growth",
+         expected_container="Alice",
+         expected_originator="Alice",
+         sought_object="instagram",
+         role="content",
+     )
+-    assert sought[0]["interpretation"]["relevance"]["url_reason"] == (
++    assert untyped[0]["interpretation"]["relevance"]["url_reason"] != (
++        "sought_platform_host"
++    )
++    assert typed[0]["interpretation"]["relevance"]["url_reason"] == (
+         "sought_platform_host"
+     )
+ 
+@@ -457,10 +456,16 @@ def test_self_sent_to_John_sets_container_John_originator_self():
+         capabilities=["open_entity", "resolve_entity", "observe", "search"],
+     )
+     from plugin.agent.capabilities.search_episode import ensure_search_episode_from_brief
++    from plugin.agent.role_binding import IdentityResolver
++    from plugin.agent.source_query_binding import originator_matches
+ 
+     ep = ensure_search_episode_from_brief(state, brief) or {}
+     assert ep.get("expected_container") == "John"
+     assert ep.get("expected_originator") == "self"
++    # IdentityResolver owns self/You — not SEARCH pronoun heuristics.
++    assert IdentityResolver.canonical_identity("You") == "self"
++    assert IdentityResolver.values_same_identity("self", "You")
++    assert originator_matches("You", "self")
+     ranked = rank_search_hypotheses(
+         [
+             {
+@@ -484,6 +489,41 @@ def test_self_sent_to_John_sets_container_John_originator_self():
+     assert ranked[0]["id"] == "you"
+ 
+ 
++def test_source_Alice_destination_Bob_search_container_is_Alice():
++    """Destination must not become SEARCH expected_container."""
++    state = ExecutionState()
++    brief = DecisionBrief(
++        goal={
++            "source_conversation": "Alice",
++            "destination": "Bob",
++            "target_contact": "Bob",
++            "contact": "Bob",  # ambiguous legacy field — must not win over source
++            "source_query": "invoice",
++            "originator": "Alice",
++        },
++        world={
++            "surface": "search",
++            "objects": [
++                {
++                    "id": "hit",
++                    "kind": "search_result",
++                    "text": "Alice https://example.com/invoice.pdf",
++                    "matches_goal": True,
++                    "sender": "Alice",
++                }
++            ],
++        },
++        task_state=TaskState(phase="reach_source", search_query="invoice"),
++        capabilities=["open_entity", "resolve_entity", "observe", "search"],
++    )
++    from plugin.agent.capabilities.search_episode import ensure_search_episode_from_brief
++
++    ep = ensure_search_episode_from_brief(state, brief) or {}
++    assert ep.get("expected_container") == "Alice"
++    assert ep.get("expected_originator") == "Alice"
++    assert ep.get("expected_container") != "Bob"
++
++
+ def test_strong_unknown_outranks_weaker_commit_ready():
+     ranked = rank_search_hypotheses(
+         [
+diff --git a/tests/plugin/test_source_query_binding.py b/tests/plugin/test_source_query_binding.py
+index 53a5ef296..9e6480e93 100644
+--- a/tests/plugin/test_source_query_binding.py
++++ b/tests/plugin/test_source_query_binding.py
+@@ -95,3 +95,16 @@ def test_host_contradict_and_support_helpers():
+     assert not query_supported_by_text("https://youtu.be/x", "zarooratwala")
+     assert text_locates_source_query("see zarooratwala.com now", "zarooratwala")
+     assert not text_locates_source_query("https://youtu.be/x", "zarooratwala")
++
++
++def test_self_you_identity_via_identity_resolver():
++    """self/You/me must canonicalize through IdentityResolver, not SEARCH heuristics."""
++    from plugin.agent.role_binding import IdentityResolver
++    from plugin.agent.source_query_binding import originator_matches
++
++    assert IdentityResolver.canonical_identity("You") == "self"
++    assert IdentityResolver.canonical_identity("me") == "self"
++    assert IdentityResolver.values_same_identity("self", "You")
++    assert originator_matches("You", "self")
++    assert originator_matches("self", "You")
++    assert not originator_matches("You", "Pallavi")
+-- 
+2.39.5 (Apple Git-154)
+

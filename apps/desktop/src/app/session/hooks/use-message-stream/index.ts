@@ -371,8 +371,46 @@ export function useMessageStream({
   )
 
   const completeAssistantMessage = useCallback(
-    (sessionId: string, text: string) => {
+    (
+      sessionId: string,
+      text: string,
+      options?: {
+        taskOutcome?: {
+          durationMs?: number | null
+          errorCode?: string
+          finalStatus: string
+          message?: string
+          phase?: string
+          summary?: string
+          taskRequestId?: string
+        }
+        uiHints?: Record<string, unknown>
+        waitingForUser?: boolean
+      }
+    ) => {
       let shouldHydrate = false
+      const uiHints = options?.uiHints
+      const waitingForUser = Boolean(options?.waitingForUser)
+      const taskOutcome = options?.taskOutcome
+      const hasUiHints = Boolean(uiHints && Object.keys(uiHints).length > 0)
+      // Clear prior interactive uiHints (QR / setup panels) when a turn completes.
+      const stripStaleInteractiveUiHints = (message: ChatMessage): ChatMessage => {
+        const hints = message.uiHints
+        if (!hints || typeof hints !== 'object') {
+          return message
+        }
+        const kind = typeof hints.kind === 'string' ? hints.kind.trim() : ''
+        const interactive =
+          Boolean(kind) ||
+          Boolean(typeof hints.qr_payload === 'string' && hints.qr_payload.trim()) ||
+          Boolean(typeof hints.setup_url === 'string' && hints.setup_url.trim()) ||
+          Boolean(typeof hints.deep_link === 'string' && hints.deep_link.trim())
+        if (!interactive) {
+          return message
+        }
+        const { uiHints: _drop, ...rest } = message
+        return rest
+      }
 
       const completedState = updateSessionState(sessionId, state => {
         // Late completion from an already-cancelled turn: cancelRun has
@@ -417,33 +455,53 @@ export function useMessageStream({
           return visibleFinalText ? [...kept, assistantTextPart(visibleFinalText)] : kept
         }
 
-        const completeMessage = (message: ChatMessage): ChatMessage =>
-          completionError
-            ? {
-                ...message,
-                error: completionError,
-                parts: message.parts.filter(part => part.type !== 'text'),
-                pending: false
-              }
-            : {
-                ...message,
-                parts: replaceTextPart(message.parts),
-                pending: false
-              }
+        const applyHints = (message: ChatMessage): ChatMessage => {
+          let next = message
+          if (hasUiHints) {
+            next = { ...next, uiHints }
+          } else if (message.uiHints) {
+            // Explicit empty/absent hints: drop stale Link-a-device QR on this bubble.
+            const { uiHints: _drop, ...rest } = next
+            next = rest
+          }
+          if (taskOutcome) {
+            next = { ...next, taskOutcome }
+          }
+          return next
+        }
 
-        const newAssistantFromCompletion = (): ChatMessage => ({
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          parts: completionError ? [] : [assistantTextPart(finalText)],
-          branchGroupId: state.pendingBranchGroup ?? undefined,
-          ...(completionError && { error: completionError })
-        })
+        const completeMessage = (message: ChatMessage): ChatMessage =>
+          applyHints(
+            completionError
+              ? {
+                  ...message,
+                  error: completionError,
+                  parts: message.parts.filter(part => part.type !== 'text'),
+                  pending: false
+                }
+              : {
+                  ...message,
+                  parts: replaceTextPart(message.parts),
+                  pending: false
+                }
+          )
+
+        const newAssistantFromCompletion = (): ChatMessage =>
+          applyHints({
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            parts: completionError ? [] : [assistantTextPart(finalText)],
+            branchGroupId: state.pendingBranchGroup ?? undefined,
+            ...(completionError && { error: completionError })
+          })
 
         const prev = state.messages
         let nextMessages = prev
 
         if (streamId && prev.some(m => m.id === streamId)) {
-          nextMessages = prev.map(m => (m.id === streamId ? completeMessage(m) : m))
+          nextMessages = prev.map(m =>
+            m.id === streamId ? completeMessage(m) : stripStaleInteractiveUiHints(m)
+          )
         } else {
           const fallbackIndex = [...prev]
             .reverse()
@@ -456,13 +514,21 @@ export function useMessageStream({
 
             if (existing.pending || (finalText && existingText === finalText)) {
               nextMessages = prev.map((message, messageIndex) =>
-                messageIndex === index ? completeMessage(message) : message
+                messageIndex === index
+                  ? completeMessage(message)
+                  : stripStaleInteractiveUiHints(message)
               )
             } else if (finalText) {
-              nextMessages = [...prev, newAssistantFromCompletion()]
+              nextMessages = [
+                ...prev.map(stripStaleInteractiveUiHints),
+                newAssistantFromCompletion()
+              ]
             }
           } else if (finalText) {
-            nextMessages = [...prev, newAssistantFromCompletion()]
+            nextMessages = [
+              ...prev.map(stripStaleInteractiveUiHints),
+              newAssistantFromCompletion()
+            ]
           }
         }
 
@@ -479,7 +545,7 @@ export function useMessageStream({
           pendingBranchGroup: null,
           awaitingResponse: false,
           busy: false,
-          needsInput: false,
+          needsInput: waitingForUser,
           turnStartedAt: null
         }
       })
@@ -510,7 +576,7 @@ export function useMessageStream({
         const streamId = state.streamId ?? `assistant-error-${Date.now()}`
         const groupId = state.pendingBranchGroup ?? undefined
         const prev = state.messages
-        const error = errorMessage.trim() || 'Hermes reported an error'
+        const error = errorMessage.trim() || 'Plugin reported an error'
 
         const nextMessages = prev.some(m => m.id === streamId)
           ? prev.map(message =>

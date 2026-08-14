@@ -7,6 +7,10 @@ import type { ModelOptionProvider } from '@/types/hermes'
  * chat would keep 404'ing the dead model. Deliberately conservative to never
  * clobber a still-valid pick: an unknown/absent provider, an empty model list
  * (re-auth / unconfigured), or a not-yet-loaded catalog all return false.
+ *
+ * Also treats obvious cross-catalog sticky ids as removed when the provider
+ * catalog is loaded: e.g. OpenRouter-shaped `vendor/model:free` while the
+ * active provider is `ollama-cloud` and that exact id is absent.
  */
 export function manualPickRemoved(
   providers: ModelOptionProvider[] | undefined,
@@ -31,7 +35,23 @@ export function manualPickRemoved(
     return false
   }
 
-  return !models.includes(model)
+  if (models.includes(model)) {
+    return false
+  }
+
+  // Bare-stem alias (nvidia/foo:free → foo) still counts as present.
+  let bare = model.includes('/') ? model.slice(model.lastIndexOf('/') + 1) : model
+  for (const suffix of [':free', ':batch', ':extended', ':fast', ':cloud']) {
+    if (bare.endsWith(suffix)) {
+      bare = bare.slice(0, -suffix.length)
+      break
+    }
+  }
+  if (bare && models.includes(bare)) {
+    return false
+  }
+
+  return true
 }
 
 interface ModelOptionsRequest {

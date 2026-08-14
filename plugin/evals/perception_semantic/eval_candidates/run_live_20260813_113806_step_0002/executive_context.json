@@ -1,0 +1,51 @@
+{
+  "goal": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay",
+  "goal_fields": {
+    "source_conversation": "Pallavi",
+    "destination": "Tanmay",
+    "source_query": "zarooratwala"
+  },
+  "current_intention": "Open Pallavi chat to find the link",
+  "perception_objective": {
+    "questions": [],
+    "focus": "",
+    "depth": "shallow",
+    "objective": "evidence sufficient to act",
+    "completion_condition": ""
+  },
+  "active_app": "WhatsApp",
+  "active_interaction_surface": "chat_list",
+  "known_bindings": {
+    "source_container": "Pallavi",
+    "source_object": "zarooratwala",
+    "originator": "Pallavi",
+    "destination": "Tanmay",
+    "open_conversation": ""
+  },
+  "previous_action": {
+    "action": "ComposeSearchQuery",
+    "family": "compose_search_query",
+    "target": "Search",
+    "text": "",
+    "result": {
+      "ok": true,
+      "message": "typed 'Pallavi zarooratwala' into search field label='Search' AXValue='Pallavi zarooratwala' open='retargeted ax search center=(297.5, 107.0)' evidence=\"AXStati"
+    },
+    "you_predicted": {
+      "surface": "search",
+      "source": "act_intention",
+      "action_family": "compose_search_query",
+      "likely_controls": [
+        "search"
+      ],
+      "semantic_target": "Search",
+      "attempt_id": "a_211389a2fa"
+    },
+    "effect": "verified",
+    "world_change_score": 1.0,
+    "diagnosis_hints": [
+      "promising_branch_explore_locally"
+    ]
+  },
+  "step": 2
+}

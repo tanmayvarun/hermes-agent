@@ -19,6 +19,12 @@ import { StreamStallIndicator } from '@/components/assistant-ui/thread/status'
 import { formatMessageTimestamp } from '@/components/assistant-ui/thread/timestamp'
 import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
+import {
+  isUserSetupBlockerUiHints,
+  UserSetupBlockerCard
+} from '@/components/chat/user-setup-blocker'
+import { TaskOutcomeFooter } from '@/components/chat/task-outcome-footer'
+import { isWhatsAppLinkUiHints, WhatsAppLinkQr } from '@/components/chat/whatsapp-link-qr'
 import { Codicon } from '@/components/ui/codicon'
 import { CopyButton } from '@/components/ui/copy-button'
 import {
@@ -73,6 +79,16 @@ export const AssistantMessage: FC<{
 
     return label
   })
+  const whatsappLinkHints = useAuiState(s => {
+    const custom = s.message.metadata?.custom as Record<string, unknown> | undefined
+    const hints = custom?.uiHints
+    return isWhatsAppLinkUiHints(hints) ? hints : null
+  })
+  const setupBlockerHints = useAuiState(s => {
+    const custom = s.message.metadata?.custom as Record<string, unknown> | undefined
+    const hints = custom?.uiHints
+    return isUserSetupBlockerUiHints(hints) ? hints : null
+  })
 
   // Preview targets only materialize once the turn completes — while running
   // the selector returns '' (stable), so per-token flushes skip the regex
@@ -118,6 +134,9 @@ export const AssistantMessage: FC<{
         )}
         {/* Todos render in the composer status stack now, not inline. */}
         <MessagePrimitive.Parts components={MESSAGE_PARTS_COMPONENTS} />
+        {whatsappLinkHints ? <WhatsAppLinkQr hints={whatsappLinkHints} /> : null}
+        {setupBlockerHints ? <UserSetupBlockerCard hints={setupBlockerHints} /> : null}
+        {!isRunning ? <TaskOutcomeFooter /> : null}
         {isRunning && <StreamStallIndicator />}
         {previewTargets.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">

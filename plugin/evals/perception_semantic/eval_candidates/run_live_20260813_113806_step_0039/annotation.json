@@ -1,0 +1,15 @@
+{
+  "status": "needs_annotation",
+  "phenomena": [],
+  "app": "WhatsApp",
+  "note": "",
+  "gold": {
+    "surfaces": [],
+    "claims": [],
+    "affordances": [],
+    "forbidden": [],
+    "acceptable_actions": [],
+    "forbidden_actions": [],
+    "rejected_evidence": []
+  }
+}

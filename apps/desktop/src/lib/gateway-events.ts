@@ -30,6 +30,7 @@ const UNSCOPED_STREAM_EVENT_TYPES = new Set([
   'reasoning.delta',
   'secret.request',
   'status.update',
+  'task.status',
   'sudo.request',
   'thinking.delta',
   'tool.complete',

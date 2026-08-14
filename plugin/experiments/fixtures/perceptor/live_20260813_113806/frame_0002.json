@@ -1,0 +1,1180 @@
+{
+  "frame": 2,
+  "captured_at": "2026-08-13T11:39:56",
+  "screenshot": "frame_0002.png",
+  "packet": {
+    "goal": {
+      "operation": "whatsapp_forward_message",
+      "source_conversation": "Pallavi",
+      "source_query": "zarooratwala",
+      "destination": "Tanmay",
+      "description": "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
+    },
+    "world_model": {
+      "frame": 1,
+      "surface": "chat_list",
+      "open_conversation": "",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "pallavi_row",
+          "kind": "chat_row",
+          "text": "Pallavi",
+          "point": [
+            208,
+            291
+          ],
+          "matches_goal": true
+        },
+        {
+          "id": "search_field",
+          "kind": "search_field",
+          "text": "Search",
+          "point": [
+            160,
+            57
+          ],
+          "matches_goal": false
+        }
+      ],
+      "layers": [
+        {
+          "role": "list",
+          "name": "Chat List",
+          "state": "active",
+          "objects": [
+            {
+              "id": "pallavi_row",
+              "kind": "chat_row",
+              "text": "Pallavi",
+              "point": [
+                208,
+                291
+              ],
+              "matches_goal": true
+            },
+            {
+              "id": "search_field",
+              "kind": "search_field",
+              "text": "Search",
+              "point": [
+                160,
+                57
+              ],
+              "matches_goal": false
+            }
+          ]
+        }
+      ],
+      "beliefs": [],
+      "progress": {
+        "phase": "locating_source",
+        "objective": "Open Pallavi chat to find the link",
+        "notes": "Found 'Pallavi' in chat list with draft preview containing query keyword."
+      },
+      "attempts": [
+        {
+          "frame": 1,
+          "action": "compose_search_query",
+          "target": "Search",
+          "result": "ok:typed 'Pallavi zarooratwala' into search field label='Search' AXValue='Pallavi zarooratwala' open='retargeted ax sear"
+        }
+      ],
+      "exhausted": [],
+      "task_surface": {
+        "app": "WhatsApp",
+        "window_bounds": [
+          42.0,
+          39.0,
+          1581.0,
+          979.0
+        ],
+        "window_id": 12968,
+        "display_index": 0,
+        "display_count": 1,
+        "displays": [
+          {
+            "index": 0,
+            "bounds": [
+              0.0,
+              0.0,
+              1710.0,
+              1107.0
+            ],
+            "backing_scale": 2.0,
+            "is_main": true
+          }
+        ],
+        "capture_origin": [
+          152.5,
+          39.0
+        ],
+        "capture_scale": 2.0,
+        "point_scale": 0.86484375,
+        "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+      }
+    },
+    "observation": {
+      "frame": 2,
+      "app": "WhatsApp",
+      "window_name": "WhatsApp",
+      "ax_node_count": 0,
+      "ax_content_node_count": 0,
+      "ax_evidence": [
+        {
+          "id": 5,
+          "role": "AXStaticText",
+          "label": "Q Pallavi zarooratwalal",
+          "bounds": [
+            124,
+            98,
+            147,
+            18
+          ],
+          "description": "Q Pallavi zarooratwalal"
+        },
+        {
+          "id": 8,
+          "role": "AXStaticText",
+          "label": "You: https://www.zarooratwala.com/?",
+          "bounds": [
+            127,
+            346,
+            229,
+            13
+          ],
+          "description": "You: https://www.zarooratwala.com/?"
+        },
+        {
+          "id": 10,
+          "role": "AXStaticText",
+          "label": "Pallavi",
+          "bounds": [
+            127,
+            328,
+            48,
+            13
+          ],
+          "description": "Pallavi"
+        },
+        {
+          "id": 11,
+          "role": "AXStaticText",
+          "label": "Pallavi",
+          "bounds": [
+            127,
+            505,
+            45,
+            13
+          ],
+          "description": "Pallavi"
+        },
+        {
+          "id": 13,
+          "role": "AXStaticText",
+          "label": "You: https://www.instagram.com/zarooratwala?",
+          "bounds": [
+            127,
+            622,
+            289,
+            16
+          ],
+          "description": "You: https://www.instagram.com/zarooratwala?"
+        },
+        {
+          "id": 14,
+          "role": "AXStaticText",
+          "label": "Pallavi",
+          "bounds": [
+            127,
+            606,
+            45,
+            13
+          ],
+          "description": "Pallavi"
+        },
+        {
+          "id": 18,
+          "role": "AXStaticText",
+          "label": "https://www.instagram.com/zarooratwala?",
+          "bounds": [
+            216,
+            682,
+            218,
+            11
+          ],
+          "description": "https://www.instagram.com/zarooratwala?"
+        },
+        {
+          "id": 25,
+          "role": "AXStaticText",
+          "label": "You: zarooratwala Pallavi",
+          "bounds": [
+            127,
+            248,
+            156,
+            14
+          ],
+          "description": "You: zarooratwala Pallavi"
+        },
+        {
+          "id": 29,
+          "role": "AXStaticText",
+          "label": "You: Zarooratwala",
+          "bounds": [
+            127,
+            526,
+            114,
+            11
+          ],
+          "description": "You: Zarooratwala"
+        },
+        {
+          "id": 30,
+          "role": "AXStaticText",
+          "label": "Pallavi",
+          "bounds": [
+            126,
+            229,
+            46,
+            14
+          ],
+          "description": "Pallavi"
+        },
+        {
+          "id": 38,
+          "role": "AXStaticText",
+          "label": "ZarooratWala - Fresh Groceries Delivered",
+          "bounds": [
+            216,
+            429,
+            213,
+            11
+          ],
+          "description": "ZarooratWala - Fresh Groceries Delivered"
+        },
+        {
+          "id": 40,
+          "role": "AXStaticText",
+          "label": "www.zarooratwala.com",
+          "bounds": [
+            216,
+            448,
+            117,
+            9
+          ],
+          "description": "www.zarooratwala.com"
+        },
+        {
+          "id": 2,
+          "role": "AXWindow",
+          "label": "‎WhatsApp",
+          "bounds": [
+            42,
+            39,
+            1581,
+            979
+          ]
+        },
+        {
+          "id": 4,
+          "role": "AXStaticText",
+          "label": "Chats",
+          "bounds": [
+            129,
+            57,
+            50,
+            16
+          ],
+          "description": "Chats"
+        },
+        {
+          "id": 6,
+          "role": "AXStaticText",
+          "label": "Links",
+          "bounds": [
+            161,
+            144,
+            36,
+            11
+          ],
+          "description": "Links"
+        },
+        {
+          "id": 7,
+          "role": "AXStaticText",
+          "label": "213",
+          "bounds": [
+            62,
+            87,
+            39,
+            29
+          ],
+          "description": "213"
+        },
+        {
+          "id": 9,
+          "role": "AXStaticText",
+          "label": "28/07/26",
+          "bounds": [
+            388,
+            327,
+            60,
+            15
+          ],
+          "description": "28/07/26"
+        },
+        {
+          "id": 12,
+          "role": "AXStaticText",
+          "label": "utm_source=ig&utm_medium=social&utm_content",
+          "bounds": [
+            127,
+            365,
+            312,
+            13
+          ],
+          "description": "utm_source=ig&utm_medium=social&utm_content"
+        },
+        {
+          "id": 15,
+          "role": "AXStaticText",
+          "label": "igsh=MTN2MDE50HNpcnpidQ==",
+          "bounds": [
+            127,
+            641,
+            204,
+            13
+          ],
+          "description": "igsh=MTN2MDE50HNpcnpidQ=="
+        },
+        {
+          "id": 16,
+          "role": "AXStaticText",
+          "label": "28/07/26 >",
+          "bounds": [
+            388,
+            505,
+            80,
+            14
+          ],
+          "description": "28/07/26 >"
+        },
+        {
+          "id": 17,
+          "role": "AXStaticText",
+          "label": "igsh=MTN2MDE50HNpcnpidQ==",
+          "bounds": [
+            214,
+            696,
+            172,
+            11
+          ],
+          "description": "igsh=MTN2MDE50HNpcnpidQ=="
+        },
+        {
+          "id": 19,
+          "role": "AXStaticText",
+          "label": "www.instagram.com",
+          "bounds": [
+            214,
+            712,
+            103,
+            11
+          ],
+          "description": "www.instagram.com"
+        },
+        {
+          "id": 20,
+          "role": "AXStaticText",
+          "label": "28/07/26",
+          "bounds": [
+            388,
+            604,
+            62,
+            13
+          ],
+          "description": "28/07/26"
+        },
+        {
+          "id": 24,
+          "role": "AXStaticText",
+          "label": "ôi Messages",
+          "bounds": [
+            64,
+            195,
+            124,
+            25
+          ],
+          "description": "ôi Messages"
+        },
+        {
+          "id": 35,
+          "role": "AXStaticText",
+          "label": "=link_in_bio&fbclid=PAdGRzdgTO4XNIeHRuA2Flb...",
+          "bounds": [
+            127,
+            379,
+            310,
+            16
+          ],
+          "description": "=link_in_bio&fbclid=PAdGRzdgTO4XNIeHRuA2Flb..."
+        },
+        {
+          "id": 42,
+          "role": "AXStaticText",
+          "label": "Friday >",
+          "bounds": [
+            407,
+            229,
+            62,
+            14
+          ],
+          "description": "Friday >"
+        },
+        {
+          "id": 44,
+          "role": "AXStaticText",
+          "label": "• Your personal messages are end-to-end encrypted",
+          "bounds": [
+            887,
+            935,
+            333,
+            16
+          ],
+          "description": "• Your personal messages are end-to-end encrypted"
+        },
+        {
+          "id": 48,
+          "role": "AXStaticText",
+          "label": "WhatsApp for Mac",
+          "bounds": [
+            947,
+            567,
+            211,
+            25
+          ],
+          "description": "WhatsApp for Mac"
+        },
+        {
+          "id": 1,
+          "role": "AXApplication",
+          "label": "WhatsApp",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": 3,
+          "role": "AXUnknown",
+          "label": "",
+          "bounds": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "source": "screenshot",
+          "state": "on",
+          "why": "always supplied; the authoritative account of the screen"
+        },
+        {
+          "source": "accessibility",
+          "state": "empty",
+          "why": "the app exposed no accessibility tree this frame",
+          "node_count": 0,
+          "content_node_count": 0
+        },
+        {
+          "source": "ocr",
+          "state": "on",
+          "why": "text read from the screenshot, bounds in screen points; corroborates the pixels but may split or clip words",
+          "lines": [
+            {
+              "text": "213",
+              "bounds": [
+                62.7,
+                87.3,
+                39.1,
+                29.9
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Chats",
+              "bounds": [
+                129.3,
+                57.2,
+                50.7,
+                16.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Q Pallavi zarooratwalal",
+              "bounds": [
+                124.7,
+                98.8,
+                147.1,
+                18.4
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "Links",
+              "bounds": [
+                161.5,
+                144.7,
+                36.8,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "ôi Messages",
+              "bounds": [
+                65.0,
+                195.3,
+                124.1,
+                25.3
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Pallavi",
+              "bounds": [
+                127.0,
+                229.6,
+                46.0,
+                14.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "You: zarooratwala Pallavi",
+              "bounds": [
+                127.0,
+                248.0,
+                156.3,
+                14.0
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Friday >",
+              "bounds": [
+                407.3,
+                229.2,
+                62.3,
+                14.9
+              ],
+              "confidence": 0.3
+            },
+            {
+              "text": "Pallavi",
+              "bounds": [
+                127.0,
+                328.6,
+                48.3,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "28/07/26",
+              "bounds": [
+                388.8,
+                327.8,
+                60.1,
+                15.4
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "You: https://www.zarooratwala.com/?",
+              "bounds": [
+                127.0,
+                346.9,
+                229.8,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "utm_source=ig&utm_medium=social&utm_content",
+              "bounds": [
+                127.0,
+                365.3,
+                312.5,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "=link_in_bio&fbclid=PAdGRzdgTO4XNIeHRuA2Flb...",
+              "bounds": [
+                127.0,
+                379.1,
+                310.2,
+                16.1
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "ZarooratWala - Fresh Groceries Delivered",
+              "bounds": [
+                216.6,
+                429.5,
+                213.7,
+                11.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "www.zarooratwala.com",
+              "bounds": [
+                216.6,
+                448.1,
+                117.2,
+                9.2
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Pallavi",
+              "bounds": [
+                127.0,
+                505.5,
+                46.0,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "You: Zarooratwala",
+              "bounds": [
+                127.0,
+                526.0,
+                114.9,
+                11.7
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "28/07/26 >",
+              "bounds": [
+                389.0,
+                505.5,
+                80.4,
+                14.0
+              ],
+              "confidence": 0.5
+            },
+            {
+              "text": "WhatsApp for Mac",
+              "bounds": [
+                947.4,
+                567.5,
+                211.4,
+                25.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "Pallavi",
+              "bounds": [
+                127.0,
+                606.6,
+                46.0,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "You: https://www.instagram.com/zarooratwala?",
+              "bounds": [
+                127.0,
+                622.5,
+                289.5,
+                16.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "igsh=MTN2MDE50HNpcnpidQ==",
+              "bounds": [
+                127.0,
+                641.1,
+                204.5,
+                13.8
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "28/07/26",
+              "bounds": [
+                389.0,
+                604.3,
+                62.1,
+                13.9
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "https://www.instagram.com/zarooratwala?",
+              "bounds": [
+                216.6,
+                682.5,
+                218.3,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "igsh=MTN2MDE50HNpcnpidQ==",
+              "bounds": [
+                214.3,
+                696.3,
+                172.3,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "www.instagram.com",
+              "bounds": [
+                214.3,
+                712.3,
+                103.4,
+                11.5
+              ],
+              "confidence": 1.0
+            },
+            {
+              "text": "• Your personal messages are end-to-end encrypted",
+              "bounds": [
+                887.7,
+                935.3,
+                333.2,
+                16.2
+              ],
+              "confidence": 1.0
+            }
+          ]
+        }
+      ],
+      "image_size": [
+        640,
+        1132
+      ],
+      "image_roi": [
+        221,
+        0,
+        1328,
+        1958
+      ],
+      "encoded_bytes": 37632
+    },
+    "allowed_actions": [
+      "click",
+      "right_click",
+      "hover",
+      "type",
+      "scroll",
+      "press_escape",
+      "observe",
+      "request_more_evidence",
+      "compose_search_query",
+      "locate_content",
+      "open_entity",
+      "resolve_entity",
+      "select_content",
+      "reveal_actions",
+      "invoke_affordance",
+      "dismiss_transient",
+      "revert_effects",
+      "relieve_host_storage",
+      "recover_blocked_app",
+      "commit_irreversible"
+    ],
+    "affordance_frontier": {
+      "surface": "chat_list",
+      "observed_actions": [
+        {
+          "id": "obj_1_compose_search_query",
+          "family": "compose_search_query",
+          "status": "observed",
+          "confidence": 0.6,
+          "target_label": "Search",
+          "expected_outcomes": [
+            {
+              "probability": 0.8,
+              "predicates": {
+                "conversation_open": true
+              }
+            }
+          ],
+          "evidence": [
+            {
+              "source": "vision_object",
+              "detail": "kind=search_field"
+            }
+          ]
+        }
+      ],
+      "latent_actions": [],
+      "probe_actions": [],
+      "known_transition_edges": [
+        {
+          "from_action": "open_entity",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "compose_search_query",
+          "to_surface": "search",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "open_entity",
+          "to_surface": "conversation",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "locate_content",
+          "to_surface": "conversation",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "invoke_affordance",
+          "to_surface": "dialog",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        },
+        {
+          "from_action": "commit_irreversible",
+          "to_surface": "dialog",
+          "probability": 0.7,
+          "enumeration_status": "predicted",
+          "basis": "surface graph"
+        }
+      ],
+      "unknown_frontiers": [],
+      "excluded_actions": []
+    },
+    "last_action": {
+      "action": "ComposeSearchQuery",
+      "family": "compose_search_query",
+      "target": "Search",
+      "text": "",
+      "result": {
+        "ok": true,
+        "message": "typed 'Pallavi zarooratwala' into search field label='Search' AXValue='Pallavi zarooratwala' open='retargeted ax search center=(297.5, 107.0)' evidence=\"AXStati"
+      },
+      "you_predicted": {
+        "surface": "search",
+        "source": "act_intention",
+        "action_family": "compose_search_query",
+        "likely_controls": [
+          "search"
+        ],
+        "semantic_target": "Search",
+        "attempt_id": "a_211389a2fa"
+      },
+      "effect": "verified",
+      "world_change_score": 1.0,
+      "diagnosis_hints": [
+        "promising_branch_explore_locally"
+      ]
+    },
+    "perception_objective": {
+      "questions": [],
+      "focus": "",
+      "depth": "shallow",
+      "objective": "evidence sufficient to act",
+      "completion_condition": ""
+    }
+  },
+  "response": {
+    "world_model": {
+      "frame": 2,
+      "surface": "chat_list",
+      "open_conversation": "",
+      "focused_field_role": "sidebar_search",
+      "objects": [
+        {
+          "id": "search_result_1",
+          "kind": "chat_row",
+          "text": "Pallavi: https://www.zarooratwala.com/?...",
+          "point": [
+            300,
+            350
+          ],
+          "matches_goal": true
+        },
+        {
+          "id": "search_result_2",
+          "kind": "chat_row",
+          "text": "Pallavi: https://www.instagram.com/zarooratwala?",
+          "point": [
+            300,
+            630
+          ],
+          "matches_goal": false
+        }
+      ],
+      "layers": [
+        {
+          "role": "list",
+          "name": "Chat List (Search Results)",
+          "state": "active",
+          "objects": [
+            {
+              "id": "search_result_1",
+              "kind": "chat_row",
+              "text": "Pallavi: https://www.zarooratwala.com/?...",
+              "point": [
+                300,
+                350
+              ],
+              "matches_goal": true
+            },
+            {
+              "id": "search_result_2",
+              "kind": "chat_row",
+              "text": "Pallavi: https://www.instagram.com/zarooratwala?",
+              "point": [
+                300,
+                630
+              ],
+              "matches_goal": false
+            }
+          ]
+        }
+      ],
+      "beliefs": [
+        {
+          "predicate": "source_message_found",
+          "value": true,
+          "confidence": 0.95,
+          "evidence": [
+            "OCR line 'You: https://www.zarooratwala.com/?' visible in search result row"
+          ],
+          "confirmed_on_frame": 2,
+          "owner_surface": "chat_list",
+          "semantic_role": "target_link"
+        }
+      ],
+      "progress": {
+        "phase": "locating_source",
+        "objective": "Open Pallavi chat to find the link",
+        "notes": "Search successfully filtered results. The specific message with the 'zarooratwala.com' link is visible in the first result row."
+      },
+      "attempts": [
+        {
+          "frame": 1,
+          "action": "compose_search_query",
+          "target": "Search",
+          "result": "ok:typed 'Pallavi zarooratwala' into search field"
+        }
+      ],
+      "exhausted": [],
+      "task_surface": {
+        "app": "WhatsApp",
+        "window_bounds": [
+          42.0,
+          39.0,
+          1581.0,
+          979.0
+        ],
+        "window_id": 12968,
+        "display_index": 0,
+        "display_count": 1,
+        "displays": [
+          {
+            "index": 0,
+            "bounds": [
+              0.0,
+              0.0,
+              1710.0,
+              1107.0
+            ],
+            "backing_scale": 2.0,
+            "is_main": true
+          }
+        ],
+        "capture_origin": [
+          152.5,
+          39.0
+        ],
+        "capture_scale": 1.0,
+        "point_scale": 0.86484375,
+        "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+      }
+    },
+    "backtrack": {},
+    "observed_state": {
+      "surface": "chat_list",
+      "open_conversation": "",
+      "target_object_visible": true,
+      "target_object_id": "search_result_1",
+      "layers": [
+        {
+          "role": "list",
+          "name": "Chat List (Search Results)",
+          "state": "active",
+          "objects": [
+            {
+              "id": "search_result_1",
+              "kind": "chat_row",
+              "text": "Pallavi: https://www.zarooratwala.com/?...",
+              "point": [
+                300,
+                350
+              ],
+              "matches_goal": true
+            },
+            {
+              "id": "search_result_2",
+              "kind": "chat_row",
+              "text": "Pallavi: https://www.instagram.com/zarooratwala?",
+              "point": [
+                300,
+                630
+              ],
+              "matches_goal": false
+            }
+          ]
+        }
+      ],
+      "focused_field_role": "sidebar_search"
+    },
+    "belief_updates": [
+      {
+        "predicate": "source_message_found",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "OCR line 'You: https://www.zarooratwala.com/?' visible in search result row"
+        ],
+        "confirmed_on_frame": 2,
+        "owner_surface": "chat_list",
+        "semantic_role": "target_link"
+      }
+    ],
+    "next_action": {},
+    "next_actions": [
+      {
+        "rank": 1,
+        "family": "open_entity",
+        "target_id": null,
+        "text": "Click the first search result row containing the zarooratwala.com link",
+        "confidence": 0.9,
+        "why": "The goal requires opening the conversation where this specific link was sent. The search result clearly displays the link preview, confirming this is the correct entry point."
+      }
+    ],
+    "suggested_actions": [
+      {
+        "rank": 1,
+        "family": "open_entity",
+        "target_id": null,
+        "text": "Click the first search result row containing the zarooratwala.com link",
+        "confidence": 0.9,
+        "why": "The goal requires opening the conversation where this specific link was sent. The search result clearly displays the link preview, confirming this is the correct entry point."
+      }
+    ],
+    "expected_transition": {
+      "surface": "conversation",
+      "likely_controls": [
+        "message_bubble",
+        "forward_button"
+      ]
+    },
+    "surprise_explanation": {
+      "cause": "unknown",
+      "locus": "unknown",
+      "transition_class": "unknown",
+      "confidence": 0.0,
+      "detail": "",
+      "evidence": [],
+      "repair": {
+        "kind": "reperceive"
+      },
+      "do_not_repeat": [],
+      "recommended_next": "reperceive",
+      "source": "model"
+    },
+    "visible_objects": [
+      {
+        "id": "search_result_1",
+        "kind": "chat_row",
+        "text": "Pallavi: https://www.zarooratwala.com/?...",
+        "point": [
+          300,
+          350
+        ],
+        "matches_goal": true
+      },
+      {
+        "id": "search_result_2",
+        "kind": "chat_row",
+        "text": "Pallavi: https://www.instagram.com/zarooratwala?",
+        "point": [
+          300,
+          630
+        ],
+        "matches_goal": false
+      }
+    ],
+    "missing_evidence": [],
+    "evidence_gaps": [
+      "goal control label seen but lacking actuatable geometry (point/bounds)"
+    ],
+    "coverage": 0.9,
+    "missing_affordance_information": [],
+    "recommended_probe": {},
+    "affordance_qc": {
+      "expected_found": true,
+      "missing": [],
+      "notes": "The target message is explicitly visible in the search results list."
+    },
+    "affordance_stance": "explore_needed",
+    "scene_summary": "WhatsApp search results showing 'Pallavi' chats filtered by 'zarooratwala'. The top result contains the target URL 'www.zarooratwala.com'.",
+    "confidence": 0.95,
+    "model": "qwen3.5:397b",
+    "latency_s": 21.366
+  },
+  "shadow_task_state": {
+    "phase": "OPEN_SOURCE",
+    "local_objective": "open visible source conversation",
+    "predicates": {
+      "source_conversation_open": false,
+      "source_conversation_visible": true,
+      "source_object_visible": false,
+      "source_object_selected": false,
+      "forward_surface_open": false,
+      "destination_picker_visible": false,
+      "destination_selected": false,
+      "forward_completed": false
+    },
+    "ax_content_node_count": 0,
+    "open_conversation": "",
+    "wa_screen": "LIST"
+  }
+}

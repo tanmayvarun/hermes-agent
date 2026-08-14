@@ -290,6 +290,74 @@ def new_capture_id() -> str:
     return f"c_{uuid.uuid4().hex[:10]}"
 
 
+def frame_id_for_space(
+    graph: Optional["FrameGraph"],
+    coordinate_space: str,
+) -> str:
+    """FrameGraph frame_id for ``coordinate_space``, or \"\" if unknown.
+
+    Never invents a frame. Screen geometry must not receive the image frame id
+    (and vice versa).
+    """
+    if graph is None:
+        return ""
+    space = str(coordinate_space or "").strip().lower()
+    if space == "screen":
+        fid = str(getattr(graph, "screen_frame_id", "") or "").strip()
+        if fid:
+            return fid
+        fr = graph.by_space("screen")
+        return str(fr.frame_id if fr is not None else "") or ""
+    if space == "image":
+        fid = str(getattr(graph, "image_frame_id", "") or "").strip()
+        if fid:
+            return fid
+        fr = graph.by_space("image")
+        return str(fr.frame_id if fr is not None else "") or ""
+    if space == "window":
+        fid = str(getattr(graph, "window_frame_id", "") or "").strip()
+        if fid:
+            return fid
+        fr = graph.by_space("window")
+        return str(fr.frame_id if fr is not None else "") or ""
+    return ""
+
+
+def resolve_frame_id_for_space(
+    *,
+    frame_id: str = "",
+    coordinate_space: str = "",
+    graph: Optional["FrameGraph"] = None,
+) -> str:
+    """Keep ``frame_id`` only when it matches ``coordinate_space``.
+
+    Missing stamp → FrameGraph fallback for that space. Wrong-space stamp →
+    empty (fail closed). Never copies a generic document frame onto geometry.
+    """
+    space = str(coordinate_space or "").strip().lower()
+    if space not in {"screen", "image", "window"}:
+        return ""
+    expected = frame_id_for_space(graph, space)
+    fid = str(frame_id or "").strip()
+    if not fid:
+        return expected
+    if graph is not None:
+        fr = graph.get(fid)
+        if fr is not None:
+            if str(fr.space or "").strip().lower() == space:
+                return fid
+            return ""  # impossible pairing: e.g. image frame on screen geometry
+        # Unknown id not in graph — refuse rather than trust a generic stamp.
+        return ""
+    # No graph: allow only space-suffixed / desktop screen identity forms.
+    low = fid.lower()
+    if f"/{space}" in low:
+        return fid
+    if space == "screen" and low in {"desktop:current", "screen"}:
+        return fid
+    return ""
+
+
 def new_frame_id(space: str = "frame", *, capture_id: str = "") -> str:
     """Stable-within-capture frame id: ``capture:<id>/<space>`` when possible."""
     cid = str(capture_id or "").strip()

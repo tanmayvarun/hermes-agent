@@ -1,9 +1,9 @@
 {
   "name": "hermes",
-  "productName": "Hermes",
+  "productName": "Plugin",
   "private": true,
   "version": "0.17.0",
-  "description": "Native desktop shell for Hermes Agent.",
+  "description": "Native desktop shell for Plugin Agent.",
   "author": "Nous Research",
   "type": "module",
   "main": "dist/electron-main.mjs",
@@ -64,6 +64,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@fontsource/poppins": "^5.3.0",
     "@hermes/shared": "file:../shared",
     "@icons-pack/react-simple-icons": "=13.11.1",
     "@lezer/highlight": "^1.2.3",
@@ -99,6 +100,7 @@
     "motion": "^12.38.0",
     "nanostores": "^1.3.0",
     "node-pty": "1.1.0",
+    "qrcode": "^1.5.4",
     "radix-ui": "^1.4.3",
     "react": "^19.2.5",
     "react-arborist": "^3.5.0",
@@ -129,6 +131,7 @@
     "@types/d3-force": "^3.0.10",
     "@types/hast": "^3.0.4",
     "@types/node": "^22.20.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.59.1",
@@ -157,17 +160,17 @@
   "build": {
     "electronVersion": "40.10.2",
     "appId": "com.nousresearch.hermes",
-    "productName": "Hermes",
-    "executableName": "Hermes",
+    "productName": "Plugin",
+    "executableName": "Plugin",
     "protocols": [
       {
-        "name": "Hermes Protocol",
+        "name": "Plugin Protocol",
         "schemes": [
           "hermes"
         ]
       }
     ],
-    "artifactName": "Hermes-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Plugin-${version}-${os}-${arch}.${ext}",
     "icon": "assets/icon",
     "directories": {
       "output": "release"
@@ -203,11 +206,11 @@
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
       "extendInfo": {
-        "CFBundleDisplayName": "Hermes",
-        "CFBundleExecutable": "Hermes",
-        "CFBundleName": "Hermes",
-        "NSAudioCaptureUsageDescription": "Hermes uses audio capture for voice conversations.",
-        "NSMicrophoneUsageDescription": "Hermes uses the microphone for voice input and voice conversations."
+        "CFBundleDisplayName": "Plugin",
+        "CFBundleExecutable": "Plugin",
+        "CFBundleName": "Plugin",
+        "NSAudioCaptureUsageDescription": "Plugin uses audio capture for voice conversations.",
+        "NSMicrophoneUsageDescription": "Plugin uses the microphone for voice input and voice conversations."
       },
       "gatekeeperAssess": false,
       "hardenedRuntime": true,
@@ -217,7 +220,7 @@
       ]
     },
     "dmg": {
-      "title": "Install Hermes",
+      "title": "Install Plugin",
       "backgroundColor": "#f5f5f7",
       "iconSize": 96,
       "window": {
@@ -239,7 +242,7 @@
       ]
     },
     "win": {
-      "legalTrademarks": "Hermes",
+      "legalTrademarks": "Plugin",
       "target": [
         "nsis",
         "msi"
@@ -249,7 +252,7 @@
     "linux": {
       "category": "Development",
       "maintainer": "Nous Research <support@nousresearch.com>",
-      "synopsis": "Native desktop shell for Hermes Agent.",
+      "synopsis": "Native desktop shell for Plugin Agent.",
       "target": [
         "AppImage",
         "deb",
@@ -260,8 +263,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "shortcutName": "Hermes",
-      "uninstallDisplayName": "Hermes",
+      "shortcutName": "Plugin",
+      "uninstallDisplayName": "Plugin",
       "warningsAsErrors": false
     }
   }

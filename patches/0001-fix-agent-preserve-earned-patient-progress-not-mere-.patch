@@ -1,0 +1,814 @@
+From 532eda40822cb7b26c782720a72fbd455546297e Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 12:11:31 +0530
+Subject: [PATCH 1/2] fix(agent): preserve earned patient progress, not mere
+ visibility
+
+Patient authority now requires prior retrieval/binding (content_located or
+content-role SEARCH choice). Drop phase/document_locates as commitment
+evidence; scope affordance repair to established_patient_ref; treat absence
+as grounding loss, not identity contradiction.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py | 105 +++++++++---
+ plugin/agent/decision_consultation.py       | 155 ++++++++++++++---
+ plugin/agent/executive/meta_action.py       |   3 +
+ plugin/agent/executive/meta_consultation.py |  17 +-
+ plugin/agent/executive/sync.py              |  16 ++
+ plugin/agent/unified_cognition.py           |   6 +-
+ tests/plugin/test_progress_preservation.py  | 174 ++++++++++++++------
+ 7 files changed, 369 insertions(+), 107 deletions(-)
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index f1632e638..2e880476e 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -731,7 +731,11 @@ def note_retrieval_complete(
+ 
+ 
+ def search_selection_trace(episode: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+-    """Compact candidate→ledger→choice→ACT-target telemetry for live probes."""
++    """SEARCH-side telemetry: candidate→ledger→selected hypothesis.
++
++    Does **not** invent an ACT target. Correlate separately with the observed
++    DecisionOutcome / PlanStep target (see ``correlate_search_choice_with_decision``).
++    """
+     ep = episode if isinstance(episode, dict) else {}
+     if not ep:
+         return {}
+@@ -742,21 +746,50 @@ def search_selection_trace(episode: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+             path = "rank"
+         elif str(ep.get("chosen_label") or "").strip():
+             path = "source_contact_shortcut"
+-    chosen = str(ep.get("chosen_label") or ep.get("explore_label") or "").strip()
++    chosen = str(ep.get("chosen_label") or "").strip()
++    explore = str(ep.get("explore_label") or "").strip()
+     return {
+         "selection_path": path,
+         "candidate_count": int(ep.get("candidate_count") or 0),
+         "hypothesis_ledger": ledger,
+         "selected_hypothesis": chosen,
+-        "explore_label": str(ep.get("explore_label") or ""),
++        "explore_label": explore,
+         "choice_confidence": str(ep.get("choice_confidence") or ""),
+         "role_resolved": bool(ep.get("role_resolved")),
+-        "act_target": chosen,
+         "status": str(ep.get("status") or ""),
+         "role": str(ep.get("role") or ""),
+     }
+ 
+ 
++def correlate_search_choice_with_decision(
++    episode: Optional[Dict[str, Any]],
++    *,
++    decision_target: str = "",
++) -> Dict[str, Any]:
++    """Observe whether ACT/decision target consumed the SEARCH authority output.
++
++    Compares the observed decision target against SEARCH's committed choice
++    (``selected_hypothesis``) or, while still ranking, the explore pointer.
++    Does not invent decision_target from the episode.
++    """
++    sel = search_selection_trace(episode)
++    decided = str(decision_target or "").strip()
++    chosen = str(sel.get("selected_hypothesis") or "").strip()
++    explore = str(sel.get("explore_label") or "").strip()
++    authority = chosen or explore
++    match = False
++    if decided and authority:
++        left = authority.lower()
++        right = decided.lower()
++        match = left == right or left in right or right in left
++    return {
++        **sel,
++        "search_authority_label": authority,
++        "decision_target": decided,
++        "search_choice_matches_decision": match,
++    }
++
++
+ def complete_search_choice(
+     execution_state: Any,
+     *,
+@@ -1537,23 +1570,31 @@ def search_continue_capability(
+     ).strip()
+     # Open conversation + unpaid content query under SEARCH → locate in-chat
+     # (live 225807: SEARCH meta kept falling through to Observe).
+-    # Live 113806: skip when patient content is already established on-screen —
+-    # affordance repair must not regress into retrieval.
+-    patient_known = False
+-    if link_q and surface == "conversation":
+-        try:
+-            from plugin.agent.source_query_binding import document_locates_source_query
+-
+-            doc = brief.world if isinstance(getattr(brief, "world", None), dict) else {}
+-            patient_known = bool(document_locates_source_query(doc, link_q))
+-        except Exception:
+-            patient_known = False
++    # Live 113806: skip only when retrieval already earned a patient (not mere
++    # on-screen query text). Affordance repair must not invent commitment.
++    patient_earned = bool(getattr(task, "content_located", False))
++    if not patient_earned:
++        ep_chk = search_episode_of(execution_state) or {}
++        if not ep_chk and isinstance(getattr(brief, "search_episode", None), dict):
++            ep_chk = brief.search_episode or {}
++        role_chk = str(ep_chk.get("role") or "").strip().lower()
++        chosen_chk = str(ep_chk.get("chosen_label") or "").strip()
++        if (
++            role_chk == "content"
++            and chosen_chk
++            and (
++                bool(ep_chk.get("retrieval_complete"))
++                or str(ep_chk.get("status") or "").strip().lower() == "complete"
++                or bool(str(ep_chk.get("choice_confidence") or "").strip())
++            )
++        ):
++            patient_earned = True
+     if (
+         surface == "conversation"
+         and meta == "search"
+         and bool(getattr(task, "source_chat_open", False))
+         and not bool(getattr(task, "content_located", False))
+-        and not patient_known
++        and not patient_earned
+         and link_q
+         and "locate_content" in allowed
+     ):
+@@ -1906,23 +1947,23 @@ def meta_referent_search_signals(
+     # (live 214626: false/true source open + ACT on unrelated visible row).
+     role = str(ep.get("role") or "").strip().lower()
+     content_episode_done = bool(complete and role == "content")
+-    # Soft on-screen patient clears SEARCH debt without RoleBinder commit
+-    # (live 113806: visible URL + reveal miss must not re-arm locate).
+-    patient_on_screen = bool(content_located)
+-    if not patient_on_screen and link_q and isinstance(document, dict):
+-        try:
+-            from plugin.agent.source_query_binding import document_locates_source_query
+-
+-            patient_on_screen = bool(document_locates_source_query(document, link_q))
+-        except Exception:
+-            patient_on_screen = False
++    # Content SEARCH debt clears only on earned retrieval progress
++    # (content_located / content-role choice) — never mere query-bearing text.
++    content_retrieval_earned = bool(content_located) or content_episode_done
++    if (
++        not content_retrieval_earned
++        and role == "content"
++        and bool(ep.get("retrieval_complete"))
++        and str(ep.get("chosen_label") or "").strip()
++    ):
++        content_retrieval_earned = True
+     # Content SEARCH debt only after the container is open. A completed *source*
+     # episode (Pallavi row chosen) must not clear it (live 214025).
+     need_content = (
+         bool(link_q)
+         and bool(source_chat_open)
+         and not failed
+-        and not patient_on_screen
++        and not content_retrieval_earned
+         and not content_episode_done
+     )
+     need_dest = surf == "forward_picker" and bool(dest) and not complete
+@@ -2021,6 +2062,16 @@ def meta_referent_search_signals(
+         "contact": contact,
+         "link_query": link_q,
+         "content_located": bool(content_located),
++        "content_retrieval_earned": bool(content_retrieval_earned),
++        "earned_patient_ref": (
++            str(ep.get("chosen_label") or "").strip()
++            if content_retrieval_earned and role == "content"
++            else (
++                str(link_q or "").strip()
++                if content_located
++                else ""
++            )
++        ),
+         "address_known": address_known,
+         "retrieve_ready": retrieve_ready,
+         "source_contact_open_ready": source_contact_open_ready,
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 1589c9b79..a6b193a10 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -256,7 +256,7 @@ class DecisionBrief:
+                     for k in (
+                         "selection_path",
+                         "selected_hypothesis",
+-                        "act_target",
++                        "explore_label",
+                         "candidate_count",
+                         "choice_confidence",
+                     )
+@@ -3085,36 +3085,120 @@ def _entity_resolution_type_query_outcome(
+     )
+ 
+ 
+-def _patient_content_established(brief: "DecisionBrief") -> bool:
+-    """True when source-query patient is already on-screen / soft-located.
++def _patient_refs_compatible(a: str, b: str) -> bool:
++    """Loose identity match for earned patient vs reveal/select target."""
++    left = str(a or "").strip().lower()
++    right = str(b or "").strip().lower()
++    if not left or not right:
++        return False
++    if left == right:
++        return True
++    return left in right or right in left
++
++
++def _earned_patient_ref(
++    brief: "DecisionBrief",
++    *,
++    execution_state: Any = None,
++) -> str:
++    """Patient previously earned by retrieval/binding — never mere visibility.
+ 
+-    Interaction-affordance failures must not erase this fact and restart
+-    retrieval (live 113806: reveal miss → locate_content found=False).
++    Progress can only be preserved if this layer previously earned it.
++    ``document_locates_source_query`` / phase are not authority.
+     """
++    ep = brief.search_episode if isinstance(brief.search_episode, dict) else {}
++    role = str(ep.get("role") or "").strip().lower()
++    chosen = str(ep.get("chosen_label") or "").strip()
++    # Content-role SEARCH choice / retrieval completion.
++    if (
++        chosen
++        and role == "content"
++        and (
++            bool(ep.get("retrieval_complete"))
++            or str(ep.get("status") or "").strip().lower() == "complete"
++            or bool(str(ep.get("choice_confidence") or "").strip())
++        )
++    ):
++        return chosen
+     task = brief.task_state
+     if bool(getattr(task, "content_located", False)):
+-        return True
+-    link_q = str(
+-        (brief.goal or {}).get("source_query")
+-        or (brief.goal or {}).get("link_query")
++        if chosen and role in {"", "content"}:
++            return chosen
++        last = getattr(task, "last_action", None) or {}
++        if isinstance(last, dict):
++            fam = str(last.get("family") or "").strip().lower()
++            tgt = str(last.get("target") or last.get("text") or "").strip()
++            if tgt and fam in {
++                "reveal_actions",
++                "select_content",
++                "locate_content",
++                "invoke_affordance",
++            }:
++                return tgt
++        link_q = str(
++            (brief.goal or {}).get("source_query")
++            or (brief.goal or {}).get("link_query")
++            or ""
++        ).strip()
++        return link_q
++    # Affordance commitment / reground patient (semantic identity, not geometry).
++    if execution_state is not None:
++        ref = str(
++            getattr(execution_state, "grounding_reground_patient_ref", "") or ""
++        ).strip()
++        if ref:
++            return ref
++    return ""
++
++
++def _patient_identity_contradicted(
++    brief: "DecisionBrief",
++    *,
++    execution_state: Any = None,
++) -> bool:
++    """True only on explicit identity/container contradiction — not mere absence."""
++    goal = brief.goal if isinstance(brief.goal, dict) else {}
++    expected = str(goal.get("source_conversation") or goal.get("contact") or "").strip()
++    open_c = str(
++        (brief.world or {}).get("open_conversation")
++        or getattr(brief.task_state, "open_conversation", "")
+         or ""
+     ).strip()
+-    if not link_q:
+-        return False
+-    doc = brief.world if isinstance(brief.world, dict) else {}
+-    try:
+-        from plugin.agent.source_query_binding import document_locates_source_query
++    if expected and open_c:
++        try:
++            from plugin.agent.capabilities.resolve_entity import open_matches_referent
+ 
+-        if document_locates_source_query(doc, link_q):
+-            return True
+-    except Exception:
+-        pass
+-    # Soft extras / phase already acknowledging patient presence.
+-    if str(getattr(task, "phase", "") or "").strip().lower() == "act_on_content":
++            if not open_matches_referent(open_c, expected):
++                return True
++        except Exception:
++            pass
++    ep = brief.search_episode if isinstance(brief.search_episode, dict) else {}
++    status = str(ep.get("status") or "").strip().lower()
++    role = str(ep.get("role") or "").strip().lower()
++    if role == "content" and status in {"failed", "exhausted"}:
++        return True
++    if execution_state is not None and bool(
++        getattr(execution_state, "role_identity_search_owed", False)
++    ):
+         return True
+     return False
+ 
+ 
++def _patient_content_established(
++    brief: "DecisionBrief",
++    *,
++    execution_state: Any = None,
++) -> bool:
++    """True when retrieval already earned a patient that is still valid.
++
++    Interaction-affordance failures must not erase that earned fact and restart
++    retrieval (live 113806). Visibility / phase alone must not invent it.
++    """
++    if _patient_identity_contradicted(brief, execution_state=execution_state):
++        return False
++    return bool(_earned_patient_ref(brief, execution_state=execution_state))
++
++
+ def _content_search_locate_outcome(
+     brief: "DecisionBrief",
+     *,
+@@ -3138,9 +3222,11 @@ def _content_search_locate_outcome(
+     task = brief.task_state
+     if not bool(getattr(task, "source_chat_open", False)):
+         return None
+-    if bool(getattr(task, "content_located", False)):
++    if bool(getattr(task, "content_located", False)) and not _patient_identity_contradicted(
++        brief, execution_state=execution_state
++    ):
+         return None
+-    if _patient_content_established(brief):
++    if _patient_content_established(brief, execution_state=execution_state):
+         return None
+     link_q = str(
+         (brief.goal or {}).get("source_query")
+@@ -3158,9 +3244,14 @@ def _content_search_locate_outcome(
+     prior_cap = str(getattr(prior, "capability", "") or "").strip().lower()
+     if prior_cap == "locate_content" and str(getattr(prior, "target", "") or "").strip():
+         return None
+-    # Affordance repair: never overwrite reveal/select with locate while patient known.
++    # Affordance repair: preserve locate-suppression only for the same earned patient.
+     if prior_cap in {"reveal_actions", "select_content"}:
+-        return None
++        prior_tgt = str(getattr(prior, "target", "") or "").strip()
++        earned = _earned_patient_ref(brief, execution_state=execution_state)
++        if earned and (
++            not prior_tgt or _patient_refs_compatible(prior_tgt, earned)
++        ):
++            return None
+     if prior_cap in {"type_query", "compose_search_query", "resolve_entity"}:
+         # Prefer locate inside an open chat over sidebar compose.
+         if prior_cap != "type_query" or surface == "conversation":
+@@ -3607,8 +3698,20 @@ def apply_decision_consultation(
+         brief, prior=outcome, execution_state=execution_state
+     )
+     _cap_now = str(outcome.capability or "").strip().lower()
+-    _patient_known = _patient_content_established(brief)
++    _patient_known = _patient_content_established(
++        brief, execution_state=execution_state
++    )
+     _affordance_caps = {"reveal_actions", "select_content"}
++    _same_patient_affordance = False
++    if _cap_now in _affordance_caps and _patient_known:
++        earned = _earned_patient_ref(brief, execution_state=execution_state)
++        _same_patient_affordance = bool(
++            earned
++            and (
++                not str(outcome.target or "").strip()
++                or _patient_refs_compatible(str(outcome.target or ""), earned)
++            )
++        )
+     if _content_seal is not None and (
+         not outcome.ok
+         or (
+@@ -3621,7 +3724,7 @@ def apply_decision_consultation(
+                 "open_entity",
+                 "commit_irreversible",
+             }
+-            or (_cap_now in _affordance_caps and not _patient_known)
++            or (_cap_now in _affordance_caps and not _same_patient_affordance)
+         )
+     ):
+         outcome = _content_seal
+diff --git a/plugin/agent/executive/meta_action.py b/plugin/agent/executive/meta_action.py
+index 689c6f8a4..ec1b8f387 100644
+--- a/plugin/agent/executive/meta_action.py
++++ b/plugin/agent/executive/meta_action.py
+@@ -212,6 +212,9 @@ class MetaContext:
+     reveal_episode_failed: bool = False
+     # After failed reveal: next recovery capability (usually select_content).
+     reveal_prefer_capability: str = ""
++    # Patient previously earned by retrieval/binding (not mere visibility).
++    # Affordance repair must scope to this same patient.
++    established_patient_ref: str = ""
+     # IntentionFrame: EXPLORE objective still has eligible methods.
+     intention_explore_active: bool = False
+     # IntentionFrame derived local-route / budget exhaustion.
+diff --git a/plugin/agent/executive/meta_consultation.py b/plugin/agent/executive/meta_consultation.py
+index e0e4b6522..7e3439365 100644
+--- a/plugin/agent/executive/meta_consultation.py
++++ b/plugin/agent/executive/meta_consultation.py
+@@ -616,11 +616,15 @@ def sanitize_meta_choice(
+                 "source": "llm_contract",
+             },
+         )
+-    # Patient already established (SEARCH debt cleared) + reveal/select failure:
+-    # repair interaction affordance on the same patient — do not re-enter SEARCH
+-    # (live 113806: context_menu miss → locate_content found=False).
++    # Same earned patient + reveal/select failure → repair affordance for that
++    # patient only. Generic reveal_failed + any query-bearing object must not
++    # suppress SEARCH (live 113806 authority correction).
++    established_patient = str(
++        getattr(ctx, "established_patient_ref", "") or ""
++    ).strip()
+     if (
+         reveal_failed
++        and established_patient
+         and bool(getattr(ctx, "address_known", False))
+         and not content_search_owed
+         and not bool(getattr(ctx, "role_identity_search_owed", False))
+@@ -633,24 +637,27 @@ def sanitize_meta_choice(
+         if prefer_select:
+             return MetaChoice(
+                 MetaAction.ACT,
+-                "contract: patient established — repair affordance via select, not re-search",
++                "contract: earned patient — repair same-patient affordance via select, not re-search",
+                 {
+                     "act": 1.0,
+                     "affordance_repair": 1.0,
+                     "reveal_episode_failed": 1.0,
+                     "forbid_search": 1.0,
++                    "established_patient_ref": 1.0,
+                     "llm_proposed": action.value,
+                     "source": "llm_contract",
+                 },
++                capability="select_content",
+             )
+         return MetaChoice(
+             MetaAction.EXPLORE,
+-            "contract: patient established — repair affordance, not re-search",
++            "contract: earned patient — repair same-patient affordance, not re-search",
+             {
+                 "explore": 1.0,
+                 "affordance_repair": 1.0,
+                 "reveal_episode_failed": 1.0,
+                 "forbid_search": 1.0,
++                "established_patient_ref": 1.0,
+                 "llm_proposed": action.value,
+                 "source": "llm_contract",
+             },
+diff --git a/plugin/agent/executive/sync.py b/plugin/agent/executive/sync.py
+index 6a703b7c8..51d35a36a 100644
+--- a/plugin/agent/executive/sync.py
++++ b/plugin/agent/executive/sync.py
+@@ -332,6 +332,7 @@ def _route_discovery_meta_kwargs(
+         "act_clear": False,
+         "reveal_episode_failed": False,
+         "reveal_prefer_capability": "",
++        "established_patient_ref": "",
+         "intention_explore_active": False,
+         "intention_locally_exhausted": False,
+         "locate_effect_verify_owed": False,
+@@ -459,6 +460,21 @@ def _route_discovery_meta_kwargs(
+         or str(referent_signals.get("chosen_label") or "").strip()
+     )
+     address_known = bool(referent_signals.get("address_known"))
++    # Affordance-repair authority: earned content patient only — never invent
++    # from arbitrary query-bearing text on screen.
++    earned_ref = str(referent_signals.get("earned_patient_ref") or "").strip()
++    if not earned_ref and bool(referent_signals.get("content_retrieval_earned")):
++        if str(referent_signals.get("role") or "").strip().lower() == "content":
++            earned_ref = str(referent_signals.get("chosen_label") or "").strip()
++        if not earned_ref:
++            earned_ref = str(referent_signals.get("link_query") or "").strip()
++    if not earned_ref and bool(referent_signals.get("content_located")):
++        earned_ref = str(referent_signals.get("link_query") or "").strip()
++    if not earned_ref:
++        earned_ref = str(
++            getattr(execution_state, "grounding_reground_patient_ref", "") or ""
++        ).strip()
++    out["established_patient_ref"] = earned_ref
+     # Route discovery only while a probe still has information value:
+     # pending unpaid look, or content known + empty grounded + budget left.
+     # Terminal failed_reveal does *not* keep route debt (escalation → ACT).
+diff --git a/plugin/agent/unified_cognition.py b/plugin/agent/unified_cognition.py
+index ae7e3be34..17d9d9c0e 100644
+--- a/plugin/agent/unified_cognition.py
++++ b/plugin/agent/unified_cognition.py
+@@ -5443,8 +5443,10 @@ def proposal_to_action(
+ 
+             cand = text or semantic_target
+             cand_l = str(cand or "").strip().lower()
+-            # Perception object ids (msg_link_*) must never become locate queries
+-            # (live 113806: locate "msg_link_zarooratwala" → found=False).
++            # TEMPORARY debt: perception object ids (msg_link_*) must not become
++            # locate queries (live 113806). Proper fix is typed —
++            # locate_content.query accepts only semantic query text; object IDs
++            # travel through target refs. Do not expand this shape heuristic.
+             object_id_query = bool(
+                 cand_l.startswith("msg_")
+                 or cand_l.startswith("obj_")
+diff --git a/tests/plugin/test_progress_preservation.py b/tests/plugin/test_progress_preservation.py
+index 4445a23aa..b6cabcbab 100644
+--- a/tests/plugin/test_progress_preservation.py
++++ b/tests/plugin/test_progress_preservation.py
+@@ -1,4 +1,4 @@
+-"""Scoped invalidation: interaction failure must not erase established patient."""
++"""Scoped invalidation: preserve earned patient progress; absence ≠ contradiction."""
+ 
+ from __future__ import annotations
+ 
+@@ -8,6 +8,7 @@ from plugin.agent.decision_consultation import (
+     DecisionOutcome,
+     TaskState,
+     _content_search_locate_outcome,
++    _earned_patient_ref,
+     _patient_content_established,
+ )
+ from plugin.agent.executive.meta_action import MetaAction, MetaContext
+@@ -30,34 +31,72 @@ def _patient_doc(query: str = "zarooratwala") -> dict:
+     }
+ 
+ 
++def _earned_content_episode(label: str = "https://www.zarooratwala.com/") -> dict:
++    return {
++        "status": "complete",
++        "role": "content",
++        "chosen_label": label,
++        "retrieval_complete": True,
++        "choice_confidence": "provisional",
++        "selection_path": "rank",
++    }
++
++
+ def test_reveal_failure_preserves_established_patient():
++    """Earned retrieval patient survives reveal failure — no locate reseal."""
+     brief = DecisionBrief(
+-        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        goal={
++            "source_conversation": "Alice",
++            "source_query": "zarooratwala",
++            "link_query": "zarooratwala",
++        },
+         world=_patient_doc(),
+         capabilities=["locate_content", "reveal_actions", "select_content"],
+         meta_action="search",
+         task_state=TaskState(
+             phase="act_on_content",
+             source_chat_open=True,
+-            content_located=False,
++            content_located=True,
+             content_visible=True,
+         ),
++        search_episode=_earned_content_episode(),
+         reveal_episode_failed=True,
+     )
+     assert _patient_content_established(brief) is True
++    assert _earned_patient_ref(brief) == "https://www.zarooratwala.com/"
+     prior = DecisionOutcome(
+         ok=True,
+         capability="reveal_actions",
+         target="https://www.zarooratwala.com/",
+-        why="reveal after patient visible",
++        why="reveal after patient earned",
+         confidence=0.9,
+     )
+     seal = _content_search_locate_outcome(brief, prior=prior)
+-    assert seal is None, "reveal failure must not reseal locate while patient known"
++    assert seal is None, "reveal failure must not reseal locate while patient earned"
++
++
++def test_mere_query_visibility_does_not_establish_patient():
++    """document_locates / phase alone must not invent patient commitment."""
++    brief = DecisionBrief(
++        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        world=_patient_doc(),
++        capabilities=["locate_content", "reveal_actions"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            content_located=False,
++            content_visible=True,
++        ),
++    )
++    assert _patient_content_established(brief) is False
++    seal = _content_search_locate_outcome(brief)
++    assert seal is not None
++    assert seal.capability == "locate_content"
+ 
+ 
+ def test_failed_context_menu_repairs_affordance_before_retrieval():
+-    """Meta contract: SEARCH after reveal fail + patient known → affordance repair."""
++    """Meta: reveal fail + earned patient ref → affordance repair, not SEARCH."""
+     choice = sanitize_meta_choice(
+         {"meta_action": "search", "why": "content unpaid", "confidence": 0.9},
+         MetaContext(
+@@ -65,18 +104,39 @@ def test_failed_context_menu_repairs_affordance_before_retrieval():
+             referent_search_needed=False,
+             reveal_episode_failed=True,
+             reveal_prefer_capability="select_content",
++            established_patient_ref="https://www.zarooratwala.com/",
+         ),
+     )
+     assert choice is not None
+     assert choice.action is MetaAction.ACT
+     assert choice.scores.get("forbid_search") == 1.0
+     assert choice.scores.get("affordance_repair") == 1.0
++    assert choice.scores.get("established_patient_ref") == 1.0
++
++
++def test_reveal_failed_without_earned_patient_does_not_suppress_search():
++    """Generic reveal_failed alone must not forbid SEARCH."""
++    choice = sanitize_meta_choice(
++        {"meta_action": "search", "why": "still hunting", "confidence": 0.9},
++        MetaContext(
++            address_known=True,
++            referent_search_needed=True,
++            reveal_episode_failed=True,
++            established_patient_ref="",
++        ),
++    )
++    assert choice is not None
++    assert choice.action is MetaAction.SEARCH
+ 
+ 
+-def test_patient_disappeared_allows_retrieval_regression():
+-    """Only contradictory absence re-arms locate / SEARCH content debt."""
++def test_patient_temporarily_not_visible_preserves_semantic_binding():
++    """Scroll-away absence must not erase earned patient / re-arm locate."""
+     brief = DecisionBrief(
+-        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        goal={
++            "source_conversation": "Alice",
++            "source_query": "zarooratwala",
++            "link_query": "zarooratwala",
++        },
+         world={
+             "surface": "conversation",
+             "open_conversation": "Alice",
+@@ -87,54 +147,37 @@ def test_patient_disappeared_allows_retrieval_regression():
+         capabilities=["locate_content", "observe"],
+         meta_action="search",
+         task_state=TaskState(
+-            phase="hunt_content",
++            phase="act_on_content",
+             source_chat_open=True,
+-            content_located=False,
++            content_located=True,
+             content_visible=False,
+         ),
++        search_episode=_earned_content_episode(),
+     )
+-    assert _patient_content_established(brief) is False
++    assert _patient_content_established(brief) is True
+     seal = _content_search_locate_outcome(brief)
+-    assert seal is not None
+-    assert seal.capability == "locate_content"
+-
+-    goal = type(
+-        "G",
+-        (),
+-        {
+-            "contact": "Alice",
+-            "link_query": "zarooratwala",
+-            "target_contact": "Bob",
+-        },
+-    )()
+-    state = ExecutionState()
+-    sig = meta_referent_search_signals(
+-        state,
+-        phase="hunt_content",
+-        source_chat_open=True,
+-        surface="conversation",
+-        goal=goal,
+-        content_located=False,
+-        document=brief.world,
+-    )
+-    assert sig["needed"] is True
++    assert seal is None
+ 
+ 
+-def test_surface_change_invalidates_grounding_not_identity():
+-    """Patient still on-screen after overlay dismiss → keep identity, no locate."""
+-    # Context menu dismissed → conversation surface, URL still present.
++def test_patient_grounding_lost_allows_reground():
++    """Lost selection/geometry invalidates grounding, not semantic identity."""
+     brief = DecisionBrief(
+-        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        goal={
++            "source_conversation": "Alice",
++            "source_query": "zarooratwala",
++            "link_query": "zarooratwala",
++        },
+         world=_patient_doc(),
+         capabilities=["locate_content", "reveal_actions", "select_content"],
+         meta_action="search",
+         task_state=TaskState(
+             phase="act_on_content",
+             source_chat_open=True,
+-            content_located=False,
++            content_located=True,
+             content_visible=True,
+-            referent_selected=False,  # grounding lost with overlay
++            referent_selected=False,
+         ),
++        search_episode=_earned_content_episode(),
+         reveal_episode_failed=True,
+     )
+     assert _patient_content_established(brief) is True
+@@ -150,6 +193,41 @@ def test_surface_change_invalidates_grounding_not_identity():
+     )
+     assert seal is None
+ 
++
++def test_explicit_patient_identity_contradiction_allows_retrieval_regression():
++    """Container change / content episode exhaustion re-arms locate."""
++    brief = DecisionBrief(
++        goal={
++            "source_conversation": "Alice",
++            "source_query": "zarooratwala",
++            "link_query": "zarooratwala",
++        },
++        world={
++            "surface": "conversation",
++            "open_conversation": "Bob",  # container contradicted
++            "objects": [],
++        },
++        capabilities=["locate_content", "observe"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            content_located=True,
++            open_conversation="Bob",
++        ),
++        search_episode={
++            **_earned_content_episode(),
++            "status": "exhausted",
++            "fail_reason": "required_role_constraint_mismatch",
++        },
++    )
++    assert _patient_content_established(brief) is False
++    seal = _content_search_locate_outcome(brief)
++    assert seal is not None
++    assert seal.capability == "locate_content"
++
++
++def test_visible_query_text_does_not_clear_content_search_debt():
+     goal = type(
+         "G",
+         (),
+@@ -161,17 +239,18 @@ def test_surface_change_invalidates_grounding_not_identity():
+     )()
+     sig = meta_referent_search_signals(
+         ExecutionState(),
+-        phase="act_on_content",
++        phase="hunt_content",
+         source_chat_open=True,
+         surface="conversation",
+         goal=goal,
+         content_located=False,
+-        document=brief.world,
++        document=_patient_doc(),
+     )
+-    assert sig["needed"] is False, "on-screen patient clears SEARCH debt"
++    assert sig["needed"] is True
++    assert not sig.get("content_retrieval_earned")
+ 
+ 
+-def test_visible_patient_clears_content_search_debt_without_content_located_flag():
++def test_earned_content_located_clears_search_debt():
+     goal = type(
+         "G",
+         (),
+@@ -183,11 +262,12 @@ def test_visible_patient_clears_content_search_debt_without_content_located_flag
+     )()
+     sig = meta_referent_search_signals(
+         ExecutionState(),
+-        phase="hunt_content",
++        phase="act_on_content",
+         source_chat_open=True,
+         surface="conversation",
+         goal=goal,
+-        content_located=False,
++        content_located=True,
+         document=_patient_doc(),
+     )
+     assert sig["needed"] is False
++    assert sig.get("content_retrieval_earned") is True
+-- 
+2.39.5 (Apple Git-154)
+

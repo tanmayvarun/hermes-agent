@@ -86,8 +86,45 @@ def test_phash_blocked_when_reveal_handoff_or_overlay_intention():
 
 
 def test_reconcile_promotes_under_handoff_when_surface_stays_conversation():
+    from plugin.perception.coordinate_frame import build_frame_graph
+
     state = ExecutionState()
     state.reveal_handoff = {"surface": "context_menu", "ttl": 2}
+    graph = build_frame_graph(
+        image_size=(1000.0, 800.0),
+        window_origin_in_screen=(0.0, 0.0),
+        point_scale=1.0,
+        capture_scale=1.0,
+        capture_id="c_reconcile",
+    )
+    document = {
+        "surface": "conversation",
+        "capture_id": "c_reconcile",
+        "frame_graph": graph.to_dict(),
+        "objects": [
+            {
+                "text": "Forward",
+                "kind": "menu_item",
+                "point": [100, 200],
+                "coordinate_space": "screen",
+                "geometry_source": "ocr",
+                "owner_surface": "context_menu",
+            },
+            {
+                "text": "Reply",
+                "kind": "menu_item",
+                "point": [100, 230],
+                "coordinate_space": "screen",
+                "geometry_source": "ocr",
+                "owner_surface": "context_menu",
+            },
+        ],
+    }
+    state.unified_world_document = document
+    state.task_surface = {
+        "capture_id": "c_reconcile",
+        "frame_graph": graph.to_dict(),
+    }
     frontier = AffordanceFrontier(
         surface="conversation",
         latent_actions=[
@@ -101,27 +138,7 @@ def test_reconcile_promotes_under_handoff_when_surface_stays_conversation():
     )
     reconcile_frontier(
         frontier,
-        document={
-            "surface": "conversation",
-            "objects": [
-                {
-                    "text": "Forward",
-                    "kind": "menu_item",
-                    "point": [100, 200],
-                    "coordinate_space": "screen",
-                    "geometry_source": "ocr",
-                    "owner_surface": "context_menu",
-                },
-                {
-                    "text": "Reply",
-                    "kind": "menu_item",
-                    "point": [100, 230],
-                    "coordinate_space": "screen",
-                    "geometry_source": "ocr",
-                    "owner_surface": "context_menu",
-                },
-            ],
-        },
+        document=document,
         execution_state=state,
         last_action_family="reveal_actions",
     )
@@ -300,7 +317,25 @@ def test_note_reveal_probe_handoff_sets_incomplete_on_execution_state():
 
 
 def test_publish_affordance_set_parity_with_actuators():
+    from plugin.perception.coordinate_frame import build_frame_graph
+
     state = ExecutionState()
+    graph = build_frame_graph(
+        image_size=(1000.0, 800.0),
+        window_origin_in_screen=(0.0, 0.0),
+        point_scale=1.0,
+        capture_scale=1.0,
+        capture_id="c_parity",
+    )
+    state.unified_world_document = {
+        "surface": "context_menu",
+        "capture_id": "c_parity",
+        "frame_graph": graph.to_dict(),
+    }
+    state.task_surface = {
+        "capture_id": "c_parity",
+        "frame_graph": graph.to_dict(),
+    }
     frontier = AffordanceFrontier(
         surface="context_menu",
         observed_actions=[
@@ -313,6 +348,8 @@ def test_publish_affordance_set_parity_with_actuators():
                 coordinate_space="screen",
                 geometry_source="ocr",
                 owner_surface="context_menu",
+                capture_id="c_parity",
+                frame_id=graph.screen_frame_id,
             )
         ],
     )

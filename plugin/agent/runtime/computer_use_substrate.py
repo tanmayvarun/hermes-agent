@@ -97,10 +97,8 @@ def probe_computer_use_environment() -> Tuple[bool, str]:
     This is substrate_available, not full end-to-end method executability.
     """
     try:
-        from plugin.perception.macos.accessibility.observer import (
-            ax_available,
-            macapptree_available,
-        )
+        from plugin.executor.ax_action import ax_available
+        from plugin.perception.macos.accessibility.observer import macapptree_available
     except Exception as exc:
         return False, f"accessibility_import_failed:{type(exc).__name__}:{exc}"
     try:
@@ -285,4 +283,7 @@ class _NullEventLogger:
         return None
 
     def check(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+    def observation(self, *args: Any, **kwargs: Any) -> None:
         return None

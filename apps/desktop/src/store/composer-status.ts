@@ -7,13 +7,14 @@ import type { TodoItem, TodoStatus } from '@/lib/todos'
 import { $gateway } from './gateway'
 import { dispatchNativeNotification } from './native-notifications'
 import { notifyError } from './notifications'
+import { $promptTasksBySession, activePromptComposerItem } from './prompt-tasks'
 import { $sessionStates } from './session-states'
 import { $subagentsBySession, type SubagentProgress } from './subagents'
 import { $todosBySession } from './todos'
 
 /** Composer status stack feed — merged todos, subagents, background per session. */
 export type StatusItemState = 'done' | 'failed' | 'running'
-export type StatusItemType = 'background' | 'subagent' | 'todo'
+export type StatusItemType = 'background' | 'prompt' | 'subagent' | 'todo'
 
 export interface ComposerStatusItem {
   /** background: non-zero exit shown inline when failed. */
@@ -145,8 +146,8 @@ const todoToItem = (t: TodoItem): ComposerStatusItem => ({
 
 // The single thing the stack reads: a typed, merged item list per session.
 export const $statusItemsBySession = computed(
-  [$subagentsBySession, $backgroundStatusBySession, $todosBySession],
-  (subs, background, todos) => {
+  [$subagentsBySession, $backgroundStatusBySession, $todosBySession, $promptTasksBySession],
+  (subs, background, todos, _promptTasks) => {
     const out: Record<string, ComposerStatusItem[]> = {}
 
     const push = (sid: string, items: ComposerStatusItem[]) => {
@@ -167,12 +168,26 @@ export const $statusItemsBySession = computed(
       push(sid, list)
     }
 
+    // One live prompt-task row per session (running / needs input).
+    const sessionIds = new Set([
+      ...Object.keys(todos),
+      ...Object.keys(subs),
+      ...Object.keys(background),
+      ...Object.keys(_promptTasks)
+    ])
+    for (const sid of sessionIds) {
+      const promptItem = activePromptComposerItem(sid)
+      if (promptItem) {
+        push(sid, [promptItem])
+      }
+    }
+
     return out
   }
 )
 
 // Fixed render order for the groups in the stack (top → bottom, above queue).
-const TYPE_ORDER: readonly StatusItemType[] = ['todo', 'subagent', 'background']
+const TYPE_ORDER: readonly StatusItemType[] = ['prompt', 'todo', 'subagent', 'background']
 
 export interface StatusGroup {
   items: ComposerStatusItem[]

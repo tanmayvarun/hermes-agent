@@ -81,9 +81,10 @@ def run_legacy_closed_loop_for_goal(
         engine=ctx.get("engine"),
         memory=ctx.get("memory"),
     )
-    return {
+    payload: Dict[str, Any] = {
         "ok": bool(getattr(result, "ok", False)),
         "reason": str(getattr(result, "reason", "") or ""),
+        "detail": str(getattr(result, "reason", "") or ""),
         "iterations": int(getattr(result, "iterations", 0) or 0),
         "substrate": "computer_use",
         "method_id": str(getattr(spec, "id", "") or ""),
@@ -91,3 +92,16 @@ def run_legacy_closed_loop_for_goal(
         "bindings_source": "composed_substrate",
         "result": result,
     }
+    # Promote setup-blocker / ASK fields from GoalResult.evidence for AgentRuntime.
+    evidence = getattr(result, "evidence", None)
+    if isinstance(evidence, dict):
+        for key in (
+            "fallback",
+            "ask_precondition",
+            "ask_question",
+            "ui_hints",
+            "setup_blocker",
+        ):
+            if key in evidence and evidence.get(key) is not None:
+                payload[key] = evidence[key]
+    return payload

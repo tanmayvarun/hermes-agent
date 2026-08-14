@@ -1,0 +1,48 @@
+{
+  "task_statuses": [
+    "running",
+    "waiting_for_user",
+    "completed",
+    "failed",
+    "interrupted"
+  ],
+  "terminal_task_statuses": [
+    "completed",
+    "failed",
+    "interrupted",
+    "waiting_for_user"
+  ],
+  "task_phases": [
+    "interpreting",
+    "selecting_method",
+    "executing",
+    "computer_use",
+    "awaiting_user",
+    "finishing"
+  ],
+  "turn_statuses": [
+    "completed",
+    "waiting_for_user",
+    "continued",
+    "failed",
+    "legacy_delegated"
+  ],
+  "error_codes": [
+    "setup_blocked",
+    "auth_required",
+    "provider_unavailable",
+    "timeout",
+    "interrupted",
+    "execution_failed",
+    "unknown"
+  ],
+  "error_code_messages": {
+    "setup_blocked": "Finish app setup on this device, then reply when you're ready.",
+    "auth_required": "Link or sign in so I can continue with the preferred method.",
+    "provider_unavailable": "That service isn't available right now. Trying another approach if possible.",
+    "timeout": "This step took too long and was stopped.",
+    "interrupted": "Stopped before finishing.",
+    "execution_failed": "Something went wrong while carrying out that step.",
+    "unknown": "Something went wrong."
+  }
+}

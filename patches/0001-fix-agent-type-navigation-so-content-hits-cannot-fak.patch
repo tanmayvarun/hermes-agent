@@ -1,0 +1,1657 @@
+From cf01afe603f3bca876f2059fbe0659444dea6208 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 13:44:43 +0530
+Subject: [PATCH 1/3] fix(agent): type navigation so content hits cannot fake
+ container identity
+
+Search-result evidence is no longer treated as a safe source_container open.
+Wrong settles become NAVIGATION_MISMATCH, invalidate that path, and block
+reveal until the required container is verified.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/action.py                      |   2 +
+ plugin/agent/apps/whatsapp.py               |  25 +-
+ plugin/agent/capabilities/locus_contract.py |  22 ++
+ plugin/agent/capabilities/search_episode.py |  85 ++++-
+ plugin/agent/controller.py                  | 117 ++++++-
+ plugin/agent/decision_consultation.py       | 179 ++++++++++-
+ plugin/agent/executive/intention_frame.py   | 142 ++++++++-
+ plugin/agent/executive/sync.py              |   6 +
+ plugin/agent/procedures/forward_message.py  | 336 +++++++++++++++++++-
+ plugin/agent/unified_cognition.py           |   1 +
+ tests/plugin/test_container_navigation.py   | 317 ++++++++++++++++++
+ 11 files changed, 1186 insertions(+), 46 deletions(-)
+ create mode 100644 tests/plugin/test_container_navigation.py
+
+diff --git a/plugin/agent/action.py b/plugin/agent/action.py
+index 1561e7d0d..27c984588 100644
+--- a/plugin/agent/action.py
++++ b/plugin/agent/action.py
+@@ -49,6 +49,8 @@ class Action:
+     legacy_semantics: bool = False
+     # locate_content MethodFrontier preference (native_find / scroll_scan).
+     prefer_realization: str = ""
++    # Typed navigation: required container after settle (content hit ≠ container).
++    expected_container: str = ""
+ 
+ 
+ # Backward-compatible alias for one release
+diff --git a/plugin/agent/apps/whatsapp.py b/plugin/agent/apps/whatsapp.py
+index 8630ad088..eb445e58c 100644
+--- a/plugin/agent/apps/whatsapp.py
++++ b/plugin/agent/apps/whatsapp.py
+@@ -1917,7 +1917,24 @@ class WhatsAppOverlay:
+             )
+         target = (goal.target_contact or "").strip().lower()
+         query = (goal.link_query or "").strip().lower()
+-        open_c = (view.open_conversation or "").lower()
++        # Authoritative settled world document dominates stale view cache when
++        # they disagree (live 123703: view=Pallavi while document=ZarooratWala).
++        open_raw = str(view.open_conversation or "").strip()
++        try:
++            hints = getattr(world, "overlay_hints", None) or {}
++            doc = hints.get("unified_world_document") if isinstance(hints, dict) else None
++            if not isinstance(doc, dict):
++                doc = getattr(world, "unified_world_document", None)
++            if isinstance(doc, dict):
++                doc_open = str(doc.get("open_conversation") or "").strip()
++                if doc_open and (
++                    not open_raw
++                    or open_raw.lower() != doc_open.lower()
++                ):
++                    open_raw = doc_open
++        except Exception:
++            pass
++        open_c = open_raw.lower()
+         on_target = _on_named_conversation(open_c, target)
+         has_query = _query_in_conversation_timeline(world, query) if query else False
+         # Also accept query anywhere if already forwarded into dest chat
+@@ -1937,14 +1954,16 @@ class WhatsAppOverlay:
+                     "forward_chrome": forward_chrome,
+                 },
+             )
++        evidence = dict(view.to_dict() or {})
++        evidence["open_conversation"] = open_raw
+         return GoalStatus(
+             succeeded=False,
+             reason=(
+                 f"forward pending source={goal.contact!r} query={goal.link_query!r} "
+-                f"target={goal.target_contact!r} open={view.open_conversation!r} "
++                f"target={goal.target_contact!r} open={open_raw!r} "
+                 f"has_query={has_query}"
+             ),
+-            evidence=view.to_dict(),
++            evidence=evidence,
+         )
+ 
+     def resolve_target(self, world: WorldModel, semantic: str, action: str) -> Optional[Entity]:
+diff --git a/plugin/agent/capabilities/locus_contract.py b/plugin/agent/capabilities/locus_contract.py
+index d9a61f62d..f096466ac 100644
+--- a/plugin/agent/capabilities/locus_contract.py
++++ b/plugin/agent/capabilities/locus_contract.py
+@@ -274,6 +274,28 @@ def wrong_locus_forbidden(
+ 
+     # --- patient locus (commitment) ----------------------------------------
+     if cap in _PATIENT_CAPS:
++        # Content actions require verified source container. Foreign open
++        # (leave_wrong owed) must not authorize reveal/select/invoke.
++        if brief is not None:
++            foreign, open_c, source = _foreign_container(brief)
++            phase = _norm(getattr(getattr(brief, "task_state", None), "phase", ""))
++            dest_phases = {
++                "choose_destination",
++                "pick_dest",
++                "invoke_forward",
++            }
++            if foreign and phase not in dest_phases:
++                r = LocusRequirement(
++                    desired_effect="source_container_open",
++                    required_locus="open_matches_referent(source)",
++                    forbidden_loci=("foreign_container",),
++                    kind=LocusKind.CONTAINER,
++                )
++                return (
++                    True,
++                    f"wrong_locus:container:foreign_open:{open_c!r}!={source!r}",
++                    r,
++                )
+         if role in COMPOSER_FIELD_ROLES or label_looks_like_composer(lab):
+             r = LocusRequirement(
+                 desired_effect="affordance_invoked",
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index 2e880476e..a6a7bcde2 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -1184,6 +1184,77 @@ def exclude_role_rejected_candidates(
+     return out
+ 
+ 
++def reject_navigation_mismatch_candidate(
++    execution_state: Any,
++    *,
++    click_label: str = "",
++    observed_container: str = "",
++    required_container: str = "",
++    candidate_id: Any = None,
++) -> Dict[str, Any]:
++    """Invalidate a content-hit open that landed in the wrong container.
++
++    Content relevance ≠ container identity. After NAVIGATION_MISMATCH the same
++    hit must not be re-opened without new evidence.
++    """
++    out: Dict[str, Any] = {"rejected": False}
++    label = str(click_label or "").strip()
++    if execution_state is None or not label:
++        return out
++    try:
++        holder = _episode_holder(execution_state)
++        ep = search_episode_of(holder) or {}
++        if not isinstance(ep, dict):
++            ep = {}
++        rejected_ids = [x for x in list(ep.get("role_rejected_ids") or []) if x is not None]
++        rejected_labels = [
++            str(x).strip()
++            for x in list(ep.get("role_rejected_labels") or [])
++            if str(x).strip()
++        ]
++        reasons = [
++            str(x).strip()
++            for x in list(ep.get("role_rejected_reasons") or [])
++            if str(x).strip()
++        ]
++        if candidate_id is not None and candidate_id not in rejected_ids:
++            rejected_ids.append(candidate_id)
++        if label not in rejected_labels:
++            rejected_labels.append(label)
++        reason = (
++            f"navigation_mismatch:expected={required_container!r}"
++            f":observed={observed_container!r}"
++        )
++        if reason not in reasons:
++            reasons.append(reason)
++        ep = {
++            **ep,
++            "role_rejected_ids": rejected_ids[:24],
++            "role_rejected_labels": rejected_labels[:24],
++            "role_rejected_reasons": reasons[:24],
++            "chosen_label": "",
++            "chosen_id": None,
++            "choice_confidence": "",
++            "status": "ranking" if rejected_labels else str(ep.get("status") or ""),
++            "role_resolved": False,
++            "last_navigation_mismatch": {
++                "click_label": label[:160],
++                "observed_container": str(observed_container or "")[:120],
++                "required_container": str(required_container or "")[:120],
++            },
++        }
++        # Clear complete-commit so SEARCH does not reseal the same hit.
++        ep["retrieval_complete"] = False
++        if hasattr(holder, "search_episode"):
++            holder.search_episode = ep
++        elif isinstance(holder, dict):
++            holder["search_episode"] = ep
++        out.update({"rejected": True, "reason": reason, "episode": ep})
++    except Exception as exc:
++        out["error"] = str(exc)[:120]
++    return out
++
++
+ def filter_search_candidates(
+     candidates: Sequence[Dict[str, Any]],
+     *,
+@@ -1622,10 +1693,22 @@ def search_continue_capability(
+             # Ranking done — do not re-resolve or open under SEARCH; next meta ACT.
+             # status=complete is retrieval/choice complete, not RoleBinder resolved.
+             return "", "", "search complete; await ACT open"
++        chosen = str(ep.get("chosen_label") or "")
++        # NAVIGATION_MISMATCH invalidation: do not reseal the same content hit.
++        rejected = exclude_role_rejected_candidates(
++            [{"label": chosen, "text": chosen, "id": ep.get("chosen_id")}],
++            ep,
++        )
++        if not rejected:
++            return (
++                "",
++                "",
++                "chosen hit invalidated by NAVIGATION_MISMATCH — re-establish container",
++            )
+         if "open_entity" in allowed:
+             return (
+                 "open_entity",
+-                str(ep.get("chosen_label") or ""),
++                chosen,
+                 "search complete; explore/open chosen hypothesis (not role bind)",
+             )
+         return "", "", ""
+diff --git a/plugin/agent/controller.py b/plugin/agent/controller.py
+index a6f26e7e6..a16928975 100644
+--- a/plugin/agent/controller.py
++++ b/plugin/agent/controller.py
+@@ -6615,8 +6615,8 @@ def _forward_predicate_gate_after_transition(
+                                     status="ok",
+                                 )
+                         elif contact_ref:
+-                            # Settled wrong container — mismatch on destination
+-                            # identity, never on the content click label.
++                            # Settled wrong container — NAVIGATION_MISMATCH when
++                            # a content hit opened an incompatible context.
+                             new_ft = apply_referent_mismatch(
+                                 runtime.execution_state,
+                                 role=role,
+@@ -6626,6 +6626,112 @@ def _forward_predicate_gate_after_transition(
+                             )
+                             if isinstance(new_ft, dict):
+                                 hints["forward_task"] = new_ft
++                            nav_class = "REFERENT_MISMATCH"
++                            if bool(sem.get("is_navigation")) or bool(
++                                getattr(decision, "action_is_navigation", False)
++                            ):
++                                nav_class = "NAVIGATION_MISMATCH"
++                                try:
++                                    from plugin.agent.capabilities.search_episode import (
++                                        reject_navigation_mismatch_candidate,
++                                    )
++
++                                    reject_navigation_mismatch_candidate(
++                                        runtime.execution_state,
++                                        click_label=click_label,
++                                        observed_container=open_name,
++                                        required_container=contact_ref,
++                                    )
++                                except Exception:
++                                    pass
++                                try:
++                                    runtime.execution_state.leave_wrong_conversation_owed = (
++                                        True
++                                    )
++                                    runtime.execution_state.leave_wrong_conversation_open = (
++                                        open_name
++                                    )
++                                    runtime.execution_state.leave_wrong_conversation_source = (
++                                        contact_ref
++                                    )
++                                except Exception:
++                                    pass
++                                # Ledger: motor ok + wrong semantic container.
++                                # Same-method retry is forbidden without new evidence.
++                                try:
++                                    from plugin.agent.executive.intention_frame import (
++                                        AttemptRecord,
++                                        AttemptValidity,
++                                        FailureClass,
++                                        MethodOutcome,
++                                        MethodStatus,
++                                        active_intention_frame,
++                                        apply_derived_status,
++                                        mark_method_attempted,
++                                        record_method_status,
++                                    )
++                                    from plugin.agent.executive.effect_implications import (
++                                        method_context_from_state,
++                                    )
++
++                                    iframe = active_intention_frame(
++                                        runtime.execution_state
++                                    )
++                                    if iframe is not None:
++                                        mid = (
++                                            f"{fam}:{click_label[:80]}"
++                                            if click_label
++                                            else fam
++                                        )
++                                        mark_method_attempted(iframe, mid)
++                                        ctx = method_context_from_state(
++                                            runtime.execution_state,
++                                            world={
++                                                "surface": str(
++                                                    (
++                                                        hints.get("unified_world_document")
++                                                        or {}
++                                                    ).get("surface")
++                                                    or ""
++                                                ),
++                                                "open_conversation": open_name,
++                                            },
++                                        )
++                                        record_method_status(
++                                            iframe,
++                                            mid,
++                                            MethodStatus.INEFFECTIVE.value,
++                                            method_context=ctx,
++                                            world_signature=ctx.signature(),
++                                        )
++                                        iframe.attempts.append(
++                                            AttemptRecord(
++                                                method_id=mid,
++                                                execution_status="motor_ok",
++                                                observation_quality=0.9,
++                                                method_outcome=(
++                                                    MethodOutcome.UNEXPECTED_EFFECT.value
++                                                ),
++                                                failure_class=(
++                                                    FailureClass.NAVIGATION_MISMATCH.value
++                                                ),
++                                                attempt_validity=(
++                                                    AttemptValidity.VALID.value
++                                                ),
++                                                method_status=(
++                                                    MethodStatus.INEFFECTIVE.value
++                                                ),
++                                                evidence_refs=[
++                                                    (
++                                                        f"expected={contact_ref!r}"
++                                                        f" observed={open_name!r}"
++                                                    )[:160]
++                                                ],
++                                            )
++                                        )
++                                        apply_derived_status(iframe)
++                                except Exception:
++                                    pass
+                             _log_cycle(
+                                 log,
+                                 iteration=iteration,
+@@ -6636,7 +6742,12 @@ def _forward_predicate_gate_after_transition(
+                                     "click_target": click_label[:120],
+                                     "attempt_id": attempt_id,
+                                     "proposal": proposal.to_dict(),
+-                                    "class": "REFERENT_MISMATCH",
++                                    "class": nav_class,
++                                    "failure_class": (
++                                        "navigation_mismatch"
++                                        if nav_class == "NAVIGATION_MISMATCH"
++                                        else "referent_mismatch"
++                                    ),
+                                 },
+                                 status="fail",
+                             )
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index b09291b6e..202fbace9 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -1153,6 +1153,75 @@ def _llm_required_observe(why: str, *, realization: str) -> DecisionOutcome:
+     )
+ 
+ 
++def _stamp_open_navigation_semantics(
++    outcome: DecisionOutcome, brief: "DecisionBrief"
++) -> DecisionOutcome:
++    """Type open_entity/open_contact with content≠container navigation semantics.
++
++    Search-commit and sanitize rewrites must not remain ``legacy_semantics`` —
++    without establishes_roles + is_navigation, settle cannot detect
++    NAVIGATION_MISMATCH when a content hit opens the wrong container.
++    """
++    cap = str(getattr(outcome, "capability", "") or "").strip().lower()
++    if cap not in {"open_entity", "open_contact"}:
++        return outcome
++    if bool(getattr(outcome, "legacy_semantics", False)) and bool(
++        getattr(outcome, "establishes_roles", None)
++    ):
++        # Already typed; do not downgrade.
++        pass
++    target = str(getattr(outcome, "target", "") or "").strip()
++    if not target:
++        return outcome
++    try:
++        from plugin.agent.procedures.forward_message import action_open_semantics
++
++        phase = str(getattr(brief.task_state, "phase", "") or "")
++        # Prefer forward_task derived phase when present (OPEN_SOURCE etc.).
++        ft = (
++            (brief.world or {}).get("forward_task")
++            if isinstance(brief.world, dict)
++            else None
++        )
++        if isinstance(ft, dict) and str(ft.get("derived_phase") or "").strip():
++            phase = str(ft.get("derived_phase") or phase)
++        cand: Dict[str, Any] = {"label": target, "text": target}
++        # Attach world object kind when the target matches a visible row.
++        for obj in (brief.world or {}).get("objects") or []:
++            if not isinstance(obj, dict):
++                continue
++            lab = str(obj.get("text") or obj.get("label") or "").strip()
++            if lab and lab.lower() == target.lower():
++                cand = dict(obj)
++                cand.setdefault("label", lab)
++                break
++        sem = action_open_semantics(
++            cap,
++            phase=phase,
++            candidate=cand,
++            target=target,
++            target_kind=str(
++                getattr(outcome, "target_kind", "") or cand.get("kind") or ""
++            ),
++        )
++        est = [str(r) for r in (sem.get("establishes_roles") or []) if str(r).strip()]
++        if not est and not sem.get("is_navigation"):
++            # Still untyped — leave as-is (caller may mark legacy).
++            return outcome
++        outcome.target_kind = str(sem.get("target_kind") or outcome.target_kind or "")
++        outcome.establishes_roles = est
++        outcome.action_is_navigation = bool(sem.get("is_navigation"))
++        outcome.legacy_semantics = False
++        if sem.get("content_hit_not_container"):
++            why = str(outcome.why or "")
++            note = "content_hit≠container; expect source_container verify"
++            if note not in why:
++                outcome.why = f"{why}; {note}"[:200]
++    except Exception:
++        return outcome
++    return outcome
++
++
+ @dataclass
+ class LlmDecisionChooser:
+     """Default realization: one short bounded text call."""
+@@ -1246,6 +1315,17 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+     target = str(payload.get("target") or payload.get("text") or "").strip()
+     if capability in {"invoke_affordance", "commit_irreversible", "reveal_actions"}:
+         target = _affordance_label(target)
++        # State/provenance markers are not actionable controls (live 123703).
++        tok = str(target or "").strip().lower()
++        tok = tok.lstrip("•·▪●◦-–— ").strip()
++        if tok.startswith("forwarded") or tok in {"forwarded", "• forwarded"}:
++            return DecisionOutcome(
++                ok=False,
++                why=(
++                    f"{capability} target {target!r} is message metadata "
++                    "(Forwarded badge), not the Forward affordance"
++                ),
++            )
+     if capability == "resolve_entity" and not brief.candidates:
+         return DecisionOutcome(ok=False, why="resolve_entity chosen with an empty candidate_set")
+     # RoleBinder owns identity. resolve_* may propose a binding; open/act
+@@ -1306,6 +1386,34 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+             target=target,
+         )
+         role = str(sem.get("target_role") or "")
++        # Do not retry a content hit already invalidated by NAVIGATION_MISMATCH.
++        try:
++            from plugin.agent.capabilities.search_episode import (
++                exclude_role_rejected_candidates,
++            )
++
++            ep = (
++                brief.search_episode
++                if isinstance(getattr(brief, "search_episode", None), dict)
++                else None
++            )
++            if isinstance(ep, dict) and (
++                ep.get("role_rejected_labels") or ep.get("role_rejected_ids")
++            ):
++                surviving = exclude_role_rejected_candidates(
++                    [{"label": target, "text": target, "id": cand.get("id")}],
++                    ep,
++                )
++                if not surviving:
++                    return DecisionOutcome(
++                        ok=False,
++                        why=(
++                            f"open candidate {target!r} invalidated by prior "
++                            "NAVIGATION_MISMATCH — re-establish required container"
++                        ),
++                    )
++        except Exception:
++            pass
+         # Navigation via content: click target is not a container identity claim.
+         # Allow open; RoleBinder will verify established roles after settle.
+         # Must NOT auto-bind source_object from this click.
+@@ -1669,8 +1777,11 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+         tgt_l = target.strip().lower()
+         dest_l = dest.lower()
+         looks_like_dest = bool(dest_l) and (dest_l in tgt_l or tgt_l in dest_l)
++        # Exact / menu-verb match only — "Forwarded" must not count as Forward
++        # (startswith("forward") is a false positive on provenance badges).
++        tok = tgt_l.lstrip("•·▪●◦-–— ").strip()
+         is_forward_verb = (not looks_like_dest) and (
+-            tgt_l
++            tok
+             in {
+                 "forward",
+                 "forward message",
+@@ -1678,7 +1789,10 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+                 "share",
+                 "send",
+             }
+-            or tgt_l.startswith("forward")
++            or (
++                tok.startswith("forward ")
++                and not tok.startswith("forwarded")
++            )
+         )
+         if is_forward_verb and dest:
+             selected = False
+@@ -1822,14 +1936,38 @@ def sanitize_decision(payload: Dict[str, Any], brief: DecisionBrief) -> Decision
+                 "(desired-effect selection pending)"
+             ),
+         )
+-    # Message actions need an open conversation; on chat_list/search the same
+-    # URL often appears as a preview row — revealing there is a dead end.
+-    if capability in {"reveal_actions", "select_content", "invoke_affordance"} and surface in {
+-        "chat_list",
+-        "search",
+-        "search_results",
+-    }:
+-        if not brief.task_state.source_chat_open:
++    # Message actions need a *verified* source container. Content relevance on
++    # search rows / wrong chats must not authorize reveal/select/invoke.
++    # Destination-picker invoke (Send) is past source establishment.
++    if capability in {"reveal_actions", "select_content", "invoke_affordance"}:
++        dest_surfaces = {
++            "forward_picker",
++            "destination_picker",
++            "send_to",
++            "share_sheet",
++        }
++        source_ref = str(
++            (brief.goal or {}).get("contact")
++            or (brief.goal or {}).get("source_conversation")
++            or ""
++        ).strip()
++        if (
++            source_ref
++            and not bool(brief.task_state.source_chat_open)
++            and surface not in dest_surfaces
++            and str(brief.task_state.phase or "").strip().lower()
++            not in {"choose_destination", "pick_dest", "invoke_forward"}
++        ):
++            return DecisionOutcome(
++                ok=False,
++                why=(
++                    f"{capability} requires verified source container "
++                    f"{source_ref!r}; current open="
++                    f"{brief.task_state.open_conversation!r} — "
++                    "ResolveContext / open_entity first"
++                ),
++            )
++        if surface in {"chat_list", "search", "search_results"}:
+             return DecisionOutcome(
+                 ok=False,
+                 why=f"{capability} before the source chat is open; open_entity first",
+@@ -3677,6 +3815,8 @@ def apply_decision_consultation(
+                     confidence=max(0.7, float(outcome.confidence or 0.0)),
+                     realization=f"{outcome.realization or 'decision'}+search_commit_chosen",
+                 )
++            # Always type search-commit opens (content hit ≠ container identity).
++            outcome = _stamp_open_navigation_semantics(outcome, brief)
+ 
+     # Final SEARCH→type_query seal: sanitize/barren/search_continue must not
+     # leave Observe or Forward as the realization of an entity-resolution gap.
+@@ -4354,16 +4494,16 @@ def apply_decision_consultation(
+                     }
+         if outcome.capability in {"locate_content", "type_query"} and outcome.target:
+             next_action["text"] = outcome.target
+-        # Preserve already-typed navigation semantics. Legacy untyped opens must
+-        # NOT acquire role-establishing navigation authority via re-inference.
++        # Type open navigation (content hit ≠ container). Prefer typing over
++        # legacy so settle can detect NAVIGATION_MISMATCH.
+         if outcome.capability in {"open_entity", "open_contact"}:
+             try:
++                outcome = _stamp_open_navigation_semantics(outcome, brief)
+                 typed = (
+                     bool(getattr(outcome, "action_is_navigation", False))
+                     or bool(getattr(outcome, "establishes_roles", None))
+-                    or bool(str(getattr(outcome, "target_kind", "") or "").strip())
+-                )
+-                if typed and not bool(getattr(outcome, "legacy_semantics", False)):
++                ) and not bool(getattr(outcome, "legacy_semantics", False))
++                if typed:
+                     next_action["target_kind"] = str(
+                         getattr(outcome, "target_kind", "") or ""
+                     )
+@@ -4374,6 +4514,14 @@ def apply_decision_consultation(
+                         getattr(outcome, "action_is_navigation", False)
+                     )
+                     next_action["legacy_semantics"] = False
++                    # Required container for post-settle verification.
++                    src = str(
++                        (brief.goal or {}).get("contact")
++                        or (brief.goal or {}).get("source_conversation")
++                        or ""
++                    ).strip()
++                    if src and bool(outcome.action_is_navigation):
++                        next_action["expected_container"] = src
+                 else:
+                     import logging as _logging
+ 
+@@ -4385,7 +4533,6 @@ def apply_decision_consultation(
+                     outcome.legacy_semantics = True
+                     outcome.action_is_navigation = False
+                     outcome.establishes_roles = []
+-                    # Keep any explicit target_kind; do not invent one.
+                     next_action["target_kind"] = str(
+                         getattr(outcome, "target_kind", "")
+                         or next_action.get("target_kind")
+diff --git a/plugin/agent/executive/intention_frame.py b/plugin/agent/executive/intention_frame.py
+index a0ea4e9aa..4617a64f6 100644
+--- a/plugin/agent/executive/intention_frame.py
++++ b/plugin/agent/executive/intention_frame.py
+@@ -64,6 +64,8 @@ class FailureClass(str, Enum):
+     METHOD_INEFFECTIVE = "method_ineffective"
+     PRECONDITION_MISSING = "precondition_missing"
+     UNEXPECTED_WORLD = "unexpected_world"
++    # Motor ok + world changed, but to an incompatible semantic container.
++    NAVIGATION_MISMATCH = "navigation_mismatch"
+     LOCAL_ROUTE_EXHAUSTED = "local_route_exhausted"
+     UNSAFE = "unsafe"
+ 
+@@ -308,9 +310,14 @@ class MethodContext:
+ 
+     Prefer this over opaque textual world hashes so irrelevant churn
+     (e.g. message timestamps) does not resurrect every failed method.
++
++    ``semantic_container`` is the locus of action (conversation/folder/tab),
++    not the UI surface alone — so failures in Alice's chat do not suppress
++    the same method in Bob's chat.
+     """
+ 
+     surface: str = ""
++    semantic_container: str = ""
+     target_selected: bool = False
+     action_surface_visible: bool = False
+     overlay: str = ""
+@@ -318,6 +325,7 @@ class MethodContext:
+     def signature(self) -> str:
+         return (
+             f"surface={str(self.surface or '').strip().lower()}"
++            f"|ctr={str(self.semantic_container or '').strip().lower()}"
+             f"|sel={int(bool(self.target_selected))}"
+             f"|act={int(bool(self.action_surface_visible))}"
+             f"|ov={str(self.overlay or '').strip().lower()}"
+@@ -326,6 +334,7 @@ class MethodContext:
+     def to_dict(self) -> Dict[str, Any]:
+         return {
+             "surface": self.surface,
++            "semantic_container": self.semantic_container,
+             "target_selected": bool(self.target_selected),
+             "action_surface_visible": bool(self.action_surface_visible),
+             "overlay": self.overlay,
+@@ -339,6 +348,9 @@ class MethodContext:
+         if isinstance(raw, dict):
+             return cls(
+                 surface=str(raw.get("surface") or ""),
++                semantic_container=str(
++                    raw.get("semantic_container") or raw.get("ctr") or ""
++                ),
+                 target_selected=bool(raw.get("target_selected")),
+                 action_surface_visible=bool(raw.get("action_surface_visible")),
+                 overlay=str(raw.get("overlay") or ""),
+@@ -353,6 +365,7 @@ class MethodContext:
+             )
+             return cls(
+                 surface=str(parts.get("surface") or ""),
++                semantic_container=str(parts.get("ctr") or ""),
+                 target_selected=str(parts.get("sel") or "0") in {"1", "true"},
+                 action_surface_visible=str(parts.get("act") or "0") in {"1", "true"},
+                 overlay=str(parts.get("ov") or ""),
+@@ -633,7 +646,10 @@ def score_method(
+     *,
+     attempted: bool = False,
+     grounding_confidence: float = 0.7,
++    locus_forbidden: bool = False,
+ ) -> float:
++    if locus_forbidden:
++        return 0.0
+     info = 0.8 if "reveal" in spec.capability or spec.gesture else 0.4
+     progress = 0.3 if "reveal" in spec.capability else 0.5
+     if spec.provenance == MethodProvenance.OBSERVED.value:
+@@ -655,10 +671,40 @@ def score_method(
+     )
+ 
+ 
++def apply_wrong_locus_ineligibility(
++    frame: IntentionFrame,
++    *,
++    brief: Any = None,
++    state: Any = None,
++    field_role: str = "",
++) -> List[str]:
++    """Mark methods whose actuation locus is currently forbidden ineligible.
++
++    Returns the method ids newly marked ineligible.
++    """
++    from plugin.agent.capabilities.locus_contract import method_locus_ineligible
++
++    marked: List[str] = []
++    fr = frame.method_frontier
++    for mid, spec in list(fr.catalog.items()):
++        cap = str(getattr(spec, "capability", "") or mid or "").strip().lower()
++        if not method_locus_ineligible(
++            cap, brief=brief, state=state, field_role=field_role
++        ):
++            continue
++        if mid not in fr.currently_ineligible:
++            fr.currently_ineligible.append(mid)
++            marked.append(mid)
++    return marked
++
++
+ def rank_eligible(
+     frame: IntentionFrame,
+     *,
+     demote_ids: Optional[Sequence[str]] = None,
++    brief: Any = None,
++    state: Any = None,
++    field_role: str = "",
+ ) -> List[Tuple[str, float]]:
+     frontier = frame.method_frontier
+     demote = {str(x) for x in (demote_ids or ()) if str(x or "").strip()}
+@@ -667,6 +713,19 @@ def rank_eligible(
+         spec = frontier.catalog.get(mid)
+         if spec is None:
+             continue
++        cap = str(getattr(spec, "capability", "") or mid or "").strip().lower()
++        locus_bad = False
++        if brief is not None or state is not None or field_role:
++            try:
++                from plugin.agent.capabilities.locus_contract import (
++                    method_locus_ineligible,
++                )
++
++                locus_bad = method_locus_ineligible(
++                    cap, brief=brief, state=state, field_role=field_role
++                )
++            except Exception:
++                locus_bad = False
+         ranked.append(
+             (
+                 mid,
+@@ -674,6 +733,7 @@ def rank_eligible(
+                     spec,
+                     frame.scoring_policy,
+                     attempted=mid in frontier.attempted,
++                    locus_forbidden=locus_bad,
+                 ),
+             )
+         )
+@@ -736,6 +796,23 @@ def is_local_route_exhausted(frame: IntentionFrame) -> bool:
+     return True
+ 
+ 
++def world_with_prerequisite_evidence(
++    state: Any,
++    world: Optional[Dict[str, Any]] = None,
++) -> Dict[str, Any]:
++    """Annotate world with downstream evidence that retires obsolete prerequisites.
++
++    Domain implications (which surfaces/capabilities entail which predicates)
++    live in ``effect_implications`` — this helper only merges evidence.
++    Motor/executor success alone never retires a prerequisite.
++    """
++    from plugin.agent.executive.effect_implications import (
++        annotate_world_with_effect_evidence,
++    )
++
++    return annotate_world_with_effect_evidence(state, world)
++
++
+ def evaluate_intention_success(
+     frame: IntentionFrame,
+     *,
+@@ -744,10 +821,16 @@ def evaluate_intention_success(
+     grounded_forward: bool = False,
+ ) -> bool:
+     """Re-evaluate success_predicate after every world update (before next method)."""
++    from plugin.agent.executive.effect_implications import (
++        collect_effect_evidence,
++        predicate_satisfied_by_evidence,
++    )
++
+     pred = str(frame.intention.success_predicate or "").strip().lower()
+     stance = str(affordance_stance or "").strip().lower()
+     doc = world if isinstance(world, dict) else {}
+     surface = str(doc.get("surface") or "").strip().lower()
++    evidence = collect_effect_evidence(None, doc)
+     if pred in {
+         "forward_affordance_grounded",
+         "usable_forwarding_route_discovered",
+@@ -755,8 +838,10 @@ def evaluate_intention_success(
+     }:
+         if grounded_forward or stance == "act_clear":
+             return True
+-        if surface in {"context_menu", "action_menu", "selection_mode", "forward_picker"}:
+-            # Surface alone is not enough — need Forward-ish control when possible.
++        if predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence):
++            return True
++        if surface in {"context_menu", "action_menu", "selection_mode"}:
++            # Menu/selection alone: need Forward-ish control or act_clear.
+             objs = doc.get("objects") or []
+             for o in objs if isinstance(objs, list) else []:
+                 if not isinstance(o, dict):
+@@ -764,18 +849,19 @@ def evaluate_intention_success(
+                 text = str(o.get("text") or o.get("label") or "").strip().lower()
+                 if text in {"forward", "share"} or "forward" in text:
+                     return True
+-            # selection_mode / menu with act_clear handled above
+             if stance == "act_clear":
+                 return True
+         return False
+     if pred == "message_action_surface_visible":
++        if predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence):
++            return True
+         return surface in {"context_menu", "action_menu", "selection_mode"}
+     if pred == "source_object_selected":
+         if bool(doc.get("source_object_selected")):
+             return True
+-        if surface == "selection_mode":
++        if bool(doc.get("downstream_implies_source_selected")):
+             return True
+-        return False
++        return predicate_satisfied_by_evidence(pred, world=doc, evidence=evidence)
+     # Effect-keyed child success predicates (storage / operational / stubs).
+     if pred.startswith("storage:available_bytes_at_least") or pred == "free_storage_satisfied":
+         from plugin.agent.executive.blocking import (
+@@ -820,24 +906,30 @@ def method_preconditions_met(
+     predicates: Optional[Dict[str, Any]] = None,
+ ) -> bool:
+     """True when every named precondition holds in world/predicates."""
++    from plugin.agent.executive.effect_implications import (
++        collect_effect_evidence,
++        predicate_satisfied_by_evidence,
++    )
++
+     preds = predicates if isinstance(predicates, dict) else {}
+     doc = world if isinstance(world, dict) else {}
++    evidence = collect_effect_evidence(None, doc)
+     for p in spec.preconditions or []:
+         key = str(p or "").strip()
+         if not key:
+             continue
+-        if key == "source_object_selected":
+-            if bool(preds.get("source_object_selected")) or bool(
+-                doc.get("source_object_selected")
+-            ):
+-                continue
+-            if str(doc.get("surface") or "").strip().lower() == "selection_mode":
+-                continue
+-            return False
++        if bool(preds.get(key)) or predicate_satisfied_by_evidence(
++            key, world=doc, evidence=evidence
++        ):
++            continue
+         if key in preds and not bool(preds.get(key)):
+             return False
+         if key in doc and not bool(doc.get(key)):
+             return False
++        # Absent from both: selection-style preconditions fail closed; others
++        # remain vacuous (legacy MethodSpec keys without world facts).
++        if key not in preds and key not in doc and key == "source_object_selected":
++            return False
+     return True
+ 
+ 
+@@ -1225,16 +1317,32 @@ def ensure_prereq_child_or_next_method(
+     predicates: Optional[Dict[str, Any]] = None,
+ ) -> Optional[MethodSpec]:
+     """Pick next method; spawn child when top-ranked method lacks preconditions."""
++    evidence_world = world_with_prerequisite_evidence(state, world)
++    if isinstance(predicates, dict):
++        # Explicit predicates win when True; do not let False erase downstream.
++        for k, v in predicates.items():
++            if v:
++                evidence_world[k] = v
+     if frame.suspended_by_child:
+         child = active_intention_frame(state)
+         if child is not None and child.intention.id != frame.intention.id:
+-            return next_reveal_method(child)
++            # Downstream may have already satisfied the child's effect.
++            if evaluate_intention_success(child, world=evidence_world):
++                resume_parent_after_child(state, world=evidence_world)
++                frame = active_intention_frame(state) or frame
++            else:
++                return next_reveal_method(child)
+     ranked = rank_eligible(frame)
+     for mid, _score in ranked:
+         spec = frame.method_frontier.catalog.get(mid)
+         if spec is None:
+             continue
+-        if method_preconditions_met(spec, world=world, predicates=predicates):
++        # Prefer world evidence over stale False predicates from task state.
++        if method_preconditions_met(spec, world=evidence_world, predicates=None):
++            return spec
++        if method_preconditions_met(
++            spec, world=evidence_world, predicates=predicates
++        ):
+             return spec
+         # First unmet → spawn child for that precondition (v1: select only).
+         if "source_object_selected" in (spec.preconditions or []):
+@@ -1318,6 +1426,10 @@ def recommend_recovery(
+         return RecoveryAction.RETURN_TO_EXECUTIVE.value
+     if failure_class == FailureClass.UNEXPECTED_WORLD.value:
+         return RecoveryAction.RETURN_TO_EXECUTIVE.value
++    # Motor worked but landed in the wrong semantic container — do not
++    # re-try the same navigation method; escalate for alternate context path.
++    if failure_class == FailureClass.NAVIGATION_MISMATCH.value:
++        return RecoveryAction.RETURN_TO_EXECUTIVE.value
+     if failure_class == FailureClass.PRECONDITION_MISSING.value:
+         return RecoveryAction.SPAWN_CHILD_INTENTION.value
+     if failure_class == FailureClass.EFFECT_UNCERTAIN.value:
+diff --git a/plugin/agent/executive/sync.py b/plugin/agent/executive/sync.py
+index 51d35a36a..7b600b05b 100644
+--- a/plugin/agent/executive/sync.py
++++ b/plugin/agent/executive/sync.py
+@@ -910,6 +910,12 @@ def assess_executive_judgement(
+             "reach_source",
+             "open_source",
+             "preclear",
++            # Content/reveal phases still require the source container —
++            # foreign open must not authorize reveal (live 123703).
++            "find_link",
++            "hunt_content",
++            "act_on_content",
++            "open_forward",
+         }
+         source_row_ready = bool(referent_signals.get("source_contact_open_ready"))
+         if (
+diff --git a/plugin/agent/procedures/forward_message.py b/plugin/agent/procedures/forward_message.py
+index 6fb885589..8d1ce405e 100644
+--- a/plugin/agent/procedures/forward_message.py
++++ b/plugin/agent/procedures/forward_message.py
+@@ -2,14 +2,54 @@
+ 
+ Supplies RoleBindingSpec and action-family → role maps for forward-style goals.
+ Other procedures (email, move-file, …) get their own modules.
++
++Action family alone does not determine semantic role. Prefer
++``action_open_semantics`` so target role and effect-established roles stay
++distinct (content search hit may navigate into a container without *being*
++that container).
+ """
+ 
+ from __future__ import annotations
+ 
+-from typing import Any, Dict
++from typing import Any, Dict, Optional, Set
+ 
+ from plugin.agent.role_binding import Constraint, RoleBindingSpec
+ 
++# Resolved *semantic* content kinds — not UI presentation kinds.
++_CONTENT_ENTITY_KINDS: Set[str] = {
++    "message",
++    "message_row",
++    "message_bubble",
++    "message_with_link",
++    "link",
++    "content_item",
++    "attachment",
++    "document",
++}
++# Presentation/unknown — must not be treated as semantic content by themselves.
++_PRESENTATION_KINDS: Set[str] = {
++    "search_result",
++    "search_result_row",
++    "picker_row",
++}
++_CONTAINER_ENTITY_KINDS: Set[str] = {
++    "conversation",
++    "conversation_row",
++    "chat",
++    "chat_row",
++    "thread",
++    "container",
++    "contact",
++}
++# Phases where opening content may establish source_container via navigation.
++_SOURCE_REACHING_PHASES: Set[str] = {
++    "",
++    "open_source",
++    "reach_source",
++    # Search-surface commits often still owe the source container.
++    "find_link",
++}
++
+ 
+ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
+     """Typed roles for a forward-style goal. Values come from the goal object."""
+@@ -43,7 +83,16 @@ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
+     return {
+         "source_container": RoleBindingSpec(
+             role="source_container",
+-            expected_entity_kinds={"conversation", "thread", "container", "contact"},
++            expected_entity_kinds={
++                "conversation",
++                "conversation_row",
++                "chat_row",
++                "chat",
++                "thread",
++                "container",
++                "contact",
++                "contact_row",
++            },
+             identity_constraints=[
+                 Constraint(
+                     relation="same_identity",
+@@ -80,14 +129,285 @@ def forward_role_specs(goal: Any) -> Dict[str, RoleBindingSpec]:
+     }
+ 
+ 
+-def role_for_action_family(family: str, *, phase: str = "") -> str:
+-    """Map a forward-procedure action family onto a typed role."""
++def _norm_kind(value: Any) -> str:
++    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
++
++
++def _norm_phase(phase: str) -> str:
++    return str(phase or "").strip().lower().replace("-", "_")
++
++
++def _has_ownership(candidate: Optional[Dict[str, Any]]) -> bool:
++    cand = candidate if isinstance(candidate, dict) else {}
++    for key in ("belongs_to", "container", "owner_conversation", "owning_conversation"):
++        if str(cand.get(key) or "").strip():
++            return True
++    return False
++
++
++def _candidate_kind(candidate: Optional[Dict[str, Any]] = None, *, target: str = "") -> str:
++    """Return resolved semantic kind; presentation kinds are unknown (\"\")."""
++    cand = candidate if isinstance(candidate, dict) else {}
++    for key in ("entity_kind", "object_type", "kind", "type"):
++        kind = _norm_kind(cand.get(key))
++        if not kind:
++            continue
++        if kind in _PRESENTATION_KINDS:
++            continue  # UI row type ≠ semantic entity type
++        return kind
++    # ui_role alone is presentation — never semantic.
++    return ""
++
++
++def _label_content_heuristic(label: str) -> bool:
++    low = str(label or "").strip().lower()
++    if not low:
++        return False
++    if low.startswith("you:"):
++        return True
++    if "https://" in low or "http://" in low:
++        return True
++    if " - you:" in low:
++        return True
++    return False
++
++
++def looks_like_content_open_target(
++    *,
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> bool:
++    """True only for resolved semantic content kinds (message/link/…).
++
++    Presentation rows (``search_result_row``) are unknown — ownership and
++    URL/``You:`` label heuristics are evidence only and must **not** authorize
++    RoleBinder bypass / navigation typing by themselves.
++    """
++    cand = candidate if isinstance(candidate, dict) else {}
++    kind = _norm_kind(target_kind) or _candidate_kind(cand, target=target)
++    # Explicit represents/relation may already resolve to a content kind.
++    represents = _norm_kind(cand.get("represents") or cand.get("semantic_kind"))
++    if represents in _CONTENT_ENTITY_KINDS:
++        return True
++    if kind in _CONTENT_ENTITY_KINDS:
++        return True
++    if kind in _CONTAINER_ENTITY_KINDS or kind in _PRESENTATION_KINDS:
++        return False
++    ui = _norm_kind(cand.get("ui_role") or cand.get("kind") or cand.get("type"))
++    if ui in _PRESENTATION_KINDS:
++        return False
++    # Empty kind: label/owner heuristics are non-authoritative (do not bypass).
++    _ = target
++    return False
++
++
++def looks_like_content_evidence_hit(
++    *,
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> bool:
++    """Search/content hit that carries content evidence, not container identity.
++
++    A result like ``You: https://zarooratwala.com/...`` may be a
++    ``source_object_candidate`` without being a safe ``source_container`` open.
++    Opening it is a *navigation hypothesis* whose settled container must still
++    be verified against the required referent.
++    """
++    if looks_like_content_open_target(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        return True
++    if looks_like_container_open_target(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        return False
++    cand = candidate if isinstance(candidate, dict) else {}
++    kind = _norm_kind(target_kind) or _candidate_kind(cand, target=target)
++    blob = " ".join(
++        str(x)
++        for x in (
++            target,
++            cand.get("text"),
++            cand.get("label"),
++            cand.get("title"),
++        )
++        if str(x or "").strip()
++    )
++    if not blob.strip():
++        return False
++    # Presentation / unknown rows with URL or "You:" message preview evidence.
++    if kind in _PRESENTATION_KINDS or not kind:
++        return _label_content_heuristic(blob)
++    return False
++
++
++def looks_like_container_open_target(
++    *,
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> bool:
++    """True only for explicit container/conversation semantic kinds."""
++    cand = candidate if isinstance(candidate, dict) else {}
++    kind = _norm_kind(target_kind) or _candidate_kind(cand, target=target)
++    represents = _norm_kind(cand.get("represents") or cand.get("semantic_kind"))
++    if represents in _CONTAINER_ENTITY_KINDS or kind in _CONTAINER_ENTITY_KINDS:
++        return True
++    return False
++
++
++def _phase_allows_container_navigation(phase: str) -> bool:
++    return _norm_phase(phase) in _SOURCE_REACHING_PHASES
++
++
++def action_open_semantics(
++    family: str,
++    *,
++    phase: str = "",
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++    target_kind: str = "",
++) -> Dict[str, Any]:
++    """Separate click-target role from roles the settled effect may establish.
++
++    A content search hit may be opened as a navigation address into its owning
++    container without claiming ``target_role=source_container``. Settled
++    destination identity is verified later via RoleBinder.
++
++    ``establishes_roles=["source_container"]`` only when phase is source-reaching;
++    content opens while already in-chat do not re-establish the container.
++    Unknown kinds stay unknown — never invent ``conversation`` from “not content”.
++    """
++    fam = str(family or "").strip().lower().replace("-", "_")
++    ph = _norm_phase(phase)
++    kind_hint = _norm_kind(target_kind) or _candidate_kind(candidate, target=target)
++    if fam not in {"open_entity", "open_contact", "resolve_entity"}:
++        return {
++            "family": fam,
++            "target_role": "",
++            "establishes_roles": [],
++            "is_navigation": False,
++            "target_kind": kind_hint,
++        }
++    if ph in {"choose_destination", "pick_dest", "invoke_forward"}:
++        return {
++            "family": fam,
++            "target_role": "destination",
++            "establishes_roles": ["destination"],
++            "is_navigation": False,
++            "target_kind": kind_hint if kind_hint in _CONTAINER_ENTITY_KINDS else kind_hint,
++        }
++    if fam == "resolve_entity":
++        # Resolve commits identity of the named target — not navigation-via-content.
++        if looks_like_content_open_target(
++            candidate=candidate, target=target, target_kind=target_kind
++        ):
++            return {
++                "family": fam,
++                "target_role": "source_object",
++                "establishes_roles": ["source_object"],
++                "is_navigation": False,
++                "target_kind": kind_hint or "message",
++            }
++        if looks_like_container_open_target(
++            candidate=candidate, target=target, target_kind=target_kind
++        ):
++            return {
++                "family": fam,
++                "target_role": "source_container",
++                "establishes_roles": ["source_container"],
++                "is_navigation": False,
++                "target_kind": kind_hint,
++            }
++        # Unknown: RoleBinder may still evaluate as container, but kind stays empty.
++        return {
++            "family": fam,
++            "target_role": "source_container",
++            "establishes_roles": [],
++            "is_navigation": False,
++            "target_kind": "",
++            "unknown_kind": True,
++        }
++    if looks_like_content_evidence_hit(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        # Content / search-hit evidence ≠ container identity. During
++        # source-reaching, opening it is a navigation hypothesis whose
++        # settled open_conversation must still match the required referent.
++        content_kind = kind_hint or (
++            "message"
++            if looks_like_content_open_target(
++                candidate=candidate, target=target, target_kind=target_kind
++            )
++            else "search_result"
++        )
++        if _phase_allows_container_navigation(ph):
++            return {
++                "family": fam,
++                "target_role": "",  # click target is not a container identity claim
++                "establishes_roles": ["source_container"],
++                "is_navigation": True,
++                "target_kind": content_kind,
++                "content_hit_not_container": True,
++            }
++        # Content-shaped open outside source-reaching: do not establish container.
++        return {
++            "family": fam,
++            "target_role": "",
++            "establishes_roles": [],
++            "is_navigation": False,
++            "target_kind": content_kind,
++            "content_hit_not_container": True,
++        }
++    if looks_like_container_open_target(
++        candidate=candidate, target=target, target_kind=target_kind
++    ):
++        return {
++            "family": fam,
++            "target_role": "source_container",
++            "establishes_roles": ["source_container"],
++            "is_navigation": False,
++            "target_kind": kind_hint,
++        }
++    # Unknown semantic kind — not content, not therefore conversation.
++    return {
++        "family": fam,
++        "target_role": "source_container",
++        "establishes_roles": [],
++        "is_navigation": False,
++        "target_kind": "",
++        "unknown_kind": True,
++    }
++
++
++def role_for_action_family(
++    family: str,
++    *,
++    phase: str = "",
++    target_kind: str = "",
++    candidate: Optional[Dict[str, Any]] = None,
++    target: str = "",
++) -> str:
++    """Map a forward-procedure action onto the *target* role (not effect role).
++
++    Prefer ``action_open_semantics`` when callers need establishes/navigation.
++    Content-shaped ``open_entity`` returns ``\"\"`` — no container claim on the
++    clicked label.
++    """
+     fam = str(family or "").strip().lower().replace("-", "_")
+-    ph = str(phase or "").strip().lower().replace("-", "_")
+     if fam in {"open_entity", "open_contact", "resolve_entity"}:
+-        if ph in {"choose_destination", "pick_dest", "invoke_forward"}:
+-            return "destination"
+-        return "source_container"
++        return str(
++            action_open_semantics(
++                fam,
++                phase=phase,
++                candidate=candidate,
++                target=target,
++                target_kind=target_kind,
++            ).get("target_role")
++            or ""
++        )
+     if fam in {"select_content", "reveal_actions", "locate_content"}:
+         return "source_object"
+     if fam in {"type_query", "compose_search_query"}:
+diff --git a/plugin/agent/unified_cognition.py b/plugin/agent/unified_cognition.py
+index a443a603f..096374f67 100644
+--- a/plugin/agent/unified_cognition.py
++++ b/plugin/agent/unified_cognition.py
+@@ -5738,6 +5738,7 @@ def proposal_to_action(
+         attempt_id=str(na.get("attempt_id") or "").strip(),
+         legacy_semantics=bool(na.get("legacy_semantics")),
+         prefer_realization=str(na.get("prefer_realization") or "").strip(),
++        expected_container=str(na.get("expected_container") or "").strip(),
+     )
+     # The prediction, in the shape the transition and experience layers read. It
+     # was empty on every model-chosen action, so record_outcome() compared each
+diff --git a/tests/plugin/test_container_navigation.py b/tests/plugin/test_container_navigation.py
+new file mode 100644
+index 000000000..3fb4ad2c9
+--- /dev/null
++++ b/tests/plugin/test_container_navigation.py
+@@ -0,0 +1,317 @@
++"""Content-hit ≠ container identity; NAVIGATION_MISMATCH after wrong open."""
++
++from __future__ import annotations
++
++from plugin.agent.capabilities.search_episode import (
++    exclude_role_rejected_candidates,
++    reject_navigation_mismatch_candidate,
++)
++from plugin.agent.decision_consultation import (
++    DecisionBrief,
++    NavigationInfo,
++    TaskState,
++    _stamp_open_navigation_semantics,
++    sanitize_decision,
++)
++from plugin.agent.executive.intention_frame import FailureClass
++from plugin.agent.procedures.forward_message import (
++    action_open_semantics,
++    looks_like_content_evidence_hit,
++    looks_like_container_open_target,
++)
++from plugin.agent.runtime.state import ExecutionState
++from plugin.agent.world_critic import _label_looks_like_menu_verb
++
++
++def test_content_hit_does_not_imply_container_identity():
++    hit = "You: https://www.zarooratwala.com/?utm_source=ig..."
++    assert looks_like_content_evidence_hit(target=hit) is True
++    assert looks_like_container_open_target(target=hit) is False
++    sem = action_open_semantics(
++        "open_entity",
++        phase="OPEN_SOURCE",
++        target=hit,
++        target_kind="search_result",
++    )
++    assert sem["is_navigation"] is True
++    assert sem.get("content_hit_not_container") is True
++    assert sem["target_role"] == ""  # click is not a container claim
++    assert "source_container" in sem["establishes_roles"]
++
++
++def test_navigation_mismatch_recovery_does_not_retry_same_method():
++    from plugin.agent.executive.intention_frame import (
++        FailureClass,
++        Intention,
++        IntentionFrame,
++        MethodOutcome,
++        RecoveryAction,
++        recommend_recovery,
++    )
++
++    frame = IntentionFrame(
++        intention=Intention(id="i1", objective="open source", success_predicate="p")
++    )
++    assert (
++        recommend_recovery(
++            frame,
++            failure_class=FailureClass.NAVIGATION_MISMATCH.value,
++            method_outcome=MethodOutcome.UNEXPECTED_EFFECT.value,
++        )
++        == RecoveryAction.RETURN_TO_EXECUTIVE.value
++    )
++
++
++def test_search_hit_opening_wrong_container_is_navigation_mismatch():
++    """Stamp types the open so settle can classify NAVIGATION_MISMATCH."""
++    from plugin.agent.decision_consultation import DecisionOutcome
++
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={
++            "surface": "search",
++            "objects": [
++                {
++                    "id": "r1",
++                    "kind": "search_result",
++                    "text": "You: https://www.zarooratwala.com/",
++                }
++            ],
++            "forward_task": {"derived_phase": "OPEN_SOURCE"},
++        },
++        task_state=TaskState(phase="reach_source", source_chat_open=False),
++        capabilities=["open_entity", "observe"],
++        meta_action="act",
++    )
++    outcome = DecisionOutcome(
++        ok=True,
++        capability="open_entity",
++        target="You: https://www.zarooratwala.com/",
++        why="search complete; explore/open chosen hypothesis",
++        realization="search_commit_chosen",
++    )
++    typed = _stamp_open_navigation_semantics(outcome, brief)
++    assert typed.legacy_semantics is False
++    assert typed.action_is_navigation is True
++    assert "source_container" in typed.establishes_roles
++    assert FailureClass.NAVIGATION_MISMATCH.value == "navigation_mismatch"
++
++
++def test_wrong_transition_invalidates_candidate_for_context_establishment():
++    state = ExecutionState()
++    state.search_episode = {
++        "status": "complete",
++        "chosen_label": "You: https://www.zarooratwala.com/",
++        "chosen_id": "r1",
++        "role": "content",
++        "retrieval_complete": True,
++    }
++    out = reject_navigation_mismatch_candidate(
++        state,
++        click_label="You: https://www.zarooratwala.com/",
++        observed_container="ZarooratWala - Fresh Groceries Delivered",
++        required_container="Pallavi",
++        candidate_id="r1",
++    )
++    assert out.get("rejected") is True
++    ep = state.search_episode
++    assert "You: https://www.zarooratwala.com/" in (ep.get("role_rejected_labels") or [])
++    surviving = exclude_role_rejected_candidates(
++        [
++            {
++                "id": "r1",
++                "label": "You: https://www.zarooratwala.com/",
++                "text": "You: https://www.zarooratwala.com/",
++            }
++        ],
++        ep,
++    )
++    assert surviving == []
++
++
++def test_same_navigation_mismatch_is_not_retried_without_new_evidence():
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={"surface": "search", "objects": []},
++        task_state=TaskState(phase="reach_source", source_chat_open=False),
++        capabilities=["open_entity", "observe", "reveal_actions"],
++        meta_action="act",
++        search_episode={
++            "status": "ranking",
++            "role_rejected_labels": ["You: https://www.zarooratwala.com/"],
++            "role_rejected_reasons": [
++                "navigation_mismatch:expected='Pallavi':observed='ZarooratWala'"
++            ],
++        },
++    )
++    rejected = sanitize_decision(
++        {
++            "capability": "open_entity",
++            "target": "You: https://www.zarooratwala.com/",
++            "why": "retry same hit",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert rejected.ok is False
++    assert "NAVIGATION_MISMATCH" in rejected.why
++
++
++def test_world_container_contradiction_clears_task_container_binding():
++    """task_state.source_chat_open must follow authoritative open_conversation."""
++    from plugin.agent.decision_consultation import task_state_from_context
++    from types import SimpleNamespace
++
++    goal = SimpleNamespace(
++        contact="Pallavi",
++        link_query="zarooratwala",
++        target_contact="Tanmay",
++        originator="",
++    )
++    # Document says ZarooratWala — must not report Pallavi source open.
++    ts = task_state_from_context(
++        goal,
++        world_document={
++            "surface": "conversation",
++            "open_conversation": "ZarooratWala - Fresh Groceries Delivered",
++        },
++        features=SimpleNamespace(
++            conversation_open=True,
++            extras={},
++        ),
++    )
++    assert ts.source_chat_open is False
++    assert "ZarooratWala" in ts.open_conversation
++
++
++def test_reveal_requires_verified_source_container():
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={
++            "surface": "conversation",
++            "open_conversation": "ZarooratWala - Fresh Groceries Delivered",
++        },
++        task_state=TaskState(
++            phase="hunt_content",
++            source_chat_open=False,
++            open_conversation="ZarooratWala - Fresh Groceries Delivered",
++            content_located=False,
++        ),
++        capabilities=["reveal_actions", "open_entity", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="conversation"),
++    )
++    out = sanitize_decision(
++        {
++            "capability": "reveal_actions",
++            "target": "You: https://www.zarooratwala.com/",
++            "why": "forward",
++            "confidence": 0.95,
++        },
++        brief,
++    )
++    assert out.ok is False
++    assert (
++        "verified source container" in out.why
++        or "foreign_open" in out.why
++    )
++
++
++def test_forwarded_badge_is_not_forward_affordance():
++    assert _label_looks_like_menu_verb("• Forwarded") is False
++    assert _label_looks_like_menu_verb("Forwarded") is False
++    assert _label_looks_like_menu_verb("Forward") is True
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={"surface": "conversation", "open_conversation": "Pallavi"},
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            open_conversation="Pallavi",
++            content_located=True,
++        ),
++        capabilities=["invoke_affordance", "reveal_actions", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="conversation"),
++    )
++    out = sanitize_decision(
++        {
++            "capability": "invoke_affordance",
++            "target": "• Forwarded",
++            "why": "forward",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert out.ok is False
++    assert "metadata" in out.why or "Forwarded" in out.why
++
++
++def test_foreign_container_locus_forbids_reveal():
++    """Defense in depth: locus_contract blocks patient caps on foreign open."""
++    from plugin.agent.capabilities.locus_contract import wrong_locus_forbidden
++
++    brief = DecisionBrief(
++        goal={"contact": "Pallavi", "source_query": "zarooratwala"},
++        world={
++            "surface": "conversation",
++            "open_conversation": "ZarooratWala - Fresh Groceries Delivered",
++        },
++        task_state=TaskState(
++            phase="hunt_content",
++            source_chat_open=False,
++            open_conversation="ZarooratWala - Fresh Groceries Delivered",
++        ),
++        capabilities=["reveal_actions", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="conversation"),
++    )
++    bad, why, _ = wrong_locus_forbidden("reveal_actions", brief=brief)
++    assert bad is True
++    assert "foreign_open" in why
++    out = sanitize_decision(
++        {
++            "capability": "reveal_actions",
++            "target": "You: https://www.zarooratwala.com/",
++            "why": "forward",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert out.ok is False
++
++
++def test_forwarded_startswith_forward_is_not_picker_verb():
++    """Picker dest-gate must not treat Forwarded as Forward via startswith."""
++    brief = DecisionBrief(
++        goal={
++            "contact": "Pallavi",
++            "destination": "Tanmay",
++            "target_contact": "Tanmay",
++            "source_query": "zarooratwala",
++        },
++        world={"surface": "forward_picker", "open_conversation": ""},
++        task_state=TaskState(
++            phase="choose_destination",
++            source_chat_open=True,
++            open_conversation="Pallavi",
++        ),
++        capabilities=["invoke_affordance", "observe"],
++        meta_action="act",
++        navigation=NavigationInfo(surface="forward_picker"),
++    )
++    # If Forwarded were treated as a forward verb, sanitize would demand
++    # destination selection. Provenance badges must fall through / fail cleanly
++    # as non-verbs (metadata reject or not dest-selected for true Forward).
++    out = sanitize_decision(
++        {
++            "capability": "invoke_affordance",
++            "target": "Forwarded",
++            "why": "forward",
++            "confidence": 0.9,
++        },
++        brief,
++    )
++    assert out.ok is False
++    assert "destination not selected" not in out.why
++    assert "metadata" in out.why or "Forwarded" in out.why
+-- 
+2.39.5 (Apple Git-154)
+

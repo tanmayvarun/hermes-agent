@@ -10360,6 +10360,11 @@ def test_session_create_records_ui_model_as_session_override(monkeypatch):
     monkeypatch.setattr(server, "_enable_gateway_prompts", lambda: None)
     # Don't run the real deferred build in this storage-focused test.
     monkeypatch.setattr(server, "_start_agent_build", lambda *a, **k: None)
+    # Inventory contains the sticky pick so coerce is a no-op.
+    monkeypatch.setattr(
+        "hermes_cli.models.cached_provider_model_ids",
+        lambda provider, **kw: ["claude-sonnet-4.6"],
+    )
     try:
         resp = server._methods["session.create"](
             "r1",
@@ -10395,6 +10400,42 @@ def test_session_create_records_ui_model_as_session_override(monkeypatch):
         assert plain_sess["model_override"] is None
         assert plain_sess["create_reasoning_override"] is None
         assert plain_sess["create_service_tier_override"] is None
+    finally:
+        server._sessions.clear()
+
+
+def test_session_create_coerces_sticky_model_absent_from_provider_inventory(monkeypatch):
+    """OpenRouter-shaped sticky id on ollama-cloud must not be advertised.
+
+    Provider prewarm only proves the provider answers; session.create must remap
+    unavailable composer picks to the configured default (or first inventory id).
+    """
+    monkeypatch.setattr(server, "_enable_gateway_prompts", lambda: None)
+    monkeypatch.setattr(server, "_start_agent_build", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "hermes_cli.models.cached_provider_model_ids",
+        lambda provider, **kw: ["mistral-large-3:675b", "nemotron-3-ultra", "gpt-oss:120b"],
+    )
+    monkeypatch.setattr(
+        server,
+        "_load_cfg",
+        lambda: {"model": {"provider": "ollama-cloud", "default": "mistral-large-3:675b"}},
+    )
+    try:
+        resp = server._methods["session.create"](
+            "r-coerce",
+            {
+                "cols": 80,
+                "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "provider": "ollama-cloud",
+            },
+        )
+        sid = resp["result"]["session_id"]
+        sess = server._sessions[sid]
+        assert sess["model_override"]["provider"] == "ollama-cloud"
+        assert sess["model_override"]["model"] == "mistral-large-3:675b"
+        assert resp["result"]["info"]["model"] == "mistral-large-3:675b"
+        assert resp["result"]["info"]["provider"] == "ollama-cloud"
     finally:
         server._sessions.clear()
 

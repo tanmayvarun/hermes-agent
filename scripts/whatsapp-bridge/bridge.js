@@ -19,12 +19,24 @@
  *   node bridge.js --port 3000 --session ~/.hermes/whatsapp/session
  */
 
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage, getAggregateVotesInPollMessage, decryptPollVote, getKeyAuthor, jidNormalizedUser } from '@whiskeysockets/baileys';
+import {
+  makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
+  Browsers,
+  downloadMediaMessage,
+  getAggregateVotesInPollMessage,
+  decryptPollVote,
+  getKeyAuthor,
+  jidNormalizedUser,
+} from '@whiskeysockets/baileys';
 import express from 'express';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import path from 'path';
-import { mkdirSync, readFileSync, existsSync, readdirSync, unlinkSync } from 'fs';
+import { mkdirSync, readFileSync, existsSync, readdirSync, unlinkSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
@@ -115,6 +127,39 @@ const CHUNK_DELAY_MS = parseInt(process.env.WHATSAPP_CHUNK_DELAY_MS || '300', 10
 // which pins the bridge's HTTP handler until the upstream aiohttp timeout
 // fires. Fail fast instead so the gateway can surface a real error and retry.
 const SEND_TIMEOUT_MS = parseInt(process.env.WHATSAPP_SEND_TIMEOUT_MS || '60000', 10);
+
+// Display-name → chatId index for /resolve (compose "send hi to Pallavi").
+// Populated from contacts/chats/history sync + inbound message notify names.
+const contactNameIndex = new Map(); // lower(name) -> { chatId, name, source }
+
+function rememberContactName(name, chatId, source = 'unknown') {
+  const label = String(name || '').trim();
+  const jid = String(chatId || '').trim();
+  if (!label || !jid) return;
+  if (jid.includes('status@broadcast') || jid.endsWith('@newsletter')) return;
+  const key = label.toLowerCase();
+  const prev = contactNameIndex.get(key);
+  // Prefer @s.whatsapp.net over @lid when both appear for the same name.
+  if (prev?.chatId?.endsWith('@s.whatsapp.net') && jid.endsWith('@lid')) return;
+  contactNameIndex.set(key, { chatId: jid, name: label, source });
+}
+
+function resolveContactName(query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return null;
+  const exact = contactNameIndex.get(q);
+  if (exact) return { ...exact, match: 'exact' };
+  let best = null;
+  for (const [key, entry] of contactNameIndex.entries()) {
+    if (key === q || key.startsWith(q) || key.includes(q) || q.includes(key)) {
+      if (!best || key.length < best.key.length) {
+        best = { key, entry };
+      }
+    }
+  }
+  if (best) return { ...best.entry, match: 'fuzzy' };
+  return null;
+}
 
 // --- Send queue: serialise all sock.sendMessage() calls across concurrent
 //     HTTP handlers so a single Baileys socket never has overlapping sends.
@@ -388,15 +433,26 @@ function emitPairEvent(event) {
 
 async function startSocket() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
-  const { version } = await fetchLatestBaileysVersion();
+  // Prefer live WhatsApp Web version — fetchLatestBaileysVersion can lag and
+  // WhatsApp then rejects the post-scan handshake ("Couldn't link device").
+  let version;
+  try {
+    ({ version } = await fetchLatestWaWebVersion());
+  } catch {
+    ({ version } = await fetchLatestBaileysVersion());
+  }
 
   sock = makeWASocket({
     version,
     auth: state,
     logger,
     printQRInTerminal: false,
-    browser: ['Hermes Agent', 'Chrome', '120.0'],
-    syncFullHistory: false,
+    // WEB_BROWSER sub-platform (not DARWIN/Desktop) — required for registration.
+    browser: Browsers.macOS('Chrome'),
+    // Needed so /resolve can map display names (e.g. Pallavi) → chatIds.
+    // Without history/contact sync the index stays empty after pair-only.
+    syncFullHistory: true,
+    shouldSyncHistoryMessage: () => true,
     markOnlineOnConnect: false,
     // Required for Baileys 7.x: without this, incoming messages that need
     // E2EE session re-establishment are silently dropped (msg.message === null)
@@ -408,6 +464,37 @@ async function startSocket() {
   });
 
   sock.ev.on('creds.update', () => { saveCreds(); lidToPhone = buildLidMap(); });
+
+  sock.ev.on('contacts.upsert', (contacts) => {
+    for (const c of contacts || []) {
+      const jid = c.id || c.jid;
+      rememberContactName(c.name || c.notify || c.verifiedName || c.pushName, jid, 'contacts.upsert');
+    }
+  });
+  sock.ev.on('contacts.update', (contacts) => {
+    for (const c of contacts || []) {
+      const jid = c.id || c.jid;
+      rememberContactName(c.name || c.notify || c.verifiedName || c.pushName, jid, 'contacts.update');
+    }
+  });
+  sock.ev.on('chats.upsert', (chats) => {
+    for (const c of chats || []) {
+      rememberContactName(c.name || c.displayName || c.subject, c.id, 'chats.upsert');
+    }
+  });
+  sock.ev.on('chats.update', (chats) => {
+    for (const c of chats || []) {
+      rememberContactName(c.name || c.displayName || c.subject, c.id, 'chats.update');
+    }
+  });
+  sock.ev.on('messaging-history.set', ({ chats, contacts }) => {
+    for (const c of contacts || []) {
+      rememberContactName(c.name || c.notify || c.verifiedName || c.pushName, c.id || c.jid, 'history.contacts');
+    }
+    for (const c of chats || []) {
+      rememberContactName(c.name || c.displayName || c.subject, c.id, 'history.chats');
+    }
+  });
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
@@ -428,6 +515,23 @@ async function startSocket() {
 
       if (reason === DisconnectReason.loggedOut) {
         emitPairEvent({ event: 'error', error: 'logged_out', reason });
+        if (PAIR_JSON || PAIR_ONLY) {
+          // Stale linked-device sessions must be wiped so Baileys can emit a
+          // fresh QR — otherwise AgentRuntime sees error→CU and never shows
+          // "Link a device" in the desktop console.
+          try {
+            sock?.end?.(undefined);
+          } catch {}
+          sock = null;
+          try {
+            for (const f of readdirSync(SESSION_DIR)) {
+              rmSync(path.join(SESSION_DIR, f), { recursive: true, force: true });
+            }
+          } catch {}
+          emitPairEvent({ event: 'session_reset', detail: 'logged_out' });
+          setTimeout(startSocket, 500);
+          return;
+        }
         if (!PAIR_JSON) {
           console.log('❌ Logged out. Delete session and restart to re-authenticate.');
         }
@@ -460,8 +564,10 @@ async function startSocket() {
         if (!PAIR_JSON) {
           console.log('✅ Pairing complete. Credentials saved.');
         }
-        // Give Baileys a moment to flush creds, then exit cleanly
-        setTimeout(() => process.exit(0), 2000);
+        // After QR scan WA often sends 515 (restartRequired) → reconnect → open.
+        // Stay up long enough for creds.flush + that reconnect cycle to settle
+        // before exiting; exiting too early makes the phone show "Couldn't link".
+        setTimeout(() => process.exit(0), 8000);
       }
     }
   });
@@ -534,6 +640,7 @@ async function startSocket() {
       const senderId = msg.key.participant || chatId;
       const isGroup = chatId.endsWith('@g.us');
       const senderNumber = senderId.replace(/@.*/, '');
+      rememberContactName(msg.pushName, isGroup ? senderId : chatId, 'messages.upsert');
       emitDebugEvent({
         stage: 'upsert',
         type,
@@ -1067,6 +1174,33 @@ app.get('/chat/:id', async (req, res) => {
   });
 });
 
+// Resolve a contact/chat display name to a WhatsApp chatId (JID).
+app.get('/resolve', (req, res) => {
+  if (!sock || connectionState !== 'connected') {
+    return res.status(503).json({ error: 'Not connected to WhatsApp' });
+  }
+  const name = String(req.query.name || req.query.q || '').trim();
+  if (!name) {
+    return res.status(400).json({ error: 'name is required' });
+  }
+  const hit = resolveContactName(name);
+  if (!hit) {
+    return res.status(404).json({
+      error: 'not_found',
+      name,
+      indexed: contactNameIndex.size,
+    });
+  }
+  return res.json({
+    chatId: hit.chatId,
+    jid: hit.chatId,
+    name: hit.name,
+    match: hit.match,
+    source: hit.source,
+    indexed: contactNameIndex.size,
+  });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -1074,6 +1208,7 @@ app.get('/health', (req, res) => {
     queueLength: messageQueue.length,
     uptime: process.uptime(),
     scriptHash: SCRIPT_HASH,
+    contactsIndexed: contactNameIndex.size,
   });
 });
 

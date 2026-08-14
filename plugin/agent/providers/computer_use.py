@@ -39,7 +39,7 @@ class ComputerUseMethodProvider:
                 provider=self.provider_id,
                 preconditions=[],
                 readiness=MethodReadiness.READY.value,
-                reliability=0.55,
+                reliability=0.55,  # I3: below WhatsApp gateway (0.88)
                 latency=0.7,
                 risk=0.55,
                 cost=0.6,
@@ -89,6 +89,16 @@ def ensure_computer_use_provider_registered(
         ComputerUseMethodProvider(runnable=True, reason=substrate.reason)
     )
     register_method_executor(ComputerUseClosedLoopExecutor())
+    try:
+        from plugin.agent.runtime.desktop_app_ready import (
+            ensure_desktop_app_ready_resolver_registered,
+        )
+
+        ensure_desktop_app_ready_resolver_registered()
+        diagnostic["desktop_app_ready_resolver"] = True
+    except Exception as exc:
+        diagnostic["desktop_app_ready_resolver"] = False
+        diagnostic["desktop_app_ready_resolver_error"] = f"{type(exc).__name__}:{exc}"
     diagnostic["provider_registered"] = True
     diagnostic["executor_registered"] = True
     diagnostic["ok"] = True

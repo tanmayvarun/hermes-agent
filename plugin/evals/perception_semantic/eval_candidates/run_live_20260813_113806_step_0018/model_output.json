@@ -1,0 +1,500 @@
+{
+  "world_model": {
+    "frame": 18,
+    "surface": "conversation",
+    "open_conversation": "Pallavi",
+    "focused_field_role": "media_viewer",
+    "objects": [
+      {
+        "id": "msg_link_zarooratwala",
+        "kind": "message_bubble",
+        "text": "You: https://www.zarooratwala.com/?utm_source=ig...",
+        "point": [
+          806,
+          94
+        ],
+        "matches_goal": true,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "msg_forwarded_text",
+        "kind": "message_bubble",
+        "text": "Forwarded Chunni ko bhi Prabal se baat karna hai...",
+        "point": [
+          769,
+          163
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "img_media_content",
+        "kind": "image_display",
+        "text": "Photo of desk with religious items and headphones",
+        "point": [
+          320,
+          450
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "btn_reply",
+        "kind": "button",
+        "text": "Reply",
+        "point": [
+          610,
+          665
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      },
+      {
+        "id": "btn_done",
+        "kind": "button",
+        "text": "Done",
+        "point": [
+          655,
+          665
+        ],
+        "matches_goal": false,
+        "owner_surface": "conversation"
+      }
+    ],
+    "layers": [
+      {
+        "role": "container",
+        "name": "Conversation: Pallavi",
+        "state": "occluded",
+        "objects": [
+          {
+            "id": "msg_link_zarooratwala",
+            "kind": "message_bubble",
+            "text": "You: https://www.zarooratwala.com/?utm_source=ig...",
+            "point": [
+              806,
+              94
+            ],
+            "matches_goal": true,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "msg_forwarded_text",
+            "kind": "message_bubble",
+            "text": "Forwarded Chunni ko bhi Prabal se baat karna hai...",
+            "point": [
+              769,
+              163
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          }
+        ]
+      },
+      {
+        "role": "dialog",
+        "name": "Media Viewer Overlay",
+        "state": "active",
+        "objects": [
+          {
+            "id": "img_media_content",
+            "kind": "image_display",
+            "text": "Photo of desk with religious items and headphones",
+            "point": [
+              320,
+              450
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "btn_reply",
+            "kind": "button",
+            "text": "Reply",
+            "point": [
+              610,
+              665
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "btn_done",
+            "kind": "button",
+            "text": "Done",
+            "point": [
+              655,
+              665
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          }
+        ]
+      }
+    ],
+    "beliefs": [
+      {
+        "predicate": "media_viewer_active",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Screenshot shows full-screen image overlay",
+          "'Done' and 'Reply' buttons visible at bottom right",
+          "Chat list thumbnails visible at bottom edge"
+        ],
+        "confirmed_on_frame": 18,
+        "owner_surface": "conversation",
+        "semantic_role": "ui_state"
+      },
+      {
+        "predicate": "context_menu_absent",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Media viewer blocks access to message bubble context menu",
+          "No forward/share controls visible in overlay"
+        ],
+        "confirmed_on_frame": 18,
+        "owner_surface": "conversation",
+        "semantic_role": "ui_state"
+      },
+      {
+        "predicate": "source_message_found",
+        "value": true,
+        "confidence": 1.0,
+        "evidence": [
+          "Previous frame showed link message"
+        ],
+        "confirmed_on_frame": 17,
+        "owner_surface": "conversation",
+        "semantic_role": "target_link"
+      },
+      {
+        "predicate": "click_target_mismatch",
+        "value": true,
+        "confidence": 0.95,
+        "evidence": [
+          "Repeated select_content actions opened media instead of triggering context menu",
+          "Clicks landing on link text or media preview rather than message container"
+        ],
+        "confirmed_on_frame": 17,
+        "owner_surface": "conversation",
+        "semantic_role": "interaction_error"
+      }
+    ],
+    "progress": {
+      "phase": "locating_source",
+      "objective": "Exit media viewer to access message context menu",
+      "notes": "The previous action (likely a click on the link message) opened the media viewer overlay instead of the context menu. The target link is now obscured. Must close this view to retry selecting the messa"
+    },
+    "attempts": [
+      {
+        "frame": 18,
+        "action": "observe",
+        "target": "",
+        "result": "ok:observe (media viewer active)"
+      }
+    ],
+    "exhausted": [
+      "select_content (on link text)"
+    ],
+    "task_surface": {
+      "app": "WhatsApp",
+      "window_bounds": [
+        42.0,
+        39.0,
+        1581.0,
+        979.0
+      ],
+      "window_id": 12968,
+      "display_index": 0,
+      "display_count": 1,
+      "displays": [
+        {
+          "index": 0,
+          "bounds": [
+            0.0,
+            0.0,
+            1710.0,
+            1107.0
+          ],
+          "backing_scale": 2.0,
+          "is_main": true
+        }
+      ],
+      "capture_origin": [
+        706.0,
+        39.0
+      ],
+      "capture_scale": 1.0,
+      "point_scale": 1.4328125,
+      "note": "Image (0,0) is the task window top-left. Pointer events use global desktop points. Prefer OCR/AX screen bounds; if you emit image points, set coordinate_space=image."
+    }
+  },
+  "backtrack": {},
+  "observed_state": {
+    "surface": "conversation",
+    "open_conversation": "Pallavi",
+    "target_object_visible": false,
+    "target_object_id": null,
+    "layers": [
+      {
+        "role": "container",
+        "name": "Conversation: Pallavi",
+        "state": "occluded",
+        "objects": [
+          {
+            "id": "msg_link_zarooratwala",
+            "kind": "message_bubble",
+            "text": "You: https://www.zarooratwala.com/?utm_source=ig...",
+            "point": [
+              806,
+              94
+            ],
+            "matches_goal": true,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "msg_forwarded_text",
+            "kind": "message_bubble",
+            "text": "Forwarded Chunni ko bhi Prabal se baat karna hai...",
+            "point": [
+              769,
+              163
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          }
+        ]
+      },
+      {
+        "role": "dialog",
+        "name": "Media Viewer Overlay",
+        "state": "active",
+        "objects": [
+          {
+            "id": "img_media_content",
+            "kind": "image_display",
+            "text": "Photo of desk with religious items and headphones",
+            "point": [
+              320,
+              450
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "btn_reply",
+            "kind": "button",
+            "text": "Reply",
+            "point": [
+              610,
+              665
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          },
+          {
+            "id": "btn_done",
+            "kind": "button",
+            "text": "Done",
+            "point": [
+              655,
+              665
+            ],
+            "matches_goal": false,
+            "owner_surface": "conversation"
+          }
+        ]
+      }
+    ],
+    "focused_field_role": "media_viewer"
+  },
+  "belief_updates": [
+    {
+      "predicate": "media_viewer_active",
+      "value": true,
+      "confidence": 1.0,
+      "evidence": [
+        "Screenshot shows full-screen image overlay",
+        "'Done' and 'Reply' buttons visible at bottom right",
+        "Chat list thumbnails visible at bottom edge"
+      ],
+      "confirmed_on_frame": 18,
+      "owner_surface": "conversation",
+      "semantic_role": "ui_state"
+    },
+    {
+      "predicate": "context_menu_absent",
+      "value": true,
+      "confidence": 1.0,
+      "evidence": [
+        "Media viewer blocks access to message bubble context menu",
+        "No forward/share controls visible in overlay"
+      ],
+      "confirmed_on_frame": 18,
+      "owner_surface": "conversation",
+      "semantic_role": "ui_state"
+    },
+    {
+      "predicate": "source_message_found",
+      "value": true,
+      "confidence": 1.0,
+      "evidence": [
+        "Previous frame showed link message"
+      ],
+      "confirmed_on_frame": 17,
+      "owner_surface": "conversation",
+      "semantic_role": "target_link"
+    },
+    {
+      "predicate": "click_target_mismatch",
+      "value": true,
+      "confidence": 0.95,
+      "evidence": [
+        "Repeated select_content actions opened media instead of triggering context menu",
+        "Clicks landing on link text or media preview rather than message container"
+      ],
+      "confirmed_on_frame": 17,
+      "owner_surface": "conversation",
+      "semantic_role": "interaction_error"
+    }
+  ],
+  "next_action": {},
+  "next_actions": [
+    {
+      "rank": 1,
+      "family": "dismiss_transient",
+      "target_id": null,
+      "text": "Close media viewer",
+      "confidence": 0.95,
+      "why": "The 'Done' button is visible at bottom-right; clicking it or pressing Escape will close the overlay and reveal the chat list/message bubbles again."
+    },
+    {
+      "rank": 2,
+      "family": "press_escape",
+      "target_id": null,
+      "text": "Press Escape key",
+      "confidence": 0.9,
+      "why": "Standard shortcut to dismiss modal overlays like the media viewer without using the mouse."
+    }
+  ],
+  "suggested_actions": [
+    {
+      "rank": 1,
+      "family": "dismiss_transient",
+      "target_id": null,
+      "text": "Close media viewer",
+      "confidence": 0.95,
+      "why": "The 'Done' button is visible at bottom-right; clicking it or pressing Escape will close the overlay and reveal the chat list/message bubbles again."
+    },
+    {
+      "rank": 2,
+      "family": "press_escape",
+      "target_id": null,
+      "text": "Press Escape key",
+      "confidence": 0.9,
+      "why": "Standard shortcut to dismiss modal overlays like the media viewer without using the mouse."
+    }
+  ],
+  "expected_transition": {
+    "surface": "conversation",
+    "likely_controls": [
+      "Message bubbles",
+      "Context menu (upon correct selection)"
+    ]
+  },
+  "surprise_explanation": {
+    "cause": "unknown",
+    "locus": "unknown",
+    "transition_class": "unknown",
+    "confidence": 0.0,
+    "detail": "",
+    "evidence": [],
+    "repair": {
+      "kind": "reperceive"
+    },
+    "do_not_repeat": [],
+    "recommended_next": "reperceive",
+    "source": "model"
+  },
+  "visible_objects": [
+    {
+      "id": "msg_link_zarooratwala",
+      "kind": "message_bubble",
+      "text": "You: https://www.zarooratwala.com/?utm_source=ig...",
+      "point": [
+        806,
+        94
+      ],
+      "matches_goal": true,
+      "owner_surface": "conversation"
+    },
+    {
+      "id": "msg_forwarded_text",
+      "kind": "message_bubble",
+      "text": "Forwarded Chunni ko bhi Prabal se baat karna hai...",
+      "point": [
+        769,
+        163
+      ],
+      "matches_goal": false,
+      "owner_surface": "conversation"
+    },
+    {
+      "id": "img_media_content",
+      "kind": "image_display",
+      "text": "Photo of desk with religious items and headphones",
+      "point": [
+        320,
+        450
+      ],
+      "matches_goal": false,
+      "owner_surface": "conversation"
+    },
+    {
+      "id": "btn_reply",
+      "kind": "button",
+      "text": "Reply",
+      "point": [
+        610,
+        665
+      ],
+      "matches_goal": false,
+      "owner_surface": "conversation"
+    },
+    {
+      "id": "btn_done",
+      "kind": "button",
+      "text": "Done",
+      "point": [
+        655,
+        665
+      ],
+      "matches_goal": false,
+      "owner_surface": "conversation"
+    }
+  ],
+  "missing_evidence": [],
+  "evidence_gaps": [
+    "Is the target link message still visible below the fold after closing the viewer?"
+  ],
+  "coverage": 0.4,
+  "missing_affordance_information": [
+    "Forward control (blocked by overlay)"
+  ],
+  "recommended_probe": {},
+  "affordance_qc": {
+    "expected_found": false,
+    "missing": [
+      "Forward",
+      "Context Menu"
+    ],
+    "notes": "Media viewer overlay is blocking the task-critical controls. Expected to find Forward on a context menu, but currently seeing image content."
+  },
+  "affordance_stance": "explore_needed",
+  "scene_summary": "A media viewer overlay is active, displaying a photo of a desk with religious items. The underlying conversation is occluded. 'Done' and 'Reply' buttons are visible at the bottom.",
+  "confidence": 0.9,
+  "model": "qwen3.5:397b",
+  "latency_s": 30.378
+}

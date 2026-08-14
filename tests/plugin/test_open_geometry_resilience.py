@@ -141,6 +141,42 @@ def test_open_source_failure_invalidates_and_escalates_to_search():
     assert runtime.world_model.overlay_hints["open_repair"]["prefer"] == "compose_search_query"
 
 
+def test_open_miss_with_visible_source_object_does_not_escalate_to_search():
+    """Method miss when source_object_visible must not wipe retrieval."""
+    runtime = RuntimeState()
+    runtime.world_model = WorldModel(active_app="WhatsApp")
+    runtime.world_model.overlay_hints = {
+        "forward_task": {
+            "predicates": {"source_object_visible": True, "source_conversation_open": False}
+        }
+    }
+    hit = "You: https://www.zarooratwala.com/?x=1"
+    decision = Action(
+        action="OpenEntity",
+        action_family="open_entity",
+        semantic_target=hit,
+        target_entity_id=9,
+        target_point=(242.0, 354.0),
+    )
+    _note_open_source_failure(runtime, decision, reason="prediction_mismatch")
+    r2 = _note_open_source_failure(
+        runtime,
+        Action(
+            action="OpenEntity",
+            action_family="open_entity",
+            semantic_target=hit,
+            target_entity_id=9,
+            target_point=(429.0, 355.0),
+        ),
+        reason="prediction_mismatch",
+    )
+    assert r2["prefer"] == "method_exhausted_reperceive"
+    assert r2.get("failure_class") == "method_ineffective"
+    # Scoped method avoid (not global bare fam|tgt|) survives XY re-ground.
+    keys = set(runtime.execution_state.avoid_motor_keys or [])
+    assert any("intent=" in k and "sig=" in k for k in keys)
+
+
 def test_reveal_actor_keeps_global_screen_cta_over_image_inventory_point():
     """014321: inventory [790,500] must not beat decision [3417,947] on display 2."""
     brief = brief_from_brain_choice(

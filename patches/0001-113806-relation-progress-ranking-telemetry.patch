@@ -1,0 +1,946 @@
+From 870ad83f34899a3556aeb252191f38d394a247ab Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 12:02:11 +0530
+Subject: [PATCH 1/3] fix(agent): parse sent_to as recipient, not originator
+
+Keep authorship UNKNOWN unless language says from-X / I-sent; do not
+loosen RoleBinder to compensate for upstream relation inversion.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/decision_consultation.py         |  3 +-
+ plugin/agent/goal.py                          | 52 ++++++++++++++---
+ .../agent/test_goal_relation_semantics.py     | 57 +++++++++++++++++++
+ 3 files changed, 103 insertions(+), 9 deletions(-)
+ create mode 100644 tests/plugin/agent/test_goal_relation_semantics.py
+
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 56939031b..66f6fb74a 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -791,8 +791,9 @@ def build_decision_brief(
+         "source_conversation": str(getattr(goal, "contact", "") or ""),
+         "source_query": str(getattr(goal, "link_query", "") or ""),
+         "destination": str(getattr(goal, "target_contact", "") or ""),
+-        # Typed authorship only — never alias from contact/source_conversation.
++        # Typed authorship / addressee — never alias from contact.
+         "originator": str(getattr(goal, "originator", "") or ""),
++        "recipient": str(getattr(goal, "recipient", "") or ""),
+     }
+     candidate_labels = [str(r.get("label") or "") for r in rows if r.get("label")]
+ 
+diff --git a/plugin/agent/goal.py b/plugin/agent/goal.py
+index 0cbee6043..81c3d718c 100644
+--- a/plugin/agent/goal.py
++++ b/plugin/agent/goal.py
+@@ -37,6 +37,9 @@ class Goal:
+     # container (conversation_with / source_conversation). Empty means UNKNOWN —
+     # never alias to contact.
+     originator: str = ""
++    # Message addressee ("sent to Pallavi"). Distinct from originator and from
++    # forward destination (target_contact). Empty means UNKNOWN.
++    recipient: str = ""
+     procedure_id: str = ""
+     procedure_score: float = 0.0
+     procedure_reasons: list[str] = field(default_factory=list)
+@@ -82,11 +85,25 @@ class Goal:
+             return cls(kind="unknown", app=app, prompt="")
+ 
+         if "whatsapp" in lowered and any(keyword in lowered for keyword in ("forward", "share", "send", "find")):
+-            source = cls._extract_name(
++            # Typed relations — keep independent (never alias sent_to → originator).
++            recipient = cls._extract_name(
++                (
++                    r"(?:sent|forwarded|shared)\s+to\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                ),
++                prompt,
++            )
++            originator_named = cls._extract_name(
++                (
++                    r"(?:received\s+)?from\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                    r"(?:sent|shared|forwarded)\s+by\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                ),
++                prompt,
++            )
++            container = cls._extract_name(
+                 (
+-                    r"(?:sent\s+to|from|with)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                     r"(?:chat|conversation)\s+(?:with\s+)?([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+-                    r"(?:to|from)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                    r"(?:in|inside)\s+([A-Z][\w .'-]{1,80}?)(?:'s)?\s+(?:chat|conversation)\b",
++                    r"\bwith\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                 ),
+                 prompt,
+             )
+@@ -104,7 +121,7 @@ class Goal:
+                 ),
+                 prompt,
+             )
+-            # Directional originator: "I sent/shared" → self; "from X" → X.
++            # Authorship only from explicit self / from-X cues — never from recipient.
+             self_origin = bool(
+                 re.search(
+                     r"\b(?:i|me|my)\s+(?:sent|shared|forwarded)\b"
+@@ -112,26 +129,30 @@ class Goal:
+                     lowered,
+                 )
+             )
+-            originator = "self" if self_origin else (source or "")
++            originator = "self" if self_origin else (originator_named or "")
++            # Container: chat-with / in-X-chat, else recipient (sent-to), else author chat.
++            contact = container or recipient or (originator_named if originator_named else "")
+             if "forward" in lowered or "share" in lowered or "send" in lowered:
+                 return cls(
+                     kind="whatsapp_forward_message",
+                     app=app,
+                     prompt=prompt,
+-                    contact=source,
++                    contact=contact,
+                     target_contact=target,
+                     link_query=link_query,
+                     originator=originator,
++                    recipient=recipient,
+                 )
+             if "find" in lowered:
+                 return cls(
+                     kind="whatsapp_read_message",
+                     app=app,
+                     prompt=prompt,
+-                    contact=source,
++                    contact=contact,
+                     target_contact=target,
+                     link_query=link_query,
+                     originator=originator,
++                    recipient=recipient,
+                 )
+ 
+         if "call" in lowered:
+@@ -171,8 +192,19 @@ class Goal:
+         if self.kind == "whatsapp_voice_call" and self.contact:
+             return f"Call {self.contact} on {self.app}"
+         if self.kind == "whatsapp_forward_message":
++            if self.originator and self.originator != "self":
++                who = f"from {self.originator}"
++            elif self.originator == "self":
++                who = "I sent"
++            elif self.recipient:
++                # sent_to ⇒ recipient relation; authorship remains UNKNOWN.
++                who = f"sent to {self.recipient}"
++            elif self.contact:
++                who = f"in {self.contact}"
++            else:
++                who = "content"
+             return (
+-                f"Find {self.link_query or 'content'} from {self.contact} "
++                f"Find {self.link_query or 'content'} {who} "
+                 f"and forward to {self.target_contact} on {self.app}"
+             )
+         return f"{self.kind} on {self.app}"
+@@ -188,6 +220,10 @@ class Goal:
+         ]
+         if self.contact:
+             lines.append(f"- contact: {self.contact}")
++        if self.originator:
++            lines.append(f"- originator: {self.originator}")
++        if self.recipient:
++            lines.append(f"- recipient: {self.recipient}")
+         if self.target_contact:
+             lines.append(f"- target_contact: {self.target_contact}")
+         if self.link_query:
+diff --git a/tests/plugin/agent/test_goal_relation_semantics.py b/tests/plugin/agent/test_goal_relation_semantics.py
+new file mode 100644
+index 000000000..c4d624fd1
+--- /dev/null
++++ b/tests/plugin/agent/test_goal_relation_semantics.py
+@@ -0,0 +1,57 @@
++"""Goal relation parse: sent_to ≠ sent_from ≠ container ≠ destination."""
++
++from plugin.agent.goal import Goal
++
++
++def test_sent_from_Alice_sets_originator_Alice():
++    goal = Goal.infer_from_text(
++        "find the invoice link from Alice on whatsapp and forward to Bob"
++    )
++    assert goal.originator.lower() == "alice"
++    assert goal.contact.lower() == "alice"
++    assert goal.recipient == ""
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_sent_to_Alice_sets_recipient_not_originator():
++    goal = Goal.infer_from_text(
++        "find the zarooratwala link sent to Alice on whatsapp and forward to Bob"
++    )
++    assert goal.recipient.lower() == "alice"
++    assert goal.contact.lower() == "alice"
++    assert goal.originator == ""  # UNKNOWN — not aliased from recipient
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_I_sent_to_Alice_sets_originator_self_recipient_Alice():
++    goal = Goal.infer_from_text(
++        "find the link I sent to Alice on whatsapp and forward to Bob"
++    )
++    assert goal.originator == "self"
++    assert goal.recipient.lower() == "alice"
++    assert goal.contact.lower() == "alice"
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_in_Alice_chat_sets_container_originator_unknown():
++    goal = Goal.infer_from_text(
++        "find the invoice in Alice's chat on whatsapp and forward to Bob"
++    )
++    assert goal.contact.lower() == "alice"
++    assert goal.originator == ""
++    assert goal.recipient == ""
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_live_zarooratwala_sent_to_prompt_does_not_require_pallavi_authorship():
++    """Live 113806 prompt must not invent originator=Pallavi from sent_to."""
++    goal = Goal.infer_from_text(
++        "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
++    )
++    assert goal.contact.lower() == "pallavi"
++    assert goal.recipient.lower() == "pallavi"
++    assert goal.originator == ""
++    assert goal.target_contact.lower() == "tanmay"
++    assert goal.link_query == "zarooratwala"
++    assert "sent to pallavi" in goal.description.lower()
++    assert "from pallavi" not in goal.description.lower()
+-- 
+2.39.5 (Apple Git-154)
+
+
+From 6c3b0d7a5f012c8a8c24bdfd24ce092a6dbe0ec4 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 12:02:50 +0530
+Subject: [PATCH 2/3] fix(agent): preserve established patient across
+ affordance failures
+
+Interaction failures (reveal/context-menu) must repair the affordance layer
+instead of regressing into locate/SEARCH. Invalidate retrieval only when the
+patient is contradicted or absent.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py |  24 ++-
+ plugin/agent/decision_consultation.py       |  68 +++++--
+ plugin/agent/executive/meta_consultation.py |  39 ++++
+ plugin/agent/unified_cognition.py           |  19 +-
+ tests/plugin/test_progress_preservation.py  | 193 ++++++++++++++++++++
+ 5 files changed, 330 insertions(+), 13 deletions(-)
+ create mode 100644 tests/plugin/test_progress_preservation.py
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index d42f743e0..12269aad0 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -1493,11 +1493,23 @@ def search_continue_capability(
+     ).strip()
+     # Open conversation + unpaid content query under SEARCH → locate in-chat
+     # (live 225807: SEARCH meta kept falling through to Observe).
++    # Live 113806: skip when patient content is already established on-screen —
++    # affordance repair must not regress into retrieval.
++    patient_known = False
++    if link_q and surface == "conversation":
++        try:
++            from plugin.agent.source_query_binding import document_locates_source_query
++
++            doc = brief.world if isinstance(getattr(brief, "world", None), dict) else {}
++            patient_known = bool(document_locates_source_query(doc, link_q))
++        except Exception:
++            patient_known = False
+     if (
+         surface == "conversation"
+         and meta == "search"
+         and bool(getattr(task, "source_chat_open", False))
+         and not bool(getattr(task, "content_located", False))
++        and not patient_known
+         and link_q
+         and "locate_content" in allowed
+     ):
+@@ -1850,13 +1862,23 @@ def meta_referent_search_signals(
+     # (live 214626: false/true source open + ACT on unrelated visible row).
+     role = str(ep.get("role") or "").strip().lower()
+     content_episode_done = bool(complete and role == "content")
++    # Soft on-screen patient clears SEARCH debt without RoleBinder commit
++    # (live 113806: visible URL + reveal miss must not re-arm locate).
++    patient_on_screen = bool(content_located)
++    if not patient_on_screen and link_q and isinstance(document, dict):
++        try:
++            from plugin.agent.source_query_binding import document_locates_source_query
++
++            patient_on_screen = bool(document_locates_source_query(document, link_q))
++        except Exception:
++            patient_on_screen = False
+     # Content SEARCH debt only after the container is open. A completed *source*
+     # episode (Pallavi row chosen) must not clear it (live 214025).
+     need_content = (
+         bool(link_q)
+         and bool(source_chat_open)
+         and not failed
+-        and not content_located
++        and not patient_on_screen
+         and not content_episode_done
+     )
+     need_dest = surf == "forward_picker" and bool(dest) and not complete
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 66f6fb74a..65dcedf3f 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -3052,6 +3052,38 @@ def _entity_resolution_type_query_outcome(
+     )
+ 
+ 
++
++
++def _patient_content_established(brief: "DecisionBrief") -> bool:
++    """True when source-query patient is already on-screen / soft-located.
++
++    Interaction-affordance failures must not erase this fact and restart
++    retrieval (live 113806: reveal miss → locate_content found=False).
++    """
++    task = brief.task_state
++    if bool(getattr(task, "content_located", False)):
++        return True
++    link_q = str(
++        (brief.goal or {}).get("source_query")
++        or (brief.goal or {}).get("link_query")
++        or ""
++    ).strip()
++    if not link_q:
++        return False
++    doc = brief.world if isinstance(brief.world, dict) else {}
++    try:
++        from plugin.agent.source_query_binding import document_locates_source_query
++
++        if document_locates_source_query(doc, link_q):
++            return True
++    except Exception:
++        pass
++    # Soft extras / phase already acknowledging patient presence.
++    if str(getattr(task, "phase", "") or "").strip().lower() == "act_on_content":
++        return True
++    return False
++
++
+ def _content_search_locate_outcome(
+     brief: "DecisionBrief",
+     *,
+@@ -3065,6 +3097,9 @@ def _content_search_locate_outcome(
+ 
+     Live 185549: AX-blind locate left EffectStatus UNKNOWN; identical locate must
+     not reseal while verification is pending / method still unresolved.
++
++    Live 113806: do **not** reseal when the patient is already established —
++    reveal/select failures repair affordances, they do not restart retrieval.
+     """
+     meta_now = str(getattr(brief, "meta_action", "") or "").strip().lower()
+     if meta_now != "search":
+@@ -3074,6 +3109,8 @@ def _content_search_locate_outcome(
+         return None
+     if bool(getattr(task, "content_located", False)):
+         return None
++    if _patient_content_established(brief):
++        return None
+     link_q = str(
+         (brief.goal or {}).get("source_query")
+         or (brief.goal or {}).get("link_query")
+@@ -3090,6 +3127,9 @@ def _content_search_locate_outcome(
+     prior_cap = str(getattr(prior, "capability", "") or "").strip().lower()
+     if prior_cap == "locate_content" and str(getattr(prior, "target", "") or "").strip():
+         return None
++    # Affordance repair: never overwrite reveal/select with locate while patient known.
++    if prior_cap in {"reveal_actions", "select_content"}:
++        return None
+     if prior_cap in {"type_query", "compose_search_query", "resolve_entity"}:
+         # Prefer locate inside an open chat over sidebar compose.
+         if prior_cap != "type_query" or surface == "conversation":
+@@ -3530,22 +3570,28 @@ def apply_decision_consultation(
+ 
+     # SEARCH with open source chat + unpaid link query → locate_content
+     # (live 225807 Observe thrash after correct YouTube reject).
++    # Live 113806: do not override reveal/select when the patient is already
++    # established — that is affordance repair, not retrieval restart.
+     _content_seal = _content_search_locate_outcome(
+         brief, prior=outcome, execution_state=execution_state
+     )
++    _cap_now = str(outcome.capability or "").strip().lower()
++    _patient_known = _patient_content_established(brief)
++    _affordance_caps = {"reveal_actions", "select_content"}
+     if _content_seal is not None and (
+         not outcome.ok
+-        or str(outcome.capability or "").strip().lower()
+-        in {
+-            "",
+-            "observe",
+-            "request_more_evidence",
+-            "invoke_affordance",
+-            "reveal_actions",
+-            "select_content",
+-            "open_entity",
+-            "commit_irreversible",
+-        }
++        or (
++            _cap_now
++            in {
++                "",
++                "observe",
++                "request_more_evidence",
++                "invoke_affordance",
++                "open_entity",
++                "commit_irreversible",
++            }
++            or (_cap_now in _affordance_caps and not _patient_known)
++        )
+     ):
+         outcome = _content_seal
+ 
+diff --git a/plugin/agent/executive/meta_consultation.py b/plugin/agent/executive/meta_consultation.py
+index adf874769..e0e4b6522 100644
+--- a/plugin/agent/executive/meta_consultation.py
++++ b/plugin/agent/executive/meta_consultation.py
+@@ -616,6 +616,45 @@ def sanitize_meta_choice(
+                 "source": "llm_contract",
+             },
+         )
++    # Patient already established (SEARCH debt cleared) + reveal/select failure:
++    # repair interaction affordance on the same patient — do not re-enter SEARCH
++    # (live 113806: context_menu miss → locate_content found=False).
++    if (
++        reveal_failed
++        and bool(getattr(ctx, "address_known", False))
++        and not content_search_owed
++        and not bool(getattr(ctx, "role_identity_search_owed", False))
++        and not destination_search
++        and action is MetaAction.SEARCH
++    ):
++        prefer_select = str(
++            getattr(ctx, "reveal_prefer_capability", "") or ""
++        ).strip().lower() in {"select_content", "select"}
++        if prefer_select:
++            return MetaChoice(
++                MetaAction.ACT,
++                "contract: patient established — repair affordance via select, not re-search",
++                {
++                    "act": 1.0,
++                    "affordance_repair": 1.0,
++                    "reveal_episode_failed": 1.0,
++                    "forbid_search": 1.0,
++                    "llm_proposed": action.value,
++                    "source": "llm_contract",
++                },
++            )
++        return MetaChoice(
++            MetaAction.EXPLORE,
++            "contract: patient established — repair affordance, not re-search",
++            {
++                "explore": 1.0,
++                "affordance_repair": 1.0,
++                "reveal_episode_failed": 1.0,
++                "forbid_search": 1.0,
++                "llm_proposed": action.value,
++                "source": "llm_contract",
++            },
++        )
+     # Active EXPLORE intention with methods left → keep EXPLORE (intent retry).
+     # Exception: reveal already failed with select recovery — that is ACT.
+     intention_active = bool(getattr(ctx, "intention_explore_active", False))
+diff --git a/plugin/agent/unified_cognition.py b/plugin/agent/unified_cognition.py
+index 904a54bea..ae7e3be34 100644
+--- a/plugin/agent/unified_cognition.py
++++ b/plugin/agent/unified_cognition.py
+@@ -5442,6 +5442,19 @@ def proposal_to_action(
+             )
+ 
+             cand = text or semantic_target
++            cand_l = str(cand or "").strip().lower()
++            # Perception object ids (msg_link_*) must never become locate queries
++            # (live 113806: locate "msg_link_zarooratwala" → found=False).
++            object_id_query = bool(
++                cand_l.startswith("msg_")
++                or cand_l.startswith("obj_")
++                or (
++                    bool(re.match(r"^[a-z]+_[a-z0-9_]+$", cand_l))
++                    and "http" not in cand_l
++                    and " " not in cand_l
++                    and len(cand_l) > len(link_q) + 2
++                )
++            )
+             distractor = bool(cand) and (
+                 host_contradicts_query(cand, link_q)
+                 or (
+@@ -5450,12 +5463,16 @@ def proposal_to_action(
+                 )
+             )
+             if family == "locate_content" and (
+-                not cand or distractor or not query_supported_by_text(cand, link_q)
++                not cand
++                or distractor
++                or object_id_query
++                or not query_supported_by_text(cand, link_q)
+             ):
+                 text = link_q
+                 semantic_target = link_q
+             elif distractor:
+                 text = link_q
++
+         except Exception:
+             if family == "locate_content":
+                 text = link_q
+diff --git a/tests/plugin/test_progress_preservation.py b/tests/plugin/test_progress_preservation.py
+new file mode 100644
+index 000000000..4445a23aa
+--- /dev/null
++++ b/tests/plugin/test_progress_preservation.py
+@@ -0,0 +1,193 @@
++"""Scoped invalidation: interaction failure must not erase established patient."""
++
++from __future__ import annotations
++
++from plugin.agent.capabilities.search_episode import meta_referent_search_signals
++from plugin.agent.decision_consultation import (
++    DecisionBrief,
++    DecisionOutcome,
++    TaskState,
++    _content_search_locate_outcome,
++    _patient_content_established,
++)
++from plugin.agent.executive.meta_action import MetaAction, MetaContext
++from plugin.agent.executive.meta_consultation import sanitize_meta_choice
++from plugin.agent.runtime.state import ExecutionState
++
++
++def _patient_doc(query: str = "zarooratwala") -> dict:
++    return {
++        "surface": "conversation",
++        "open_conversation": "Alice",
++        "objects": [
++            {
++                "id": "msg_link_1",
++                "kind": "link",
++                "text": f"https://www.{query}.com/",
++                "matches_goal": True,
++            }
++        ],
++    }
++
++
++def test_reveal_failure_preserves_established_patient():
++    brief = DecisionBrief(
++        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        world=_patient_doc(),
++        capabilities=["locate_content", "reveal_actions", "select_content"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            content_located=False,
++            content_visible=True,
++        ),
++        reveal_episode_failed=True,
++    )
++    assert _patient_content_established(brief) is True
++    prior = DecisionOutcome(
++        ok=True,
++        capability="reveal_actions",
++        target="https://www.zarooratwala.com/",
++        why="reveal after patient visible",
++        confidence=0.9,
++    )
++    seal = _content_search_locate_outcome(brief, prior=prior)
++    assert seal is None, "reveal failure must not reseal locate while patient known"
++
++
++def test_failed_context_menu_repairs_affordance_before_retrieval():
++    """Meta contract: SEARCH after reveal fail + patient known → affordance repair."""
++    choice = sanitize_meta_choice(
++        {"meta_action": "search", "why": "content unpaid", "confidence": 0.9},
++        MetaContext(
++            address_known=True,
++            referent_search_needed=False,
++            reveal_episode_failed=True,
++            reveal_prefer_capability="select_content",
++        ),
++    )
++    assert choice is not None
++    assert choice.action is MetaAction.ACT
++    assert choice.scores.get("forbid_search") == 1.0
++    assert choice.scores.get("affordance_repair") == 1.0
++
++
++def test_patient_disappeared_allows_retrieval_regression():
++    """Only contradictory absence re-arms locate / SEARCH content debt."""
++    brief = DecisionBrief(
++        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        world={
++            "surface": "conversation",
++            "open_conversation": "Alice",
++            "objects": [
++                {"id": "m1", "kind": "message", "text": "hello", "matches_goal": False}
++            ],
++        },
++        capabilities=["locate_content", "observe"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="hunt_content",
++            source_chat_open=True,
++            content_located=False,
++            content_visible=False,
++        ),
++    )
++    assert _patient_content_established(brief) is False
++    seal = _content_search_locate_outcome(brief)
++    assert seal is not None
++    assert seal.capability == "locate_content"
++
++    goal = type(
++        "G",
++        (),
++        {
++            "contact": "Alice",
++            "link_query": "zarooratwala",
++            "target_contact": "Bob",
++        },
++    )()
++    state = ExecutionState()
++    sig = meta_referent_search_signals(
++        state,
++        phase="hunt_content",
++        source_chat_open=True,
++        surface="conversation",
++        goal=goal,
++        content_located=False,
++        document=brief.world,
++    )
++    assert sig["needed"] is True
++
++
++def test_surface_change_invalidates_grounding_not_identity():
++    """Patient still on-screen after overlay dismiss → keep identity, no locate."""
++    # Context menu dismissed → conversation surface, URL still present.
++    brief = DecisionBrief(
++        goal={"source_query": "zarooratwala", "link_query": "zarooratwala"},
++        world=_patient_doc(),
++        capabilities=["locate_content", "reveal_actions", "select_content"],
++        meta_action="search",
++        task_state=TaskState(
++            phase="act_on_content",
++            source_chat_open=True,
++            content_located=False,
++            content_visible=True,
++            referent_selected=False,  # grounding lost with overlay
++        ),
++        reveal_episode_failed=True,
++    )
++    assert _patient_content_established(brief) is True
++    assert brief.task_state.referent_selected is False
++    seal = _content_search_locate_outcome(
++        brief,
++        prior=DecisionOutcome(
++            ok=False,
++            capability="reveal_actions",
++            target="https://www.zarooratwala.com/",
++            why="context_menu absent",
++        ),
++    )
++    assert seal is None
++
++    goal = type(
++        "G",
++        (),
++        {
++            "contact": "Alice",
++            "link_query": "zarooratwala",
++            "target_contact": "Bob",
++        },
++    )()
++    sig = meta_referent_search_signals(
++        ExecutionState(),
++        phase="act_on_content",
++        source_chat_open=True,
++        surface="conversation",
++        goal=goal,
++        content_located=False,
++        document=brief.world,
++    )
++    assert sig["needed"] is False, "on-screen patient clears SEARCH debt"
++
++
++def test_visible_patient_clears_content_search_debt_without_content_located_flag():
++    goal = type(
++        "G",
++        (),
++        {
++            "contact": "Alice",
++            "link_query": "zarooratwala",
++            "target_contact": "Bob",
++        },
++    )()
++    sig = meta_referent_search_signals(
++        ExecutionState(),
++        phase="hunt_content",
++        source_chat_open=True,
++        surface="conversation",
++        goal=goal,
++        content_located=False,
++        document=_patient_doc(),
++    )
++    assert sig["needed"] is False
+-- 
+2.39.5 (Apple Git-154)
+
+
+From 0cb0fc116d87058fc5e901d3c625cc89b343a041 Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 12:03:24 +0530
+Subject: [PATCH 3/3] =?UTF-8?q?fix(agent):=20instrument=20SEARCH=20candida?=
+ =?UTF-8?q?te=E2=86=92ledger=E2=86=92choice=E2=86=92ACT=20path?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Emit selection_path and selection_trace so live probes can verify whether
+the ranking architecture chose the target, versus a source-contact shortcut.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py   | 46 +++++++++++-
+ plugin/agent/decision_consultation.py         | 35 +++++++++-
+ .../plugin/test_search_hypothesis_ranking.py  | 70 +++++++++++++++++++
+ 3 files changed, 148 insertions(+), 3 deletions(-)
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index 12269aad0..f1632e638 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -569,6 +569,12 @@ def advance_search_with_candidates(
+         ),
+         # Unique / ranked choice is not RoleBinder resolution.
+         "role_resolved": bool(ep.get("role_resolved")) if status != "complete" else False,
++        # End-to-end ranking path marker (vs source-contact shortcut).
++        "selection_path": (
++            "rank"
++            if ledger
++            else str(ep.get("selection_path") or "")
++        ),
+     }
+     if status == "complete" and choice_confidence == "provisional":
+         ep["role_resolved"] = False
+@@ -724,15 +730,43 @@ def note_retrieval_complete(
+     return ep
+ 
+ 
++def search_selection_trace(episode: Optional[Dict[str, Any]]) -> Dict[str, Any]:
++    """Compact candidate→ledger→choice→ACT-target telemetry for live probes."""
++    ep = episode if isinstance(episode, dict) else {}
++    if not ep:
++        return {}
++    ledger = list(ep.get("hypothesis_ledger") or [])[:8]
++    path = str(ep.get("selection_path") or "").strip()
++    if not path:
++        if ledger:
++            path = "rank"
++        elif str(ep.get("chosen_label") or "").strip():
++            path = "source_contact_shortcut"
++    chosen = str(ep.get("chosen_label") or ep.get("explore_label") or "").strip()
++    return {
++        "selection_path": path,
++        "candidate_count": int(ep.get("candidate_count") or 0),
++        "hypothesis_ledger": ledger,
++        "selected_hypothesis": chosen,
++        "explore_label": str(ep.get("explore_label") or ""),
++        "choice_confidence": str(ep.get("choice_confidence") or ""),
++        "role_resolved": bool(ep.get("role_resolved")),
++        "act_target": chosen,
++        "status": str(ep.get("status") or ""),
++        "role": str(ep.get("role") or ""),
++    }
++
++
+ def complete_search_choice(
+     execution_state: Any,
+     *,
+     chosen_label: str,
+     chosen_id: Any = None,
+     scores: Optional[Sequence[Any]] = None,
++    selection_path: str = "",
+ ) -> Dict[str, Any]:
+     """Role-resolved search completion (retrieval + binding-eligible referent)."""
+-    return note_retrieval_complete(
++    ep = note_retrieval_complete(
+         execution_state,
+         chosen_label=chosen_label,
+         chosen_id=chosen_id,
+@@ -740,6 +774,15 @@ def complete_search_choice(
+         role_resolved=True,
+         candidate_count=1,
+     )
++    path = str(selection_path or "").strip()
++    if path and isinstance(ep, dict):
++        ep = {**ep, "selection_path": path}
++        try:
++            if execution_state is not None:
++                execution_state.search_episode = ep
++        except Exception:
++            pass
++    return ep
+ 
+ 
+ def maybe_complete_source_contact_from_visible_row(
+@@ -805,6 +848,7 @@ def maybe_complete_source_contact_from_visible_row(
+         chosen_label=label,
+         chosen_id=row.get("id"),
+         scores=[1.0],
++        selection_path="source_contact_shortcut",
+     )
+ 
+ 
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 65dcedf3f..1589c9b79 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -221,6 +221,19 @@ class DecisionBrief:
+         if self.effect_closure:
+             packet["effect_closure"] = dict(self.effect_closure)
+         if isinstance(self.search_episode, dict) and self.search_episode:
++            try:
++                from plugin.agent.capabilities.search_episode import (
++                    search_selection_trace,
++                )
++
++                trace = search_selection_trace(self.search_episode)
++            except Exception:
++                trace = {}
++            ledger = list(
++                (trace.get("hypothesis_ledger") if trace else None)
++                or self.search_episode.get("hypothesis_ledger")
++                or []
++            )[:4]
+             packet["search_episode"] = {
+                 "status": self.search_episode.get("status"),
+                 "role": self.search_episode.get("role"),
+@@ -228,7 +241,27 @@ class DecisionBrief:
+                 "query": self.search_episode.get("query"),
+                 "candidate_count": self.search_episode.get("candidate_count"),
+                 "chosen_label": self.search_episode.get("chosen_label"),
++                "explore_label": self.search_episode.get("explore_label"),
++                "choice_confidence": self.search_episode.get("choice_confidence"),
++                "role_resolved": self.search_episode.get("role_resolved"),
+                 "space": self.search_episode.get("space"),
++                "hypothesis_ledger": ledger,
++                "path": str(
++                    (trace or {}).get("selection_path")
++                    or self.search_episode.get("selection_path")
++                    or ""
++                ),
++                "selection_trace": {
++                    k: (trace or {}).get(k)
++                    for k in (
++                        "selection_path",
++                        "selected_hypothesis",
++                        "act_target",
++                        "candidate_count",
++                        "choice_confidence",
++                    )
++                    if (trace or {}).get(k) not in (None, "", [])
++                },
+             }
+         return packet
+ 
+@@ -3052,8 +3085,6 @@ def _entity_resolution_type_query_outcome(
+     )
+ 
+ 
+-
+-
+ def _patient_content_established(brief: "DecisionBrief") -> bool:
+     """True when source-query patient is already on-screen / soft-located.
+ 
+diff --git a/tests/plugin/test_search_hypothesis_ranking.py b/tests/plugin/test_search_hypothesis_ranking.py
+index 2513e617c..93b91e28e 100644
+--- a/tests/plugin/test_search_hypothesis_ranking.py
++++ b/tests/plugin/test_search_hypothesis_ranking.py
+@@ -264,6 +264,76 @@ def test_frozen_world_old_vs_new_ranking_separates_ties():
+     assert ranked[0]["id"] != "related"
+ 
+ 
++def test_rank_path_emits_candidate_ledger_choice_act_trace():
++    """End-to-end: candidates → ledger → selected hypothesis → ACT target."""
++    from plugin.agent.capabilities.search_episode import search_selection_trace
++    from plugin.agent.decision_consultation import DecisionBrief
++
++    state = ExecutionState()
++    start_search_episode(
++        state,
++        role="content",
++        referent="acme",
++        query="acme",
++        evidence_tokens=["Alice", "acme"],
++        expected_originator="Alice",
++        expected_container="Alice",
++    )
++    ep = advance_search_with_candidates(
++        state,
++        _frozen_inventory(),
++        referent="acme",
++        query="acme",
++        evidence_tokens=["Alice", "acme"],
++    )
++    assert ep.get("selection_path") == "rank"
++    assert ep.get("hypothesis_ledger")
++    trace = search_selection_trace(ep)
++    assert trace["selection_path"] == "rank"
++    assert trace["selected_hypothesis"]
++    assert trace["act_target"] == trace["selected_hypothesis"]
++    brief = DecisionBrief(
++        goal={"source_conversation": "Alice", "source_query": "acme"},
++        world={"surface": "search", "objects": _frozen_inventory()},
++        search_episode=ep,
++        task_state=TaskState(phase="reach_source"),
++        capabilities=["open_entity"],
++    )
++    packet = brief.to_packet()
++    assert packet["search_episode"]["path"] == "rank"
++    assert packet["search_episode"]["hypothesis_ledger"]
++    assert packet["search_episode"]["selection_trace"]["act_target"]
++    assert _open_entity_target_from_brief(brief) == packet["search_episode"][
++        "selection_trace"
++    ]["act_target"]
++
++
++def test_source_contact_shortcut_marks_selection_path():
++    from plugin.agent.capabilities.search_episode import (
++        maybe_complete_source_contact_from_visible_row,
++        search_selection_trace,
++    )
++
++    state = ExecutionState()
++    doc = {
++        "surface": "chat_list",
++        "objects": [
++            {
++                "id": "r1",
++                "kind": "chat_row",
++                "text": "Alice",
++                "point": [10, 20],
++            }
++        ],
++    }
++    ep = maybe_complete_source_contact_from_visible_row(
++        state, document=doc, contact="Alice", source_chat_open=False
++    )
++    assert ep is not None
++    assert ep.get("selection_path") == "source_contact_shortcut"
++    assert search_selection_trace(ep)["selection_path"] == "source_contact_shortcut"
++
++
+ def test_hypothesis_ledger_mandatory_fields():
+     ranked = rank_search_hypotheses(
+         _frozen_inventory(),
+-- 
+2.39.5 (Apple Git-154)
+

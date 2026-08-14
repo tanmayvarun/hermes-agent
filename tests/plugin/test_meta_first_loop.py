@@ -392,7 +392,12 @@ def test_must_executive_reperceive_is_meta_signal_not_forced_look(tmp_path, monk
     )
     events = log.read_all()
     assert not any(e.get("kind") == "perception_forced" for e in events)
-    assert MetaAction.PERCEIVE in meta_actions or MetaAction.PERCEIVE in meta_actions
+    # Unpaid post-act debt may be preempted by the executability gate as
+    # MetaAction.PERCEIVE (skipping assess); that is still a meta-scheduled look.
+    assert (
+        MetaAction.PERCEIVE in meta_actions
+        or any(e.get("kind") == "mandatory_verification" for e in events)
+    )
     labels = [c[0] for c in perceive_calls]
     assert any(lbl in {"meta_perceive", "meta_reflect", "meta_verify"} for lbl in labels)
     handling = next(

@@ -61,6 +61,28 @@ def compose_domain_adapters() -> None:
                 "exception": f"{type(exc).__name__}: {exc}",
             }
         )
+    try:
+        from plugin.agent.providers.whatsapp_gateway import (
+            ensure_whatsapp_gateway_provider_registered,
+        )
+
+        wa_diag = dict(ensure_whatsapp_gateway_provider_registered() or {})
+        wa_diag.setdefault("event", "whatsapp_gateway_composition")
+        wa_diag.setdefault("ok", bool(wa_diag.get("ready")))
+        _COMPOSITION_DIAGNOSTICS.append(wa_diag)
+    except Exception as exc:
+        _COMPOSITION_DIAGNOSTICS.append(
+            {
+                "event": "whatsapp_gateway_composition",
+                "ok": False,
+                "ready": False,
+                "provider_registered": False,
+                "executor_registered": False,
+                "resolver_registered": False,
+                "reason": "composition_exception",
+                "exception": f"{type(exc).__name__}: {exc}",
+            }
+        )
     _COMPOSED = True
 
 

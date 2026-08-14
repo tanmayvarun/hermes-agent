@@ -29,6 +29,7 @@ import {
   $turnStartedAt,
   sessionMatchesStoredId
 } from '@/store/session'
+import { $activePromptPhase } from '@/store/prompt-tasks'
 import { $focusedRuntimeId, $focusedSessionState, $focusedStoredSessionId } from '@/store/session-states'
 import { $subagentsBySession, activeSubagentCount, failedSubagentCount } from '@/store/subagents'
 import { $gatewayRestarting } from '@/store/system-actions'
@@ -102,6 +103,7 @@ export function useStatusbarItems({
   const gatewayRestarting = useStore($gatewayRestarting)
   const primarySessionStartedAt = useStore($sessionStartedAt)
   const primaryTurnStartedAt = useStore($turnStartedAt)
+  const activePromptPhase = useStore($activePromptPhase)
   const subagentsBySession = useStore($subagentsBySession)
   const updateStatus = useStore($updateStatus)
   const updateApply = useStore($updateApply)
@@ -412,7 +414,7 @@ export function useStatusbarItems({
         hidden: !busy || !turnStartedAt,
         icon: <Loader2 className="size-3 animate-spin" />,
         id: 'running-timer',
-        label: copy.turnRunning,
+        label: activePromptPhase ? `${copy.turnRunning} · ${activePromptPhase}` : copy.turnRunning,
         title: copy.currentTurnElapsed,
         variant: 'text'
       },
@@ -455,6 +457,7 @@ export function useStatusbarItems({
       ...(backendVersionItem ? [backendVersionItem] : [])
     ],
     [
+      activePromptPhase,
       activeSessionId,
       approvalModeItem,
       backendVersionItem,

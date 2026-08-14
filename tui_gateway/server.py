@@ -5018,6 +5018,44 @@ def _make_agent(
     if isinstance(model_override, dict) and model_override.get("model"):
         model = str(model_override.get("model") or "")
         requested_provider = model_override.get("provider") or provider_override or None
+        # Re-check inventory at build time so resume/sticky overrides cannot
+        # advertise a model the active provider no longer (or never) lists.
+        try:
+            from hermes_cli.models import coerce_model_for_provider
+
+            cfg_default = ""
+            try:
+                _m = (cfg.get("model") if isinstance(cfg, dict) else None) or {}
+                if isinstance(_m, dict):
+                    cfg_default = str(_m.get("default") or _m.get("model") or "").strip()
+                    if not requested_provider:
+                        requested_provider = str(_m.get("provider") or "").strip() or None
+                elif isinstance(_m, str):
+                    cfg_default = _m.strip()
+            except Exception:
+                cfg_default = ""
+            coerced = coerce_model_for_provider(
+                model,
+                requested_provider,
+                default_model=cfg_default or None,
+            )
+            if coerced.get("remapped"):
+                logger.info(
+                    "session model override coerced provider=%s %r → %r (%s)",
+                    coerced.get("provider"),
+                    coerced.get("original_model"),
+                    coerced.get("model"),
+                    coerced.get("reason"),
+                )
+                model = str(coerced.get("model") or model)
+                requested_provider = coerced.get("provider") or requested_provider
+                model_override = {
+                    **model_override,
+                    "model": model,
+                    "provider": requested_provider,
+                }
+        except Exception:
+            logger.debug("model override coerce failed", exc_info=True)
         override_base_url = model_override.get("base_url")
         override_api_key = model_override.get("api_key")
         override_api_mode = model_override.get("api_mode")
@@ -5469,6 +5507,12 @@ def _history_to_messages(history: list[dict]) -> list[dict]:
             for key in reasoning_keys:
                 if key in m and m.get(key) is not None:
                     msg[key] = m.get(key)
+            # Preserve AgentRuntime rich UI (WhatsApp Link-a-device QR, etc.)
+            # across session.resume — without this the QR text survives but
+            # the inline QR component never remounts.
+            hints = m.get("ui_hints")
+            if isinstance(hints, dict) and hints:
+                msg["ui_hints"] = hints
         messages.append(msg)
 
     return messages
@@ -5768,12 +5812,51 @@ def _(rid, params: dict) -> dict:
     # the agent below) — never a global config write, so picking a model/effort
     # for a new chat can't mutate the profile default. provider is optional
     # (resolved at build).
+    #
+    # Coerce against the active provider inventory before advertising: sticky
+    # picks can carry a foreign catalog id (e.g. OpenRouter `:free` on
+    # ollama-cloud). Provider prewarm only proves the provider answers — not
+    # that this model id is executable there.
     create_model = str(params.get("model") or "").strip()
-    session_model_override = (
-        {"model": create_model, "provider": str(params.get("provider") or "").strip() or None}
-        if create_model
-        else None
-    )
+    create_provider = str(params.get("provider") or "").strip() or None
+    session_model_override = None
+    if create_model:
+        try:
+            from hermes_cli.models import coerce_model_for_provider
+
+            cfg_model = ""
+            try:
+                _cfg = _load_cfg()
+                _m = _cfg.get("model") if isinstance(_cfg, dict) else None
+                if isinstance(_m, dict):
+                    cfg_model = str(_m.get("default") or _m.get("model") or "").strip()
+                    if not create_provider:
+                        create_provider = str(_m.get("provider") or "").strip() or None
+                elif isinstance(_m, str):
+                    cfg_model = _m.strip()
+            except Exception:
+                cfg_model = ""
+            coerced = coerce_model_for_provider(
+                create_model,
+                create_provider,
+                default_model=cfg_model or None,
+            )
+            if coerced.get("remapped"):
+                logger.info(
+                    "session.create model coerced provider=%s %r → %r (%s)",
+                    coerced.get("provider"),
+                    coerced.get("original_model"),
+                    coerced.get("model"),
+                    coerced.get("reason"),
+                )
+            create_model = str(coerced.get("model") or create_model)
+            create_provider = coerced.get("provider") or create_provider
+        except Exception:
+            logger.debug("session.create model coerce failed", exc_info=True)
+        session_model_override = {
+            "model": create_model,
+            "provider": create_provider,
+        }
     create_reasoning_override = None
     if effort := str(params.get("reasoning_effort") or "").strip():
         try:
@@ -10077,8 +10160,14 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 conversation_runner=agent.run_conversation,
                 run_message=run_message,
                 conversation_kwargs=run_kwargs,
+                on_task_update=lambda payload, _sid=sid: _emit(
+                    "task.status", _sid, dict(payload or {})
+                ),
             )
             session["last_runtime_trace"] = dict(_turn.acceptance_trace or {})
+            session["last_task_request_id"] = str(
+                getattr(_turn, "task_request_id", "") or ""
+            )
             interp = getattr(_turn, "interpretation", None)
             if interp is not None and str(getattr(interp, "goal_kind", "") or "") not in {
                 "",
@@ -10092,20 +10181,97 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 session.pop("structured_goal_kind", None)
                 session.pop("structured_goal_prompt", None)
 
+            def _runtime_transcript(final_text: str) -> list[dict]:
+                """Persist user+assistant for non-legacy runtime turns.
+
+                Legacy run_conversation returns a full messages list. Structured
+                methods / ASK turns previously returned messages=[] so desktop
+                resumed an empty chat even when message.complete had text.
+                """
+                user_content = prompt if isinstance(prompt, str) else str(prompt or "")
+                out = list(history)
+                if user_content.strip():
+                    out.append({"role": "user", "content": user_content})
+                if str(final_text or "").strip():
+                    assistant_msg: dict = {
+                        "role": "assistant",
+                        "content": str(final_text),
+                    }
+                    # Keep Link-a-device QR (and other rich UI) across resume/reload.
+                    _hints = dict(getattr(_turn, "ui_hints", None) or {})
+                    if _hints:
+                        assistant_msg["ui_hints"] = _hints
+                    try:
+                        from plugin.agent.runtime.task_tracker import get_task_tracker
+
+                        _bits = get_task_tracker().complete_payload(
+                            str(getattr(_turn, "task_request_id", "") or "")
+                        )
+                        if _bits.get("final_status") is not None:
+                            assistant_msg["task_outcome"] = {
+                                "finalStatus": _bits.get("final_status"),
+                                "durationMs": _bits.get("duration_ms"),
+                                "phase": _bits.get("phase"),
+                                "summary": _bits.get("summary") or "",
+                                "taskRequestId": _bits.get("task_request_id") or "",
+                            }
+                            if _bits.get("error_code"):
+                                assistant_msg["task_outcome"]["errorCode"] = _bits.get(
+                                    "error_code"
+                                )
+                            if _bits.get("message"):
+                                assistant_msg["task_outcome"]["message"] = _bits.get(
+                                    "message"
+                                )
+                    except Exception:
+                        pass
+                    out.append(assistant_msg)
+                return out
+
             if _turn.status == TurnStatus.WAITING_FOR_USER:
+                # Prefer the pending message (may include link-QR instructions)
+                # over the original ASK question once resolution has started.
+                _wait_text = str(_turn.message or _turn.question or "")
                 result = {
-                    "final_response": str(_turn.question or _turn.message or ""),
-                    "messages": [],
+                    "final_response": _wait_text,
+                    "messages": _runtime_transcript(_wait_text),
                     "waiting_for_user": True,
                     "intention_id": _turn.intention_id,
+                    "ui_hints": dict(getattr(_turn, "ui_hints", None) or {}),
                 }
-            else:
+            elif _turn.status == TurnStatus.LEGACY_DELEGATED:
+                # Legacy conversation_runner payload owns the transcript text.
                 result = _turn.legacy_result
                 if result is None:
                     result = {
                         "final_response": str(_turn.message or ""),
-                        "messages": [],
+                        "messages": _runtime_transcript(str(_turn.message or "")),
                     }
+                if getattr(_turn, "ui_hints", None) and isinstance(result, dict):
+                    result = dict(result)
+                    result.setdefault("ui_hints", dict(_turn.ui_hints or {}))
+            else:
+                # Structured method execution (e.g. WhatsApp gateway / ComputerUse).
+                # Executor payloads are NOT conversation results — they often lack
+                # final_response. Using them as `result` previously emitted an empty
+                # message.complete and made the turn look stuck/dead.
+                _method_text = str(_turn.message or "")
+                result = {
+                    "final_response": _method_text,
+                    "messages": _runtime_transcript(_method_text),
+                    "selected_method": str(
+                        getattr(_turn, "selected_method", "") or ""
+                    ),
+                    "selected_substrate": str(
+                        getattr(_turn, "selected_substrate", "") or ""
+                    ),
+                    "runtime_status": str(_turn.status or ""),
+                }
+                if isinstance(_turn.legacy_result, dict):
+                    result["executor_payload"] = dict(_turn.legacy_result)
+                # Always include ui_hints (including {}) so desktop can clear QR
+                # after scan / QR timeout fallthrough.
+                result["ui_hints"] = dict(getattr(_turn, "ui_hints", None) or {})
             if "moa_one_shot_restore" in session:
                 _restore = session.pop("moa_one_shot_restore", None)
                 # Restore the model the user was on before the /moa one-shot.
@@ -10217,6 +10383,42 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 payload["reasoning"] = last_reasoning
             if status_note:
                 payload["warning"] = status_note
+            if isinstance(result, dict):
+                # Forward empty ui_hints too — clients clear Link-a-device QR on {}.
+                if "ui_hints" in result and isinstance(result.get("ui_hints"), dict):
+                    payload["ui_hints"] = dict(result["ui_hints"])
+                if result.get("waiting_for_user"):
+                    payload["waiting_for_user"] = True
+            # Prompt-as-task: final status + duration for the UI footer.
+            try:
+                from plugin.agent.runtime.task_tracker import (
+                    final_status_from_turn,
+                    get_task_tracker,
+                )
+
+                _tid = str(
+                    getattr(_turn, "task_request_id", "")
+                    or session.get("last_task_request_id")
+                    or ""
+                )
+                _tracker = get_task_tracker()
+                _task_bits = _tracker.complete_payload(_tid) if _tid else {}
+                if not _task_bits.get("final_status"):
+                    _task_bits["final_status"] = final_status_from_turn(
+                        str(getattr(_turn, "status", "") or ""),
+                        interrupted=(status == "interrupted"),
+                    )
+                    if status == "error":
+                        _task_bits["final_status"] = "failed"
+                    if isinstance(result, dict) and result.get("waiting_for_user"):
+                        _task_bits["final_status"] = "waiting_for_user"
+                if _tid:
+                    _task_bits.setdefault("task_request_id", _tid)
+                for _k, _v in _task_bits.items():
+                    if _v is not None and _v != "":
+                        payload[_k] = _v
+            except Exception:
+                pass
             rendered = render_message(raw, cols)
             if rendered:
                 payload["rendered"] = rendered

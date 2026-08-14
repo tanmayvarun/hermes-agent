@@ -429,6 +429,10 @@ export interface SessionMessage {
   tool_call_id?: null | string
   tool_calls?: unknown
   tool_name?: string
+  /** AgentRuntime rich UI (e.g. WhatsApp link-device QR). */
+  ui_hints?: Record<string, unknown>
+  /** Prompt-as-task frozen outcome (status + duration). */
+  task_outcome?: Record<string, unknown>
 }
 
 export interface SessionMessagesResponse {

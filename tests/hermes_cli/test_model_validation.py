@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from hermes_cli.models import (
     azure_foundry_model_api_mode,
+    coerce_model_for_provider,
     copilot_model_api_mode,
     fetch_github_model_catalog,
     curated_models_for_provider,
@@ -972,3 +973,63 @@ class TestProbeApiModelsUserAgent:
 
         req = mock_urlopen.call_args[0][0]
         assert req.get_header("X-goog-api-client") is None
+
+
+class TestCoerceModelForProvider:
+    """Sticky composer picks must not advertise ids absent from provider inventory."""
+
+    OLLAMA = ["mistral-large-3:675b", "nemotron-3-ultra", "gpt-oss:120b"]
+
+    def test_keeps_inventory_member(self):
+        out = coerce_model_for_provider(
+            "nemotron-3-ultra",
+            "ollama-cloud",
+            default_model="mistral-large-3:675b",
+            inventory=self.OLLAMA,
+        )
+        assert out["model"] == "nemotron-3-ultra"
+        assert out["remapped"] is False
+
+    def test_normalizes_openrouter_shaped_alias_when_stem_in_inventory(self):
+        out = coerce_model_for_provider(
+            "nvidia/nemotron-3-ultra:free",
+            "ollama-cloud",
+            default_model="mistral-large-3:675b",
+            inventory=self.OLLAMA,
+        )
+        assert out["model"] == "nemotron-3-ultra"
+        assert out["remapped"] is True
+        assert out["reason"] == "normalized_to_inventory_id"
+
+    def test_remaps_foreign_sticky_to_default(self):
+        out = coerce_model_for_provider(
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "ollama-cloud",
+            default_model="mistral-large-3:675b",
+            inventory=self.OLLAMA,
+        )
+        assert out["model"] == "mistral-large-3:675b"
+        assert out["remapped"] is True
+        assert out["reason"] == "sticky_not_in_inventory_use_default"
+        assert out["original_model"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+    def test_remaps_to_first_when_default_also_missing(self):
+        out = coerce_model_for_provider(
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "ollama-cloud",
+            default_model="missing-default",
+            inventory=self.OLLAMA,
+        )
+        assert out["model"] == "mistral-large-3:675b"
+        assert out["reason"] == "sticky_not_in_inventory_use_first_available"
+
+    def test_leaves_pick_when_inventory_unavailable(self):
+        out = coerce_model_for_provider(
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "ollama-cloud",
+            default_model="mistral-large-3:675b",
+            inventory=[],
+        )
+        assert out["model"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
+        assert out["remapped"] is False
+        assert out["reason"] == "inventory_unavailable"

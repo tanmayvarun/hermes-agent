@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from plugin.agent.executive.blocking import (
     BlockingCondition,
     EffectPredicate,
@@ -13,6 +15,7 @@ from plugin.agent.executive.blocking import (
     evaluate_effect_predicate,
     resolve_methods_for_effect,
 )
+from plugin.agent.executive.executability_gate import run_executability_gate
 from plugin.agent.executive.intention_frame import (
     Intention,
     IntentionFrame,
@@ -20,11 +23,15 @@ from plugin.agent.executive.intention_frame import (
     IntentionStatus,
     active_intention_frame,
     ensure_child_for_precondition,
+    ensure_prereq_child_or_next_method,
     evaluate_intention_success,
     intention_stack_of,
     push_intention_frame,
     resume_parent_after_child,
+    seed_reveal_explore_frame,
+    spawn_child_for_precondition,
 )
+from plugin.agent.executive.meta_action import MetaAction
 from plugin.agent.runtime.state import ExecutionState
 
 
@@ -333,6 +340,178 @@ def test_effect_predicate_judge_not_capability_claim():
     assert evaluate_effect_predicate(
         pred, world={"available_storage_bytes": 150}
     )
+
+
+def test_post_act_reperceive_debt_preempts_prerequisite_child():
+    """Mandatory look outranks ACT-producing prerequisite children."""
+    state = ExecutionState()
+    parent = _parent_frame()
+    push_intention_frame(state, parent)
+    child = ensure_child_for_precondition(
+        state,
+        parent,
+        effect_key="source_object_selected",
+        success_predicate="source_object_selected",
+        methods=[("select_content", "select_content")],
+    )
+    assert child is not None
+    assert active_intention_frame(state) is child
+    state.post_action_reperceive_pending = True
+    state.must_executive_reperceive = True
+    gate = run_executability_gate(
+        state,
+        view={"surface": "conversation", "screen": "conversation"},
+        goal_kind="whatsapp_forward_message",
+    )
+    assert gate.phase == "mandatory_verification"
+    assert gate.skip_normal_meta is True
+    assert gate.meta is not None
+    assert gate.meta.action == MetaAction.PERCEIVE
+    assert gate.meta.reason == "mandatory_post_action_verification"
+    # Child remains active — verification must not pop it.
+    assert active_intention_frame(state) is child
+    assert child.prerequisite_effect_key == "source_object_selected"
+
+
+def test_post_action_perceive_does_not_lose_child_intention():
+    state = ExecutionState()
+    parent = _parent_frame()
+    push_intention_frame(state, parent)
+    child = spawn_child_for_precondition(
+        state,
+        parent,
+        blocked_method_id="reveal_hover",
+        precondition="source_object_selected",
+    )
+    child_id = child.intention.id
+    state.post_action_reperceive_pending = True
+    gate1 = run_executability_gate(state, view={"surface": "conversation"})
+    assert gate1.meta and gate1.meta.action == MetaAction.PERCEIVE
+    assert active_intention_frame(state).intention.id == child_id
+    # Look paid → child may ACT if still required.
+    state.post_action_reperceive_pending = False
+    state.must_executive_reperceive = False
+    gate2 = run_executability_gate(state, view={"surface": "conversation"})
+    assert gate2.phase == "prerequisite_child_act"
+    assert gate2.meta and gate2.meta.action == MetaAction.ACT
+    assert gate2.meta.capability == "select_content"
+    assert active_intention_frame(state).intention.id == child_id
+
+
+def test_successful_downstream_action_invalidates_obsolete_prerequisite():
+    """Verified Forward effect (picker) retires source_object_selected child debt."""
+    state = ExecutionState()
+    parent = seed_reveal_explore_frame(target_binding="source_object")
+    push_intention_frame(state, parent)
+    child = spawn_child_for_precondition(
+        state,
+        parent,
+        blocked_method_id="reveal_hover",
+        precondition="source_object_selected",
+    )
+    assert active_intention_frame(state) is child
+    state.last_plan_step = SimpleNamespace(
+        action_family="invoke_affordance",
+        semantic_target="Forward",
+        text="Forward",
+    )
+    state.last_result = {"ok": True}
+    state.last_attribution = {"effect_kind": "progress", "outcome": "progress"}
+    # Verified downstream effect surface — not motor ok alone.
+    gate = run_executability_gate(
+        state,
+        view={"surface": "forward_picker", "screen": "forward_picker"},
+        goal_kind="whatsapp_forward_message",
+    )
+    assert gate.phase == "prerequisite_resume"
+    assert gate.resume and gate.resume.get("child_effect_met")
+    # Child must not remain as an ACT-forcing source_object_selected debt.
+    top = active_intention_frame(state)
+    assert not (
+        top
+        and top.parent_intention_id
+        and str(top.prerequisite_effect_key or "") == "source_object_selected"
+    )
+    # Stale False predicate must not re-spawn a select child after Forward.
+    if top is not None:
+        nxt = ensure_prereq_child_or_next_method(
+            state,
+            top,
+            world={"surface": "forward_picker"},
+            predicates={"source_object_selected": False},
+        )
+        if nxt is not None and nxt.capability == "select_content":
+            assert "source_object_selected" not in (nxt.preconditions or [])
+    top2 = active_intention_frame(state)
+    assert not (
+        top2
+        and top2.parent_intention_id
+        and str(top2.prerequisite_effect_key or "") == "source_object_selected"
+    )
+
+
+def test_execution_ok_without_verified_effect_does_not_retire_prerequisite():
+    """Motor/executor ok alone must not retire source_object_selected."""
+    state = ExecutionState()
+    parent = seed_reveal_explore_frame(target_binding="source_object")
+    push_intention_frame(state, parent)
+    child = spawn_child_for_precondition(
+        state,
+        parent,
+        blocked_method_id="reveal_hover",
+        precondition="source_object_selected",
+    )
+    child_id = child.intention.id
+    state.last_plan_step = SimpleNamespace(
+        action_family="invoke_affordance",
+        semantic_target="Forward",
+        text="Forward",
+    )
+    state.last_result = {"ok": True}  # motor ok, no verified effect / picker
+    gate = run_executability_gate(
+        state,
+        view={"surface": "conversation", "screen": "conversation"},
+        goal_kind="whatsapp_forward_message",
+    )
+    assert gate.phase != "prerequisite_resume" or not (
+        gate.resume and gate.resume.get("child_effect_met")
+    )
+    top = active_intention_frame(state)
+    assert top is not None
+    assert top.intention.id == child_id
+    assert str(top.prerequisite_effect_key or "") == "source_object_selected"
+
+
+def test_missing_execution_result_does_not_retire_prerequisite():
+    """Absent/malformed last_result must fail closed (not default ok=True)."""
+    from plugin.agent.executive.intention_frame import world_with_prerequisite_evidence
+
+    state = ExecutionState()
+    state.last_plan_step = SimpleNamespace(
+        action_family="invoke_affordance",
+        semantic_target="Forward",
+        text="Forward",
+    )
+    state.last_result = None
+    annotated = world_with_prerequisite_evidence(
+        state, {"surface": "conversation"}
+    )
+    assert annotated.get("source_object_selected") is not True
+    assert annotated.get("downstream_implies_source_selected") is not True
+    assert annotated.get("forward_invoked_ok") is not True
+
+
+def test_open_source_satisfied_by_authoritative_open_container_advances_phase():
+    """Authoritative source_conversation_open closes OPEN_SOURCE → FIND_LINK."""
+    from plugin.agent.task_binding import ForwardPredicates, ForwardTaskState
+
+    state = ForwardTaskState(
+        predicates=ForwardPredicates(source_conversation_open=True),
+    )
+    phase = state.derive_phase(leftover=False)
+    assert phase == "FIND_LINK"
+    assert state.derived_phase == "FIND_LINK"
+    assert "open source" not in (state.local_objective or "").lower()
 
 
 def test_paired_storage_and_app_blockers_from_dialog():

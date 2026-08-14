@@ -1,0 +1,302 @@
+{
+  "nodes": [
+    {
+      "id": 23,
+      "role": "AXStaticText",
+      "label": "https://www.zarooratwala.com/?",
+      "bounds": [
+        1064,
+        142,
+        197,
+        13
+      ],
+      "description": "https://www.zarooratwala.com/?"
+    },
+    {
+      "id": 31,
+      "role": "AXStaticText",
+      "label": "Pallavi",
+      "bounds": [
+        554,
+        59,
+        48,
+        14
+      ],
+      "description": "Pallavi"
+    },
+    {
+      "id": 34,
+      "role": "AXStaticText",
+      "label": "ZarooratWala - Fresh Groceries Delivered",
+      "bounds": [
+        1066,
+        89,
+        248,
+        14
+      ],
+      "description": "ZarooratWala - Fresh Groceries Delivered"
+    },
+    {
+      "id": 36,
+      "role": "AXStaticText",
+      "label": "zarooratwala.com",
+      "bounds": [
+        1066,
+        114,
+        114,
+        16
+      ],
+      "description": "zarooratwala.com"
+    },
+    {
+      "id": 46,
+      "role": "AXStaticText",
+      "label": "zarooratwala lasawethe se",
+      "bounds": [
+        545,
+        985,
+        163,
+        13
+      ],
+      "description": "zarooratwala lasawethe se"
+    },
+    {
+      "id": 2,
+      "role": "AXWindow",
+      "label": "‎WhatsApp",
+      "bounds": [
+        42,
+        39,
+        1581,
+        979
+      ]
+    },
+    {
+      "id": 7,
+      "role": "AXStaticText",
+      "label": "Same Size Table Added Beside - Multiple Design Ideas",
+      "bounds": [
+        598,
+        769,
+        356,
+        13
+      ],
+      "description": "Same Size Table Added Beside - Multiple Design Ideas"
+    },
+    {
+      "id": 21,
+      "role": "AXStaticText",
+      "label": "Create more workspace, storage & a balanced look",
+      "bounds": [
+        673,
+        785,
+        204,
+        11
+      ],
+      "description": "Create more workspace, storage & a balanced look"
+    },
+    {
+      "id": 22,
+      "role": "AXStaticText",
+      "label": "utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdg=",
+      "bounds": [
+        1064,
+        158,
+        507,
+        16
+      ],
+      "description": "utm_source=ig&utm_medium=social&utm_content=link_in_bio&fbclid=PAdGRzdg="
+    },
+    {
+      "id": 26,
+      "role": "AXStaticText",
+      "label": "TO4XNIeHRuA2FIbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTIOMjc-",
+      "bounds": [
+        1064,
+        174,
+        448,
+        13
+      ],
+      "description": "TO4XNIeHRuA2FIbQIxMQBzcnRjBmFwcF9pZA81NjcwNjczNDMzNTIOMjc-"
+    },
+    {
+      "id": 27,
+      "role": "AXStaticText",
+      "label": "bete ke sath rahti hai .",
+      "bounds": [
+        876,
+        270,
+        137,
+        14
+      ],
+      "description": "bete ke sath rahti hai ."
+    },
+    {
+      "id": 28,
+      "role": "AXStaticText",
+      "label": "3:59 AM J/",
+      "bounds": [
+        1533,
+        208,
+        62,
+        14
+      ],
+      "description": "3:59 AM J/"
+    },
+    {
+      "id": 32,
+      "role": "AXStaticText",
+      "label": "AAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-",
+      "bounds": [
+        1064,
+        190,
+        448,
+        13
+      ],
+      "description": "AAad4VZ8BZYp2WG07_QZXUZyv4Zf6lj_V8EMIN_L5A04vzaCi86G8MTX-"
+    },
+    {
+      "id": 33,
+      "role": "AXStaticText",
+      "label": "Chunni ko bhi Prabal se baat karna hai, uski mother ka phone aaya tha. Lady gentle hai..Agra ki hai, Banglore me bade",
+      "bounds": [
+        878,
+        255,
+        714,
+        16
+      ],
+      "description": "Chunni ko bhi Prabal se baat karna hai, uski mother ka phone aaya tha. Lady gentle hai..Agra ki hai, Banglore me bade"
+    },
+    {
+      "id": 37,
+      "role": "AXStaticText",
+      "label": "Sat, 1 Aug",
+      "bounds": [
+        1020,
+        310,
+        66,
+        16
+      ],
+      "description": "Sat, 1 Aug"
+    },
+    {
+      "id": 39,
+      "role": "AXStaticText",
+      "label": "7:52 PM J/",
+      "bounds": [
+        1533,
+        273,
+        62,
+        11
+      ],
+      "description": "7:52 PM J/"
+    },
+    {
+      "id": 41,
+      "role": "AXStaticText",
+      "label": "mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ",
+      "bounds": [
+        1064,
+        206,
+        280,
+        13
+      ],
+      "description": "mmueng_aem_SJ-4D3eRjQETnWW_WSKHyQ"
+    },
+    {
+      "id": 43,
+      "role": "AXStaticText",
+      "label": "6:24 PM",
+      "bounds": [
+        995,
+        735,
+        45,
+        13
+      ],
+      "description": "6:24 PM"
+    },
+    {
+      "id": 44,
+      "role": "AXStaticText",
+      "label": "Forwarded",
+      "bounds": [
+        878,
+        238,
+        75,
+        11
+      ],
+      "description": "Forwarded"
+    },
+    {
+      "id": 45,
+      "role": "AXStaticText",
+      "label": "+",
+      "bounds": [
+        499,
+        983,
+        20,
+        20
+      ],
+      "description": "+"
+    },
+    {
+      "id": 47,
+      "role": "AXStaticText",
+      "label": "YTV",
+      "bounds": [
+        593,
+        928,
+        89,
+        36
+      ],
+      "description": "YTV"
+    },
+    {
+      "id": 49,
+      "role": "AXStaticText",
+      "label": "linimal + Symmetr",
+      "bounds": [
+        529,
+        808,
+        50,
+        9
+      ],
+      "description": "linimal + Symmetr"
+    },
+    {
+      "id": 50,
+      "role": "AXStaticText",
+      "label": "B. Wall Shelves + Book Storage",
+      "bounds": [
+        786,
+        811,
+        89,
+        4
+      ],
+      "description": "B. Wall Shelves + Book Storage"
+    },
+    {
+      "id": 1,
+      "role": "AXApplication",
+      "label": "WhatsApp",
+      "bounds": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": 3,
+      "role": "AXUnknown",
+      "label": "",
+      "bounds": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "count": 25
+}

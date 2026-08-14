@@ -2901,6 +2901,37 @@ def run_goal_closed_loop(
                 feats_pre = snap_pre.features
                 assert observation is not None and patch is not None
 
+        # Setup / login walls (Welcome, Link Device, …) — stop and ASK the user
+        # in Hermes instead of burning the step budget on an unusable screen.
+        try:
+            from plugin.agent.executive.setup_blockers import detect_setup_blocker
+
+            setup_blocker = detect_setup_blocker(
+                app=str(getattr(goal, "app", "") or observation.app_name or ""),
+                view=view if isinstance(view, dict) else {},
+                features=feats_pre,
+                observation=observation,
+            )
+        except Exception:
+            setup_blocker = None
+        if setup_blocker is not None:
+            _log_cycle(
+                log,
+                iteration=iteration,
+                phase="setup_blocker",
+                payload={
+                    "blocker": setup_blocker.id,
+                    "app": setup_blocker.app,
+                    "title": setup_blocker.title,
+                },
+                status="warn",
+            )
+            return _finish_failure(
+                setup_blocker.question,
+                setup_blocker.ask_evidence(),
+                iterations=iteration,
+            )
+
         _log_cycle(
             log,
             iteration=iteration,
@@ -3535,18 +3566,84 @@ def run_goal_closed_loop(
                 status="warn",
             )
             if meta.action == MetaAction.ASK:
-                return _finish_failure(
-                    "executive escalated to the user: no self-serve move resolves the block",
-                    {
-                        "meta_action": meta.to_dict(),
-                        "app_view": view,
-                        "consecutive_backtracks": int(
-                            getattr(runtime.execution_state, "consecutive_backtracks", 0) or 0
-                        ),
-                        "blocking_uncertainties": [str(q) for q in blocking_uncertainties][:8],
-                    },
-                    iterations=iteration,
+                # Prefer a Hermes WAITING_FOR_USER turn over a silent hard-fail.
+                ask_question = (
+                    "I can’t make further progress on my own from this screen. "
+                    "Please adjust the app so the normal UI is available, then reply **done**."
                 )
+                try:
+                    from plugin.agent.executive.setup_blockers import (
+                        DESKTOP_APP_READY_PRECONDITION,
+                        USER_SETUP_BLOCKER_KIND,
+                        detect_setup_blocker,
+                    )
+
+                    late_blocker = detect_setup_blocker(
+                        app=str(getattr(goal, "app", "") or ""),
+                        view=view if isinstance(view, dict) else {},
+                        features=feats_pre,
+                        observation=observation,
+                    )
+                    if late_blocker is not None:
+                        return _finish_failure(
+                            late_blocker.question,
+                            {
+                                **late_blocker.ask_evidence(),
+                                "meta_action": meta.to_dict(),
+                                "consecutive_backtracks": int(
+                                    getattr(
+                                        runtime.execution_state,
+                                        "consecutive_backtracks",
+                                        0,
+                                    )
+                                    or 0
+                                ),
+                            },
+                            iterations=iteration,
+                        )
+                    app_label = str(getattr(goal, "app", "") or "the app").strip() or "the app"
+                    ask_question = (
+                        f"I’m stuck and need your help with {app_label}. "
+                        "Adjust the app so I can continue, then reply **done**."
+                    )
+                    return _finish_failure(
+                        ask_question,
+                        {
+                            "fallback": "ask_prerequisite",
+                            "ask_precondition": DESKTOP_APP_READY_PRECONDITION,
+                            "ask_question": ask_question,
+                            "ui_hints": {
+                                "kind": USER_SETUP_BLOCKER_KIND,
+                                "blocker": "executive_ask",
+                                "app": app_label,
+                                "title": f"Need your help with {app_label}",
+                                "body": ask_question,
+                                "cta": "Reply **done** when ready",
+                            },
+                            "meta_action": meta.to_dict(),
+                            "consecutive_backtracks": int(
+                                getattr(
+                                    runtime.execution_state, "consecutive_backtracks", 0
+                                )
+                                or 0
+                            ),
+                            "blocking_uncertainties": [
+                                str(q) for q in blocking_uncertainties
+                            ][:8],
+                        },
+                        iterations=iteration,
+                    )
+                except Exception:
+                    return _finish_failure(
+                        ask_question,
+                        {
+                            "fallback": "ask_prerequisite",
+                            "ask_precondition": "desktop_app_ready",
+                            "ask_question": ask_question,
+                            "meta_action": meta.to_dict(),
+                        },
+                        iterations=iteration,
+                    )
             if meta.action == MetaAction.DELEGATE:
                 return _finish_failure(
                     "executive delegate runtime not configured: escalate instead",

@@ -39,12 +39,16 @@ const isLocalhostPreview = (target: string): boolean => /\b(?:localhost|127\.0\.
 // Real codicons per group (no sparkles): a checklist for todos, the agent glyph
 // for subagents, a background process glyph for background tasks.
 const GROUP_ICON: Record<StatusGroup['type'], string> = {
+  prompt: 'play',
   todo: 'checklist',
   subagent: 'agent',
   background: 'server-process'
 }
 
 const groupLabel = (group: StatusGroup, s: Translations['statusStack']) => {
+  if (group.type === 'prompt') {
+    return group.items[0]?.title || 'Task'
+  }
   if (group.type === 'todo') {
     return s.todos(group.items.filter(i => i.todoStatus === 'completed').length, group.items.length)
   }

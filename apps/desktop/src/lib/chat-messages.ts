@@ -20,6 +20,18 @@ export type ChatMessage = {
   hidden?: boolean
   /** Composer attachment ref strings (`@file:...`, `@image:...`) sent with this user message. */
   attachmentRefs?: string[]
+  /** Rich UI from runtime (e.g. WhatsApp link-device QR). */
+  uiHints?: Record<string, unknown>
+  /** Frozen prompt-as-task outcome for the turn footer. */
+  taskOutcome?: {
+    durationMs?: number | null
+    errorCode?: string
+    finalStatus: string
+    message?: string
+    phase?: string
+    summary?: string
+    taskRequestId?: string
+  }
 }
 
 export type GatewayEventPayload = {
@@ -80,6 +92,18 @@ export type GatewayEventPayload = {
   // session.title (live auto-title push) — stored session id + generated title
   session_id?: string
   title?: string
+  // AgentRuntime rich UI (WhatsApp link QR, etc.)
+  ui_hints?: Record<string, unknown>
+  waiting_for_user?: boolean
+  // Prompt-as-task finalization (message.complete / task.status)
+  task_request_id?: string
+  final_status?: string
+  duration_ms?: number
+  phase?: string
+  detail?: string
+  error_code?: string
+  message?: string
+  summary?: string
   // session.info — the stored (durable) session id for this runtime session.
   // Lets the desktop app map runtime→stored for background sessions it hasn't
   // opened, so the sidebar working indicator updates without opening the chat.
@@ -881,11 +905,40 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
       flushPendingTools(index)
     }
 
+    const uiHints =
+      message.ui_hints && typeof message.ui_hints === 'object'
+        ? (message.ui_hints as Record<string, unknown>)
+        : undefined
+    const taskOutcomeRaw =
+      message.task_outcome && typeof message.task_outcome === 'object'
+        ? (message.task_outcome as Record<string, unknown>)
+        : undefined
+    const taskOutcome =
+      taskOutcomeRaw && typeof taskOutcomeRaw.finalStatus === 'string'
+        ? {
+            durationMs:
+              typeof taskOutcomeRaw.durationMs === 'number' ? taskOutcomeRaw.durationMs : null,
+            errorCode:
+              typeof taskOutcomeRaw.errorCode === 'string' ? taskOutcomeRaw.errorCode : undefined,
+            finalStatus: taskOutcomeRaw.finalStatus,
+            message:
+              typeof taskOutcomeRaw.message === 'string' ? taskOutcomeRaw.message : undefined,
+            phase: typeof taskOutcomeRaw.phase === 'string' ? taskOutcomeRaw.phase : undefined,
+            summary: typeof taskOutcomeRaw.summary === 'string' ? taskOutcomeRaw.summary : undefined,
+            taskRequestId:
+              typeof taskOutcomeRaw.taskRequestId === 'string'
+                ? taskOutcomeRaw.taskRequestId
+                : undefined
+          }
+        : undefined
+
     result.push({
       id: `${message.timestamp || Date.now()}-${index}-${message.role}`,
       role: message.role,
       parts,
-      timestamp: message.timestamp
+      timestamp: message.timestamp,
+      ...(uiHints ? { uiHints } : {}),
+      ...(taskOutcome ? { taskOutcome } : {})
     })
 
     activeAssistantIndex = message.role === 'assistant' ? result.length - 1 : null

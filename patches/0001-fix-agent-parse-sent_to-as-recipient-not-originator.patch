@@ -1,0 +1,215 @@
+From 870ad83f34899a3556aeb252191f38d394a247ab Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 12:02:11 +0530
+Subject: [PATCH 1/3] fix(agent): parse sent_to as recipient, not originator
+
+Keep authorship UNKNOWN unless language says from-X / I-sent; do not
+loosen RoleBinder to compensate for upstream relation inversion.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/decision_consultation.py         |  3 +-
+ plugin/agent/goal.py                          | 52 ++++++++++++++---
+ .../agent/test_goal_relation_semantics.py     | 57 +++++++++++++++++++
+ 3 files changed, 103 insertions(+), 9 deletions(-)
+ create mode 100644 tests/plugin/agent/test_goal_relation_semantics.py
+
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 56939031b..66f6fb74a 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -791,8 +791,9 @@ def build_decision_brief(
+         "source_conversation": str(getattr(goal, "contact", "") or ""),
+         "source_query": str(getattr(goal, "link_query", "") or ""),
+         "destination": str(getattr(goal, "target_contact", "") or ""),
+-        # Typed authorship only — never alias from contact/source_conversation.
++        # Typed authorship / addressee — never alias from contact.
+         "originator": str(getattr(goal, "originator", "") or ""),
++        "recipient": str(getattr(goal, "recipient", "") or ""),
+     }
+     candidate_labels = [str(r.get("label") or "") for r in rows if r.get("label")]
+ 
+diff --git a/plugin/agent/goal.py b/plugin/agent/goal.py
+index 0cbee6043..81c3d718c 100644
+--- a/plugin/agent/goal.py
++++ b/plugin/agent/goal.py
+@@ -37,6 +37,9 @@ class Goal:
+     # container (conversation_with / source_conversation). Empty means UNKNOWN —
+     # never alias to contact.
+     originator: str = ""
++    # Message addressee ("sent to Pallavi"). Distinct from originator and from
++    # forward destination (target_contact). Empty means UNKNOWN.
++    recipient: str = ""
+     procedure_id: str = ""
+     procedure_score: float = 0.0
+     procedure_reasons: list[str] = field(default_factory=list)
+@@ -82,11 +85,25 @@ class Goal:
+             return cls(kind="unknown", app=app, prompt="")
+ 
+         if "whatsapp" in lowered and any(keyword in lowered for keyword in ("forward", "share", "send", "find")):
+-            source = cls._extract_name(
++            # Typed relations — keep independent (never alias sent_to → originator).
++            recipient = cls._extract_name(
++                (
++                    r"(?:sent|forwarded|shared)\s+to\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                ),
++                prompt,
++            )
++            originator_named = cls._extract_name(
++                (
++                    r"(?:received\s+)?from\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                    r"(?:sent|shared|forwarded)\s+by\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                ),
++                prompt,
++            )
++            container = cls._extract_name(
+                 (
+-                    r"(?:sent\s+to|from|with)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                     r"(?:chat|conversation)\s+(?:with\s+)?([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+-                    r"(?:to|from)\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
++                    r"(?:in|inside)\s+([A-Z][\w .'-]{1,80}?)(?:'s)?\s+(?:chat|conversation)\b",
++                    r"\bwith\s+([A-Z][\w .'-]{1,80}?)(?=\s+(?:on|in|and|for|to|from|with)\b|[.,;]|$)",
+                 ),
+                 prompt,
+             )
+@@ -104,7 +121,7 @@ class Goal:
+                 ),
+                 prompt,
+             )
+-            # Directional originator: "I sent/shared" → self; "from X" → X.
++            # Authorship only from explicit self / from-X cues — never from recipient.
+             self_origin = bool(
+                 re.search(
+                     r"\b(?:i|me|my)\s+(?:sent|shared|forwarded)\b"
+@@ -112,26 +129,30 @@ class Goal:
+                     lowered,
+                 )
+             )
+-            originator = "self" if self_origin else (source or "")
++            originator = "self" if self_origin else (originator_named or "")
++            # Container: chat-with / in-X-chat, else recipient (sent-to), else author chat.
++            contact = container or recipient or (originator_named if originator_named else "")
+             if "forward" in lowered or "share" in lowered or "send" in lowered:
+                 return cls(
+                     kind="whatsapp_forward_message",
+                     app=app,
+                     prompt=prompt,
+-                    contact=source,
++                    contact=contact,
+                     target_contact=target,
+                     link_query=link_query,
+                     originator=originator,
++                    recipient=recipient,
+                 )
+             if "find" in lowered:
+                 return cls(
+                     kind="whatsapp_read_message",
+                     app=app,
+                     prompt=prompt,
+-                    contact=source,
++                    contact=contact,
+                     target_contact=target,
+                     link_query=link_query,
+                     originator=originator,
++                    recipient=recipient,
+                 )
+ 
+         if "call" in lowered:
+@@ -171,8 +192,19 @@ class Goal:
+         if self.kind == "whatsapp_voice_call" and self.contact:
+             return f"Call {self.contact} on {self.app}"
+         if self.kind == "whatsapp_forward_message":
++            if self.originator and self.originator != "self":
++                who = f"from {self.originator}"
++            elif self.originator == "self":
++                who = "I sent"
++            elif self.recipient:
++                # sent_to ⇒ recipient relation; authorship remains UNKNOWN.
++                who = f"sent to {self.recipient}"
++            elif self.contact:
++                who = f"in {self.contact}"
++            else:
++                who = "content"
+             return (
+-                f"Find {self.link_query or 'content'} from {self.contact} "
++                f"Find {self.link_query or 'content'} {who} "
+                 f"and forward to {self.target_contact} on {self.app}"
+             )
+         return f"{self.kind} on {self.app}"
+@@ -188,6 +220,10 @@ class Goal:
+         ]
+         if self.contact:
+             lines.append(f"- contact: {self.contact}")
++        if self.originator:
++            lines.append(f"- originator: {self.originator}")
++        if self.recipient:
++            lines.append(f"- recipient: {self.recipient}")
+         if self.target_contact:
+             lines.append(f"- target_contact: {self.target_contact}")
+         if self.link_query:
+diff --git a/tests/plugin/agent/test_goal_relation_semantics.py b/tests/plugin/agent/test_goal_relation_semantics.py
+new file mode 100644
+index 000000000..c4d624fd1
+--- /dev/null
++++ b/tests/plugin/agent/test_goal_relation_semantics.py
+@@ -0,0 +1,57 @@
++"""Goal relation parse: sent_to ≠ sent_from ≠ container ≠ destination."""
++
++from plugin.agent.goal import Goal
++
++
++def test_sent_from_Alice_sets_originator_Alice():
++    goal = Goal.infer_from_text(
++        "find the invoice link from Alice on whatsapp and forward to Bob"
++    )
++    assert goal.originator.lower() == "alice"
++    assert goal.contact.lower() == "alice"
++    assert goal.recipient == ""
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_sent_to_Alice_sets_recipient_not_originator():
++    goal = Goal.infer_from_text(
++        "find the zarooratwala link sent to Alice on whatsapp and forward to Bob"
++    )
++    assert goal.recipient.lower() == "alice"
++    assert goal.contact.lower() == "alice"
++    assert goal.originator == ""  # UNKNOWN — not aliased from recipient
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_I_sent_to_Alice_sets_originator_self_recipient_Alice():
++    goal = Goal.infer_from_text(
++        "find the link I sent to Alice on whatsapp and forward to Bob"
++    )
++    assert goal.originator == "self"
++    assert goal.recipient.lower() == "alice"
++    assert goal.contact.lower() == "alice"
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_in_Alice_chat_sets_container_originator_unknown():
++    goal = Goal.infer_from_text(
++        "find the invoice in Alice's chat on whatsapp and forward to Bob"
++    )
++    assert goal.contact.lower() == "alice"
++    assert goal.originator == ""
++    assert goal.recipient == ""
++    assert goal.target_contact.lower() == "bob"
++
++
++def test_live_zarooratwala_sent_to_prompt_does_not_require_pallavi_authorship():
++    """Live 113806 prompt must not invent originator=Pallavi from sent_to."""
++    goal = Goal.infer_from_text(
++        "find the zarooratwala link sent to pallavi on whatsapp and forward to tanmay"
++    )
++    assert goal.contact.lower() == "pallavi"
++    assert goal.recipient.lower() == "pallavi"
++    assert goal.originator == ""
++    assert goal.target_contact.lower() == "tanmay"
++    assert goal.link_query == "zarooratwala"
++    assert "sent to pallavi" in goal.description.lower()
++    assert "from pallavi" not in goal.description.lower()
+-- 
+2.39.5 (Apple Git-154)
+

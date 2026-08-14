@@ -121,7 +121,7 @@ export function coerceGatewayText(value: unknown): string {
 /**
  * Normalize a reasoning/thinking text payload from the gateway.
  *
- * Only the leading status prefix (e.g. "Hermes is thinking...") and the
+ * Only the leading status prefix (e.g. "Plugin is thinking...") and the
  * obvious placeholder echoes are stripped. We deliberately do NOT trim
  * the delta — reasoning streams as small chunks (often individual tokens
  * with leading or trailing spaces), and trimming each chunk before
@@ -380,7 +380,11 @@ export function toRuntimeMessage(message: ChatMessage): ThreadMessage {
       unstable_annotations: [],
       unstable_data: [],
       steps: [],
-      custom: message.attribution ? { attribution: message.attribution } : {}
+      custom: {
+        ...(message.attribution ? { attribution: message.attribution } : {}),
+        ...(message.uiHints ? { uiHints: message.uiHints } : {}),
+        ...(message.taskOutcome ? { taskOutcome: message.taskOutcome } : {})
+      }
     }
   } as ThreadMessage
 }

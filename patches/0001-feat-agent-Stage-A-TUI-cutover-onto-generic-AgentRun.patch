@@ -1,0 +1,1444 @@
+From c85a668b4bd8179a84e2d675a452d2bbfa300f4b Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 16:02:20 +0530
+Subject: [PATCH] feat(agent): Stage A TUI cutover onto generic AgentRuntime
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Route all ordinary TUI turns through TaskRequest → TaskIngress →
+AgentRuntime. Keep runtime domain-generic; method catalogs via providers;
+quality orthogonal to MethodAvailability/readiness; resumable ASK; force
+ComputerUse via ExecutionConstraints rather than a harness branch.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .../personal-agent-brain-and-substrates.md    |  40 +-
+ plugin/agent/controller.py                    |   7 +-
+ plugin/agent/executive/intention_frame.py     |  15 +
+ plugin/agent/executive/method_availability.py | 152 +++++++
+ plugin/agent/executive/method_providers.py    | 104 +++++
+ plugin/agent/ingress.py                       |  11 +-
+ plugin/agent/runtime/agent_runtime.py         | 378 +++++++++++++++++-
+ plugin/agent/runtime/session_store.py         |  56 +++
+ plugin/agent/runtime/turn_result.py           |  30 ++
+ .../test_ui_runtime_method_selection.py       | 366 +++++++++++++++++
+ tui_gateway/server.py                         |  78 +++-
+ 11 files changed, 1194 insertions(+), 43 deletions(-)
+ create mode 100644 plugin/agent/executive/method_availability.py
+ create mode 100644 plugin/agent/executive/method_providers.py
+ create mode 100644 plugin/agent/runtime/session_store.py
+ create mode 100644 plugin/agent/runtime/turn_result.py
+ create mode 100644 tests/plugin/test_ui_runtime_method_selection.py
+
+diff --git a/docs/design/personal-agent-brain-and-substrates.md b/docs/design/personal-agent-brain-and-substrates.md
+index c4f8e3a3c..1ad79e027 100644
+--- a/docs/design/personal-agent-brain-and-substrates.md
++++ b/docs/design/personal-agent-brain-and-substrates.md
+@@ -545,33 +545,45 @@ both attach. This document locks that target; it does not refactor clients.
+ 
+ ---
+ 
+-## Implementation status (A + thin C)
++## Implementation status
+ 
+-Landed as a **seam only** (no durable store, no TUI/CLI wire-in yet):
++### A + thin C (seam)
+ 
+ ```text
+ plugin/agent/ingress.py              TaskRequest, SessionRef, TaskIngress
+ plugin/agent/memory/                 MemorySystem Protocol + NoopMemorySystem
+-plugin/agent/runtime/agent_runtime.py  AgentRuntime façade
++plugin/agent/runtime/agent_runtime.py  AgentRuntime
+ ```
+ 
+-Ownership invariants in code:
++### Stage A — TUI cutover onto generic AgentRuntime
+ 
+ ```text
+-TaskIngress → AgentRuntime is the common seam.
+-run_goal_closed_loop is the first *legacy adapter* into that seam
+-  (Goal → from_legacy_goal → normalize → AgentRuntime),
+-  not the owner/composition root of TaskIngress.
++TUI → TaskRequest → TaskIngress → AgentRuntime.handle_turn
++  → interpret → method providers → quality ⊥ availability → decide
++  → WAITING_FOR_USER (resumable ASK) | legacy AIAgent delegate | selected method
++```
+ 
+-AgentRuntime owns RuntimeState (one-way).
+-RuntimeState must not backreference AgentRuntime.
++Hard invariants:
+ 
+-TaskIngress.normalize is canonical; from_legacy_goal is compatibility only.
+-No constructor / normalize path calls retrieve / submit_candidate / invalidate.
+-Noop submit_candidate → MemoryWriteResult(disposition="ignored", …).
++```text
++AgentRuntime is domain-generic (no if forward_message / WhatsApp).
++Domain catalogs register via method_providers.
++Implementation readiness UNAVAILABLE ⇒ UNSUPPORTED (never ASK to link a stub).
++READY + missing user prereq ⇒ MISSING_PRECONDITION (may ASK).
++ASK = resumable WAITING_FOR_USER across session turns (not a sync UI callback).
++All ordinary TUI turns enter AgentRuntime; gateway does not classify chat vs executive.
++Method quality ranking ⊥ MethodAvailability.
++Forced ComputerUse = ExecutionConstraints.allowed_substrates / forced_substrate.
+ ```
+ 
+-Architectural goldens: `tests/plugin/test_task_ingress_memory_seam.py`.
++**Stage A live acceptance:** traditional TUI reaches common runtime + method selection.
++If WhatsApp Web is not READY, ComputerUse may win — correct.
++
++**Stage B (deferred):** ASK→decline→ComputerUse live only once WhatsApp Web executor
++is READY so linking would make the method executable.
++
++Goldens: `tests/plugin/test_task_ingress_memory_seam.py`,
++`tests/plugin/test_ui_runtime_method_selection.py`.
+ 
+ ## Roadmap (conceptual)
+ 
+diff --git a/plugin/agent/controller.py b/plugin/agent/controller.py
+index 6d2d45308..a6ca846db 100644
+--- a/plugin/agent/controller.py
++++ b/plugin/agent/controller.py
+@@ -2464,11 +2464,12 @@ def run_goal_closed_loop(
+     # Legacy Goal → TaskRequest → AgentRuntime (first adapter; not ingress owner).
+     # Locals kept for the seam; closed-loop internals continue to use ``runtime``.
+     # RuntimeState must never gain an AgentRuntime backreference.
+-    from plugin.agent.ingress import TaskIngress
++    from plugin.agent.ingress import ExecutionConstraints, TaskIngress
+     from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
+     from plugin.agent.runtime.agent_runtime import AgentRuntime
+ 
+     _memory: MemorySystem = memory if memory is not None else NoopMemorySystem()
++    # ComputerUse benchmark: force substrate via constraints (not a harness branch).
+     _task_request = TaskIngress.normalize(
+         TaskIngress.from_legacy_goal(
+             goal,
+@@ -2476,6 +2477,10 @@ def run_goal_closed_loop(
+                 "client": "live_harness",
+                 "legacy_adapter": "run_goal_closed_loop",
+             },
++            constraints=ExecutionConstraints(
++                allowed_substrates=("computer_use",),
++                forced_substrate="computer_use",
++            ),
+         )
+     )
+     agent_runtime = AgentRuntime(
+diff --git a/plugin/agent/executive/intention_frame.py b/plugin/agent/executive/intention_frame.py
+index 4617a64f6..8c455d296 100644
+--- a/plugin/agent/executive/intention_frame.py
++++ b/plugin/agent/executive/intention_frame.py
+@@ -223,6 +223,15 @@ class MethodSpec:
+     risk: float = 0.1
+     reversibility: float = 0.9
+     gesture: str = ""  # optional motor detail (context_click / hover)
++    # Substrate / provider identity (domain catalogs set these; AgentRuntime does not).
++    substrate: str = ""
++    provider: str = ""
++    # Quality dimensions (orthogonal to MethodAvailability).
++    user_interference: float = 0.5
++    reliability: float = 0.5
++    semantic_precision: float = 0.5
++    # Implementation readiness: UNAVAILABLE ⇒ overall UNSUPPORTED (never ASK).
++    readiness: str = "unavailable"
+ 
+     def to_dict(self) -> Dict[str, Any]:
+         return {
+@@ -238,6 +247,12 @@ class MethodSpec:
+             "risk": self.risk,
+             "reversibility": self.reversibility,
+             "gesture": self.gesture,
++            "substrate": self.substrate,
++            "provider": self.provider,
++            "user_interference": self.user_interference,
++            "reliability": self.reliability,
++            "semantic_precision": self.semantic_precision,
++            "readiness": self.readiness,
+         }
+ 
+ 
+diff --git a/plugin/agent/executive/method_availability.py b/plugin/agent/executive/method_availability.py
+new file mode 100644
+index 000000000..5ee38f7f0
+--- /dev/null
++++ b/plugin/agent/executive/method_availability.py
+@@ -0,0 +1,152 @@
++"""MethodAvailability vs MethodReadiness — quality ranking stays separate.
++
++Implementation readiness ≠ runtime prerequisite:
++
++    readiness UNAVAILABLE → overall UNSUPPORTED (never ASK to link)
++    readiness READY + auth missing → MISSING_PRECONDITION (may ASK)
++"""
++
++from __future__ import annotations
++
++from enum import Enum
++from typing import Any, Mapping, Optional, Sequence, Set
++
++from plugin.agent.ingress import ExecutionConstraints
++
++
++class MethodAvailability(str, Enum):
++    AVAILABLE = "available"
++    MISSING_PRECONDITION = "missing_precondition"
++    USER_DECLINED = "user_declined"
++    UNSUPPORTED = "unsupported"
++    TEMPORARILY_UNAVAILABLE = "temporarily_unavailable"
++    FORBIDDEN_BY_CONSTRAINT = "forbidden_by_constraint"
++
++
++class MethodReadiness(str, Enum):
++    """Whether an executable implementation exists (not whether prereqs hold)."""
++
++    READY = "ready"
++    UNAVAILABLE = "unavailable"
++
++
++def overall_availability(
++    *,
++    readiness: str,
++    runtime_availability: str,
++) -> str:
++    """Combine implementation readiness with runtime prerequisite state."""
++    if str(readiness or "").strip().lower() != MethodReadiness.READY.value:
++        return MethodAvailability.UNSUPPORTED.value
++    return str(runtime_availability or MethodAvailability.UNSUPPORTED.value)
++
++
++def substrate_forbidden(
++    substrate: str,
++    constraints: Optional[ExecutionConstraints],
++) -> bool:
++    if constraints is None:
++        return False
++    forced = str(getattr(constraints, "forced_substrate", "") or "").strip().lower()
++    sub = str(substrate or "").strip().lower()
++    if forced and sub and sub != forced:
++        return True
++    allowed = tuple(getattr(constraints, "allowed_substrates", ()) or ())
++    if allowed:
++        allowed_l = {str(a).strip().lower() for a in allowed if str(a).strip()}
++        if sub and sub not in allowed_l:
++            return True
++    return False
++
++
++def evaluate_method_availability(
++    spec: Any,
++    *,
++    constraints: Optional[ExecutionConstraints] = None,
++    precondition_facts: Optional[Mapping[str, bool]] = None,
++    declined_method_ids: Optional[Set[str]] = None,
++    declined_preconditions: Optional[Set[str]] = None,
++) -> tuple[str, str]:
++    """Return (overall_availability, detail_reason).
++
++    Quality/ranking must not be computed here — availability only.
++    """
++    readiness = str(
++        getattr(spec, "readiness", None) or MethodReadiness.UNAVAILABLE.value
++    ).strip().lower()
++    mid = str(getattr(spec, "id", "") or "")
++    substrate = str(getattr(spec, "substrate", "") or "")
++    if mid in (declined_method_ids or set()):
++        return MethodAvailability.USER_DECLINED.value, "method_declined"
++    if substrate_forbidden(substrate, constraints):
++        return MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value, "substrate_constraint"
++
++    if readiness != MethodReadiness.READY.value:
++        return MethodAvailability.UNSUPPORTED.value, "implementation_unavailable"
++
++    facts = dict(precondition_facts or {})
++    missing: list[str] = []
++    for pre in list(getattr(spec, "preconditions", None) or []):
++        key = str(pre or "").strip()
++        if not key:
++            continue
++        if key in (declined_preconditions or set()):
++            return MethodAvailability.USER_DECLINED.value, f"precondition_declined:{key}"
++        if facts.get(key, False) is True:
++            continue
++        # Absent fact → missing (fail closed for named preconditions).
++        missing.append(key)
++    if missing:
++        return (
++            MethodAvailability.MISSING_PRECONDITION.value,
++            f"missing:{','.join(missing)}",
++        )
++    return MethodAvailability.AVAILABLE.value, "ready"
++
++
++def method_quality_score(spec: Any) -> float:
++    """Quality-only score (orthogonal to availability). Higher is better."""
++    reliability = float(getattr(spec, "reliability", 0.5) or 0.5)
++    latency = float(getattr(spec, "latency", 0.5) or 0.5)
++    risk = float(getattr(spec, "risk", 0.5) or 0.5)
++    cost = float(getattr(spec, "cost", 0.5) or 0.5)
++    interference = float(getattr(spec, "user_interference", 0.5) or 0.5)
++    semantic = float(getattr(spec, "semantic_precision", 0.5) or 0.5)
++    return (
++        1.2 * reliability
++        + 1.0 * semantic
++        - 0.8 * latency
++        - 0.9 * risk
++        - 0.6 * cost
++        - 1.1 * interference
++    )
++
++
++def rank_by_quality(specs: Sequence[Any]) -> list[tuple[Any, float]]:
++    ranked = [(s, method_quality_score(s)) for s in specs]
++    ranked.sort(key=lambda x: x[1], reverse=True)
++    return ranked
++
++
++def should_ask_for_precondition(
++    *,
++    preferred_spec: Any,
++    preferred_availability: str,
++    best_available_quality: Optional[float],
++    ask_quality_margin: float = 0.15,
++) -> bool:
++    """Whether to interrupt the user for a READY method's missing precondition.
++
++    Does not auto-ASK merely because the top-ranked method is missing a prereq.
++    Asks when no AVAILABLE alternative exists, or preferred quality beats the
++    best AVAILABLE alternative by ``ask_quality_margin``.
++    """
++    if preferred_availability != MethodAvailability.MISSING_PRECONDITION.value:
++        return False
++    readiness = str(getattr(preferred_spec, "readiness", "") or "").lower()
++    if readiness != MethodReadiness.READY.value:
++        return False
++    pref_q = method_quality_score(preferred_spec)
++    if best_available_quality is None:
++        return True
++    return pref_q >= (float(best_available_quality) + float(ask_quality_margin))
+diff --git a/plugin/agent/executive/method_providers.py b/plugin/agent/executive/method_providers.py
+new file mode 100644
+index 000000000..337f8fd9a
+--- /dev/null
++++ b/plugin/agent/executive/method_providers.py
+@@ -0,0 +1,104 @@
++"""Capability/method providers — domain catalogs live here, not in AgentRuntime.
++
++AgentRuntime only calls ``discover_methods(interpretation, constraints)``.
++Providers advertise MethodSpecs for effects they understand.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any, List, Optional, Protocol, Sequence
++
++from plugin.agent.executive.intention_frame import MethodSpec
++from plugin.agent.ingress import ExecutionConstraints
++
++
++@dataclass
++class TaskInterpretation:
++    """Generic interpretation result — no substrate choice."""
++
++    user_turn: str = ""
++    goal_kind: str = "unknown"
++    goal: Any = None
++    desired_effects: List[str] = field(default_factory=list)
++    notes: dict = field(default_factory=dict)
++
++
++class MethodProvider(Protocol):
++    def discover(
++        self,
++        interpretation: TaskInterpretation,
++        *,
++        constraints: Optional[ExecutionConstraints] = None,
++    ) -> Sequence[MethodSpec]:
++        ...
++
++
++_PROVIDERS: List[MethodProvider] = []
++
++
++def register_method_provider(provider: MethodProvider) -> None:
++    if provider not in _PROVIDERS:
++        _PROVIDERS.append(provider)
++
++
++def clear_method_providers() -> None:
++    _PROVIDERS.clear()
++
++
++def iter_method_providers() -> List[MethodProvider]:
++    return list(_PROVIDERS)
++
++
++def discover_methods(
++    interpretation: TaskInterpretation,
++    *,
++    constraints: Optional[ExecutionConstraints] = None,
++) -> List[MethodSpec]:
++    out: List[MethodSpec] = []
++    seen: set[str] = set()
++    for provider in _PROVIDERS:
++        try:
++            specs = provider.discover(interpretation, constraints=constraints) or []
++        except Exception:
++            continue
++        for spec in specs:
++            mid = str(getattr(spec, "id", "") or "")
++            if not mid or mid in seen:
++                continue
++            seen.add(mid)
++            out.append(spec)
++    return out
++
++
++def interpret_task_request(request: Any) -> TaskInterpretation:
++    """Generic Goal.infer interpretation — domain-agnostic routing input."""
++    user_turn = str(getattr(request, "user_turn", "") or "")
++    legacy = getattr(request, "legacy_goal", None)
++    goal = legacy
++    kind = "unknown"
++    if goal is not None:
++        kind = str(getattr(goal, "kind", "") or "unknown")
++    else:
++        try:
++            from plugin.agent.goal import Goal
++
++            goal = Goal.infer_from_text(user_turn)
++            kind = str(getattr(goal, "kind", "") or "unknown")
++        except Exception:
++            goal = None
++            kind = "unknown"
++    effects: List[str] = []
++    if kind and kind != "unknown":
++        # Effect keys derived from goal kind; providers match on these.
++        effects.append(str(kind))
++        if "forward" in kind:
++            effects.append("forward_message")
++        if "call" in kind or "voice" in kind:
++            effects.append("place_call")
++    return TaskInterpretation(
++        user_turn=user_turn,
++        goal_kind=kind,
++        goal=goal,
++        desired_effects=effects,
++    )
+diff --git a/plugin/agent/ingress.py b/plugin/agent/ingress.py
+index bfd247449..727c7dc34 100644
+--- a/plugin/agent/ingress.py
++++ b/plugin/agent/ingress.py
+@@ -26,12 +26,19 @@ class SessionRef:
+ 
+ @dataclass(frozen=True)
+ class ExecutionConstraints:
+-    """Constraints that may affect executive / method choice — not presentation config."""
++    """Constraints that may affect executive / method choice — not presentation config.
++
++    ``allowed_substrates`` / ``forced_substrate`` are the architectural way to
++    force ComputerUse (or other) for benchmarks — not a harness-specific branch.
++    Empty ``allowed_substrates`` means no substrate filter.
++    """
+ 
+     foreground_allowed: bool = True
+     network_allowed: bool = True
+     destructive_actions_allowed: bool = False
+     approval_policy: str = "default"
++    allowed_substrates: tuple[str, ...] = ()
++    forced_substrate: str = ""
+ 
+ 
+ @dataclass
+@@ -133,6 +140,8 @@ def semantic_task_fingerprint(request: TaskRequest) -> dict[str, Any]:
+             "network_allowed": bool(constraints.network_allowed),
+             "destructive_actions_allowed": bool(constraints.destructive_actions_allowed),
+             "approval_policy": str(constraints.approval_policy or "default"),
++            "allowed_substrates": list(constraints.allowed_substrates or ()),
++            "forced_substrate": str(constraints.forced_substrate or ""),
+         },
+         "interaction_capabilities": dict(request.interaction_capabilities or {}),
+         "client_context_semantic": ctx,
+diff --git a/plugin/agent/runtime/agent_runtime.py b/plugin/agent/runtime/agent_runtime.py
+index cd6de8914..7f06101f6 100644
+--- a/plugin/agent/runtime/agent_runtime.py
++++ b/plugin/agent/runtime/agent_runtime.py
+@@ -1,24 +1,43 @@
+-"""Thin AgentRuntime façade — owns RuntimeState + MemorySystem one-way.
++"""Thin AgentRuntime — domain-generic turn orchestration.
+ 
+-Ownership invariant:
++Owns RuntimeState + MemorySystem one-way. Orchestrates:
+ 
+-    AgentRuntime
+-    ├── RuntimeState
+-    ├── MemorySystem
+-    └── TaskRequest / SessionRef
++    TaskRequest → interpretation → capability/method discovery
++    → MethodFrontier (quality ⊥ availability) → executive decision
++
++No WhatsApp / forward_message branches. Domain catalogs register via
++``method_providers``. ASK is resumable ``WAITING_FOR_USER``, not a sync UI call.
+ 
+-RuntimeState must not backreference AgentRuntime.
+ Construction has no MemorySystem side effects.
+ """
+ 
+ from __future__ import annotations
+ 
++import uuid
+ from dataclasses import dataclass, field
+-from typing import Optional
++from typing import Any, Callable, Dict, Optional
+ 
+-from plugin.agent.ingress import SessionRef, TaskRequest
++from plugin.agent.executive.method_availability import (
++    MethodAvailability,
++    evaluate_method_availability,
++    method_quality_score,
++    should_ask_for_precondition,
++)
++from plugin.agent.executive.method_providers import (
++    discover_methods,
++    interpret_task_request,
++)
++from plugin.agent.ingress import SessionRef, TaskRequest, TaskIngress
+ from plugin.agent.memory.system import MemorySystem, NoopMemorySystem
++from plugin.agent.runtime.session_store import (
++    SuspendedAsk,
++    get_or_create_session,
++)
+ from plugin.agent.runtime.state import RuntimeState
++from plugin.agent.runtime.turn_result import RuntimeTurnResult, TurnStatus
++
++
++ConversationRunner = Callable[..., Any]
+ 
+ 
+ @dataclass
+@@ -29,6 +48,7 @@ class AgentRuntime:
+     memory: MemorySystem = field(default_factory=NoopMemorySystem)
+     task_request: Optional[TaskRequest] = None
+     session: Optional[SessionRef] = None
++    precondition_facts: Dict[str, bool] = field(default_factory=dict)
+ 
+     def __post_init__(self) -> None:
+         if self.runtime_state is None:
+@@ -38,3 +58,343 @@ class AgentRuntime:
+         if self.session is None and self.task_request is not None:
+             self.session = self.task_request.session
+         # Construction must not touch MemorySystem (no retrieve/submit/invalidate).
++
++    def handle_turn(
++        self,
++        request: TaskRequest,
++        *,
++        conversation_runner: Optional[ConversationRunner] = None,
++        run_message: Any = None,
++        conversation_kwargs: Optional[Dict[str, Any]] = None,
++    ) -> RuntimeTurnResult:
++        """Process one TaskRequest. Domain-generic; may legacy-delegate conversation."""
++        req = TaskIngress.normalize(request)
++        self.task_request = req
++        if req.session is not None:
++            self.session = req.session
++        sid = self.session.session_id if self.session else "anonymous"
++        session_state = get_or_create_session(sid)
++        task_request_id = uuid.uuid4().hex[:12]
++        intention_id = session_state.active_intention_id or uuid.uuid4().hex[:12]
++        session_state.active_intention_id = intention_id
++
++        # Resume suspended ASK before re-interpreting as a new goal.
++        if session_state.suspended_ask is not None:
++            return self._resume_ask(
++                req,
++                session_state=session_state,
++                task_request_id=task_request_id,
++                conversation_runner=conversation_runner,
++                run_message=run_message,
++                conversation_kwargs=conversation_kwargs,
++            )
++
++        interpretation = interpret_task_request(req)
++        specs = discover_methods(interpretation, constraints=req.constraints)
++        evaluated: list[dict[str, Any]] = []
++        for spec in specs:
++            avail, reason = evaluate_method_availability(
++                spec,
++                constraints=req.constraints,
++                precondition_facts=self.precondition_facts,
++                declined_method_ids=session_state.declined_method_ids,
++                declined_preconditions=session_state.declined_preconditions,
++            )
++            evaluated.append(
++                {
++                    "id": spec.id,
++                    "substrate": getattr(spec, "substrate", ""),
++                    "provider": getattr(spec, "provider", ""),
++                    "readiness": getattr(spec, "readiness", ""),
++                    "quality": method_quality_score(spec),
++                    "availability": avail,
++                    "reason": reason,
++                    "spec": spec,
++                }
++            )
++        evaluated.sort(key=lambda e: float(e["quality"]), reverse=True)
++
++        available = [
++            e for e in evaluated if e["availability"] == MethodAvailability.AVAILABLE.value
++        ]
++        best_available_q = (
++            float(available[0]["quality"]) if available else None
++        )
++        preferred = evaluated[0] if evaluated else None
++
++        trace: Dict[str, Any] = {
++            "client": (req.client_context or {}).get("client"),
++            "task_request_id": task_request_id,
++            "session_id": sid,
++            "runtime_id": session_state.runtime_id,
++            "intention_id": intention_id,
++            "goal_interpretation": {
++                "goal_kind": interpretation.goal_kind,
++                "desired_effects": list(interpretation.desired_effects),
++            },
++            "candidate_methods": [
++                {
++                    "id": e["id"],
++                    "substrate": e["substrate"],
++                    "quality": e["quality"],
++                    "availability": e["availability"],
++                    "readiness": e["readiness"],
++                    "reason": e["reason"],
++                }
++                for e in evaluated
++            ],
++            "constraints": {
++                "allowed_substrates": list(req.constraints.allowed_substrates or ()),
++                "forced_substrate": req.constraints.forced_substrate,
++            },
++        }
++
++        if preferred is not None and should_ask_for_precondition(
++            preferred_spec=preferred["spec"],
++            preferred_availability=str(preferred["availability"]),
++            best_available_quality=best_available_q,
++        ):
++            missing = str(preferred["reason"] or "")
++            pre = missing.split("missing:", 1)[-1].split(",")[0] if "missing:" in missing else ""
++            question = (
++                f"A better method ({preferred['id']}) needs prerequisite "
++                f"'{pre or 'access'}'. Allow me to establish it so I can proceed "
++                f"without a more disruptive approach?"
++            )
++            session_state.suspended_ask = SuspendedAsk(
++                intention_id=intention_id,
++                method_id=str(preferred["id"]),
++                precondition=pre,
++                question=question,
++                parent_effect=",".join(interpretation.desired_effects),
++            )
++            trace["method_availability"] = preferred["availability"]
++            trace["missing_precondition"] = pre
++            trace["ASK"] = question
++            trace["original_user_turn"] = req.user_turn
++            session_state.last_trace = trace
++            return RuntimeTurnResult(
++                status=TurnStatus.WAITING_FOR_USER,
++                question=question,
++                message=question,
++                intention_id=intention_id,
++                task_request_id=task_request_id,
++                session_id=sid,
++                runtime_id=session_state.runtime_id,
++                acceptance_trace=trace,
++                interpretation=interpretation,
++            )
++
++        selected = available[0] if available else None
++        if selected is not None:
++            trace["selected_method"] = selected["id"]
++            trace["selected_substrate"] = selected["substrate"]
++            session_state.last_trace = trace
++            # Domain-generic: substrate execution engines plug in later.
++            # Stage A: legacy conversation remains the default product path;
++            # selected method is recorded for acceptance traces / frontier tests.
++            if conversation_runner is not None:
++                legacy = self._delegate_conversation(
++                    interpretation=interpretation,
++                    conversation_runner=conversation_runner,
++                    run_message=run_message if run_message is not None else req.user_turn,
++                    conversation_kwargs=conversation_kwargs,
++                )
++                return RuntimeTurnResult(
++                    status=TurnStatus.LEGACY_DELEGATED,
++                    message=_legacy_message(legacy),
++                    intention_id=intention_id,
++                    selected_method=str(selected["id"]),
++                    selected_substrate=str(selected["substrate"]),
++                    task_request_id=task_request_id,
++                    session_id=sid,
++                    runtime_id=session_state.runtime_id,
++                    acceptance_trace=trace,
++                    legacy_result=legacy,
++                    interpretation=interpretation,
++                )
++            return RuntimeTurnResult(
++                status=TurnStatus.COMPLETED,
++                intention_id=intention_id,
++                selected_method=str(selected["id"]),
++                selected_substrate=str(selected["substrate"]),
++                task_request_id=task_request_id,
++                session_id=sid,
++                runtime_id=session_state.runtime_id,
++                acceptance_trace=trace,
++                interpretation=interpretation,
++            )
++
++        # No executable method catalog — migration: legacy conversational engine.
++        session_state.last_trace = trace
++        if conversation_runner is not None:
++            legacy = self._delegate_conversation(
++                interpretation=interpretation,
++                conversation_runner=conversation_runner,
++                run_message=run_message if run_message is not None else req.user_turn,
++                conversation_kwargs=conversation_kwargs,
++            )
++            return RuntimeTurnResult(
++                status=TurnStatus.LEGACY_DELEGATED,
++                message=_legacy_message(legacy),
++                intention_id=intention_id,
++                task_request_id=task_request_id,
++                session_id=sid,
++                runtime_id=session_state.runtime_id,
++                acceptance_trace=trace,
++                legacy_result=legacy,
++                interpretation=interpretation,
++            )
++        return RuntimeTurnResult(
++            status=TurnStatus.COMPLETED,
++            message="",
++            intention_id=intention_id,
++            task_request_id=task_request_id,
++            session_id=sid,
++            runtime_id=session_state.runtime_id,
++            acceptance_trace=trace,
++            interpretation=interpretation,
++        )
++
++    def _resume_ask(
++        self,
++        req: TaskRequest,
++        *,
++        session_state: Any,
++        task_request_id: str,
++        conversation_runner: Optional[ConversationRunner],
++        run_message: Any,
++        conversation_kwargs: Optional[Dict[str, Any]],
++    ) -> RuntimeTurnResult:
++        ask: SuspendedAsk = session_state.suspended_ask
++        intention_id = ask.intention_id
++        answer = _classify_ask_response(req.user_turn)
++        trace = dict(session_state.last_trace or {})
++        trace["task_request_id"] = task_request_id
++        trace["user_response"] = answer
++        trace["intention_id"] = intention_id
++
++        orig = str((session_state.last_trace or {}).get("original_user_turn") or "")
++
++        if answer == "decline":
++            session_state.declined_method_ids.add(ask.method_id)
++            if ask.precondition:
++                session_state.declined_preconditions.add(ask.precondition)
++            session_state.suspended_ask = None
++            # Re-enter selection with same parent intention (not a new goal restart).
++            resumed = TaskRequest(
++                user_turn=str(orig or req.user_turn),
++                attachments=list(req.attachments or []),
++                session=req.session,
++                client_context=dict(req.client_context or {}),
++                constraints=req.constraints,
++                interaction_capabilities=dict(req.interaction_capabilities or {}),
++                legacy_goal=req.legacy_goal,
++            )
++            session_state.active_intention_id = intention_id
++            result = self.handle_turn(
++                resumed,
++                conversation_runner=conversation_runner,
++                run_message=run_message if run_message is not None else resumed.user_turn,
++                conversation_kwargs=conversation_kwargs,
++            )
++            result.status = TurnStatus.CONTINUED
++            result.intention_id = intention_id
++            result.acceptance_trace = {
++                **(result.acceptance_trace or {}),
++                "resumed_after": "user_declined",
++                "declined_method": ask.method_id,
++            }
++            return result
++
++        if answer == "accept":
++            if ask.precondition:
++                self.precondition_facts[ask.precondition] = True
++            session_state.suspended_ask = None
++            session_state.active_intention_id = intention_id
++            resumed = TaskRequest(
++                user_turn=str(orig or req.user_turn),
++                attachments=list(req.attachments or []),
++                session=req.session,
++                client_context=dict(req.client_context or {}),
++                constraints=req.constraints,
++                interaction_capabilities=dict(req.interaction_capabilities or {}),
++                legacy_goal=req.legacy_goal,
++            )
++            result = self.handle_turn(
++                resumed,
++                conversation_runner=conversation_runner,
++                run_message=run_message if run_message is not None else resumed.user_turn,
++                conversation_kwargs=conversation_kwargs,
++            )
++            result.status = TurnStatus.CONTINUED
++            result.intention_id = intention_id
++            result.acceptance_trace = {
++                **(result.acceptance_trace or {}),
++                "resumed_after": "user_accepted_prerequisite",
++                "method": ask.method_id,
++            }
++            return result
++
++        # Unclear — re-ask same suspended intention.
++        return RuntimeTurnResult(
++            status=TurnStatus.WAITING_FOR_USER,
++            question=ask.question,
++            message=ask.question,
++            intention_id=intention_id,
++            task_request_id=task_request_id,
++            session_id=session_state.session_id,
++            runtime_id=session_state.runtime_id,
++            acceptance_trace=trace,
++        )
++
++    def _delegate_conversation(
++        self,
++        *,
++        interpretation: Any,
++        conversation_runner: ConversationRunner,
++        run_message: Any,
++        conversation_kwargs: Optional[Dict[str, Any]],
++    ) -> Any:
++        kwargs = dict(conversation_kwargs or {})
++        # Move structured goal context ownership into runtime (not gateway classify).
++        goal = getattr(interpretation, "goal", None)
++        if goal is not None and str(getattr(goal, "kind", "") or "") != "unknown":
++            try:
++                block = goal.execution_context_block()
++                if block and "system_message" not in kwargs:
++                    kwargs["system_message"] = block
++            except Exception:
++                pass
++        return conversation_runner(run_message, **kwargs)
++
++
++def _legacy_message(legacy: Any) -> str:
++    if legacy is None:
++        return ""
++    if isinstance(legacy, dict):
++        return str(legacy.get("final_response") or legacy.get("response") or "")
++    return str(getattr(legacy, "final_response", "") or getattr(legacy, "response", "") or "")
++
++
++def _classify_ask_response(text: str) -> str:
++    t = str(text or "").strip().lower()
++    if not t:
++        return "unclear"
++    decline = {
++        "no",
++        "n",
++        "nope",
++        "decline",
++        "don't",
++        "dont",
++        "not now",
++        "never",
++        "skip",
++    }
++    accept = {"yes", "y", "ok", "okay", "sure", "allow", "link", "accept", "please"}
++    if t in decline or t.startswith("no ") or "don't" in t or "do not" in t:
++        return "decline"
++    if t in accept or t.startswith("yes"):
++        return "accept"
++    return "unclear"
+diff --git a/plugin/agent/runtime/session_store.py b/plugin/agent/runtime/session_store.py
+new file mode 100644
+index 000000000..31d736ea7
+--- /dev/null
++++ b/plugin/agent/runtime/session_store.py
+@@ -0,0 +1,56 @@
++"""Session-scoped runtime continuation (suspended ASK / intentions).
++
++Sessions belong to the runtime, not the client. TaskRequest holds SessionRef only.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any, Dict, Optional, Set
++import threading
++import uuid
++
++
++@dataclass
++class SuspendedAsk:
++    intention_id: str
++    method_id: str
++    precondition: str
++    question: str
++    parent_effect: str = ""
++    interpretation_notes: Dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass
++class SessionRuntimeState:
++    session_id: str
++    runtime_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
++    suspended_ask: Optional[SuspendedAsk] = None
++    declined_method_ids: Set[str] = field(default_factory=set)
++    declined_preconditions: Set[str] = field(default_factory=set)
++    active_intention_id: str = ""
++    last_trace: Dict[str, Any] = field(default_factory=dict)
++
++
++_LOCK = threading.RLock()
++_SESSIONS: Dict[str, SessionRuntimeState] = {}
++
++
++def get_or_create_session(session_id: str) -> SessionRuntimeState:
++    sid = str(session_id or "").strip() or "anonymous"
++    with _LOCK:
++        st = _SESSIONS.get(sid)
++        if st is None:
++            st = SessionRuntimeState(session_id=sid)
++            _SESSIONS[sid] = st
++        return st
++
++
++def clear_session(session_id: str) -> None:
++    with _LOCK:
++        _SESSIONS.pop(str(session_id or "").strip(), None)
++
++
++def reset_session_store() -> None:
++    with _LOCK:
++        _SESSIONS.clear()
+diff --git a/plugin/agent/runtime/turn_result.py b/plugin/agent/runtime/turn_result.py
+new file mode 100644
+index 000000000..e7b99e68e
+--- /dev/null
++++ b/plugin/agent/runtime/turn_result.py
+@@ -0,0 +1,30 @@
++"""Structured result of AgentRuntime.handle_turn."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any, Dict, Optional
++
++
++class TurnStatus:
++    COMPLETED = "completed"
++    WAITING_FOR_USER = "waiting_for_user"
++    CONTINUED = "continued"
++    FAILED = "failed"
++    LEGACY_DELEGATED = "legacy_delegated"
++
++
++@dataclass
++class RuntimeTurnResult:
++    status: str
++    message: str = ""
++    question: str = ""
++    intention_id: str = ""
++    selected_method: str = ""
++    selected_substrate: str = ""
++    task_request_id: str = ""
++    session_id: str = ""
++    runtime_id: str = ""
++    acceptance_trace: Dict[str, Any] = field(default_factory=dict)
++    legacy_result: Any = None
++    interpretation: Any = None
+diff --git a/tests/plugin/test_ui_runtime_method_selection.py b/tests/plugin/test_ui_runtime_method_selection.py
+new file mode 100644
+index 000000000..89175f041
+--- /dev/null
++++ b/tests/plugin/test_ui_runtime_method_selection.py
+@@ -0,0 +1,366 @@
++"""Stage A goldens: TUI→AgentRuntime cutover, availability ⊥ quality, resumable ASK."""
++
++from __future__ import annotations
++
++from typing import Any, Optional, Sequence
++
++import pytest
++
++from plugin.agent.executive.intention_frame import MethodSpec
++from plugin.agent.executive.method_availability import (
++    MethodAvailability,
++    MethodReadiness,
++    evaluate_method_availability,
++    should_ask_for_precondition,
++)
++from plugin.agent.executive.method_providers import (
++    TaskInterpretation,
++    clear_method_providers,
++    discover_methods,
++    register_method_provider,
++)
++from plugin.agent.ingress import (
++    ExecutionConstraints,
++    SessionRef,
++    TaskIngress,
++    TaskRequest,
++    semantic_task_fingerprint,
++)
++from plugin.agent.runtime.agent_runtime import AgentRuntime
++from plugin.agent.runtime.session_store import reset_session_store
++from plugin.agent.runtime.state import RuntimeState
++from plugin.agent.runtime.turn_result import TurnStatus
++
++
++@pytest.fixture(autouse=True)
++def _clean_providers_and_sessions():
++    clear_method_providers()
++    reset_session_store()
++    yield
++    clear_method_providers()
++    reset_session_store()
++
++
++class _CatalogProvider:
++    def __init__(self, specs: Sequence[MethodSpec]):
++        self.specs = list(specs)
++
++    def discover(
++        self,
++        interpretation: TaskInterpretation,
++        *,
++        constraints: Optional[ExecutionConstraints] = None,
++    ) -> Sequence[MethodSpec]:
++        if "forward_message" not in interpretation.desired_effects and (
++            "forward" not in interpretation.goal_kind
++        ):
++            # Still return for synthetic tests that set effects explicitly.
++            if interpretation.desired_effects:
++                return list(self.specs)
++            return list(self.specs)
++        return list(self.specs)
++
++
++def _web_ready_missing_auth() -> MethodSpec:
++    return MethodSpec(
++        id="structured_web_forward",
++        capability="forward_message",
++        substrate="browser",
++        provider="test_web",
++        preconditions=["authenticated_integration"],
++        readiness=MethodReadiness.READY.value,
++        reliability=0.92,
++        latency=0.2,
++        risk=0.15,
++        cost=0.2,
++        user_interference=0.1,
++        semantic_precision=0.9,
++    )
++
++
++def _web_unimplemented() -> MethodSpec:
++    return MethodSpec(
++        id="whatsapp_web_forward",
++        capability="forward_message",
++        substrate="browser",
++        provider="whatsapp_web",
++        preconditions=["authenticated_whatsapp_web"],
++        readiness=MethodReadiness.UNAVAILABLE.value,
++        reliability=0.95,
++        latency=0.15,
++        risk=0.1,
++        cost=0.15,
++        user_interference=0.05,
++        semantic_precision=0.95,
++    )
++
++
++def _computer_use() -> MethodSpec:
++    return MethodSpec(
++        id="native_computer_use_forward",
++        capability="forward_message",
++        substrate="computer_use",
++        provider="native_ui",
++        preconditions=[],
++        readiness=MethodReadiness.READY.value,
++        reliability=0.55,
++        latency=0.7,
++        risk=0.55,
++        cost=0.6,
++        user_interference=0.85,
++        semantic_precision=0.55,
++    )
++
++
++def test_all_tui_user_turns_enter_agent_runtime_before_legacy_conversation_routing() -> None:
++    calls = {"n": 0}
++
++    def runner(msg, **kwargs):
++        calls["n"] += 1
++        return {"final_response": f"echo:{msg}"}
++
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    req = TaskIngress.normalize(
++        TaskRequest(
++            user_turn="hello there",
++            session=SessionRef("tui-sess-1"),
++            client_context={"client": "tui"},
++        )
++    )
++    result = rt.handle_turn(req, conversation_runner=runner)
++    assert result.status == TurnStatus.LEGACY_DELEGATED
++    assert calls["n"] == 1
++    assert result.acceptance_trace.get("session_id") == "tui-sess-1"
++    assert result.acceptance_trace.get("client") == "tui"
++
++
++def test_ui_adapter_does_not_choose_execution_substrate() -> None:
++    """Client context label must not appear as selected_substrate."""
++    register_method_provider(_CatalogProvider([_computer_use()]))
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    req = TaskRequest(
++        user_turn="Forward ZarooratWala link from Pallavi to Tanmay",
++        session=SessionRef("s"),
++        client_context={"client": "tui"},
++    )
++    # Force interpretation effects via legacy goal-like provider match.
++    from plugin.agent.goal import Goal
++
++    req.legacy_goal = Goal(
++        kind="whatsapp_forward_message",
++        contact="Pallavi",
++        prompt=req.user_turn,
++    )
++    result = rt.handle_turn(req)
++    assert result.selected_substrate == "computer_use"
++    assert result.selected_substrate != "tui"
++    assert result.acceptance_trace.get("client") == "tui"
++
++
++def test_same_task_request_and_constraints_yield_same_method_frontier() -> None:
++    register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
++    constraints = ExecutionConstraints()
++    tui = TaskIngress.normalize(
++        TaskRequest(
++            user_turn="Forward the link to Tanmay",
++            session=SessionRef("shared"),
++            client_context={"client": "tui", "supports_rich_ui": True},
++            constraints=constraints,
++            legacy_goal=__import__("plugin.agent.goal", fromlist=["Goal"]).Goal(
++                kind="whatsapp_forward_message", contact="Pallavi", prompt="Forward the link to Tanmay"
++            ),
++        )
++    )
++    desktop = TaskIngress.normalize(
++        TaskRequest(
++            user_turn="Forward the link to Tanmay",
++            session=SessionRef("shared"),
++            client_context={"client": "desktop", "supports_rich_ui": False},
++            constraints=constraints,
++            legacy_goal=tui.legacy_goal,
++        )
++    )
++    assert semantic_task_fingerprint(tui) == semantic_task_fingerprint(desktop)
++    r1 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(tui)
++    r2 = AgentRuntime(runtime_state=RuntimeState()).handle_turn(desktop)
++    assert r1.selected_method == r2.selected_method
++    assert r1.selected_substrate == r2.selected_substrate
++    assert [m["id"] for m in r1.acceptance_trace["candidate_methods"]] == [
++        m["id"] for m in r2.acceptance_trace["candidate_methods"]
++    ]
++
++
++def test_unimplemented_preferred_method_does_not_ask_for_prerequisite() -> None:
++    register_method_provider(_CatalogProvider([_web_unimplemented(), _computer_use()]))
++    web = _web_unimplemented()
++    avail, reason = evaluate_method_availability(web)
++    assert avail == MethodAvailability.UNSUPPORTED.value
++    assert "implementation" in reason
++    assert not should_ask_for_precondition(
++        preferred_spec=web,
++        preferred_availability=avail,
++        best_available_quality=0.1,
++    )
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    from plugin.agent.goal import Goal
++
++    result = rt.handle_turn(
++        TaskRequest(
++            user_turn="Forward ZarooratWala to Tanmay",
++            session=SessionRef("no-ask"),
++            legacy_goal=Goal(
++                kind="whatsapp_forward_message",
++                contact="Pallavi",
++                prompt="Forward ZarooratWala to Tanmay",
++            ),
++        )
++    )
++    assert result.status != TurnStatus.WAITING_FOR_USER
++    assert result.selected_substrate == "computer_use"
++    cands = result.acceptance_trace["candidate_methods"]
++    web_c = next(c for c in cands if c["id"] == "whatsapp_web_forward")
++    assert web_c["availability"] == MethodAvailability.UNSUPPORTED.value
++
++
++def test_preferred_ready_method_missing_user_prerequisite_can_ask_before_fallback() -> None:
++    register_method_provider(
++        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
++    )
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    from plugin.agent.goal import Goal
++
++    result = rt.handle_turn(
++        TaskRequest(
++            user_turn="Forward ZarooratWala to Tanmay",
++            session=SessionRef("ask-sess"),
++            legacy_goal=Goal(
++                kind="whatsapp_forward_message",
++                contact="Pallavi",
++                prompt="Forward ZarooratWala to Tanmay",
++            ),
++        )
++    )
++    assert result.status == TurnStatus.WAITING_FOR_USER
++    assert "prerequisite" in (result.question or "").lower() or result.question
++    assert result.acceptance_trace.get("missing_precondition") == "authenticated_integration"
++
++
++def test_ask_returns_waiting_state_and_resumes_same_intention_on_next_turn() -> None:
++    register_method_provider(
++        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
++    )
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    from plugin.agent.goal import Goal
++
++    goal = Goal(
++        kind="whatsapp_forward_message",
++        contact="Pallavi",
++        prompt="Forward ZarooratWala to Tanmay",
++    )
++    sess = SessionRef("resume-sess")
++    first = rt.handle_turn(
++        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
++    )
++    assert first.status == TurnStatus.WAITING_FOR_USER
++    intention = first.intention_id
++    second = rt.handle_turn(
++        TaskRequest(user_turn="no", session=sess, legacy_goal=goal)
++    )
++    assert second.status == TurnStatus.CONTINUED
++    assert second.intention_id == intention
++    assert second.selected_substrate == "computer_use"
++    assert second.acceptance_trace.get("resumed_after") == "user_declined"
++
++
++def test_user_declined_method_prerequisite_advances_method_frontier() -> None:
++    register_method_provider(
++        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
++    )
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    from plugin.agent.goal import Goal
++
++    goal = Goal(
++        kind="whatsapp_forward_message",
++        contact="Pallavi",
++        prompt="Forward message",
++    )
++    sess = SessionRef("decline-sess")
++    rt.handle_turn(TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal))
++    result = rt.handle_turn(TaskRequest(user_turn="not now", session=sess, legacy_goal=goal))
++    assert result.selected_method == "native_computer_use_forward"
++    # Declined method must not be re-asked within scope.
++    again = rt.handle_turn(
++        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
++    )
++    assert again.status != TurnStatus.WAITING_FOR_USER
++    assert again.selected_method == "native_computer_use_forward"
++
++
++def test_accepted_prerequisite_resumes_parent_intention() -> None:
++    register_method_provider(
++        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
++    )
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    from plugin.agent.goal import Goal
++
++    goal = Goal(
++        kind="whatsapp_forward_message",
++        contact="Pallavi",
++        prompt="Forward message",
++    )
++    sess = SessionRef("accept-sess")
++    first = rt.handle_turn(
++        TaskRequest(user_turn=goal.prompt, session=sess, legacy_goal=goal)
++    )
++    intention = first.intention_id
++    second = rt.handle_turn(TaskRequest(user_turn="yes", session=sess, legacy_goal=goal))
++    assert second.status == TurnStatus.CONTINUED
++    assert second.intention_id == intention
++    assert second.selected_method == "structured_web_forward"
++    assert second.acceptance_trace.get("resumed_after") == "user_accepted_prerequisite"
++
++
++def test_forced_substrate_via_execution_constraints_not_harness_branch() -> None:
++    register_method_provider(
++        _CatalogProvider([_web_ready_missing_auth(), _computer_use()])
++    )
++    # Even with READY web missing auth, forced CU forbids browser and skips ASK
++    # when CU is the only allowed substrate with AVAILABLE readiness.
++    # Web becomes FORBIDDEN_BY_CONSTRAINT; CU AVAILABLE → select CU, no ASK.
++    rt = AgentRuntime(runtime_state=RuntimeState())
++    from plugin.agent.goal import Goal
++
++    goal = Goal(
++        kind="whatsapp_forward_message",
++        contact="Pallavi",
++        prompt="Forward message",
++    )
++    result = rt.handle_turn(
++        TaskRequest(
++            user_turn=goal.prompt,
++            session=SessionRef("force-cu"),
++            legacy_goal=goal,
++            constraints=ExecutionConstraints(
++                allowed_substrates=("computer_use",),
++                forced_substrate="computer_use",
++            ),
++        )
++    )
++    assert result.status != TurnStatus.WAITING_FOR_USER
++    assert result.selected_substrate == "computer_use"
++    web = next(
++        c
++        for c in result.acceptance_trace["candidate_methods"]
++        if c["id"] == "structured_web_forward"
++    )
++    assert web["availability"] == MethodAvailability.FORBIDDEN_BY_CONSTRAINT.value
++
++
++def test_agent_runtime_has_no_whatsapp_forward_branch_source() -> None:
++    import inspect
++    from plugin.agent.runtime import agent_runtime as mod
++
++    src = inspect.getsource(mod.AgentRuntime.handle_turn)
++    assert "whatsapp" not in src.lower()
++    assert "forward_message" not in src
++    assert "zarooratwala" not in src.lower()
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+index b1385ef4a..6e5dbc596 100644
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -10026,21 +10026,8 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
+                 else:
+                     run_message = _enrich_with_attached_images(prompt, images)
+ 
+-            structured_goal_context = ""
+-            try:
+-                from plugin.agent.goal import Goal
+-
+-                inferred_goal = Goal.infer_from_text(prompt)
+-                if inferred_goal.kind != "unknown":
+-                    structured_goal_context = inferred_goal.execution_context_block()
+-                    session["structured_goal_kind"] = inferred_goal.kind
+-                    session["structured_goal_prompt"] = inferred_goal.description
+-                else:
+-                    session.pop("structured_goal_kind", None)
+-                    session.pop("structured_goal_prompt", None)
+-            except Exception as _goal_exc:
+-                print(f"[tui_gateway] structured goal inference failed: {_goal_exc}", file=sys.stderr)
+-
++            # Stage A cutover: every ordinary TUI turn enters the common runtime.
++            # Gateway is ClientAdapter only — does not classify executive vs chat.
+             def _stream(delta):
+                 with session["history_lock"]:
+                     _append_inflight_delta(session, delta)
+@@ -10053,14 +10040,69 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
+                 "conversation_history": list(history),
+                 "stream_callback": _stream,
+             }
+-            if structured_goal_context:
+-                run_kwargs["system_message"] = structured_goal_context
+             try:
+                 if "task_id" in inspect.signature(agent.run_conversation).parameters:
+                     run_kwargs["task_id"] = session["session_key"]
+             except (TypeError, ValueError):
+                 pass
+-            result = agent.run_conversation(run_message, **run_kwargs)
++
++            from plugin.agent.ingress import SessionRef, TaskIngress, TaskRequest
++            from plugin.agent.runtime.agent_runtime import AgentRuntime
++            from plugin.agent.runtime.state import RuntimeState
++            from plugin.agent.runtime.turn_result import TurnStatus
++
++            _task_req = TaskIngress.normalize(
++                TaskRequest(
++                    user_turn=str(prompt or ""),
++                    attachments=list(images or []),
++                    session=SessionRef(str(session.get("session_key") or sid)),
++                    client_context={
++                        "client": "tui",
++                        "supports_rich_ui": True,
++                        "supports_streaming": True,
++                    },
++                )
++            )
++            if "agent_runtime_state" not in session:
++                session["agent_runtime_state"] = RuntimeState()
++            _agent_runtime = AgentRuntime(
++                runtime_state=session["agent_runtime_state"],
++                task_request=_task_req,
++            )
++            _turn = _agent_runtime.handle_turn(
++                _task_req,
++                conversation_runner=agent.run_conversation,
++                run_message=run_message,
++                conversation_kwargs=run_kwargs,
++            )
++            session["last_runtime_trace"] = dict(_turn.acceptance_trace or {})
++            interp = getattr(_turn, "interpretation", None)
++            if interp is not None and str(getattr(interp, "goal_kind", "") or "") not in {
++                "",
++                "unknown",
++            }:
++                session["structured_goal_kind"] = interp.goal_kind
++                session["structured_goal_prompt"] = str(
++                    getattr(getattr(interp, "goal", None), "description", "") or prompt
++                )
++            else:
++                session.pop("structured_goal_kind", None)
++                session.pop("structured_goal_prompt", None)
++
++            if _turn.status == TurnStatus.WAITING_FOR_USER:
++                result = {
++                    "final_response": str(_turn.question or _turn.message or ""),
++                    "messages": [],
++                    "waiting_for_user": True,
++                    "intention_id": _turn.intention_id,
++                }
++            else:
++                result = _turn.legacy_result
++                if result is None:
++                    result = {
++                        "final_response": str(_turn.message or ""),
++                        "messages": [],
++                    }
+             if "moa_one_shot_restore" in session:
+                 _restore = session.pop("moa_one_shot_restore", None)
+                 # Restore the model the user was on before the /moa one-shot.
+-- 
+2.39.5 (Apple Git-154)
+

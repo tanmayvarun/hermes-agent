@@ -1,0 +1,319 @@
+{
+  "layer": "post_open_pipeline",
+  "live": true,
+  "model": "ollama-cloud/qwen3.5:397b",
+  "trajectories": [
+    {
+      "name": "open_pallavi_then_hunt",
+      "prior_id": "open_source/frame_0056",
+      "after_id": "find_link/frame_0059",
+      "live": true,
+      "pieces": [
+        {
+          "piece": "A_perception",
+          "trajectory": "open_pallavi_then_hunt",
+          "fixture_id": "find_link/frame_0059",
+          "score": 1.0,
+          "checks": [
+            {
+              "name": "fusion_surface_matches_gold",
+              "passed": true,
+              "detail": "gold='conversation' got='conversation'"
+            },
+            {
+              "name": "surface_is_conversation",
+              "passed": true,
+              "detail": "got='conversation' expect=conversation (gold='conversation')"
+            },
+            {
+              "name": "open_conversation_matches_source",
+              "passed": true,
+              "detail": "expect~='Pallavi' got='Pallavi'"
+            },
+            {
+              "name": "open_conversation_not_search_chrome",
+              "passed": true,
+              "detail": "open='Pallavi'"
+            },
+            {
+              "name": "admits_content_not_yet_visible_or_names_gap",
+              "passed": true,
+              "detail": "target_visible=False missing=0 gaps=0"
+            }
+          ],
+          "failures": [],
+          "extras": {
+            "surface": "conversation",
+            "open_conversation": "Pallavi",
+            "model": "qwen3.5:397b",
+            "latency_s": 46.91577911376953
+          }
+        },
+        {
+          "piece": "B_critic",
+          "trajectory": "open_pallavi_then_hunt",
+          "fixture_id": "find_link/frame_0059",
+          "score": 1.0,
+          "checks": [
+            {
+              "name": "accepted_surface_canonical",
+              "passed": true,
+              "detail": "surface='conversation'"
+            },
+            {
+              "name": "accepted_surface_matches_expected",
+              "passed": true,
+              "detail": "got='conversation' expect='conversation' proposed='conversation'"
+            },
+            {
+              "name": "open_conversation_matches_expected",
+              "passed": true,
+              "detail": "got='Pallavi' expect='Pallavi'"
+            },
+            {
+              "name": "open_conversation_not_wiped_on_descended_surface",
+              "passed": true,
+              "detail": "prior='' accepted='Pallavi' surface=conversation"
+            },
+            {
+              "name": "field_role_consistent_with_surface",
+              "passed": true,
+              "detail": "role='in_chat_or_composer' expect='in_chat_or_composer' surface=conversation"
+            },
+            {
+              "name": "picker_field_role_not_sidebar_search",
+              "passed": true,
+              "detail": "surface=conversation role=in_chat_or_composer"
+            },
+            {
+              "name": "sidebar_motor_gate_matches_expected",
+              "passed": true,
+              "detail": "n/a"
+            },
+            {
+              "name": "picker_forbids_sidebar_motor",
+              "passed": true,
+              "detail": "surface=conversation forbid=False"
+            },
+            {
+              "name": "illegal_picker_to_search_rejected",
+              "passed": true,
+              "detail": "prior=chat_list proposed=conversation accepted=conversation"
+            },
+            {
+              "name": "soft_objects_accepted_when_structure_ok",
+              "passed": true,
+              "detail": "proposed_objects=3 accepted=3"
+            },
+            {
+              "name": "representation_has_no_motor_scripts",
+              "passed": true,
+              "detail": "document contains motor/mechanism strings"
+            },
+            {
+              "name": "representation_has_core_keys",
+              "passed": true,
+              "detail": "keys=['attempts', 'beliefs', 'exhausted', 'focused_field_role', 'frame', 'layers', 'objects', 'open_conversation', 'progress', 'surface']"
+            },
+            {
+              "name": "critic_emits_decisions_with_reasons",
+              "passed": true,
+              "detail": "n_decisions=7"
+            },
+            {
+              "name": "residual_keeps_prior_progress_when_omitted",
+              "passed": true,
+              "detail": "n/a"
+            },
+            {
+              "name": "accepted_open_not_search_chrome",
+              "passed": true,
+              "detail": "accepted_open='Pallavi'"
+            },
+            {
+              "name": "accepted_surface_conversation",
+              "passed": true,
+              "detail": "surface='conversation'"
+            }
+          ],
+          "failures": [],
+          "extras": {
+            "accepted_surface": "conversation",
+            "accepted_open": "Pallavi",
+            "decisions": [
+              {
+                "field": "surface",
+                "verdict": "accept",
+                "reason": "chat_list is a legal parent of conversation"
+              },
+              {
+                "field": "open_conversation",
+                "verdict": "accept",
+                "reason": "proposal named an open conversation"
+              },
+              {
+                "field": "focused_field_role",
+                "verdict": "accept",
+                "reason": "field role from surface/proposal"
+              },
+              {
+                "field": "objects",
+                "verdict": "accept",
+                "reason": "surface changed; a new inventory is expected"
+              },
+              {
+                "field": "progress",
+                "verdict": "accept",
+                "reason": "proposal provided soft content"
+              },
+              {
+                "field": "attempts",
+                "verdict": "accept",
+                "reason": "proposal provided soft content"
+              },
+              {
+                "field": "beliefs",
+                "verdict": "accept",
+                "reason": "belief retraction is explicit by omission/empty list"
+              }
+            ]
+          }
+        },
+        {
+          "piece": "C_brain",
+          "trajectory": "open_pallavi_then_hunt",
+          "fixture_id": "find_link/frame_0059",
+          "score": 1.0,
+          "checks": [
+            {
+              "name": "brain_emitted_a_capability",
+              "passed": true,
+              "detail": "family='locate_content' trace_keys=['phase', 'surface', 'frontier_observed', 'recommended_probe', 'barren_frontier', 'affordance_qc']"
+            },
+            {
+              "name": "brain_hunts_in_open_surface",
+              "passed": true,
+              "detail": "family='locate_content' accept=['locate_content', 'reveal_actions', 'scroll', 'scroll_content', 'select_content']"
+            },
+            {
+              "name": "brain_prefers_locate_content",
+              "passed": true,
+              "detail": "family='locate_content' (design: source open + query pending \u2192 locate_content)"
+            },
+            {
+              "name": "brain_does_not_reopen_or_sidebar_search",
+              "passed": true,
+              "detail": "family='locate_content' forbidden=['compose_search_query', 'open_contact', 'open_entity', 'open_search']"
+            },
+            {
+              "name": "brain_does_not_stall_on_observe",
+              "passed": true,
+              "detail": "family='locate_content' \u2014 observe is reperceive, not the hunt move"
+            },
+            {
+              "name": "locate_carries_goal_query",
+              "passed": true,
+              "detail": "query='zarooratwala' text='zarooratwala'"
+            }
+          ],
+          "failures": [],
+          "extras": {
+            "family": "locate_content",
+            "text": "zarooratwala",
+            "phase": "hunt_content",
+            "realization": "heuristic"
+          }
+        }
+      ],
+      "piece_scores": {
+        "A_perception": 1.0,
+        "B_critic": 1.0,
+        "C_brain": 1.0
+      },
+      "mean_score": 1.0,
+      "failures": []
+    }
+  ],
+  "ax_chrome_trap": {
+    "piece": "D_ax_chrome_trap",
+    "trajectory": "ax_search_chrome_trap",
+    "fixture_id": "synthetic/ax_q_search",
+    "score": 1.0,
+    "checks": [
+      {
+        "name": "clean_proposal_keeps_contact_open",
+        "passed": true,
+        "detail": "accepted_open='Pallavi'"
+      },
+      {
+        "name": "contaminated_ax_title_not_accepted_as_open",
+        "passed": true,
+        "detail": "accepted_open='Pallavi' (AX trap input was 'Q Search|')"
+      },
+      {
+        "name": "contaminated_still_conversation_surface",
+        "passed": true,
+        "detail": "surface='conversation'"
+      }
+    ],
+    "failures": [],
+    "extras": {
+      "clean_open": "Pallavi",
+      "contaminated_accepted_open": "Pallavi"
+    }
+  },
+  "piece_means": {
+    "A_perception": 1.0,
+    "B_critic": 1.0,
+    "C_brain": 1.0,
+    "D_ax_chrome_trap": 1.0
+  },
+  "mean_pipeline_score": 1.0,
+  "metrics": [
+    {
+      "name": "perception_post_open_surface",
+      "layer": "post_open_pipeline",
+      "value": 1.0,
+      "scored": 1,
+      "skipped": 0,
+      "question": "After open_entity, does perception name conversation + open contact?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "critic_accepts_post_open",
+      "layer": "post_open_pipeline",
+      "value": 1.0,
+      "scored": 1,
+      "skipped": 0,
+      "question": "Does the critic accept conversation and keep the source open?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "brain_locate_after_open",
+      "layer": "post_open_pipeline",
+      "value": 1.0,
+      "scored": 1,
+      "skipped": 0,
+      "question": "Does the brain choose locate_content (hunt) on the open source?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    },
+    {
+      "name": "ax_search_chrome_not_open_title",
+      "layer": "post_open_pipeline",
+      "value": 1.0,
+      "scored": 3,
+      "skipped": 0,
+      "question": "When AX latches search chrome as open title, does the critic refuse it?",
+      "higher_is_better": true,
+      "detail": {},
+      "examples": []
+    }
+  ],
+  "fixtures_scored": 1
+}

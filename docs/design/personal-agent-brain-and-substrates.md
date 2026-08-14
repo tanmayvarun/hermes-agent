@@ -581,8 +581,8 @@ MemoryRecord schema deferred; Candidate/Evidence/write results only.
 ```
 
 **Stage A live acceptance:** TUI → common runtime → MethodFrontier → ComputerUse
-(because WhatsApp Web is not READY) → composed substrate observe/execute →
-closed loop. Do **not** expect “link WhatsApp first” until Stage B.
+when no preferred WhatsApp gateway method is executable → composed substrate
+observe/execute → closed loop.
 
 ComputerUse `readiness=READY` only when substrate is composed **and** smoke-bind
 succeeds (observe/execute constructible). `runnable`/`substrate_composed` means
@@ -590,7 +590,11 @@ foundational stack + bindable dependencies — not guaranteed live task success.
 TUI never injects observe/execute. No WhatsApp app default in the generic
 substrate. Composition diagnostics always include `ok`.
 
-**Stage B (deferred):** ASK→resolve→resume / decline→CU once WhatsApp Web is READY.
+**Stage B (thin, in progress):** WhatsApp gateway MethodProvider is READY when
+the Baileys bridge stack exists; missing ``whatsapp_linked`` → ASK → resolve
+starts ``--pair-json`` → ``ui_hints.qr_payload`` on WAITING_FOR_USER → desktop
+renders QR inline → scan/resume or decline → ComputerUse. Full gateway
+search/forward automation remains follow-up.
 
 Goldens: `tests/plugin/test_task_ingress_memory_seam.py`,
 `tests/plugin/test_ui_runtime_method_selection.py`.

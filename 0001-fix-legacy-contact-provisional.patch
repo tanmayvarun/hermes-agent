@@ -1,0 +1,220 @@
+From c9e09186b53a1c718b29eb254a0e1513649c79cd Mon Sep 17 00:00:00 2001
+From: Tanmay Varun <varuntanmay21@gmail.com>
+Date: Thu, 13 Aug 2026 11:37:35 +0530
+Subject: [PATCH] fix(agent): treat legacy contact as provisional container
+ only
+
+Do not promote ambiguous goal.contact to authoritative expected_container.
+Propagate typed Goal.originator into decision briefs. Harden
+IdentityResolver so content blobs containing 'you' are not self.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ plugin/agent/capabilities/search_episode.py   | 43 ++++++++++++++++---
+ plugin/agent/decision_consultation.py         |  3 ++
+ plugin/agent/role_binding.py                  | 10 ++++-
+ .../plugin/test_search_hypothesis_ranking.py  | 32 ++++++++++++++
+ tests/plugin/test_source_query_binding.py     | 16 +++++++
+ 5 files changed, 96 insertions(+), 8 deletions(-)
+
+diff --git a/plugin/agent/capabilities/search_episode.py b/plugin/agent/capabilities/search_episode.py
+index ed8d82b94..d42f743e0 100644
+--- a/plugin/agent/capabilities/search_episode.py
++++ b/plugin/agent/capabilities/search_episode.py
+@@ -1268,7 +1268,7 @@ def ensure_search_episode_from_brief(
+     query = str(getattr(task, "search_query", "") or "").strip() if task else ""
+     dest = str(goal.get("destination") or goal.get("target_contact") or "").strip()
+     link_q = str(goal.get("source_query") or goal.get("link_query") or "").strip()
+-    # Source/container referent — never destination/general contact by accident.
++    # Typed source/container referent — never destination by accident.
+     source_container = str(
+         goal.get("source_conversation")
+         or goal.get("container")
+@@ -1276,15 +1276,24 @@ def ensure_search_episode_from_brief(
+         or goal.get("expected_container")
+         or ""
+     ).strip()
++    # Migration debt: bare goal.contact is role-ambiguous (source / dest /
++    # participant / subject). Do NOT promote it to authoritative
++    # expected_container. Keep as provisional seed for search arming only.
++    legacy_source_candidate = ""
+     if not source_container:
+-        # Legacy Goal.contact is usually source, but reject when it equals dest.
+         legacy = str(goal.get("contact") or "").strip()
+         if legacy and _norm(legacy) != _norm(dest):
+-            source_container = legacy
++            legacy_source_candidate = legacy
+     contact = source_container
++    container_provenance = (
++        "typed"
++        if source_container
++        else ("legacy_provisional" if legacy_source_candidate else "")
++    )
+ 
+     role = "source"
+-    referent = contact or link_q
++    # Prefer typed container; legacy contact may arm search but is not a role fact.
++    referent = contact or legacy_source_candidate or link_q
+     if surface == "forward_picker":
+         role = "destination"
+         referent = dest or referent
+@@ -1299,11 +1308,17 @@ def ensure_search_episode_from_brief(
+         if role == "content":
+             referent = link_q
+ 
+-    tokens = [t for t in (referent, contact, link_q, query, dest) if t]
++    tokens = [
++        t
++        for t in (referent, contact, legacy_source_candidate, link_q, query, dest)
++        if t
++    ]
+     tokens = list(dict.fromkeys(tokens))
+     # Typed semantic roles from the goal — independent relations.
+-    # container ← source conversation; originator ← typed sent_by / "from X".
+-    # Never: expected_originator = container; never: container = destination.
++    # container ← typed source conversation only (not legacy contact).
++    # originator ← typed sent_by / "from X". Never alias to container/dest.
++    # Debt: role-keyed lookup (source_container / destination / source_object)
++    # rather than a binary source/destination branch.
+     typed_container = dest if role == "destination" else source_container
+     # Debt: normalize originator / expected_originator / sent_by upstream to one
+     # canonical Goal relation; SEARCH should eventually consume only "originator".
+@@ -1354,6 +1369,14 @@ def ensure_search_episode_from_brief(
+             reason="ensure_from_brief",
+             status=start_status,
+         )
++        try:
++            ep0 = dict(search_episode_of(holder) or {})
++            ep0["container_provenance"] = container_provenance
++            if legacy_source_candidate:
++                ep0["legacy_source_candidate"] = legacy_source_candidate
++            holder.search_episode = ep0
++        except Exception:
++            pass
+     else:
+         # Refresh typed roles when goal fields are known; never invent from tokens
+         # or alias originator ← container.
+@@ -1365,6 +1388,12 @@ def ensure_search_episode_from_brief(
+                 ep["expected_container"] = typed_container
+             if typed_sought_object and not str(ep.get("sought_object") or "").strip():
+                 ep["sought_object"] = typed_sought_object
++            if container_provenance and not str(ep.get("container_provenance") or "").strip():
++                ep["container_provenance"] = container_provenance
++            if legacy_source_candidate and not str(
++                ep.get("legacy_source_candidate") or ""
++            ).strip():
++                ep["legacy_source_candidate"] = legacy_source_candidate
+             if query and not str(ep.get("query") or "").strip():
+                 ep["query"] = query
+             holder.search_episode = ep
+diff --git a/plugin/agent/decision_consultation.py b/plugin/agent/decision_consultation.py
+index 6b08d5811..56939031b 100644
+--- a/plugin/agent/decision_consultation.py
++++ b/plugin/agent/decision_consultation.py
+@@ -787,9 +787,12 @@ def build_decision_brief(
+     ][:3]
+     goal_dict = {
+         "operation": str(getattr(goal, "kind", "") or ""),
++        # Goal.contact is the source/container referent in this procedure path.
+         "source_conversation": str(getattr(goal, "contact", "") or ""),
+         "source_query": str(getattr(goal, "link_query", "") or ""),
+         "destination": str(getattr(goal, "target_contact", "") or ""),
++        # Typed authorship only — never alias from contact/source_conversation.
++        "originator": str(getattr(goal, "originator", "") or ""),
+     }
+     candidate_labels = [str(r.get("label") or "") for r in rows if r.get("label")]
+ 
+diff --git a/plugin/agent/role_binding.py b/plugin/agent/role_binding.py
+index a53008e39..821ac4b16 100644
+--- a/plugin/agent/role_binding.py
++++ b/plugin/agent/role_binding.py
+@@ -746,10 +746,18 @@ class IdentityResolver:
+ 
+     @classmethod
+     def canonical_identity(cls, value: Any) -> str:
+-        """Normalize an identity label; self-aliases collapse to ``self``."""
++        """Normalize a *typed identity label*; self-aliases collapse to ``self``.
++
++        Contract: call only on identity labels (sender, originator, contact
++        name) — never on arbitrary content text. A sentence like
++        ``YouTube sent you a notification`` must not become ``self``.
++        """
+         n = _norm(value)
+         if not n:
+             return ""
++        # Whole-label aliases only — reject multi-word content blobs.
++        if " " in n or len(n) > 24:
++            return n
+         if n in cls.SELF_ALIASES:
+             return "self"
+         return n
+diff --git a/tests/plugin/test_search_hypothesis_ranking.py b/tests/plugin/test_search_hypothesis_ranking.py
+index f9823be79..2513e617c 100644
+--- a/tests/plugin/test_search_hypothesis_ranking.py
++++ b/tests/plugin/test_search_hypothesis_ranking.py
+@@ -522,6 +522,38 @@ def test_source_Alice_destination_Bob_search_container_is_Alice():
+     assert ep.get("expected_container") == "Alice"
+     assert ep.get("expected_originator") == "Alice"
+     assert ep.get("expected_container") != "Bob"
++    assert ep.get("container_provenance") == "typed"
++
++
++def test_ambiguous_legacy_contact_without_source_role_is_not_authoritative_container():
++    """Bare goal.contact must not silently become expected_container."""
++    state = ExecutionState()
++    brief = DecisionBrief(
++        goal={
++            "contact": "Charlie",
++            "destination": "Dana",
++            "source_query": "notes",
++        },
++        world={
++            "surface": "search",
++            "objects": [
++                {
++                    "id": "hit",
++                    "kind": "search_result",
++                    "text": "notes.pdf",
++                    "matches_goal": True,
++                }
++            ],
++        },
++        task_state=TaskState(phase="reach_source", search_query="notes"),
++        capabilities=["open_entity", "resolve_entity", "observe", "search"],
++    )
++    from plugin.agent.capabilities.search_episode import ensure_search_episode_from_brief
++
++    ep = ensure_search_episode_from_brief(state, brief) or {}
++    assert ep.get("expected_container") in ("", None)
++    assert ep.get("legacy_source_candidate") == "Charlie"
++    assert ep.get("container_provenance") == "legacy_provisional"
+ 
+ 
+ def test_strong_unknown_outranks_weaker_commit_ready():
+diff --git a/tests/plugin/test_source_query_binding.py b/tests/plugin/test_source_query_binding.py
+index 9e6480e93..93e06b59e 100644
+--- a/tests/plugin/test_source_query_binding.py
++++ b/tests/plugin/test_source_query_binding.py
+@@ -108,3 +108,19 @@ def test_self_you_identity_via_identity_resolver():
+     assert originator_matches("You", "self")
+     assert originator_matches("self", "You")
+     assert not originator_matches("You", "Pallavi")
++
++
++def test_content_text_containing_you_is_not_self_identity():
++    """IdentityResolver must not treat arbitrary content blobs as self."""
++    from plugin.agent.role_binding import IdentityResolver
++    from plugin.agent.source_query_binding import (
++        infer_message_originator,
++        originator_matches,
++    )
++
++    blob = "YouTube sent you a notification"
++    assert IdentityResolver.canonical_identity(blob) != "self"
++    assert not IdentityResolver.values_same_identity(blob, "self")
++    assert not originator_matches(blob, "self")
++    # Infer extracts typed sender labels; plain content is not self.
++    assert infer_message_originator(blob) != "self"
+-- 
+2.39.5 (Apple Git-154)
+
