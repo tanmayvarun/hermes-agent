@@ -204,26 +204,34 @@ class AgentRuntime:
 
         phase(PHASE_INTERPRETING)
 
-        # Slice 1: associative ContextActivation BEFORE Goal interpret / commit.
-        # Does not replace recipient_binding; evidence only → BrainWorkspace.
+        # Slice 1B: persistent BrainWorkspace + activation fed into interpret.
         activation_trace: Dict[str, Any] = {}
+        workspace = None
         try:
             from plugin.agent.brain.context_activation import activate_context
+            from plugin.agent.brain.workspace import BrainWorkspace
 
+            prior = getattr(session_state, "brain_workspace", None)
+            if prior is None or not isinstance(prior, BrainWorkspace):
+                prior = BrainWorkspace(session_ref=sid)
+            # Carry L1 working context; client is additive only.
+            wc_in = dict(prior.working_context or {})
+            client = (req.client_context or {}).get("client")
+            if client:
+                wc_in["client"] = client
             workspace = activate_context(
                 self.memory,
                 raw_turn=str(req.user_turn or ""),
                 session_ref=sid,
-                working_context={
-                    "client": (req.client_context or {}).get("client"),
-                },
+                working_context=wc_in,
+                workspace=prior,
             )
             session_state.brain_workspace = workspace
             activation_trace = workspace.activation_trace()
         except Exception as exc:
             activation_trace = {"status": "error", "error": str(exc), "committed": False}
 
-        interpretation = interpret_task_request(req)
+        interpretation = interpret_task_request(req, brain_workspace=workspace)
 
         # Personal-entity resolution BEFORE MethodFrontier / substrate choice.
         recipient_trace: Dict[str, Any] = {}
@@ -392,6 +400,14 @@ class AgentRuntime:
             "goal_interpretation": {
                 "goal_kind": interpretation.goal_kind,
                 "desired_effects": list(interpretation.desired_effects),
+                "activated_context_consumed": bool(
+                    (getattr(interpretation, "notes", None) or {}).get(
+                        "activated_context"
+                    )
+                ),
+                "l1_preferred_entity": (getattr(interpretation, "notes", None) or {}).get(
+                    "l1_preferred_entity"
+                ),
             },
             "recipient_resolution": recipient_trace,
             "candidate_methods": candidate_trace,

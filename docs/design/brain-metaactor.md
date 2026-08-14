@@ -424,9 +424,13 @@ Stop expanding storage architecture. Reuse LocalMemorySystem as L2/L3 backend.
 ### Slice 1 acceptance
 
 - Activation for `"send hi to Pallavi on WhatsApp"` admits candidate entities into workspace evidence when Day-0 memory exists
-- Activation does **not** set `goal.committed_*`
+- Activation does **not** set `goal.committed_*`, does **not** write `desired_effects`, does **not** clear session `bindings`
+- Mentions stay `role=unknown` until interpretation
+- **BrainWorkspace is session-persistent**; new turns reuse and enrich it (L1 working context)
+- **Activated context is input to `interpret_task_request`** (`notes.activated_context`) — not a sidecar shelf
 - Empty / unready memory → empty activation, no crash
 - Existing recipient_binding path remains authoritative until Slice 3–5
+- L1 golden: recent session context can outrank global personal salience for the same surface form
 
 ---
 

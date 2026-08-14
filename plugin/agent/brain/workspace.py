@@ -46,13 +46,18 @@ class BrainWorkspace:
             "entity_names": [
                 str(e.get("canonical_name") or e.get("ref") or "")
                 for e in self.retrieved_evidence
-                if e.get("ref_kind") == "entity" or e.get("canonical_name")
+                if e.get("ref_kind") in {"entity", "project"} or e.get("canonical_name")
             ],
+            "hypotheses": list(self.hypotheses or [])[:5],
+            "working_context_keys": sorted(self.working_context.keys()),
+            "l1_recent_entity": self.working_context.get("recent_entity_name")
+            or self.working_context.get("recent_entity"),
             "provisional_status": (
                 self.provisional_interpretation.interpretation_status
                 if self.provisional_interpretation
                 else None
             ),
-            "bindings": list(self.bindings),
+            "bindings_count": len(self.bindings),
+            "desired_effects": list(self.desired_effects),
             "committed": False,
         }

@@ -84,8 +84,18 @@ def discover_methods(
     return out, errors
 
 
-def interpret_task_request(request: Any) -> TaskInterpretation:
-    """Generic Goal.infer interpretation — domain-agnostic routing input."""
+def interpret_task_request(
+    request: Any,
+    *,
+    brain_workspace: Any = None,
+    activated_context: Optional[dict] = None,
+) -> TaskInterpretation:
+    """Generic Goal.infer interpretation — domain-agnostic routing input.
+
+    Slice 1B: when ``brain_workspace`` / ``activated_context`` is supplied, attach
+    it under ``notes['activated_context']`` so interpretation *consumes* activation
+    rather than ignoring a sidecar. Does not treat activation as Goal commitment.
+    """
     user_turn = str(getattr(request, "user_turn", "") or "")
     legacy = getattr(request, "legacy_goal", None)
     goal = legacy
@@ -108,9 +118,36 @@ def interpret_task_request(request: Any) -> TaskInterpretation:
             effects.append("forward_message")
         if "call" in kind or "voice" in kind:
             effects.append("place_call")
+
+    notes: dict = {}
+    ctx = dict(activated_context or {})
+    if not ctx and brain_workspace is not None:
+        try:
+            from plugin.agent.brain.context_activation import (
+                consultation_context_from_workspace,
+            )
+
+            ctx = consultation_context_from_workspace(brain_workspace)
+        except Exception:
+            ctx = {}
+    if ctx:
+        notes["activated_context"] = ctx
+        # Temporary Slice 1 adapter: surface L1-preferred hypothesis for downstream
+        # inspection without committing RoleBinder / goal.committed_*.
+        hyps = list(ctx.get("hypotheses") or [])
+        if hyps:
+            notes["top_hypothesis"] = dict(hyps[0])
+            notes["hypothesis_salience"] = hyps[0].get("salience")
+        wc = dict(ctx.get("working_context") or {})
+        if wc.get("recent_entity_name") or wc.get("recent_entity"):
+            notes["l1_preferred_entity"] = wc.get("recent_entity_name") or wc.get(
+                "recent_entity"
+            )
+
     return TaskInterpretation(
         user_turn=user_turn,
         goal_kind=kind,
         goal=goal,
         desired_effects=effects,
+        notes=notes,
     )

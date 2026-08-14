@@ -8,6 +8,7 @@ from plugin.agent.brain.context_activation import (
     ActivationSignature,
     activate_context,
     build_activation_signature,
+    consultation_context_from_workspace,
 )
 from plugin.agent.brain.turn_representation import TurnRepresentation
 from plugin.agent.brain.workspace import BrainWorkspace
@@ -18,4 +19,5 @@ __all__ = [
     "TurnRepresentation",
     "activate_context",
     "build_activation_signature",
+    "consultation_context_from_workspace",
 ]
