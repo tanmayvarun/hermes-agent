@@ -91,7 +91,20 @@ class EntityResolver:
             if r.feature_scores.get("alias_exact", 0.0) >= 1.0
         ]
         if len(exact_hits) >= 2 and margin < 0.25:
-            reasons.append("multiple_exact_name_matches")
+            top_rec = float(top.feature_scores.get("interaction_recency", 0.0))
+            sec_rec = float(
+                second.feature_scores.get("interaction_recency", 0.0) if second else 0.0
+            )
+            # Day-0 WhatsApp often lacks frequency. A large recency gap
+            # (e.g. today vs years-stale) is sufficient personal signal —
+            # do not force ASK solely because both share an exact alias.
+            recency_dominant = (
+                top_rec >= 0.8
+                and (top_rec - sec_rec) >= 0.7
+                and margin >= 0.18
+            )
+            if not recency_dominant:
+                reasons.append("multiple_exact_name_matches")
         if second and margin < 0.08:
             reasons.append("close_numeric_margin")
         if top.feature_scores.get("interaction_recency", 0.0) < 0.1 and len(ranked) > 1:

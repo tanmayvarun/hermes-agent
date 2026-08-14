@@ -49,6 +49,7 @@ def _day0_two_pallavis(store: LocalMemorySystem) -> MemoryPipeline:
                 interaction_count_30d=180,
                 interaction_count_180d=900,
                 active_days_30d=28,
+                frequency_known=True,
             ),
             ContactObservation(
                 provider="whatsapp",
@@ -60,6 +61,7 @@ def _day0_two_pallavis(store: LocalMemorySystem) -> MemoryPipeline:
                 interaction_count_30d=0,
                 interaction_count_180d=1,
                 active_days_30d=0,
+                frequency_known=True,
             ),
         ],
         cursor_value="wa:v1",
@@ -130,6 +132,7 @@ def test_source_identities_not_merged_on_shared_alias(store):
                 display_name="Pallavi",
                 interaction_count_30d=180,
                 last_interaction_at=time.time(),
+                frequency_known=True,
             ),
         ],
         cursor_value="wa:v2",
@@ -224,6 +227,7 @@ def test_close_candidates_trigger_ask_via_binding_uncertainty(store):
                 interaction_count_30d=50,
                 interaction_count_7d=10,
                 active_days_30d=10,
+                frequency_known=True,
             ),
             ContactObservation(
                 provider="whatsapp",
@@ -233,6 +237,7 @@ def test_close_candidates_trigger_ask_via_binding_uncertainty(store):
                 interaction_count_30d=48,
                 interaction_count_7d=9,
                 active_days_30d=9,
+                frequency_known=True,
             ),
         ],
     )

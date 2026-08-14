@@ -28,7 +28,11 @@ DEFAULT_SCOPE = "personal:user:local:private"
 
 @dataclass
 class ContactObservation:
-    """Normalized contact/channel observation from a source adapter."""
+    """Normalized contact/channel observation from a source adapter.
+
+    Frequency fields are 0 when unknown unless ``frequency_known`` is True.
+    Never fabricate frequency from unread counts.
+    """
 
     provider: str
     external_id: str
@@ -39,6 +43,7 @@ class ContactObservation:
     interaction_count_7d: int = 0
     interaction_count_180d: int = 0
     active_days_30d: int = 0
+    frequency_known: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -160,24 +165,27 @@ class MemoryPipeline:
                 if entity_id not in name_buckets[key]:
                     name_buckets[key].append(entity_id)
 
-            # 2B: interaction aggregates on the linked entity
+            # 2B: interaction aggregates — frequency only when source says known
             continuity = 0.0
-            if obs.active_days_30d:
+            if obs.frequency_known and obs.active_days_30d:
                 continuity = min(1.0, obs.active_days_30d / 30.0)
+            meta = dict(obs.metadata or {})
+            meta["frequency_known"] = bool(obs.frequency_known)
             self.store.upsert_interaction_aggregate(
                 InteractionAggregate(
                     aggregate_id="",
                     subject_id=self.user_entity_id,
                     object_id=entity_id,
-                    count_7d=obs.interaction_count_7d,
-                    count_30d=obs.interaction_count_30d,
-                    count_180d=obs.interaction_count_180d,
+                    count_7d=obs.interaction_count_7d if obs.frequency_known else 0,
+                    count_30d=obs.interaction_count_30d if obs.frequency_known else 0,
+                    count_180d=obs.interaction_count_180d if obs.frequency_known else 0,
                     last_interaction_at=obs.last_interaction_at,
-                    active_days_30d=obs.active_days_30d,
+                    active_days_30d=obs.active_days_30d if obs.frequency_known else 0,
                     continuity=continuity,
                     scope=DEFAULT_SCOPE,
                     evidence_refs=[evt_id],
                     updated_at=now,
+                    metadata=meta,
                 )
             )
             result.aggregates += 1

@@ -104,6 +104,45 @@ def resolve_recipient_before_methods(
     effects = list(desired_effects or [])
     effect = _effect_for_goal(goal, effects)
 
+    if boot in (
+        MemoryBootstrapState.NOT_STARTED.value,
+        MemoryBootstrapState.AUTH_REQUIRED.value,
+        MemoryBootstrapState.SOURCE_UNAVAILABLE.value,
+    ):
+        # Don't claim identity readiness; prefer ASK / link rather than lexical guess.
+        packet_preview = MemoryRetriever(memory).retrieve(
+            MemoryQuery(
+                purpose="entity_resolution",
+                text=surface,
+                current_context={"channel": channel, "user_entity_id": "user:local"},
+                limit=8,
+            )
+        )
+        if not packet_preview.ranked:
+            if boot == MemoryBootstrapState.AUTH_REQUIRED.value:
+                q = (
+                    f"I can use your WhatsApp history to identify which '{surface}' "
+                    f"you usually mean. Link WhatsApp on this device?"
+                )
+            elif boot == MemoryBootstrapState.SOURCE_UNAVAILABLE.value:
+                q = (
+                    f"WhatsApp memory isn't available yet, so I can't safely choose "
+                    f"among contacts named '{surface}'. Link or retry when WhatsApp "
+                    f"is connected?"
+                )
+            else:
+                q = (
+                    f"I don't have enough personal memory yet to resolve who "
+                    f"'{surface}' is. Which contact should I use?"
+                )
+            return RecipientResolutionResult(
+                status="ask",
+                surface_form=surface,
+                question=q,
+                reason=f"bootstrap_{boot.lower() or 'not_started'}",
+                bootstrap_state=boot,
+            )
+
     packet = MemoryRetriever(memory).retrieve(
         MemoryQuery(
             purpose="entity_resolution",
@@ -120,22 +159,7 @@ def resolve_recipient_before_methods(
         surface_form=surface, role="recipient", packet=ctx.packet
     )
 
-    # Insufficient memory → ASK rather than lexical substrate guess
-    if boot in (
-        MemoryBootstrapState.NOT_STARTED.value,
-        "",
-    ) and not packet.ranked:
-        return RecipientResolutionResult(
-            status="ask",
-            surface_form=surface,
-            question=(
-                f"I don't have enough personal memory yet to resolve who "
-                f"'{surface}' is. Which contact should I use?"
-            ),
-            reason="bootstrap_not_ready",
-            bootstrap_state=boot,
-        )
-
+    # Insufficient memory after retrieve → ASK rather than lexical substrate guess
     if not proposal.entity_id or not packet.ranked:
         return RecipientResolutionResult(
             status="ask",

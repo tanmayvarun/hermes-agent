@@ -13,6 +13,7 @@ from plugin.agent.memory.pipeline import MemoryPipeline
 from plugin.agent.memory.sources import (
     MemorySourceAdapter,
     SourceObservationBatch,
+    SourceScanDisposition,
     WhatsAppBridgeSourceAdapter,
 )
 
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 class MemoryBootstrapState(str, Enum):
     NOT_STARTED = "NOT_STARTED"
+    SOURCE_UNAVAILABLE = "SOURCE_UNAVAILABLE"
+    AUTH_REQUIRED = "AUTH_REQUIRED"
     IDENTITY_READY = "IDENTITY_READY"
     INTERACTION_READY = "INTERACTION_READY"
     FULLY_CAUGHT_UP = "FULLY_CAUGHT_UP"
@@ -33,6 +36,8 @@ class MemoryBootstrapCoordinator:
 
     Does not block Hermes startup. Prefer:
       open LocalMemorySystem → schedule run_incremental()
+
+    Unavailable / auth-required scans must NOT become IDENTITY_READY.
     """
 
     store: LocalMemorySystem
@@ -83,9 +88,15 @@ class MemoryBootstrapCoordinator:
 
     def _run_once(self) -> dict[str, Any]:
         assert self.pipeline is not None
+        assert self.adapters is not None
         summary: dict[str, Any] = {"adapters": {}}
         any_identity = False
         any_interaction = False
+        any_success = False
+        saw_auth_required = False
+        saw_unavailable = False
+        saw_error = False
+
         for adapter in self.adapters:
             name = adapter.source_name
             cursor = self.store.get_source_cursor(name)
@@ -93,16 +104,38 @@ class MemoryBootstrapCoordinator:
                 batch: SourceObservationBatch = adapter.scan(cursor)
             except Exception as exc:
                 logger.warning("memory source %s scan failed: %s", name, exc)
-                summary["adapters"][name] = {"error": str(exc)}
-                continue
-            if not batch.observations:
                 summary["adapters"][name] = {
-                    "ingested": 0,
-                    "cursor": batch.next_cursor,
+                    "disposition": SourceScanDisposition.ERROR.value,
+                    "error": str(exc),
                 }
+                saw_error = True
+                continue
+
+            disp = batch.disposition
+            summary["adapters"][name] = {
+                "disposition": disp.value,
+                "cursor": batch.next_cursor,
+                "metadata": dict(batch.metadata or {}),
+            }
+
+            if disp == SourceScanDisposition.AUTH_REQUIRED:
+                saw_auth_required = True
+                continue
+            if disp == SourceScanDisposition.UNAVAILABLE:
+                saw_unavailable = True
+                continue
+            if disp == SourceScanDisposition.ERROR:
+                saw_error = True
+                continue
+
+            # SUCCESS or PARTIAL
+            any_success = True
+            if not batch.observations:
                 if batch.next_cursor:
                     self.store.set_source_cursor(name, batch.next_cursor)
+                summary["adapters"][name]["ingested"] = 0
                 continue
+
             result = self.pipeline.ingest_contacts(
                 name,
                 batch.observations,
@@ -114,25 +147,43 @@ class MemoryBootstrapCoordinator:
                 or result.links > 0
                 or result.source_identities > 0
             )
-            any_interaction = any_interaction or result.aggregates > 0
-            summary["adapters"][name] = {
-                "source_identities": result.source_identities,
-                "entities": result.entities,
-                "aggregates": result.aggregates,
-                "cursor": batch.next_cursor,
-            }
-        if any_interaction:
+            # Interaction-ready if we have last_interaction or known frequency
+            has_recency = any(
+                o.last_interaction_at is not None for o in batch.observations
+            )
+            has_freq = any(o.frequency_known for o in batch.observations)
+            any_interaction = any_interaction or has_recency or has_freq or result.aggregates > 0
+            summary["adapters"][name].update(
+                {
+                    "source_identities": result.source_identities,
+                    "entities": result.entities,
+                    "aggregates": result.aggregates,
+                    "ingested": len(batch.observations),
+                }
+            )
+
+        # Derive readiness from successful coverage — never from skipped scans.
+        if any_interaction and any_identity:
             self.set_state(MemoryBootstrapState.INTERACTION_READY)
+            if any_success and not (saw_auth_required or saw_unavailable or saw_error):
+                self.set_state(MemoryBootstrapState.FULLY_CAUGHT_UP)
         elif any_identity:
             self.set_state(MemoryBootstrapState.IDENTITY_READY)
-        elif self.state == MemoryBootstrapState.NOT_STARTED:
-            self.set_state(MemoryBootstrapState.IDENTITY_READY)
-
-        if summary["adapters"] and all(
-            "error" not in v for v in summary["adapters"].values()
+        elif saw_auth_required and self.state in (
+            MemoryBootstrapState.NOT_STARTED,
+            MemoryBootstrapState.SOURCE_UNAVAILABLE,
+            MemoryBootstrapState.AUTH_REQUIRED,
         ):
-            if self.state == MemoryBootstrapState.INTERACTION_READY:
-                self.set_state(MemoryBootstrapState.FULLY_CAUGHT_UP)
+            self.set_state(MemoryBootstrapState.AUTH_REQUIRED)
+        elif saw_unavailable and self.state in (
+            MemoryBootstrapState.NOT_STARTED,
+            MemoryBootstrapState.SOURCE_UNAVAILABLE,
+        ):
+            self.set_state(MemoryBootstrapState.SOURCE_UNAVAILABLE)
+        elif saw_error and self.state == MemoryBootstrapState.NOT_STARTED:
+            self.set_state(MemoryBootstrapState.STALE)
+        # else: leave prior state (e.g. already IDENTITY_READY from earlier run)
+
         summary["state"] = self.state.value
         return summary
 

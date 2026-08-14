@@ -130,9 +130,9 @@ const SEND_TIMEOUT_MS = parseInt(process.env.WHATSAPP_SEND_TIMEOUT_MS || '60000'
 
 // Display-name → chatId index for /resolve (compose "send hi to Pallavi").
 // Populated from contacts/chats/history sync + inbound message notify names.
-// lower(name) -> { chatId, name, source, lastInteractionAt?, interactionHint? }
+// lower(name) -> { chatId, name, source, lastInteractionAt?, unreadCount? }
 const contactNameIndex = new Map();
-// jid -> interaction metadata (from chats / history; used by Day-0 memory)
+// jid -> { lastInteractionAt, unreadCount } — NEVER treat unread as interaction frequency
 const chatInteractionIndex = new Map();
 
 function rememberContactName(name, chatId, source = 'unknown', meta = {}) {
@@ -149,17 +149,15 @@ function rememberContactName(name, chatId, source = 'unknown', meta = {}) {
     name: label,
     source,
     lastInteractionAt: meta.lastInteractionAt ?? prev?.lastInteractionAt ?? null,
-    interactionHint: meta.interactionHint ?? prev?.interactionHint ?? 0,
+    unreadCount: meta.unreadCount ?? prev?.unreadCount ?? 0,
   };
   contactNameIndex.set(key, entry);
-  if (meta.lastInteractionAt != null || meta.interactionHint) {
+  if (meta.lastInteractionAt != null || meta.unreadCount != null) {
     const prevIx = chatInteractionIndex.get(jid) || {};
     chatInteractionIndex.set(jid, {
       lastInteractionAt: meta.lastInteractionAt ?? prevIx.lastInteractionAt ?? null,
-      interactionHint: Math.max(
-        Number(meta.interactionHint || 0),
-        Number(prevIx.interactionHint || 0),
-      ),
+      unreadCount:
+        meta.unreadCount != null ? Number(meta.unreadCount) : Number(prevIx.unreadCount || 0),
     });
   }
 }
@@ -174,11 +172,12 @@ function rememberChatInteraction(chat) {
     // Baileys may emit seconds or ms
     lastInteractionAt = n > 1e12 ? n / 1000 : n;
   }
+  // unreadCount is a separate optional feature — NOT interaction frequency.
   const unread = Number(chat.unreadCount || 0);
   const prev = chatInteractionIndex.get(jid) || {};
   chatInteractionIndex.set(jid, {
     lastInteractionAt: lastInteractionAt ?? prev.lastInteractionAt ?? null,
-    interactionHint: Math.max(unread, Number(prev.interactionHint || 0)),
+    unreadCount: unread,
   });
   rememberContactName(
     chat.name || chat.displayName || chat.subject,
@@ -186,7 +185,7 @@ function rememberChatInteraction(chat) {
     'chats.meta',
     {
       lastInteractionAt: lastInteractionAt ?? undefined,
-      interactionHint: unread || undefined,
+      unreadCount: unread,
     },
   );
 }
@@ -1242,8 +1241,15 @@ app.get('/contacts', (req, res) => {
       display_name: entry.name,
       aliases: [entry.name],
       source: entry.source,
+      // conversationTimestamp-derived when available (provenance: whatsapp.chats.conversationTimestamp)
       last_interaction_at: ix.lastInteractionAt ?? entry.lastInteractionAt ?? null,
-      interaction_hint: ix.interactionHint ?? entry.interactionHint ?? 0,
+      // Separate optional signal — never interpret as interaction frequency
+      unread_count: ix.unreadCount ?? entry.unreadCount ?? 0,
+      // Frequency unknown until real history counts exist
+      interaction_count_7d: null,
+      interaction_count_30d: null,
+      interaction_count_180d: null,
+      active_days_30d: null,
     });
   }
   return res.json({

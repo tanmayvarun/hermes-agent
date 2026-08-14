@@ -736,6 +736,14 @@ Hermes:
 
 If Day-0 metadata cannot distinguish a highly active Pallavi from a stale duplicate—or at least ASK—the memory architecture has not produced personal intelligence. That is the step from UI automation agent toward personal agent.
 
+### Day-0 evidence quality (WhatsApp)
+
+- `last_interaction_at` ← `whatsapp.chats.conversationTimestamp` (observed when present).
+- `interaction_count_*` / `active_days_*` ← real history only; **never** fabricate from `unreadCount`.
+- Missing frequency is better than incorrect frequency; V0 may resolve on exact alias + recency alone.
+- Source scans report disposition (`SUCCESS` / `AUTH_REQUIRED` / `UNAVAILABLE` / …); skipped/unauth must not become `IDENTITY_READY`.
+- `EntityReferenceEvidence` currently keys primarily on surface form (context-sensitive retrieval is a follow-up — do not let recent disambiguation dominate permanently).
+
 ### Goldens policy
 
 Land when owning slice is green. Fixtures ahead OK. **No knowingly red merge-gate stubs.**

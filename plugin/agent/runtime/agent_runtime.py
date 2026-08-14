@@ -203,6 +203,8 @@ class AgentRuntime:
 
         # Personal-entity resolution BEFORE MethodFrontier / substrate choice.
         recipient_trace: Dict[str, Any] = {}
+        _goal_kind = ""
+        _effects: list = []
         try:
             from plugin.agent.memory.recipient_binding import (
                 resolve_recipient_before_methods,
@@ -258,7 +260,57 @@ class AgentRuntime:
                     )
                 )
         except Exception as exc:
+            # Fail closed for recipient-bearing externally visible actions.
             recipient_trace = {"status": "error", "error": str(exc)}
+            _goal_kind = str(
+                getattr(getattr(interpretation, "goal", None), "kind", "") or ""
+            ).lower()
+            _effects = list(interpretation.desired_effects or [])
+            _surface = str(
+                getattr(getattr(interpretation, "goal", None), "contact", "")
+                or getattr(getattr(interpretation, "goal", None), "recipient", "")
+                or getattr(getattr(interpretation, "goal", None), "target_contact", "")
+                or ""
+            ).strip()
+            _recipient_action = bool(_surface) and (
+                "forward" in _goal_kind
+                or "send" in _goal_kind
+                or any("send" in str(e) or "forward" in str(e) for e in _effects)
+            )
+            if _recipient_action:
+                question = (
+                    f"I couldn't safely resolve who '{_surface}' refers to "
+                    f"(memory error). Which contact should I use?"
+                )
+                session_state.suspended_ask = SuspendedAsk(
+                    intention_id=intention_id,
+                    method_id="memory_entity_resolution",
+                    precondition="entity_resolution",
+                    question=question,
+                    parent_effect=",".join(_effects),
+                    interpretation_notes={
+                        "surface_form": _surface,
+                        "error": str(exc),
+                        "fail_closed": True,
+                    },
+                )
+                phase(PHASE_AWAITING_USER, status="waiting_for_user")
+                return finish(
+                    RuntimeTurnResult(
+                        status=TurnStatus.WAITING_FOR_USER,
+                        question=question,
+                        message=question,
+                        intention_id=intention_id,
+                        task_request_id=task_request_id,
+                        session_id=sid,
+                        runtime_id=session_state.runtime_id,
+                        acceptance_trace={
+                            "recipient_resolution": recipient_trace,
+                            "ASK": question,
+                        },
+                        interpretation=interpretation,
+                    )
+                )
 
         phase(PHASE_SELECTING_METHOD)
         specs, provider_errors = discover_methods(

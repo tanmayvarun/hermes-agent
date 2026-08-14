@@ -34,6 +34,7 @@ def _pallavi_obs(now: float) -> list[ContactObservation]:
             interaction_count_30d=180,
             interaction_count_180d=900,
             active_days_30d=28,
+            frequency_known=True,
         ),
         ContactObservation(
             provider="whatsapp",
@@ -45,6 +46,7 @@ def _pallavi_obs(now: float) -> list[ContactObservation]:
             interaction_count_30d=0,
             interaction_count_180d=1,
             active_days_30d=0,
+            frequency_known=True,
         ),
     ]
 
@@ -126,16 +128,11 @@ def test_tui_send_message_resolves_recipient_from_memory_before_method_selection
         adapters=[adapter],
     )
     try:
-        # Block method providers so we only test resolution gate
         from plugin.agent.executive import method_providers as mp
 
         original = list(mp._PROVIDERS)
         mp._PROVIDERS.clear()
 
-        def _fake_discover(interpretation, *, constraints=None):
-            return []
-
-        # Prefer patching discover_methods via empty providers
         runtime = AgentRuntime(
             runtime_state=RuntimeState(),
             memory=store,
@@ -156,27 +153,23 @@ def test_tui_send_message_resolves_recipient_from_memory_before_method_selection
         )
         mp._PROVIDERS[:] = original
 
-        # Either ASK (unlikely with high margin) or proceed into method selection.
-        # With Day-0 data, should resolve and not leave recipient unresolved.
+        # High-margin fixture must resolve — ASK is a failure here.
+        assert turn.status != TurnStatus.WAITING_FOR_USER
         trace = turn.acceptance_trace or {}
         rr = trace.get("recipient_resolution") or {}
-        if turn.status == TurnStatus.WAITING_FOR_USER:
-            # Only acceptable if entity_resolution ask
-            assert "Pallavi" in (turn.question or "")
-        else:
-            assert rr.get("status") == "proceed"
-            assert rr.get("entity_id")
-            assert rr.get("channel_external_id") == "W17"
-            goal = getattr(turn.interpretation, "goal", None)
-            assert goal is not None
-            assert goal.committed_entity_id
-            assert goal.committed_channel_id == "W17"
+        assert rr.get("status") == "proceed"
+        assert rr.get("entity_id")
+        assert rr.get("channel_external_id") == "W17"
+        goal = getattr(turn.interpretation, "goal", None)
+        assert goal is not None
+        assert goal.committed_entity_id
+        assert goal.committed_channel_id == "W17"
     finally:
         store.close()
         reset_session_store()
 
 
-def test_computer_use_receives_committed_channel_identity_not_unresolved_name(tmp_path):
+def test_recipient_resolution_commits_channel_identity_to_goal(tmp_path):
     store, _ = open_local_memory(
         root=tmp_path / "mem4",
         start_bootstrap=True,
@@ -207,10 +200,85 @@ def test_computer_use_receives_committed_channel_identity_not_unresolved_name(tm
         assert goal.committed_entity_id
         assert goal.committed_channel_id == "W17"
         assert "PhonePe" not in (goal.committed_display_name or "")
-        # Substrate handoff: committed id preferred over surface "Pallavi"
-        assert goal.committed_channel_id.startswith("W") or "@" in goal.committed_channel_id or goal.committed_channel_id == "W17"
     finally:
         store.close()
+
+
+def test_whatsapp_auth_required_does_not_become_identity_ready(tmp_path):
+    from plugin.agent.memory.sources import SourceObservationBatch, SourceScanDisposition
+
+    class AuthRequiredAdapter:
+        source_name = "whatsapp_bridge"
+
+        def scan(self, cursor=None):
+            return SourceObservationBatch(
+                observations=[],
+                disposition=SourceScanDisposition.AUTH_REQUIRED,
+                metadata={"skipped": True},
+            )
+
+    store, coord = open_local_memory(
+        root=tmp_path / "mem_auth",
+        start_bootstrap=True,
+        blocking_bootstrap=True,
+        adapters=[AuthRequiredAdapter()],
+    )
+    try:
+        assert store.get_bootstrap_state() == MemoryBootstrapState.AUTH_REQUIRED.value
+        assert store.get_bootstrap_state() != MemoryBootstrapState.IDENTITY_READY.value
+    finally:
+        store.close()
+
+
+def test_unread_not_mapped_to_frequency_in_bridge_adapter(monkeypatch):
+    """Adapter must not invent interaction_count from unread_count."""
+    import io
+    import json
+    from plugin.agent.memory.sources import (
+        SourceScanDisposition,
+        WhatsAppBridgeSourceAdapter,
+    )
+
+    payload = {
+        "contacts": [
+            {
+                "provider": "whatsapp",
+                "external_id": "W99",
+                "display_name": "Ignored Group",
+                "aliases": ["Ignored Group"],
+                "last_interaction_at": None,
+                "unread_count": 40,
+                "interaction_count_7d": None,
+                "interaction_count_30d": None,
+                "interaction_count_180d": None,
+                "active_days_30d": None,
+            }
+        ],
+        "cursor": "wa:done",
+        "indexed": 1,
+    }
+
+    class _Resp:
+        def read(self):
+            return json.dumps(payload).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *a, **k: _Resp(),
+    )
+    batch = WhatsAppBridgeSourceAdapter().scan(None)
+    assert batch.disposition == SourceScanDisposition.SUCCESS
+    assert len(batch.observations) == 1
+    obs = batch.observations[0]
+    assert obs.interaction_count_30d == 0
+    assert obs.frequency_known is False
+    assert obs.metadata.get("unread_count") == 40
 
 
 def test_noop_memory_skips_resolution_without_blocking():
@@ -226,6 +294,53 @@ def test_noop_memory_skips_resolution_without_blocking():
     )
     assert rr.status == "skip"
     assert not goal.committed_entity_id
+
+
+def test_recency_only_without_frequency_still_resolves_high_margin_pallavi(tmp_path):
+    """Day-0 WhatsApp often lacks real frequency; recency alone must still work."""
+    now = time.time()
+    obs = [
+        ContactObservation(
+            provider="whatsapp",
+            external_id="W17",
+            display_name="Pallavi",
+            aliases=["Pallavi"],
+            last_interaction_at=now - 3600,
+            frequency_known=False,
+        ),
+        ContactObservation(
+            provider="whatsapp",
+            external_id="W781",
+            display_name="Pallavi PhonePe",
+            aliases=["Pallavi PhonePe", "Pallavi"],
+            last_interaction_at=now - 3 * 365 * 86400,
+            frequency_known=False,
+        ),
+    ]
+    store, _ = open_local_memory(
+        root=tmp_path / "mem_recency",
+        start_bootstrap=True,
+        blocking_bootstrap=True,
+        adapters=[FixtureSourceAdapter(source_name="wa", observations=obs)],
+    )
+    try:
+        goal = Goal(
+            kind="whatsapp_forward_message",
+            contact="Pallavi",
+            message_body="hi",
+            app="WhatsApp",
+        )
+        rr = resolve_recipient_before_methods(
+            store,
+            goal=goal,
+            desired_effects=["send_message"],
+            channel="whatsapp",
+        )
+        assert rr.status == "proceed"
+        assert rr.channel_external_id == "W17"
+        assert goal.committed_channel_id == "W17"
+    finally:
+        store.close()
 
 
 def test_fixture_adapter_scan_idempotent_with_cursor():

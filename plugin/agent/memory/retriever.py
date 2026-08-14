@@ -213,13 +213,19 @@ class MemoryRetriever:
 
             agg = self.store.get_aggregate(user_id, ent.entity_id, scope=ent.scope)
             if agg:
-                features["interaction_frequency"] = min(1.0, agg.count_30d / 50.0)
+                freq_known = bool((agg.metadata or {}).get("frequency_known"))
+                if freq_known:
+                    features["interaction_frequency"] = min(1.0, agg.count_30d / 50.0)
+                    features["continuity"] = float(agg.continuity)
+                else:
+                    # Missing frequency is better than fabricated frequency.
+                    features["interaction_frequency"] = 0.0
+                    features["continuity"] = 0.0
                 if agg.last_interaction_at:
                     days = max(0.0, (now - float(agg.last_interaction_at)) / 86400.0)
                     features["interaction_recency"] = max(0.0, 1.0 - days / 180.0)
                 else:
                     features["interaction_recency"] = 0.0
-                features["continuity"] = float(agg.continuity)
             else:
                 features["interaction_frequency"] = 0.0
                 features["interaction_recency"] = 0.0
