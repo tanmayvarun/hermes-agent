@@ -2,11 +2,13 @@
 
 Ensures send/forward effects resolve EntityRef before substrate selection.
 ComputerUse / gateway receive committed channel identity — not unresolved names.
+
+On ambiguity: Brain spends a bounded identity-evidence budget before ASK.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from plugin.agent.memory.bootstrap import MemoryBootstrapState
@@ -33,6 +35,8 @@ class RecipientResolutionResult:
     alternatives: Optional[list] = None
     reason: str = ""
     bootstrap_state: str = ""
+    evidence_probes: list[str] = field(default_factory=list)
+    identity_hypotheses: list = field(default_factory=list)
 
 
 def _surface_form_from_goal(goal: Any) -> str:
@@ -48,7 +52,6 @@ def _surface_form_from_goal(goal: Any) -> str:
 def _effect_for_goal(goal: Any, desired_effects: list[str]) -> str:
     kind = str(getattr(goal, "kind", "") or "").lower()
     if "forward" in kind or "forward_message" in desired_effects:
-        # Sending a known body ("send hi to X") is still send_message risk.
         body = str(getattr(goal, "message_body", "") or "").strip()
         if body and not str(getattr(goal, "link_query", "") or "").strip():
             return "send_message"
@@ -58,6 +61,61 @@ def _effect_for_goal(goal: Any, desired_effects: list[str]) -> str:
     return "send_message"
 
 
+def _working_context_disputes_top(
+    proposal: Any, working_context: Optional[dict[str, Any]]
+) -> bool:
+    """True when L1/working context prefers a non-top ranked candidate."""
+    wc = dict(working_context or {})
+    l1_id = str(wc.get("recent_entity_id") or "").strip()
+    l1_name = str(wc.get("recent_entity_name") or "").strip().lower()
+    if not l1_id and not l1_name:
+        return False
+    ranked = list(getattr(proposal, "ranked", None) or [])
+    top = str(getattr(proposal, "entity_id", "") or "")
+    if len(ranked) < 2 or not top:
+        return False
+    for r in ranked[:6]:
+        eid = str(getattr(r, "ref", "") or "")
+        payload = dict(getattr(r, "payload", None) or {})
+        cname = str(payload.get("canonical_name") or "").lower()
+        hit = (l1_id and eid == l1_id) or (
+            l1_name and (l1_name == cname or l1_name in cname)
+        )
+        if hit and eid != top:
+            return True
+    return False
+
+
+def _commit_goal(
+    goal: Any,
+    *,
+    surface: str,
+    entity_id: str,
+    channel: str,
+    memory: Any,
+) -> tuple[str, str]:
+    grounded = ChannelGrounding(memory).resolve(entity_id, channel)
+    display = str(
+        (grounded.display_name if grounded else "")
+        or surface
+    )
+    try:
+        goal.committed_entity_id = entity_id
+        goal.committed_channel_id = grounded.external_id if grounded else ""
+        goal.committed_display_name = display
+        if display:
+            if getattr(goal, "target_contact", ""):
+                goal.target_contact = display
+            if getattr(goal, "recipient", ""):
+                goal.recipient = display
+            if getattr(goal, "contact", "") and not getattr(goal, "link_query", ""):
+                if str(goal.contact).strip().lower() == surface.lower():
+                    goal.contact = display
+    except Exception:
+        pass
+    return (grounded.external_id if grounded else ""), display
+
+
 def resolve_recipient_before_methods(
     memory: Any,
     *,
@@ -65,10 +123,13 @@ def resolve_recipient_before_methods(
     desired_effects: Optional[list[str]] = None,
     channel: str = "whatsapp",
     bootstrap_state: Optional[str] = None,
+    working_context: Optional[dict[str, Any]] = None,
+    world_probes: bool = True,
+    evidence_budget: int = 4,
 ) -> RecipientResolutionResult:
     """Run memory entity resolution for person recipients.
 
-    Returns ``skip`` when memory is Noop / no surface form / no LocalMemorySystem.
+    Ambiguity triggers a bounded Brain evidence-acquisition loop before ASK.
     """
     surface = _surface_form_from_goal(goal)
     if not surface:
@@ -81,7 +142,6 @@ def resolve_recipient_before_methods(
             reason="memory_not_local",
         )
 
-    # Already committed this turn/session
     existing = str(getattr(goal, "committed_entity_id", "") or "").strip()
     if existing:
         grounded = ChannelGrounding(memory).resolve(existing, channel)
@@ -109,7 +169,6 @@ def resolve_recipient_before_methods(
         MemoryBootstrapState.AUTH_REQUIRED.value,
         MemoryBootstrapState.SOURCE_UNAVAILABLE.value,
     ):
-        # Don't claim identity readiness; prefer ASK / link rather than lexical guess.
         packet_preview = MemoryRetriever(memory).retrieve(
             MemoryQuery(
                 purpose="entity_resolution",
@@ -150,6 +209,7 @@ def resolve_recipient_before_methods(
             current_context={
                 "channel": channel,
                 "user_entity_id": "user:local",
+                "working_context": dict(working_context or {}),
             },
             limit=8,
         )
@@ -159,7 +219,6 @@ def resolve_recipient_before_methods(
         surface_form=surface, role="recipient", packet=ctx.packet
     )
 
-    # Insufficient memory after retrieve → ASK rather than lexical substrate guess
     if not proposal.entity_id or not packet.ranked:
         return RecipientResolutionResult(
             status="ask",
@@ -170,53 +229,100 @@ def resolve_recipient_before_methods(
         )
 
     decision = ActionRiskPolicy().allows(effect, proposal.uncertainty)
-    if decision.action == "ask" or decision.action == "refuse":
-        alts = []
-        for r in proposal.ranked[:5]:
-            name = str(r.payload.get("canonical_name") or r.ref)
-            alts.append({"entity_id": r.ref, "label": name})
-        labels = " or ".join(f"**{a['label']}**" for a in alts[:3]) or surface
+    wc_dispute = _working_context_disputes_top(proposal, working_context)
+
+    # Clear path: proceed without evidence loop only when policy is clear
+    # AND working context does not prefer a competing candidate.
+    if decision.action == "proceed" and not wc_dispute:
+        ext, display = _commit_goal(
+            goal, surface=surface, entity_id=proposal.entity_id, channel=channel, memory=memory
+        )
+        # Prefer ranked display name when grounding lacks it
+        if not display or display == surface:
+            display = str(
+                proposal.ranked[0].payload.get("canonical_name") or display or surface
+            )
+            try:
+                goal.committed_display_name = display
+            except Exception:
+                pass
         return RecipientResolutionResult(
-            status="ask",
+            status="proceed",
             surface_form=surface,
             entity_id=proposal.entity_id,
-            alternatives=alts,
-            question=f"Do you mean {labels}?",
-            reason=decision.reason or "ambiguous",
+            channel_external_id=ext,
+            channel_provider=channel,
+            display_name=display,
+            reason=decision.reason or "resolved",
             bootstrap_state=boot,
         )
 
-    grounded = ChannelGrounding(memory).resolve(proposal.entity_id, channel)
-    display = str(
-        (grounded.display_name if grounded else "")
-        or proposal.ranked[0].payload.get("canonical_name")
-        or surface
-    )
-    # Bind onto goal for substrate handoff
-    try:
-        goal.committed_entity_id = proposal.entity_id
-        goal.committed_channel_id = grounded.external_id if grounded else ""
-        goal.committed_display_name = display
-        # Prefer resolved display name for search/send strings
-        if display:
-            if getattr(goal, "target_contact", ""):
-                goal.target_contact = display
-            if getattr(goal, "recipient", ""):
-                goal.recipient = display
-            if getattr(goal, "contact", "") and not getattr(goal, "link_query", ""):
-                # Simple send: contact is the recipient
-                if str(goal.contact).strip().lower() == surface.lower():
-                    goal.contact = display
-    except Exception:
-        pass
+    # Ambiguous / refuse / working-context dispute → evidence loop BEFORE ASK
+    from plugin.agent.brain.identity_evidence import resolve_identity_with_evidence_loop
 
+    outcome = resolve_identity_with_evidence_loop(
+        memory,
+        list(proposal.ranked or packet.ranked),
+        surface=surface,
+        channel=channel,
+        working_context=working_context,
+        budget=evidence_budget,
+        world_probes=world_probes,
+    )
+    hyp_dicts = [h.to_dict() for h in outcome.hypotheses]
+
+    if outcome.action == "proceed" and outcome.entity_id:
+        # Find display name from hypotheses
+        display = surface
+        for h in outcome.hypotheses:
+            if h.entity_id == outcome.entity_id:
+                display = h.display_name or surface
+                break
+        ext, display2 = _commit_goal(
+            goal,
+            surface=surface,
+            entity_id=outcome.entity_id,
+            channel=channel,
+            memory=memory,
+        )
+        display = display2 or display
+        return RecipientResolutionResult(
+            status="proceed",
+            surface_form=surface,
+            entity_id=outcome.entity_id,
+            channel_external_id=ext,
+            channel_provider=channel,
+            display_name=display,
+            reason=outcome.reason,
+            bootstrap_state=boot,
+            evidence_probes=list(outcome.probes_used),
+            identity_hypotheses=hyp_dicts,
+        )
+
+    # ASK only after evidence budget exhausted / ambiguity survived
+    alts = []
+    for h in outcome.hypotheses[:5]:
+        alts.append({"entity_id": h.entity_id, "label": h.display_name})
+    if not alts:
+        for r in proposal.ranked[:5]:
+            alts.append(
+                {
+                    "entity_id": r.ref,
+                    "label": str(r.payload.get("canonical_name") or r.ref),
+                }
+            )
+    labels = " or ".join(f"**{a['label']}**" for a in alts[:3]) or surface
     return RecipientResolutionResult(
-        status="proceed",
+        status="ask",
         surface_form=surface,
         entity_id=proposal.entity_id,
-        channel_external_id=grounded.external_id if grounded else "",
-        channel_provider=channel,
-        display_name=display,
-        reason=decision.reason or "resolved",
+        alternatives=alts,
+        question=(
+            f"I checked personal memory and available WhatsApp contact signals, "
+            f"but still can't tell which '{surface}' you mean. Do you mean {labels}?"
+        ),
+        reason=outcome.reason or "ambiguity_survived_evidence_budget",
         bootstrap_state=boot,
+        evidence_probes=list(outcome.probes_used),
+        identity_hypotheses=hyp_dicts,
     )

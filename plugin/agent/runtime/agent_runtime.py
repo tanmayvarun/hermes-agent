@@ -251,6 +251,11 @@ class AgentRuntime:
                 desired_effects=list(interpretation.desired_effects or []),
                 channel="whatsapp",
                 bootstrap_state=boot_state,
+                working_context=dict(
+                    getattr(workspace, "working_context", None) or {}
+                )
+                if workspace is not None
+                else None,
             )
             recipient_trace = {
                 "status": rr.status,
@@ -259,6 +264,7 @@ class AgentRuntime:
                 "channel_external_id": rr.channel_external_id,
                 "reason": rr.reason,
                 "bootstrap_state": rr.bootstrap_state,
+                "evidence_probes": list(getattr(rr, "evidence_probes", None) or []),
             }
             if rr.status == "ask":
                 question = rr.question or f"Which '{rr.surface_form}' did you mean?"

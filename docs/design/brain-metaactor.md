@@ -421,6 +421,28 @@ Stop expanding storage architecture. Reuse LocalMemorySystem as L2/L3 backend.
 | **6** | MethodFrontier strictly after semantic bindings; ComputerUse gets resolved targets |
 | **7** | MemoryConsolidator: episodes, semantic compaction, procedures/preferences, vectors |
 
+### Identity resolution: evidence before ASK
+
+Behavioral principle:
+
+> **low confidence → first spend a bounded information-gathering budget; ASK only if ambiguity survives.**
+
+ASK is terminal information acquisition, not the first response to a narrow numeric margin.
+
+```text
+ContextActivation → competing IdentityHypotheses (structured evidence bags)
+  → ActionRiskPolicy ambiguous?
+       → gather (memory aggregates, reference history, WhatsApp contact enrichment, …)
+       → qualitative reinterpretation over name/context/salience/channel evidence
+       → proceed | ASK (budget exhausted)
+```
+
+Do **not** “fix” ambiguity by global score-weight tweaks or always-prefer-exact rules.
+Keep name match, recency, frequency, relationships, working context, prior references,
+and channel identities as distinct evidence features.
+
+Code: [`plugin/agent/brain/identity_evidence.py`](../../plugin/agent/brain/identity_evidence.py).
+
 ### Slice 1 acceptance
 
 - Activation for `"send hi to Pallavi on WhatsApp"` admits candidate entities into workspace evidence when Day-0 memory exists
