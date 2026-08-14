@@ -36,7 +36,7 @@ import express from 'express';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import path from 'path';
-import { mkdirSync, readFileSync, existsSync, readdirSync, unlinkSync, rmSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
@@ -134,6 +134,48 @@ const SEND_TIMEOUT_MS = parseInt(process.env.WHATSAPP_SEND_TIMEOUT_MS || '60000'
 const contactNameIndex = new Map();
 // jid -> { lastInteractionAt, unreadCount } — NEVER treat unread as interaction frequency
 const chatInteractionIndex = new Map();
+const CONTACT_INDEX_PATH = path.join(SESSION_DIR, 'contact-index.json');
+let _contactIndexDirty = false;
+let _contactIndexSaveTimer = null;
+
+function loadPersistedContactIndex() {
+  try {
+    if (!existsSync(CONTACT_INDEX_PATH)) return;
+    const raw = JSON.parse(readFileSync(CONTACT_INDEX_PATH, 'utf8'));
+    for (const [key, entry] of Object.entries(raw.contacts || {})) {
+      if (entry?.chatId && entry?.name) contactNameIndex.set(key, entry);
+    }
+    for (const [jid, ix] of Object.entries(raw.interactions || {})) {
+      chatInteractionIndex.set(jid, ix);
+    }
+    console.log(
+      `📇 Restored contact index: ${contactNameIndex.size} names, ` +
+        `${chatInteractionIndex.size} interaction rows`,
+    );
+  } catch (err) {
+    console.log('📇 contact-index restore failed:', err?.message || err);
+  }
+}
+
+function schedulePersistContactIndex() {
+  _contactIndexDirty = true;
+  if (_contactIndexSaveTimer) return;
+  _contactIndexSaveTimer = setTimeout(() => {
+    _contactIndexSaveTimer = null;
+    if (!_contactIndexDirty) return;
+    _contactIndexDirty = false;
+    try {
+      const contacts = Object.fromEntries(contactNameIndex.entries());
+      const interactions = Object.fromEntries(chatInteractionIndex.entries());
+      writeFileSync(
+        CONTACT_INDEX_PATH,
+        JSON.stringify({ contacts, interactions, savedAt: Date.now() }),
+      );
+    } catch (err) {
+      console.log('📇 contact-index save failed:', err?.message || err);
+    }
+  }, 1500);
+}
 
 function rememberContactName(name, chatId, source = 'unknown', meta = {}) {
   const label = String(name || '').trim();
@@ -160,6 +202,7 @@ function rememberContactName(name, chatId, source = 'unknown', meta = {}) {
         meta.unreadCount != null ? Number(meta.unreadCount) : Number(prevIx.unreadCount || 0),
     });
   }
+  schedulePersistContactIndex();
 }
 
 function rememberChatInteraction(chat) {
@@ -179,6 +222,7 @@ function rememberChatInteraction(chat) {
     lastInteractionAt: lastInteractionAt ?? prev.lastInteractionAt ?? null,
     unreadCount: unread,
   });
+  schedulePersistContactIndex();
   rememberContactName(
     chat.name || chat.displayName || chat.subject,
     jid,
@@ -330,6 +374,7 @@ function getContextInfo(messageContent) {
 }
 
 mkdirSync(SESSION_DIR, { recursive: true });
+loadPersistedContactIndex();
 
 // Build LID → phone reverse map from session files (lid-mapping-{phone}.json)
 function buildLidMap() {
@@ -512,18 +557,21 @@ async function startSocket() {
   sock.ev.on('creds.update', () => { saveCreds(); lidToPhone = buildLidMap(); });
 
   sock.ev.on('contacts.upsert', (contacts) => {
+    console.log(`📇 contacts.upsert n=${(contacts || []).length}`);
     for (const c of contacts || []) {
       const jid = c.id || c.jid;
       rememberContactName(c.name || c.notify || c.verifiedName || c.pushName, jid, 'contacts.upsert');
     }
   });
   sock.ev.on('contacts.update', (contacts) => {
+    console.log(`📇 contacts.update n=${(contacts || []).length}`);
     for (const c of contacts || []) {
       const jid = c.id || c.jid;
       rememberContactName(c.name || c.notify || c.verifiedName || c.pushName, jid, 'contacts.update');
     }
   });
   sock.ev.on('chats.upsert', (chats) => {
+    console.log(`💬 chats.upsert n=${(chats || []).length}`);
     for (const c of chats || []) {
       rememberChatInteraction(c);
       rememberContactName(c.name || c.displayName || c.subject, c.id, 'chats.upsert');
@@ -536,6 +584,10 @@ async function startSocket() {
     }
   });
   sock.ev.on('messaging-history.set', ({ chats, contacts }) => {
+    console.log(
+      `🕘 messaging-history.set chats=${(chats || []).length} contacts=${(contacts || []).length} ` +
+        `indexed=${contactNameIndex.size}`,
+    );
     for (const c of contacts || []) {
       rememberContactName(c.name || c.notify || c.verifiedName || c.pushName, c.id || c.jid, 'history.contacts');
     }
@@ -608,6 +660,21 @@ async function startSocket() {
       emitPairEvent({ event: 'connected', user: connectedUser });
       if (!PAIR_JSON) {
         console.log('✅ WhatsApp connected!');
+      }
+      // Day-0 memory needs names+recency. On reconnect WhatsApp often skips
+      // history/contact re-emit; force app-state resync so contacts.upsert fires.
+      if (typeof sock.resyncAppState === 'function') {
+        sock
+          .resyncAppState(
+            ['critical_unblock_low', 'regular_high', 'regular_low', 'critical_block', 'regular'],
+            true,
+          )
+          .then(() => {
+            console.log(`🔄 resyncAppState done; indexed=${contactNameIndex.size}`);
+          })
+          .catch((err) => {
+            console.log('🔄 resyncAppState failed:', err?.message || err);
+          });
       }
       if (PAIR_ONLY) {
         if (!PAIR_JSON) {

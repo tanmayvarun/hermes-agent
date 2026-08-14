@@ -107,8 +107,16 @@ class EntityResolver:
                 reasons.append("multiple_exact_name_matches")
         if second and margin < 0.08:
             reasons.append("close_numeric_margin")
-        if top.feature_scores.get("interaction_recency", 0.0) < 0.1 and len(ranked) > 1:
-            reasons.append("top_candidate_stale_interactions")
+        # Recency unknown for everyone is not the same as "top is stale".
+        # Only flag when another candidate has observed recency and top does not.
+        top_rec = float(top.feature_scores.get("interaction_recency", 0.0))
+        if top_rec < 0.1 and len(ranked) > 1:
+            others_have_recency = any(
+                float(r.feature_scores.get("interaction_recency", 0.0)) >= 0.1
+                for r in ranked[1:5]
+            )
+            if others_have_recency:
+                reasons.append("top_candidate_stale_interactions")
         if not reasons and margin >= 0.2 and top.final_score >= 0.45:
             # clear winner
             pass
@@ -117,12 +125,24 @@ class EntityResolver:
         elif not reasons and margin < 0.15:
             reasons.append("insufficient_margin")
 
+        # Unique exact alias is strong Day-0 evidence even when frequency/recency
+        # are still unknown (score may be ~0.30 from alias alone).
+        unique_exact = (
+            len(exact_hits) == 1
+            and float(top.feature_scores.get("alias_exact", 0.0)) >= 1.0
+            and margin >= 0.15
+        )
+
         evidence_quality = min(
             1.0,
             0.4 * top.feature_scores.get("alias_exact", 0.0)
             + 0.3 * top.feature_scores.get("interaction_recency", 0.0)
             + 0.3 * top.feature_scores.get("interaction_frequency", 0.0),
         )
+
+        feat = dict(top.feature_scores)
+        if unique_exact:
+            feat["unique_exact_alias"] = 1.0
 
         uncertainty = BindingUncertainty(
             top_candidate=top.ref,
@@ -131,7 +151,7 @@ class EntityResolver:
             margin=margin,
             ambiguity_reasons=reasons,
             evidence_quality=evidence_quality,
-            feature_scores=dict(top.feature_scores),
+            feature_scores=feat,
         )
         return EntityBindingProposal(
             role=role,
@@ -181,12 +201,20 @@ class ActionRiskPolicy:
             return RiskDecision(action="ask", reason="low_confidence")
 
         if risk == "moderate":
+            unique_exact = (
+                float(uncertainty.feature_scores.get("unique_exact_alias", 0.0)) >= 1.0
+                and "multiple_exact_name_matches" not in reasons
+            )
             if (
                 uncertainty.confidence >= 0.45
                 and uncertainty.margin >= 0.15
                 and "multiple_exact_name_matches" not in reasons
             ):
                 return RiskDecision(action="proceed", reason="clear_personal_margin")
+            # Day-0: unique exact display-name match is enough to send when
+            # frequency/recency are still unknown (alias-only score ~0.30).
+            if unique_exact and uncertainty.margin >= 0.15 and not reasons:
+                return RiskDecision(action="proceed", reason="unique_exact_alias")
             if uncertainty.margin < 0.1 or reasons:
                 return RiskDecision(action="ask", reason="ambiguous_recipient")
             return RiskDecision(action="ask", reason="insufficient_confidence")
