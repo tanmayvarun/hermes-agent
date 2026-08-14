@@ -1,9 +1,15 @@
 """Pre-MethodFrontier recipient resolution via MemorySystem.
 
 Ensures send/forward effects resolve EntityRef before substrate selection.
-ComputerUse / gateway receive committed channel identity — not unresolved names.
 
-On ambiguity: Brain spends a bounded identity-evidence budget before ASK.
+Architecture order (merge-critical):
+  1. EntityResolver → BindingUncertainty (epistemic)
+  2. If epistemic ambiguity → EvidenceAcquisitionEpisode (Brain/MetaActor)
+  3. Identity consultant reinterprets structured hypotheses
+  4. ActionRiskPolicy on the post-evidence binding — never overridden by gather
+  5. proceed | ASK | refuse
+
+ASK is terminal information acquisition after bounded evidence effort.
 """
 
 from __future__ import annotations
@@ -20,12 +26,12 @@ from plugin.agent.memory.cognition import (
 )
 from plugin.agent.memory.local_store import LocalMemorySystem
 from plugin.agent.memory.retriever import MemoryRetriever
-from plugin.agent.memory.types import MemoryQuery
+from plugin.agent.memory.types import BindingUncertainty, MemoryQuery
 
 
 @dataclass
 class RecipientResolutionResult:
-    status: str  # proceed | ask | skip
+    status: str  # proceed | ask | refuse | skip
     surface_form: str = ""
     entity_id: str = ""
     channel_external_id: str = ""
@@ -52,19 +58,36 @@ def _surface_form_from_goal(goal: Any) -> str:
 def _effect_for_goal(goal: Any, desired_effects: list[str]) -> str:
     kind = str(getattr(goal, "kind", "") or "").lower()
     if "forward" in kind or "forward_message" in desired_effects:
-        body = str(getattr(goal, "message_body", "") or "").strip()
-        if body and not str(getattr(goal, "link_query", "") or "").strip():
-            return "send_message"
         return "send_message"
     if any("send" in e for e in desired_effects):
         return "send_message"
     return "send_message"
 
 
+def _epistemically_ambiguous(proposal: Any) -> bool:
+    """True when binding uncertainty needs more evidence (not policy refusal)."""
+    unc = getattr(proposal, "uncertainty", None)
+    if unc is None:
+        return True
+    reasons = set(getattr(unc, "ambiguity_reasons", None) or [])
+    if "no_candidates" in reasons:
+        return True
+    if reasons:
+        return True
+    margin = float(getattr(unc, "margin", 0.0) or 0.0)
+    conf = float(getattr(unc, "confidence", 0.0) or 0.0)
+    if margin < 0.15 or conf < 0.45:
+        # Unique exact alias may still be clear enough — leave to risk policy
+        # after gather skip; treat as ambiguous for gather when multi-candidate.
+        alts = list(getattr(unc, "alternatives", None) or [])
+        if alts and margin < 0.15:
+            return True
+    return False
+
+
 def _working_context_disputes_top(
     proposal: Any, working_context: Optional[dict[str, Any]]
 ) -> bool:
-    """True when L1/working context prefers a non-top ranked candidate."""
     wc = dict(working_context or {})
     l1_id = str(wc.get("recent_entity_id") or "").strip()
     l1_name = str(wc.get("recent_entity_name") or "").strip().lower()
@@ -86,6 +109,36 @@ def _working_context_disputes_top(
     return False
 
 
+def _uncertainty_for_entity(
+    proposal: Any,
+    *,
+    entity_id: str,
+    reason: str,
+) -> BindingUncertainty:
+    """Build uncertainty for ActionRiskPolicy after epistemic resolution."""
+    ranked = list(getattr(proposal, "ranked", None) or [])
+    top = next((r for r in ranked if str(r.ref) == entity_id), None)
+    if top is None and ranked:
+        top = ranked[0]
+    conf = float(getattr(top, "final_score", 0.55) or 0.55) if top else 0.55
+    # Established binding after consultation — clear margin for policy.
+    return BindingUncertainty(
+        top_candidate=entity_id,
+        alternatives=[
+            str(r.ref)
+            for r in ranked
+            if str(r.ref) != entity_id
+        ][:4],
+        confidence=max(conf, 0.5),
+        margin=0.25,
+        ambiguity_reasons=[],
+        evidence_quality=0.6,
+        feature_scores=dict(getattr(top, "feature_scores", None) or {})
+        if top
+        else {},
+    )
+
+
 def _commit_goal(
     goal: Any,
     *,
@@ -95,10 +148,7 @@ def _commit_goal(
     memory: Any,
 ) -> tuple[str, str]:
     grounded = ChannelGrounding(memory).resolve(entity_id, channel)
-    display = str(
-        (grounded.display_name if grounded else "")
-        or surface
-    )
+    display = str((grounded.display_name if grounded else "") or surface)
     try:
         goal.committed_entity_id = entity_id
         goal.committed_channel_id = grounded.external_id if grounded else ""
@@ -127,10 +177,7 @@ def resolve_recipient_before_methods(
     world_probes: bool = True,
     evidence_budget: int = 4,
 ) -> RecipientResolutionResult:
-    """Run memory entity resolution for person recipients.
-
-    Ambiguity triggers a bounded Brain evidence-acquisition loop before ASK.
-    """
+    """Resolve person recipients: evidence first (if needed), then risk policy."""
     surface = _surface_form_from_goal(goal)
     if not surface:
         return RecipientResolutionResult(status="skip", reason="no_surface_form")
@@ -228,101 +275,142 @@ def resolve_recipient_before_methods(
             bootstrap_state=boot,
         )
 
-    decision = ActionRiskPolicy().allows(effect, proposal.uncertainty)
-    wc_dispute = _working_context_disputes_top(proposal, working_context)
+    probes: list[str] = []
+    hyp_dicts: list = []
+    entity_id = str(proposal.entity_id)
+    epistemic_reason = "resolved"
+    uncertainty = proposal.uncertainty
 
-    # Clear path: proceed without evidence loop only when policy is clear
-    # AND working context does not prefer a competing candidate.
-    if decision.action == "proceed" and not wc_dispute:
-        ext, display = _commit_goal(
-            goal, surface=surface, entity_id=proposal.entity_id, channel=channel, memory=memory
-        )
-        # Prefer ranked display name when grounding lacks it
-        if not display or display == surface:
-            display = str(
-                proposal.ranked[0].payload.get("canonical_name") or display or surface
-            )
-            try:
-                goal.committed_display_name = display
-            except Exception:
-                pass
-        return RecipientResolutionResult(
-            status="proceed",
-            surface_form=surface,
-            entity_id=proposal.entity_id,
-            channel_external_id=ext,
-            channel_provider=channel,
-            display_name=display,
-            reason=decision.reason or "resolved",
-            bootstrap_state=boot,
-        )
-
-    # Ambiguous / refuse / working-context dispute → evidence loop BEFORE ASK
-    from plugin.agent.brain.identity_evidence import resolve_identity_with_evidence_loop
-
-    outcome = resolve_identity_with_evidence_loop(
-        memory,
-        list(proposal.ranked or packet.ranked),
-        surface=surface,
-        channel=channel,
-        working_context=working_context,
-        budget=evidence_budget,
-        world_probes=world_probes,
+    needs_gather = _epistemically_ambiguous(proposal) or _working_context_disputes_top(
+        proposal, working_context
     )
-    hyp_dicts = [h.to_dict() for h in outcome.hypotheses]
 
-    if outcome.action == "proceed" and outcome.entity_id:
-        # Find display name from hypotheses
-        display = surface
-        for h in outcome.hypotheses:
-            if h.entity_id == outcome.entity_id:
-                display = h.display_name or surface
-                break
-        ext, display2 = _commit_goal(
-            goal,
+    if needs_gather:
+        from plugin.agent.brain.evidence_acquisition import acquire_for_entity_resolution
+        from plugin.agent.brain.identity_consultant import consult_after_episode
+
+        episode = acquire_for_entity_resolution(
+            memory,
+            list(proposal.ranked or packet.ranked),
             surface=surface,
-            entity_id=outcome.entity_id,
             channel=channel,
-            memory=memory,
+            working_context=working_context,
+            budget=evidence_budget,
+            world_probes=world_probes,
         )
-        display = display2 or display
+        probes = episode.probe_labels()
+        consultation = consult_after_episode(episode, surface=surface)
+        hyp_dicts = [h.to_dict() for h in consultation.hypotheses]
+
+        if consultation.action == "proceed" and consultation.entity_id:
+            entity_id = consultation.entity_id
+            epistemic_reason = consultation.reason
+            uncertainty = _uncertainty_for_entity(
+                proposal, entity_id=entity_id, reason=epistemic_reason
+            )
+        else:
+            # Epistemic ASK — still run risk policy only for refuse-class effects
+            # after failed discrimination; ASK is the epistemic outcome.
+            alts = [
+                {"entity_id": h.entity_id, "label": h.display_name}
+                for h in consultation.hypotheses[:5]
+            ]
+            if not alts:
+                for r in proposal.ranked[:5]:
+                    alts.append(
+                        {
+                            "entity_id": r.ref,
+                            "label": str(r.payload.get("canonical_name") or r.ref),
+                        }
+                    )
+            labels = " or ".join(f"**{a['label']}**" for a in alts[:3]) or surface
+            # Policy refuse must still win for very-high-risk effects even when
+            # identity is unknown — check risk with remaining uncertainty.
+            decision_early = ActionRiskPolicy().allows(effect, proposal.uncertainty)
+            if decision_early.action == "refuse":
+                return RecipientResolutionResult(
+                    status="refuse",
+                    surface_form=surface,
+                    entity_id=proposal.entity_id,
+                    reason=decision_early.reason,
+                    bootstrap_state=boot,
+                    evidence_probes=probes,
+                    identity_hypotheses=hyp_dicts,
+                )
+            return RecipientResolutionResult(
+                status="ask",
+                surface_form=surface,
+                entity_id=proposal.entity_id,
+                alternatives=alts,
+                question=(
+                    f"I checked personal memory and available channel signals, "
+                    f"but still can't tell which '{surface}' you mean. "
+                    f"Do you mean {labels}?"
+                ),
+                reason=consultation.reason or "ambiguity_survived_evidence_budget",
+                bootstrap_state=boot,
+                evidence_probes=probes,
+                identity_hypotheses=hyp_dicts,
+            )
+
+    # Binding epistemically established (or was clear) → ActionRiskPolicy
+    decision = ActionRiskPolicy().allows(effect, uncertainty)
+
+    if decision.action == "refuse":
         return RecipientResolutionResult(
-            status="proceed",
+            status="refuse",
             surface_form=surface,
-            entity_id=outcome.entity_id,
-            channel_external_id=ext,
-            channel_provider=channel,
-            display_name=display,
-            reason=outcome.reason,
+            entity_id=entity_id,
+            reason=decision.reason,
             bootstrap_state=boot,
-            evidence_probes=list(outcome.probes_used),
+            evidence_probes=probes,
             identity_hypotheses=hyp_dicts,
         )
 
-    # ASK only after evidence budget exhausted / ambiguity survived
-    alts = []
-    for h in outcome.hypotheses[:5]:
-        alts.append({"entity_id": h.entity_id, "label": h.display_name})
-    if not alts:
-        for r in proposal.ranked[:5]:
+    if decision.action == "ask":
+        alts = []
+        for r in (proposal.ranked or [])[:5]:
             alts.append(
                 {
                     "entity_id": r.ref,
                     "label": str(r.payload.get("canonical_name") or r.ref),
                 }
             )
-    labels = " or ".join(f"**{a['label']}**" for a in alts[:3]) or surface
+        labels = " or ".join(f"**{a['label']}**" for a in alts[:3]) or surface
+        return RecipientResolutionResult(
+            status="ask",
+            surface_form=surface,
+            entity_id=entity_id,
+            alternatives=alts,
+            question=f"Which '{surface}' should I use — {labels}?",
+            reason=decision.reason,
+            bootstrap_state=boot,
+            evidence_probes=probes,
+            identity_hypotheses=hyp_dicts,
+        )
+
+    # proceed
+    ext, display = _commit_goal(
+        goal, surface=surface, entity_id=entity_id, channel=channel, memory=memory
+    )
+    if not display or display == surface:
+        for r in proposal.ranked or []:
+            if str(r.ref) == entity_id:
+                display = str(r.payload.get("canonical_name") or display or surface)
+                break
+        try:
+            goal.committed_display_name = display
+        except Exception:
+            pass
     return RecipientResolutionResult(
-        status="ask",
+        status="proceed",
         surface_form=surface,
-        entity_id=proposal.entity_id,
-        alternatives=alts,
-        question=(
-            f"I checked personal memory and available WhatsApp contact signals, "
-            f"but still can't tell which '{surface}' you mean. Do you mean {labels}?"
-        ),
-        reason=outcome.reason or "ambiguity_survived_evidence_budget",
+        entity_id=entity_id,
+        channel_external_id=ext,
+        channel_provider=channel,
+        display_name=display,
+        reason=epistemic_reason if needs_gather else (decision.reason or "resolved"),
         bootstrap_state=boot,
-        evidence_probes=list(outcome.probes_used),
+        evidence_probes=probes,
         identity_hypotheses=hyp_dicts,
     )

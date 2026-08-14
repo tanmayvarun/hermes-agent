@@ -421,27 +421,47 @@ Stop expanding storage architecture. Reuse LocalMemorySystem as L2/L3 backend.
 | **6** | MethodFrontier strictly after semantic bindings; ComputerUse gets resolved targets |
 | **7** | MemoryConsolidator: episodes, semantic compaction, procedures/preferences, vectors |
 
-### Identity resolution: evidence before ASK
+### Evidence acquisition before ASK (generic Brain/MetaActor behavior)
 
 Behavioral principle:
 
-> **low confidence → first spend a bounded information-gathering budget; ASK only if ambiguity survives.**
+> **uncertain semantic commitment → gather discriminating evidence → reinterpret → commit or ASK**
 
-ASK is terminal information acquisition, not the first response to a narrow numeric margin.
+ASK is terminal information acquisition after bounded evidence effort — not the
+first response to a narrow numeric margin.
+
+This is **generic MetaActor behavior**, not an identity-specific mini-agent.
 
 ```text
-ContextActivation → competing IdentityHypotheses (structured evidence bags)
-  → ActionRiskPolicy ambiguous?
-       → gather (memory aggregates, reference history, WhatsApp contact enrichment, …)
-       → qualitative reinterpretation over name/context/salience/channel evidence
-       → proceed | ASK (budget exhausted)
+BrainWorkspace / EntityResolver → competing hypotheses + BindingUncertainty
+  → InformationNeed (what would discriminate?)
+  → EvidenceAcquisitionEpisode (adaptive SEARCH via InformationCapabilityRegistry)
+  → workspace / hypotheses updated
+  → consultant reinterpretation (LLM target; deterministic fallback for goldens)
+  → RoleBinder-ready BindingProposal
+  → ActionRiskPolicy (proceed | ASK approval | refuse)
 ```
 
-Do **not** “fix” ambiguity by global score-weight tweaks or always-prefer-exact rules.
-Keep name match, recency, frequency, relationships, working context, prior references,
-and channel identities as distinct evidence features.
+Hard rules:
 
-Code: [`plugin/agent/brain/identity_evidence.py`](../../plugin/agent/brain/identity_evidence.py).
+- Brain code must **not** call WhatsApp HTTP / localhost endpoints. Channel
+  enrichment lives behind information capability providers
+  (`plugin/agent/information/`).
+- Evidence gathering resolves **epistemic** insufficiency only. It must **never**
+  override `ActionRiskPolicy.REFUSE`.
+- Probe budget counts meaningful attempts (`EVIDENCE_FOUND` / `NO_EVIDENCE`).
+  `NO_CAPABILITY` / `ERROR` do not exhaust the budget.
+- Structured `IdentityHypothesis` (name / salience / context / channel) is the
+  identity-domain evidence representation. Orchestration stays generic
+  (`InformationNeed` / `EvidenceAcquisitionEpisode`).
+- Exact-name evidence is a **prior**, not resolution authority.
+
+Code:
+
+- [`plugin/agent/brain/information_need.py`](../../plugin/agent/brain/information_need.py)
+- [`plugin/agent/brain/evidence_acquisition.py`](../../plugin/agent/brain/evidence_acquisition.py)
+- [`plugin/agent/brain/identity_hypothesis.py`](../../plugin/agent/brain/identity_hypothesis.py)
+- [`plugin/agent/information/`](../../plugin/agent/information/)
 
 ### Slice 1 acceptance
 

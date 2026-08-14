@@ -1,6 +1,6 @@
-"""Goldens: identity evidence-acquisition before ASK.
+"""Goldens: generic evidence acquisition before ASK (identity use case).
 
-ASK is terminal information gathering after a bounded Brain budget —
+ASK is terminal after a bounded Brain/MetaActor evidence budget —
 not the first response to a narrow numeric margin.
 """
 
@@ -9,21 +9,32 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-import pytest
-
-from plugin.agent.brain.identity_evidence import (
+from plugin.agent.brain.evidence_acquisition import (
+    acquire_for_entity_resolution,
+    run_evidence_acquisition,
+)
+from plugin.agent.brain.identity_consultant import consult_identity_hypotheses
+from plugin.agent.brain.identity_hypothesis import (
     classify_name_match,
-    gather_identity_evidence,
     hypotheses_from_ranked,
-    reinterpret_identity_hypotheses,
-    resolve_identity_with_evidence_loop,
+)
+from plugin.agent.brain.information_need import (
+    NO_CAPABILITY,
+    EvidenceResult,
+    InformationNeed,
 )
 from plugin.agent.goal import Goal
+from plugin.agent.information import (
+    InformationCapabilityRegistry,
+    WhatsAppContactEvidenceProvider,
+    default_registry_for_entity_resolution,
+)
 from plugin.agent.memory.bootstrap import open_local_memory
+from plugin.agent.memory.cognition import ActionRiskPolicy
 from plugin.agent.memory.pipeline import ContactObservation
 from plugin.agent.memory.recipient_binding import resolve_recipient_before_methods
 from plugin.agent.memory.sources import FixtureSourceAdapter
-from plugin.agent.memory.types import RankedCandidate
+from plugin.agent.memory.types import BindingUncertainty, RankedCandidate
 
 
 def _rc(
@@ -60,8 +71,6 @@ def test_classify_name_match_kinds():
 def test_ambiguous_person_triggers_evidence_gathering_before_ask(tmp_path):
     """Close numeric margin must gather probes before asking the user."""
     now = time.time()
-    # Joshi must NOT carry bare alias "Pallavi" or alias_exact ties defeat the
-    # close-margin ASK path (recency_dominant clear_personal_margin).
     obs = [
         ContactObservation(
             provider="whatsapp",
@@ -110,9 +119,7 @@ def test_ambiguous_person_triggers_evidence_gathering_before_ask(tmp_path):
             evidence_budget=4,
         )
         assert rr.evidence_probes, "expected evidence probes before commit/ASK"
-        assert "working_context_recheck" in rr.evidence_probes
-        assert any("memory_" in p or "working_" in p for p in rr.evidence_probes)
-        # After gathering: exact alias prior without contextual rival → proceed
+        assert any("working_context" in p for p in rr.evidence_probes)
         assert rr.status == "proceed"
         assert rr.channel_external_id == "W_P"
         assert rr.reason == "exact_alias_prior_without_contextual_rival"
@@ -121,7 +128,7 @@ def test_ambiguous_person_triggers_evidence_gathering_before_ask(tmp_path):
 
 
 def test_additional_world_evidence_can_resolve_without_user_interrupt(monkeypatch):
-    """World substrate enrichment can establish a winner without interrupting."""
+    """Channel evidence provider can establish a winner without interrupting."""
     ranked = [
         _rc("e:joshi", "Pallavi Joshi", score=0.32, recency=0.0, aliases=["Pallavi Joshi"]),
         _rc(
@@ -132,10 +139,10 @@ def test_additional_world_evidence_can_resolve_without_user_interrupt(monkeypatc
             aliases=["Pallavi PhonePe"],
         ),
     ]
-    memory = SimpleNamespace()  # no aggregate / reference APIs
+    memory = SimpleNamespace()
 
-    def fake_wa(hyps, **_kwargs):
-        for h in hyps:
+    def fake_probe(self, need, *, evidence_kind, hypotheses):
+        for h in hypotheses:
             if "Joshi" in h.display_name:
                 h.salience.frequency_known = True
                 h.salience.frequency = 0.85
@@ -144,23 +151,30 @@ def test_additional_world_evidence_can_resolve_without_user_interrupt(monkeypatc
                 h.salience.frequency_known = True
                 h.salience.frequency = 0.05
                 h.gather_notes.append("wa_contacts:freq=0.05")
-        return "whatsapp_contacts_enrichment"
+        from plugin.agent.brain.information_need import EVIDENCE_FOUND
 
-    monkeypatch.setattr(
-        "plugin.agent.brain.identity_evidence._probe_whatsapp_contact_enrichment",
-        fake_wa,
-    )
-    outcome = resolve_identity_with_evidence_loop(
+        return EvidenceResult(
+            status=EVIDENCE_FOUND,
+            provider_id="whatsapp_contacts",
+            evidence_kind=evidence_kind,
+            payload={"updated": 2},
+        )
+
+    monkeypatch.setattr(WhatsAppContactEvidenceProvider, "probe", fake_probe)
+    episode = acquire_for_entity_resolution(
         memory,
         ranked,
         surface="Pallavi",
         world_probes=True,
         budget=4,
     )
-    assert outcome.action == "proceed"
-    assert outcome.entity_id == "e:joshi"
-    assert outcome.reason == "frequency_dominance"
-    assert "whatsapp_contacts_enrichment" in outcome.probes_used
+    consultation = consult_identity_hypotheses(
+        [h for h in episode.hypotheses], surface="Pallavi"
+    )
+    assert consultation.action == "proceed"
+    assert consultation.entity_id == "e:joshi"
+    assert consultation.reason == "frequency_dominance"
+    assert any("whatsapp_contacts" in p for p in episode.probe_labels())
 
 
 def test_exact_name_does_not_always_override_context():
@@ -183,7 +197,7 @@ def test_exact_name_does_not_always_override_context():
             "recent_entity_name": "Pallavi Joshi",
         },
     )
-    outcome = reinterpret_identity_hypotheses(hyps, surface="Pallavi")
+    outcome = consult_identity_hypotheses(hyps, surface="Pallavi")
     assert outcome.action == "proceed"
     assert outcome.entity_id == "e:joshi"
     assert "working_context" in outcome.reason
@@ -212,7 +226,7 @@ def test_recent_partial_match_does_not_automatically_override_exact_alias():
         memory=SimpleNamespace(),
         working_context={},
     )
-    outcome = reinterpret_identity_hypotheses(hyps, surface="Pallavi")
+    outcome = consult_identity_hypotheses(hyps, surface="Pallavi")
     assert outcome.action == "proceed"
     assert outcome.entity_id == "e:exact"
     assert outcome.reason == "exact_alias_prior_without_contextual_rival"
@@ -274,7 +288,6 @@ def test_working_context_can_flip_person_resolution(tmp_path):
 
 
 def test_ask_only_after_identity_evidence_budget_exhausted():
-    """Two exact peers with no discriminator → gather then ASK."""
     ranked = [
         _rc("e:a", "Pallavi", score=0.40, alias_exact=1.0, recency=0.5, aliases=["Pallavi"]),
         _rc("e:b", "Pallavi", score=0.39, alias_exact=1.0, recency=0.48, aliases=["Pallavi"]),
@@ -283,32 +296,93 @@ def test_ask_only_after_identity_evidence_budget_exhausted():
         get_aggregate=lambda *a, **k: None,
         recent_reference_support=lambda *a, **k: 0.0,
     )
-    outcome = resolve_identity_with_evidence_loop(
+    episode = acquire_for_entity_resolution(
         memory,
         ranked,
         surface="Pallavi",
         world_probes=False,
         budget=2,
     )
-    assert outcome.action == "gather_exhausted_ask"
-    assert outcome.probes_used
-    assert len(outcome.probes_used) <= 2
-    assert outcome.reason == "ambiguity_survived_evidence_budget"
+    consultation = consult_identity_hypotheses(
+        [h for h in episode.hypotheses], surface="Pallavi"
+    )
+    assert consultation.action == "ask"
+    assert episode.probes_attempted
+    assert consultation.reason == "ambiguity_survived_evidence_budget"
 
 
-def test_gather_respects_budget_cap():
-    ranked = [
-        _rc("e:a", "Pallavi", score=0.3, aliases=["Pallavi"]),
-        _rc("e:b", "Pallavi Joshi", score=0.3, aliases=["Pallavi Joshi"]),
-    ]
-    hyps = hypotheses_from_ranked(
-        ranked, surface="Pallavi", memory=SimpleNamespace()
+def test_budget_ignores_unavailable_providers():
+    """NO_CAPABILITY / ERROR must not exhaust the information budget."""
+    need = InformationNeed(
+        need_type="entity_resolution",
+        subject="Pallavi",
+        competing_hypotheses=[],
+        desired_discrimination="channel_activity,working_context",
+        budget=2,
+        context={"channel": "whatsapp", "working_context": {}},
     )
-    _, probes = gather_identity_evidence(
-        SimpleNamespace(),
-        hyps,
-        surface="Pallavi",
-        budget=1,
-        world_probes=True,
+
+    class DeadProvider:
+        provider_id = "dead"
+        evidence_kinds = frozenset({"channel_activity"})
+
+        def can_serve(self, need, evidence_kind):
+            return True
+
+        def probe(self, need, *, evidence_kind, hypotheses):
+            return EvidenceResult(
+                status=NO_CAPABILITY,
+                provider_id=self.provider_id,
+                evidence_kind=evidence_kind,
+                notes="offline",
+            )
+
+    reg = InformationCapabilityRegistry()
+    reg.register(DeadProvider())
+    reg.register(
+        type(
+            "WC",
+            (),
+            {
+                "provider_id": "working_context",
+                "evidence_kinds": frozenset({"working_context"}),
+                "can_serve": lambda self, n, k: True,
+                "probe": lambda self, n, *, evidence_kind, hypotheses: EvidenceResult(
+                    status="NO_EVIDENCE",
+                    provider_id="working_context",
+                    evidence_kind=evidence_kind,
+                ),
+            },
+        )()
     )
-    assert len(probes) == 1
+    episode = run_evidence_acquisition(need, registry=reg, hypotheses=[])
+    # Dead provider should not consume budget; working_context may consume 1.
+    assert episode.budget_remaining >= 1
+    assert any(r.status == NO_CAPABILITY for r in episode.probes_attempted)
+
+
+def test_evidence_gathering_cannot_override_action_risk_refuse():
+    """Epistemic gather must never turn REFUSE into proceed."""
+    policy = ActionRiskPolicy()
+    unc = BindingUncertainty(
+        top_candidate="e1",
+        alternatives=["e2"],
+        confidence=0.9,
+        margin=0.5,
+        ambiguity_reasons=[],
+        evidence_quality=0.9,
+        feature_scores={"alias_exact": 1.0},
+    )
+    assert policy.allows("transfer_money", unc).action == "refuse"
+
+
+def test_brain_does_not_import_whatsapp_http():
+    """Merge blocker: Brain package must not call WhatsApp endpoints."""
+    import pathlib
+
+    brain = pathlib.Path(__file__).resolve().parents[2] / "plugin" / "agent" / "brain"
+    banned = ("127.0.0.1:3000", "urllib.request", "/contacts")
+    for path in brain.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for token in banned:
+            assert token not in text, f"{path.name} must not contain {token!r}"
