@@ -1,28 +1,29 @@
-"""MemorySystem Protocol + NoopMemorySystem (thin C seam).
+"""MemorySystem Protocol + NoopMemorySystem.
 
-Design-neutral about async: methods are sync callables so existing closed-loop
-code can call them without an event loop; future backends may wrap async IO
-behind this façade. Do not assume retrieval is always an instantaneous
-in-process lookup.
+Authority: evidence only. resolve_entity is NOT on this Protocol.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Mapping, Optional, Protocol, Sequence, Union, runtime_checkable
 
 from plugin.agent.memory.types import (
     MemoryCandidate,
     MemoryEvidence,
+    MemoryEvent,
     MemoryInvalidationResult,
+    MemoryQuery,
     MemoryWriteResult,
 )
+
+MemoryQueryLike = Union[str, MemoryQuery, Mapping[str, Any]]
 
 
 @runtime_checkable
 class MemorySystem(Protocol):
     def retrieve(
         self,
-        query: str,
+        query: MemoryQueryLike,
         *,
         context: Optional[Mapping[str, Any]] = None,
         limit: int = 8,
@@ -48,11 +49,12 @@ class NoopMemorySystem:
     """In-memory seam placeholder — does not persist.
 
     Writes report disposition=ignored so callers cannot confuse submit with persist.
+    Optional append_event is a no-op for LocalMemorySystem parity in tests.
     """
 
     def retrieve(
         self,
-        query: str,
+        query: MemoryQueryLike,
         *,
         context: Optional[Mapping[str, Any]] = None,
         limit: int = 8,
@@ -77,3 +79,6 @@ class NoopMemorySystem:
             reason=reason or "noop_memory_system",
             memory_id=memory_id or None,
         )
+
+    def append_event(self, event: MemoryEvent) -> str:
+        return event.event_id or ""

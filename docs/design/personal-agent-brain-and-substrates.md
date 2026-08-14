@@ -373,7 +373,22 @@ ownership policy; it does **not** mean `ComputerUseExecutor` already exists.
 
 ---
 
-## MemorySystem (first-class — design only here)
+## MemorySystem (first-class)
+
+**Full MemorySystem design (stores, Episode, projections, retrieval, entity
+binding):** [memorydesign.md](memorydesign.md).
+
+Hard authority chain (do not collapse):
+
+```text
+MemorySystem = evidence
+  → EntityResolver = interpretation
+  → RoleBinder = commit
+  → ActionRiskPolicy = whether ambiguity is acceptable for this effect
+```
+
+`resolve_entity` is **not** a MemorySystem method. Projections are rebuildable
+accelerators with freshness (`ProjectionState`), not memory truth.
 
 ### Placement
 
@@ -608,7 +623,7 @@ Current packaging:
 
 A. Common runtime / TaskIngress seam          ← thin seam landed
 B. Capability / Method / Substrate contract
-C. MemorySystem minimal seam                   ← Protocol + noop landed; no store
+C. MemorySystem                                ← see memorydesign.md; local store in progress
 D. ComputerUseExecutor boundary
 E. Executive / Progress evolution (ProgressLedger target shape)
 F. Additional substrates / specialists (CodingAgent as large tool)
