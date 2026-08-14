@@ -1,6 +1,7 @@
 """Information capability providers — substrates for MetaActor SEARCH.
 
-Brain/MetaActor requests evidence kinds; providers decide how to obtain them.
+Providers return EvidenceResult payloads only. They must not mutate Brain
+hypotheses; domain EvidenceStrategy.incorporate applies interpretation.
 WhatsApp HTTP lives here, not under agent/brain/.
 """
 
@@ -43,7 +44,7 @@ class InformationEvidenceProvider(Protocol):
 
 @dataclass
 class WorkingContextEvidenceProvider:
-    """L1 / session working context — no world I/O."""
+    """L1 / session working context — returns preferred ids; no hyp mutation."""
 
     provider_id: str = "working_context"
     evidence_kinds: frozenset[str] = frozenset({"working_context"})
@@ -68,22 +69,20 @@ class WorkingContextEvidenceProvider:
             if (lid and h.entity_id == lid) or (
                 l1 and l1 in (h.display_name or "").lower()
             ):
-                h.context.l1_preferred = True
-                h.context.working_context_hit = True
-                h.gather_notes.append("working_context_prefer")
                 hits.append(h.entity_id)
         if hits:
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"preferred_entity_ids": hits},
+                payload={"preferred_entity_ids": hits, "l1_name": l1, "l1_id": lid},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
             provider_id=self.provider_id,
             evidence_kind=evidence_kind,
             notes="no_l1_match",
+            payload={"l1_name": l1, "l1_id": lid},
         )
 
 
@@ -110,7 +109,7 @@ class MemoryAggregateEvidenceProvider:
                 evidence_kind=evidence_kind,
                 notes="no_aggregate_api",
             )
-        updated = 0
+        by_entity: dict[str, dict[str, Any]] = {}
         for h in hypotheses:
             if not isinstance(h, IdentityHypothesis):
                 continue
@@ -125,29 +124,23 @@ class MemoryAggregateEvidenceProvider:
                 if agg is None:
                     continue
                 meta = dict(agg.metadata or {})
-                h.salience.frequency_known = bool(meta.get("frequency_known"))
-                if h.salience.frequency_known:
-                    h.salience.frequency = min(1.0, float(agg.count_30d or 0) / 50.0)
-                if agg.last_interaction_at and not h.salience.last_interaction_at:
-                    h.salience.last_interaction_at = float(agg.last_interaction_at)
-                    days = max(
-                        0.0,
-                        (time.time() - float(agg.last_interaction_at)) / 86400.0,
-                    )
-                    h.salience.recency = max(0.0, 1.0 - days / 180.0)
-                h.gather_notes.append(
-                    f"aggregate freq_known={h.salience.frequency_known} "
-                    f"recency={h.salience.recency:.2f}"
-                )
-                updated += 1
+                by_entity[h.entity_id] = {
+                    "frequency_known": bool(meta.get("frequency_known")),
+                    "count_30d": float(agg.count_30d or 0),
+                    "last_interaction_at": (
+                        float(agg.last_interaction_at)
+                        if agg.last_interaction_at
+                        else None
+                    ),
+                }
             except Exception as exc:
-                h.gather_notes.append(f"aggregate_error:{exc}")
-        if updated:
+                by_entity[h.entity_id] = {"error": str(exc)}
+        if by_entity:
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"updated": updated},
+                payload={"by_entity": by_entity},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
@@ -180,38 +173,34 @@ class MemoryReferenceHistoryProvider:
                 notes="no_reference_api",
             )
         surface = need.subject
-        found = 0
+        by_entity: dict[str, float] = {}
         for h in hypotheses:
             if not isinstance(h, IdentityHypothesis):
                 continue
             try:
-                h.context.reference_support = float(
+                by_entity[h.entity_id] = float(
                     self.memory.recent_reference_support(surface, h.entity_id) or 0.0
                 )
-                h.gather_notes.append(
-                    f"reference_support={h.context.reference_support:.2f}"
-                )
-                if h.context.reference_support > 0:
-                    found += 1
-            except Exception as exc:
-                h.gather_notes.append(f"reference_error:{exc}")
-        if found:
+            except Exception:
+                by_entity[h.entity_id] = 0.0
+        if any(v > 0 for v in by_entity.values()):
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"supported": found},
+                payload={"reference_support_by_entity": by_entity},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
             provider_id=self.provider_id,
             evidence_kind=evidence_kind,
+            payload={"reference_support_by_entity": by_entity},
         )
 
 
 @dataclass
 class WhatsAppContactEvidenceProvider:
-    """Structured WhatsApp contact activity — information substrate, not Brain."""
+    """Structured WhatsApp contact activity — raw payload only."""
 
     provider_id: str = "whatsapp_contacts"
     evidence_kinds: frozenset[str] = frozenset({"channel_activity"})
@@ -265,8 +254,7 @@ class WhatsAppContactEvidenceProvider:
             if name:
                 by_name[name] = c
 
-        now = time.time()
-        updated = 0
+        by_entity: dict[str, dict[str, Any]] = {}
         for h in hypotheses:
             if not isinstance(h, IdentityHypothesis):
                 continue
@@ -279,39 +267,27 @@ class WhatsAppContactEvidenceProvider:
                 hit = by_name.get((h.display_name or "").strip().lower())
             if hit is None:
                 continue
-            # Optional frequency if bridge exposes real counts (never unread→freq)
-            if hit.get("interaction_count_30d") is not None and hit.get(
-                "frequency_known"
-            ):
+            entry: dict[str, Any] = {}
+            if hit.get("last_interaction_at") is not None:
                 try:
-                    h.salience.frequency_known = True
-                    h.salience.frequency = min(
-                        1.0, float(hit["interaction_count_30d"]) / 50.0
-                    )
-                    h.gather_notes.append(f"wa_contacts:freq={h.salience.frequency:.2f}")
-                    updated += 1
+                    entry["last_interaction_at"] = float(hit["last_interaction_at"])
                 except (TypeError, ValueError):
                     pass
-            last = hit.get("last_interaction_at")
-            if last is None:
-                h.gather_notes.append("wa_contacts:no_timestamp")
-                continue
-            try:
-                last_f = float(last)
-            except (TypeError, ValueError):
-                continue
-            h.salience.last_interaction_at = last_f
-            days = max(0.0, (now - last_f) / 86400.0)
-            h.salience.recency = max(0.0, 1.0 - days / 180.0)
-            h.gather_notes.append(f"wa_contacts:recency={h.salience.recency:.3f}")
-            updated += 1
+            if hit.get("interaction_count_30d") is not None and hit.get("frequency_known"):
+                try:
+                    entry["interaction_count_30d"] = float(hit["interaction_count_30d"])
+                    entry["frequency_known"] = True
+                except (TypeError, ValueError):
+                    pass
+            if entry:
+                by_entity[h.entity_id] = entry
 
-        if updated:
+        if by_entity:
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"updated": updated},
+                payload={"by_entity": by_entity},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
@@ -337,6 +313,30 @@ class InformationCapabilityRegistry:
             if evidence_kind in getattr(p, "evidence_kinds", frozenset())
             and p.can_serve(need, evidence_kind)
         ]
+
+    def select_provider(
+        self,
+        need: InformationNeed,
+        *,
+        preferred_kinds: list[str],
+        attempted_pairs: set[tuple[str, str]],
+        blacklisted: Optional[set[str]] = None,
+    ) -> Optional[tuple[str, Any]]:
+        """Next (kind, provider) that has not been attempted.
+
+        V1 order: preferred kinds, then registration order within kind.
+        Does not exhaust a kind after a single weak/empty provider.
+        """
+        blocked = set(blacklisted or ())
+        for kind in preferred_kinds:
+            for p in self.providers_for(need, kind):
+                pid = str(getattr(p, "provider_id", "") or "")
+                if not pid or pid in blocked:
+                    continue
+                if (kind, pid) in attempted_pairs:
+                    continue
+                return kind, p
+        return None
 
 
 def default_registry_for_entity_resolution(

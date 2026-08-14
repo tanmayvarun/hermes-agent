@@ -448,16 +448,16 @@ Hard rules:
 - Generic episode knows only `InformationNeed`, hypotheses:`Any`,
   `EvidenceStrategy`, budgets — not `IdentityHypothesis`.
 - Domain strategies (`EntityResolutionEvidenceStrategy`,
-  `DocumentResolutionEvidenceStrategy`, …) reassess after each result and
-  propose discriminating evidence kinds.
-- Brain code must **not** call WhatsApp HTTP. Channel enrichment lives under
-  `plugin/agent/information/`.
-- Evidence gathering resolves **epistemic** insufficiency only. It must **never**
-  override `ActionRiskPolicy.REFUSE`.
-- Dual budgets: `budget` (meaningful `EVIDENCE_FOUND`/`NO_EVIDENCE`) and
-  `attempt_budget` (operational ceiling including skips/errors).
-- `BindingAssessment` → `BindingUncertainty` must be derived from evidence class
-  / opaque scores — never fabricate fixed margin/quality to satisfy risk policy.
+  `DocumentResolutionEvidenceStrategy`, …) **incorporate** raw `EvidenceResult`
+  payloads into hypotheses, then reassess. Providers must not mutate hypotheses.
+- Attempts are tracked by `(evidence_kind, provider_id)` — one weak provider does
+  not exhaust an evidence kind.
+- Dual budgets: `budget` (meaningful probes) and `attempt_budget` (operational).
+- `BindingAssessment` uses qualitative `evidence_strength`
+  (`weak|moderate|strong|decisive`) and `evidence_classes` — not fabricated
+  calibrated confidence/margin. `ActionRiskPolicy.allows_binding` consumes strength.
+- Evidence gathering resolves **epistemic** insufficiency only; never overrides
+  `ActionRiskPolicy.REFUSE`.
 - Exact-name evidence is a **prior**, not resolution authority.
 
 Code:

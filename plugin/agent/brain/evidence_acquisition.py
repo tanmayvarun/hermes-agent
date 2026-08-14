@@ -1,7 +1,8 @@
 """Generic MetaActor evidence-acquisition episode — domain-neutral.
 
 Knows only InformationNeed, EvidenceResult, budgets, and an EvidenceStrategy.
-Domain logic (identity, documents, effects, …) lives in strategy callbacks.
+Providers return evidence; strategies incorporate + assess.
+Attempts are tracked by (evidence_kind, provider_id).
 """
 
 from __future__ import annotations
@@ -16,12 +17,23 @@ from plugin.agent.brain.information_need import (
     EvidenceNeedAssessment,
     EvidenceResult,
     InformationNeed,
+    ProbeAttempt,
 )
 from plugin.agent.information import InformationCapabilityRegistry
 
 
 class EvidenceStrategy(Protocol):
-    """Domain-supplied reassessment + coverage for one InformationNeed type."""
+    """Domain-supplied incorporate + reassessment for one InformationNeed type."""
+
+    def incorporate(
+        self,
+        result: EvidenceResult,
+        hypotheses: list[Any],
+        *,
+        need: InformationNeed,
+    ) -> list[Any]:
+        """Apply raw EvidenceResult onto hypotheses; return updated list."""
+        ...
 
     def assess(
         self,
@@ -29,7 +41,7 @@ class EvidenceStrategy(Protocol):
         hypotheses: list[Any],
         *,
         last_result: Optional[EvidenceResult] = None,
-        attempted_kinds: Optional[set[str]] = None,
+        attempted_pairs: Optional[set[tuple[str, str]]] = None,
     ) -> EvidenceNeedAssessment: ...
 
 
@@ -43,12 +55,12 @@ def run_evidence_acquisition(
     """Bounded adaptive gathering driven by strategy reassessment.
 
     Loop:
-      assess remaining uncertainty → preferred evidence kinds → provider
-      → EvidenceResult → update hypotheses → reassess
+      assess → preferred kinds → next untried provider for kind
+      → EvidenceResult → strategy.incorporate → reassess
 
     Budgets:
       - information budget: EVIDENCE_FOUND / NO_EVIDENCE only
-      - attempt budget: every registry/provider interaction (incl. skips/errors)
+      - attempt budget: every registry/provider interaction
     """
     hyps = list(hypotheses if hypotheses is not None else need.competing_hypotheses)
     episode = EvidenceAcquisitionEpisode(
@@ -57,16 +69,16 @@ def run_evidence_acquisition(
         budget_remaining=max(0, int(need.budget)),
         attempt_budget_remaining=max(0, int(need.attempt_budget)),
     )
-    attempted_kinds: set[str] = set()
     last: Optional[EvidenceResult] = None
     blacklisted: set[str] = set()
 
     while episode.budget_remaining > 0 and episode.attempt_budget_remaining > 0:
+        pairs = episode.attempted_pairs()
         assessment = strategy.assess(
             need,
             hyps,
             last_result=last,
-            attempted_kinds=attempted_kinds,
+            attempted_pairs=pairs,
         )
         episode.assessments.append(assessment)
         if assessment.resolved:
@@ -75,51 +87,54 @@ def run_evidence_acquisition(
             episode.resolution_reason = assessment.resolution_reason
             break
 
-        kind = assessment.next_kind(attempted_kinds)
-        if not kind:
+        # Find next (kind, provider) — do not exhaust a kind after one provider.
+        choice = registry.select_provider(
+            need,
+            preferred_kinds=list(assessment.preferred_evidence_kinds),
+            attempted_pairs=pairs,
+            blacklisted=blacklisted,
+        )
+        if choice is None:
             episode.uncertainty_notes.extend(assessment.remaining_ambiguities)
             break
 
-        attempted_kinds.add(kind)
-        providers = [
-            p
-            for p in registry.providers_for(need, kind)
-            if getattr(p, "provider_id", "") not in blacklisted
-        ]
-        if not providers:
-            skip = EvidenceResult(
-                status=NO_CAPABILITY,
-                provider_id="registry",
-                evidence_kind=kind,
-                notes="no_provider",
-            )
-            episode.probes_attempted.append(skip)
-            last = skip
-            episode.attempt_budget_remaining -= 1
-            continue
-
-        # V1: first capable provider. Later: rank by latency/cost/gain.
-        result = providers[0].probe(need, evidence_kind=kind, hypotheses=hyps)
+        kind, provider = choice
+        result = provider.probe(need, evidence_kind=kind, hypotheses=hyps)
         episode.probes_attempted.append(result)
+        episode.probe_attempts.append(
+            ProbeAttempt(
+                evidence_kind=kind,
+                provider_id=str(getattr(provider, "provider_id", "")),
+                status=result.status,
+            )
+        )
         last = result
         episode.attempt_budget_remaining -= 1
+
+        # Interpretation belongs to the strategy, not the provider.
+        hyps = strategy.incorporate(result, hyps, need=need)
+        episode.hypotheses = hyps
 
         if result.status == EVIDENCE_FOUND:
             episode.evidence_found.append(result)
             need.evidence_already_known.append(
-                {"kind": kind, "provider_id": result.provider_id}
+                {
+                    "kind": kind,
+                    "provider_id": result.provider_id,
+                    "payload": dict(result.payload),
+                }
             )
         if result.status in {NO_CAPABILITY, ERROR}:
             blacklisted.add(result.provider_id)
             continue
         episode.budget_remaining -= 1
 
-    # Final assessment after budget/exhaustion
+    pairs = episode.attempted_pairs()
     final = strategy.assess(
         need,
         hyps,
         last_result=last,
-        attempted_kinds=attempted_kinds,
+        attempted_pairs=pairs,
     )
     episode.assessments.append(final)
     if final.resolved:

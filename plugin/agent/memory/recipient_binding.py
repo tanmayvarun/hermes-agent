@@ -26,7 +26,7 @@ from plugin.agent.memory.cognition import (
 )
 from plugin.agent.memory.local_store import LocalMemorySystem
 from plugin.agent.memory.retriever import MemoryRetriever
-from plugin.agent.memory.types import BindingUncertainty, MemoryQuery
+from plugin.agent.memory.types import MemoryQuery
 
 
 @dataclass
@@ -250,6 +250,7 @@ def resolve_recipient_before_methods(
     entity_id = str(proposal.entity_id)
     epistemic_reason = "resolved"
     uncertainty = proposal.uncertainty
+    binding_assessment = None
 
     needs_gather = _epistemically_ambiguous(proposal) or _working_context_disputes_top(
         proposal, working_context
@@ -273,14 +274,12 @@ def resolve_recipient_before_methods(
         probes = episode.probe_labels()
         consultation = consult_after_episode(episode, surface=surface)
         hyp_dicts = [h.to_dict() for h in consultation.hypotheses]
+        binding_assessment = consultation
 
         if consultation.action == "proceed" and consultation.entity_id:
             entity_id = consultation.entity_id
             epistemic_reason = consultation.reason
-            uncertainty = consultation.to_binding_uncertainty()
         else:
-            # Epistemic ASK — still run risk policy only for refuse-class effects
-            # after failed discrimination; ASK is the epistemic outcome.
             alts = [
                 {"entity_id": h.entity_id, "label": h.display_name}
                 for h in consultation.hypotheses[:5]
@@ -294,8 +293,6 @@ def resolve_recipient_before_methods(
                         }
                     )
             labels = " or ".join(f"**{a['label']}**" for a in alts[:3]) or surface
-            # Policy refuse must still win for very-high-risk effects even when
-            # identity is unknown — check risk with remaining uncertainty.
             decision_early = ActionRiskPolicy().allows(effect, proposal.uncertainty)
             if decision_early.action == "refuse":
                 return RecipientResolutionResult(
@@ -324,7 +321,11 @@ def resolve_recipient_before_methods(
             )
 
     # Binding epistemically established (or was clear) → ActionRiskPolicy
-    decision = ActionRiskPolicy().allows(effect, uncertainty)
+    policy = ActionRiskPolicy()
+    if binding_assessment is not None:
+        decision = policy.allows_binding(effect, binding_assessment)
+    else:
+        decision = policy.allows(effect, uncertainty)
 
     if decision.action == "refuse":
         return RecipientResolutionResult(

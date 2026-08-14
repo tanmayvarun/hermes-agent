@@ -17,6 +17,7 @@ from plugin.agent.brain.information_need import (
     EvidenceNeedAssessment,
     EvidenceResult,
     InformationNeed,
+    ProbeAttempt,
 )
 from plugin.agent.brain.turn_representation import TurnRepresentation
 from plugin.agent.brain.workspace import BrainWorkspace
@@ -28,6 +29,7 @@ __all__ = [
     "EvidenceNeedAssessment",
     "EvidenceResult",
     "InformationNeed",
+    "ProbeAttempt",
     "TurnRepresentation",
     "activate_context",
     "build_activation_signature",

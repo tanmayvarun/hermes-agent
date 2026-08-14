@@ -1,6 +1,7 @@
 """Document-resolution EvidenceStrategy — proves the generic episode is domain-neutral.
 
-Uses DocumentHypothesis only. Identity types are intentionally absent.
+Uses DocumentHypothesis only. Providers return EvidenceResult; strategy.incorporate
+updates hypotheses.
 """
 
 from __future__ import annotations
@@ -45,16 +46,48 @@ class DocumentHypothesis:
 
 
 class DocumentResolutionEvidenceStrategy:
+    def incorporate(
+        self,
+        result: EvidenceResult,
+        hypotheses: list[Any],
+        *,
+        need: InformationNeed,
+    ) -> list[Any]:
+        if result.status != EVIDENCE_FOUND:
+            return list(hypotheses)
+        payload = dict(result.payload or {})
+        kind = result.evidence_kind
+        for h in hypotheses:
+            if not isinstance(h, DocumentHypothesis):
+                continue
+            if kind == "working_context":
+                hits = set(payload.get("preferred_doc_ids") or [])
+                if h.doc_id in hits:
+                    h.working_context_hit = True
+                    h.notes.append("working_context_doc")
+            elif kind == "recent_file_memory":
+                hits = set(payload.get("recent_doc_ids") or [])
+                if h.doc_id in hits:
+                    h.recent_file_hit = True
+                    h.notes.append("recent_file_memory")
+            elif kind == "filesystem_metadata":
+                ranks = dict(payload.get("mtime_rank_by_id") or {})
+                if h.doc_id in ranks:
+                    h.filesystem_mtime_rank = float(ranks[h.doc_id])
+                    h.notes.append(f"mtime={h.filesystem_mtime_rank:.2f}")
+        return list(hypotheses)
+
     def assess(
         self,
         need: InformationNeed,
         hypotheses: list[Any],
         *,
         last_result: Optional[EvidenceResult] = None,
-        attempted_kinds: Optional[set[str]] = None,
+        attempted_pairs: Optional[set[tuple[str, str]]] = None,
     ) -> EvidenceNeedAssessment:
         hyps = [h for h in hypotheses if isinstance(h, DocumentHypothesis)]
-        attempted = set(attempted_kinds or ())
+        pairs = set(attempted_pairs or ())
+        attempted_kinds = {k for k, _ in pairs}
 
         wc = [h for h in hyps if h.working_context_hit]
         if len(wc) == 1:
@@ -65,17 +98,20 @@ class DocumentResolutionEvidenceStrategy:
             )
 
         recent = [h for h in hyps if h.recent_file_hit]
-        if len(recent) == 1 and "recent_file_memory" in attempted:
+        if len(recent) == 1 and "recent_file_memory" in attempted_kinds:
             return EvidenceNeedAssessment(
                 resolved=True,
                 resolution_ref=recent[0].doc_id,
                 resolution_reason="recent_file_memory",
             )
 
-        # mtime dominance after filesystem probe
-        if "filesystem_metadata" in attempted and hyps:
+        if "filesystem_metadata" in attempted_kinds and hyps:
             ranked = sorted(hyps, key=lambda h: h.filesystem_mtime_rank, reverse=True)
-            if len(ranked) >= 2 and ranked[0].filesystem_mtime_rank >= ranked[1].filesystem_mtime_rank + 0.4:
+            if (
+                len(ranked) >= 2
+                and ranked[0].filesystem_mtime_rank
+                >= ranked[1].filesystem_mtime_rank + 0.4
+            ):
                 return EvidenceNeedAssessment(
                     resolved=True,
                     resolution_ref=ranked[0].doc_id,
@@ -90,14 +126,15 @@ class DocumentResolutionEvidenceStrategy:
 
         preferred: list[str] = []
         ambiguities: list[str] = []
-        if len(wc) != 1 and "working_context" not in attempted:
+        if len(wc) != 1:
             ambiguities.append("no_unique_working_context_doc")
             preferred.append("working_context")
-        if len(recent) != 1 and "recent_file_memory" not in attempted:
+        if len(recent) != 1:
             ambiguities.append("no_unique_recent_file")
             preferred.append("recent_file_memory")
-        if "filesystem_metadata" not in attempted and (
-            "recent_file_memory" in attempted or not preferred
+        # Filesystem discrimination when still competing after (or instead of) recent.
+        if len(hyps) >= 2 and (
+            "recent_file_memory" in attempted_kinds or len(recent) != 1 or not preferred
         ):
             ambiguities.append("need_filesystem_discrimination")
             preferred.append("filesystem_metadata")
@@ -138,15 +175,13 @@ class DocumentWorkingContextProvider:
                 or active == h.title.lower()
                 or active in h.title.lower()
             ):
-                h.working_context_hit = True
-                h.notes.append("working_context_doc")
                 hits.append(h.doc_id)
         if hits:
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"hits": hits},
+                payload={"preferred_doc_ids": hits},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
@@ -157,8 +192,6 @@ class DocumentWorkingContextProvider:
 
 @dataclass
 class RecentFileMemoryProvider:
-    """Fixture-friendly recent-file memory probe."""
-
     provider_id: str = "recent_file_memory"
     evidence_kinds: frozenset[str] = frozenset({"recent_file_memory"})
     recent_titles: list[str] = field(default_factory=list)
@@ -186,15 +219,13 @@ class RecentFileMemoryProvider:
             if not isinstance(h, DocumentHypothesis):
                 continue
             if h.title.lower() in recent or any(r in h.title.lower() for r in recent):
-                h.recent_file_hit = True
-                h.notes.append("recent_file_memory")
                 hits.append(h.doc_id)
         if hits:
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"hits": hits},
+                payload={"recent_doc_ids": hits},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
@@ -219,25 +250,47 @@ class FilesystemMetadataProvider:
         evidence_kind: str,
         hypotheses: list[Any],
     ) -> EvidenceResult:
-        updated = 0
-        for h in hypotheses:
-            if not isinstance(h, DocumentHypothesis):
-                continue
-            if h.doc_id in self.mtime_by_id:
-                h.filesystem_mtime_rank = float(self.mtime_by_id[h.doc_id])
-                h.notes.append(f"mtime={h.filesystem_mtime_rank:.2f}")
-                updated += 1
-        if updated:
+        ranks = {
+            h.doc_id: float(self.mtime_by_id[h.doc_id])
+            for h in hypotheses
+            if isinstance(h, DocumentHypothesis) and h.doc_id in self.mtime_by_id
+        }
+        if ranks:
             return EvidenceResult(
                 status=EVIDENCE_FOUND,
                 provider_id=self.provider_id,
                 evidence_kind=evidence_kind,
-                payload={"updated": updated},
+                payload={"mtime_rank_by_id": ranks},
             )
         return EvidenceResult(
             status=NO_EVIDENCE,
             provider_id=self.provider_id,
             evidence_kind=evidence_kind,
+        )
+
+
+@dataclass
+class EmptyRecentFileMemoryProvider:
+    """First-provider miss for adaptive reassessment goldens."""
+
+    provider_id: str = "recent_file_memory_empty"
+    evidence_kinds: frozenset[str] = frozenset({"recent_file_memory"})
+
+    def can_serve(self, need: InformationNeed, evidence_kind: str) -> bool:
+        return evidence_kind in self.evidence_kinds
+
+    def probe(
+        self,
+        need: InformationNeed,
+        *,
+        evidence_kind: str,
+        hypotheses: list[Any],
+    ) -> EvidenceResult:
+        return EvidenceResult(
+            status=NO_EVIDENCE,
+            provider_id=self.provider_id,
+            evidence_kind=evidence_kind,
+            notes="no_recent_files",
         )
 
 
@@ -250,6 +303,7 @@ def acquire_for_document_resolution(
     mtime_by_id: Optional[dict[str, float]] = None,
     budget: int = 4,
     attempt_budget: int = 8,
+    prefer_empty_recent_first: bool = False,
 ) -> EvidenceAcquisitionEpisode:
     need = InformationNeed(
         need_type="document_resolution",
@@ -264,6 +318,9 @@ def acquire_for_document_resolution(
     )
     reg = InformationCapabilityRegistry()
     reg.register(DocumentWorkingContextProvider())
+    if prefer_empty_recent_first:
+        # Same evidence kind, weak provider first — proves kind is not exhausted.
+        reg.register(EmptyRecentFileMemoryProvider())
     reg.register(RecentFileMemoryProvider(recent_titles=list(recent_files or [])))
     reg.register(FilesystemMetadataProvider(mtime_by_id=dict(mtime_by_id or {})))
     return run_evidence_acquisition(

@@ -181,6 +181,15 @@ class ActionRiskPolicy:
         "transfer_money": "very_high",
     }
 
+    # Minimum qualitative evidence strength per risk class (BindingAssessment).
+    # These are policy thresholds — not calibrated epistemic probabilities.
+    MIN_STRENGTH = {
+        "low": "weak",
+        "moderate": "moderate",
+        "high": "strong",
+        "very_high": "decisive",
+    }
+
     def allows(self, effect: str, uncertainty: BindingUncertainty) -> RiskDecision:
         risk = self.EFFECT_RISK.get(effect, "moderate")
         reasons = set(uncertainty.ambiguity_reasons)
@@ -231,6 +240,43 @@ class ActionRiskPolicy:
 
         # very_high
         return RiskDecision(action="refuse", reason="very_high_risk_requires_explicit_confirm")
+
+    def allows_binding(self, effect: str, assessment: Any) -> RiskDecision:
+        """Consume qualitative BindingAssessment (evidence_strength classes).
+
+        Epistemic gather produces BindingAssessment; this applies risk policy
+        without treating policy constants as calibrated confidence.
+        """
+        from plugin.agent.brain.information_need import STRENGTH_ORDER
+
+        action = str(getattr(assessment, "action", "") or "")
+        strength = str(getattr(assessment, "evidence_strength", "") or "weak")
+        reason = str(getattr(assessment, "reason", "") or "")
+        amb = list(getattr(assessment, "ambiguity_reasons", None) or [])
+
+        if action != "proceed" or amb:
+            return RiskDecision(
+                action="ask",
+                reason=reason or (amb[0] if amb else "ambiguous_recipient"),
+            )
+
+        risk = self.EFFECT_RISK.get(effect, "moderate")
+        if risk == "very_high":
+            return RiskDecision(
+                action="refuse",
+                reason="very_high_risk_requires_explicit_confirm",
+            )
+
+        required = self.MIN_STRENGTH.get(risk, "moderate")
+        if STRENGTH_ORDER.get(strength, -1) >= STRENGTH_ORDER.get(required, 99):
+            return RiskDecision(
+                action="proceed",
+                reason=f"strength_{strength}_meets_{required}",
+            )
+        return RiskDecision(
+            action="ask",
+            reason=f"strength_{strength}_below_{required}",
+        )
 
 
 @dataclass

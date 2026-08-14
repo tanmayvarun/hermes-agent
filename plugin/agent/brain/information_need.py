@@ -16,6 +16,19 @@ NO_EVIDENCE = "NO_EVIDENCE"
 NO_CAPABILITY = "NO_CAPABILITY"
 ERROR = "ERROR"
 
+# Qualitative evidence strength (not calibrated probability)
+STRENGTH_WEAK = "weak"
+STRENGTH_MODERATE = "moderate"
+STRENGTH_STRONG = "strong"
+STRENGTH_DECISIVE = "decisive"
+
+STRENGTH_ORDER = {
+    STRENGTH_WEAK: 0,
+    STRENGTH_MODERATE: 1,
+    STRENGTH_STRONG: 2,
+    STRENGTH_DECISIVE: 3,
+}
+
 
 @dataclass
 class InformationNeed:
@@ -37,6 +50,15 @@ class InformationNeed:
 
 
 @dataclass
+class ProbeAttempt:
+    """One provider interaction for an evidence kind."""
+
+    evidence_kind: str
+    provider_id: str
+    status: str = ""
+
+
+@dataclass
 class EvidenceNeedAssessment:
     """Reassessment of remaining uncertainty after (or before) a probe.
 
@@ -51,16 +73,20 @@ class EvidenceNeedAssessment:
     resolution_reason: str = ""
     notes: str = ""
 
-    def next_kind(self, attempted_kinds: set[str]) -> Optional[str]:
+    def next_kind(self, exhausted_kinds: set[str]) -> Optional[str]:
+        """Next kind that still has untried providers (caller filters exhaustion)."""
         for kind in self.preferred_evidence_kinds:
-            if kind and kind not in attempted_kinds:
+            if kind and kind not in exhausted_kinds:
                 return kind
         return None
 
 
 @dataclass
 class EvidenceResult:
-    """Outcome of one information-capability probe."""
+    """Outcome of one information-capability probe.
+
+    Providers return raw evidence only — they must not mutate Brain hypotheses.
+    """
 
     status: str  # EVIDENCE_FOUND | NO_EVIDENCE | NO_CAPABILITY | ERROR
     provider_id: str
@@ -70,7 +96,6 @@ class EvidenceResult:
 
     @property
     def is_meaningful_attempt(self) -> bool:
-        """True when a capable provider actually ran (found or empty)."""
         return self.status in {EVIDENCE_FOUND, NO_EVIDENCE}
 
     def to_dict(self) -> dict[str, Any]:
@@ -89,6 +114,7 @@ class EvidenceAcquisitionEpisode:
 
     information_need: InformationNeed
     probes_attempted: list[EvidenceResult] = field(default_factory=list)
+    probe_attempts: list[ProbeAttempt] = field(default_factory=list)
     evidence_found: list[EvidenceResult] = field(default_factory=list)
     hypotheses: list[Any] = field(default_factory=list)
     assessments: list[EvidenceNeedAssessment] = field(default_factory=list)
@@ -109,3 +135,10 @@ class EvidenceAcquisitionEpisode:
             else:
                 out.append(f"{r.provider_id}:{r.status}")
         return out
+
+    def attempted_pairs(self) -> set[tuple[str, str]]:
+        return {
+            (a.evidence_kind, a.provider_id)
+            for a in self.probe_attempts
+            if a.evidence_kind and a.provider_id
+        }

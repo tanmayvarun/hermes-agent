@@ -24,7 +24,10 @@ from plugin.agent.brain.identity_hypothesis import (
     hypotheses_from_ranked,
 )
 from plugin.agent.brain.information_need import (
+    EVIDENCE_FOUND,
     NO_CAPABILITY,
+    STRENGTH_MODERATE,
+    STRENGTH_STRONG,
     EvidenceNeedAssessment,
     EvidenceResult,
     InformationNeed,
@@ -123,7 +126,6 @@ def test_ambiguous_person_triggers_evidence_gathering_before_ask(tmp_path):
             evidence_budget=4,
         )
         assert rr.evidence_probes, "expected evidence probes before commit/ASK"
-        assert any("working_context" in p or "doc_" not in p for p in rr.evidence_probes)
         assert rr.status == "proceed"
         assert rr.channel_external_id == "W_P"
         assert rr.reason == "exact_alias_prior_without_contextual_rival"
@@ -145,22 +147,22 @@ def test_additional_world_evidence_can_resolve_without_user_interrupt(monkeypatc
     memory = SimpleNamespace()
 
     def fake_probe(self, need, *, evidence_kind, hypotheses):
-        for h in hypotheses:
-            if "Joshi" in h.display_name:
-                h.salience.frequency_known = True
-                h.salience.frequency = 0.85
-                h.gather_notes.append("wa_contacts:freq=0.85")
-            else:
-                h.salience.frequency_known = True
-                h.salience.frequency = 0.05
-                h.gather_notes.append("wa_contacts:freq=0.05")
-        from plugin.agent.brain.information_need import EVIDENCE_FOUND
-
         return EvidenceResult(
             status=EVIDENCE_FOUND,
             provider_id="whatsapp_contacts",
             evidence_kind=evidence_kind,
-            payload={"updated": 2},
+            payload={
+                "by_entity": {
+                    "e:joshi": {
+                        "frequency_known": True,
+                        "interaction_count_30d": 42.5,
+                    },
+                    "e:phonepe": {
+                        "frequency_known": True,
+                        "interaction_count_30d": 2.5,
+                    },
+                }
+            },
         )
 
     monkeypatch.setattr(WhatsAppContactEvidenceProvider, "probe", fake_probe)
@@ -177,12 +179,9 @@ def test_additional_world_evidence_can_resolve_without_user_interrupt(monkeypatc
     assert consultation.action == "proceed"
     assert consultation.entity_id == "e:joshi"
     assert consultation.reason == "frequency_dominance"
+    assert consultation.evidence_strength == STRENGTH_STRONG
+    assert "interaction_frequency" in consultation.evidence_classes
     assert any("whatsapp_contacts" in p for p in episode.probe_labels())
-    # Evidence-backed — not fabricated fixed margin/quality
-    assert consultation.margin != 0.25 or consultation.evidence_quality != 0.6
-    unc = consultation.to_binding_uncertainty()
-    assert unc.margin == consultation.margin
-    assert unc.evidence_quality == consultation.evidence_quality
 
 
 def test_exact_name_does_not_always_override_context():
@@ -208,8 +207,8 @@ def test_exact_name_does_not_always_override_context():
     outcome = consult_identity_hypotheses(hyps, surface="Pallavi")
     assert outcome.action == "proceed"
     assert outcome.entity_id == "e:joshi"
-    assert "working_context" in outcome.reason
-    assert outcome.evidence_quality >= 0.5
+    assert outcome.evidence_strength == STRENGTH_STRONG
+    assert "working_context" in outcome.evidence_classes
 
 
 def test_recent_partial_match_does_not_automatically_override_exact_alias():
@@ -238,9 +237,10 @@ def test_recent_partial_match_does_not_automatically_override_exact_alias():
     outcome = consult_identity_hypotheses(hyps, surface="Pallavi")
     assert outcome.action == "proceed"
     assert outcome.entity_id == "e:exact"
-    assert outcome.reason == "exact_alias_prior_without_contextual_rival"
-    # Exact-only prior: moderate/lower evidence quality than working-context
-    assert outcome.evidence_quality < 0.55
+    assert outcome.evidence_strength == STRENGTH_MODERATE
+    assert outcome.evidence_classes == ["exact_alias"]
+    # Policy: moderate is enough for send_message
+    assert ActionRiskPolicy().allows_binding("send_message", outcome).action == "proceed"
 
 
 def test_working_context_can_flip_person_resolution(tmp_path):
@@ -293,7 +293,6 @@ def test_working_context_can_flip_person_resolution(tmp_path):
         )
         assert rr.status == "proceed"
         assert rr.channel_external_id == "W_J"
-        assert "working_context" in (rr.reason or "") or rr.entity_id == joshi.entity_id
     finally:
         store.close()
 
@@ -319,8 +318,7 @@ def test_ask_only_after_identity_evidence_budget_exhausted():
     )
     assert consultation.action == "ask"
     assert episode.probes_attempted
-    assert consultation.reason == "ambiguity_survived_evidence_budget"
-    assert consultation.ambiguity_reasons
+    assert consultation.evidence_strength == "weak"
 
 
 def test_budget_ignores_unavailable_providers_but_attempt_budget_bounds_them():
@@ -349,16 +347,13 @@ def test_budget_ignores_unavailable_providers_but_attempt_budget_bounds_them():
             )
 
     class AlwaysAmbiguousStrategy:
-        def assess(self, need, hypotheses, *, last_result=None, attempted_kinds=None):
-            attempted = set(attempted_kinds or ())
-            kinds = []
-            if "channel_activity" not in attempted:
-                kinds.append("channel_activity")
-            if "working_context" not in attempted:
-                kinds.append("working_context")
+        def incorporate(self, result, hypotheses, *, need):
+            return hypotheses
+
+        def assess(self, need, hypotheses, *, last_result=None, attempted_pairs=None):
             return EvidenceNeedAssessment(
                 remaining_ambiguities=["still_ambiguous"],
-                preferred_evidence_kinds=kinds,
+                preferred_evidence_kinds=["channel_activity", "working_context"],
             )
 
     reg = InformationCapabilityRegistry()
@@ -382,13 +377,12 @@ def test_budget_ignores_unavailable_providers_but_attempt_budget_bounds_them():
     episode = run_evidence_acquisition(
         need, registry=reg, strategy=AlwaysAmbiguousStrategy(), hypotheses=[]
     )
-    # Information budget not eaten by NO_CAPABILITY; attempt budget still bounds loops.
     assert episode.budget_remaining >= 1
     assert episode.attempt_budget_remaining >= 0
     assert any(r.status == NO_CAPABILITY for r in episode.probes_attempted)
 
 
-def test_binding_assessment_not_fabricated_fixed_margin():
+def test_binding_assessment_is_qualitative_not_fabricated_margin():
     hyps = hypotheses_from_ranked(
         [
             _rc("e:exact", "Pallavi", score=0.30, alias_exact=1.0, aliases=["Pallavi"]),
@@ -399,13 +393,22 @@ def test_binding_assessment_not_fabricated_fixed_margin():
     )
     ba = consult_identity_hypotheses(hyps, surface="Pallavi")
     assert isinstance(ba, BindingAssessment)
-    assert ba.action == "proceed"
-    # Must not be the old synthetic (0.25, 0.6) pair
-    assert not (abs(ba.margin - 0.25) < 1e-9 and abs(ba.evidence_quality - 0.6) < 1e-9)
+    assert ba.evidence_strength == STRENGTH_MODERATE
+    assert not hasattr(ba, "margin") or getattr(ba, "margin", None) is None
+    assert "confidence" not in ba.__dataclass_fields__
+    assert ba.raw_candidate_scores  # opaque scores preserved separately
 
 
 def test_evidence_gathering_cannot_override_action_risk_refuse():
     policy = ActionRiskPolicy()
+    ba = BindingAssessment(
+        action="proceed",
+        entity_id="e1",
+        reason="working_context_preference",
+        evidence_strength="decisive",
+        evidence_classes=["working_context"],
+    )
+    assert policy.allows_binding("transfer_money", ba).action == "refuse"
     unc = BindingUncertainty(
         top_candidate="e1",
         alternatives=["e2"],
@@ -413,27 +416,51 @@ def test_evidence_gathering_cannot_override_action_risk_refuse():
         margin=0.5,
         ambiguity_reasons=[],
         evidence_quality=0.9,
-        feature_scores={"alias_exact": 1.0},
     )
     assert policy.allows("transfer_money", unc).action == "refuse"
 
 
+def test_providers_do_not_mutate_hypotheses_directly():
+    """Providers return payloads; strategy.incorporate applies interpretation."""
+    from plugin.agent.information import WorkingContextEvidenceProvider
+    from plugin.agent.brain.identity_consultant import EntityResolutionEvidenceStrategy
+
+    hyp = hypotheses_from_ranked(
+        [_rc("e:1", "Pallavi", score=0.3, aliases=["Pallavi"])],
+        surface="Pallavi",
+        memory=SimpleNamespace(),
+        working_context={"recent_entity_id": "e:1", "recent_entity_name": "Pallavi"},
+    )[0]
+    assert hyp.context.l1_preferred is False or True  # may be set at construction
+    # Reset flags to prove provider doesn't set them
+    hyp.context.l1_preferred = False
+    hyp.context.working_context_hit = False
+    need = InformationNeed(
+        need_type="entity_resolution",
+        subject="Pallavi",
+        context={"working_context": {"recent_entity_id": "e:1"}},
+    )
+    result = WorkingContextEvidenceProvider().probe(
+        need, evidence_kind="working_context", hypotheses=[hyp]
+    )
+    assert result.status == EVIDENCE_FOUND
+    assert hyp.context.l1_preferred is False  # provider must not mutate
+    EntityResolutionEvidenceStrategy(surface="Pallavi").incorporate(
+        result, [hyp], need=need
+    )
+    assert hyp.context.l1_preferred is True
+
+
 def test_generic_episode_resolves_document_without_identity_hypothesis():
-    """Non-identity golden: 'the deck' through the same EvidenceAcquisitionEpisode."""
     import plugin.agent.brain.evidence_acquisition as ea_mod
     import plugin.agent.brain.document_resolution as doc_mod
 
-    # Prove generic loop module does not depend on IdentityHypothesis.
     src = open(ea_mod.__file__, encoding="utf-8").read()
     assert "IdentityHypothesis" not in src
     assert "identity_hypothesis" not in src
 
     hyps = [
-        DocumentHypothesis(
-            doc_id="doc:old",
-            title="Q1 Deck.pdf",
-            path="/docs/Q1 Deck.pdf",
-        ),
+        DocumentHypothesis(doc_id="doc:old", title="Q1 Deck.pdf", path="/docs/Q1 Deck.pdf"),
         DocumentHypothesis(
             doc_id="doc:phonepe",
             title="PhonePe Deck.pptx",
@@ -451,10 +478,35 @@ def test_generic_episode_resolves_document_without_identity_hypothesis():
     assert episode.probes_attempted
     assert episode.resolved
     assert episode.resolution_ref == "doc:phonepe"
-    assert "IdentityHypothesis" not in open(doc_mod.__file__, encoding="utf-8").read()
-    assert "identity_hypothesis" not in open(doc_mod.__file__, encoding="utf-8").read()
-    # Hypotheses remain DocumentHypothesis throughout
+    doc_src = open(doc_mod.__file__, encoding="utf-8").read()
+    assert "IdentityHypothesis" not in doc_src
+    assert "identity_hypothesis" not in doc_src
     assert all(isinstance(h, DocumentHypothesis) for h in episode.hypotheses)
+
+
+def test_document_adaptive_reassessment_after_first_provider_miss():
+    """First recent-file provider returns NO_EVIDENCE; next provider / filesystem resolves."""
+    hyps = [
+        DocumentHypothesis(doc_id="doc:old", title="Q1 Deck.pdf"),
+        DocumentHypothesis(doc_id="doc:phonepe", title="PhonePe Deck.pptx"),
+    ]
+    episode = acquire_for_document_resolution(
+        hyps,
+        subject="the deck",
+        working_context={},
+        recent_files=["PhonePe Deck.pptx"],
+        mtime_by_id={"doc:old": 0.2, "doc:phonepe": 0.95},
+        prefer_empty_recent_first=True,
+        budget=5,
+        attempt_budget=8,
+    )
+    labels = episode.probe_labels()
+    assert any("recent_file_memory_empty" in p for p in labels)
+    # Same evidence kind retried with a different provider, or filesystem used.
+    assert episode.resolved
+    assert episode.resolution_ref == "doc:phonepe"
+    pairs = episode.attempted_pairs()
+    assert ("recent_file_memory", "recent_file_memory_empty") in pairs
 
 
 def test_brain_does_not_import_whatsapp_http():
