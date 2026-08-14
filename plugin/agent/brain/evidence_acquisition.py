@@ -1,114 +1,85 @@
-"""Generic MetaActor evidence-acquisition episode.
+"""Generic MetaActor evidence-acquisition episode — domain-neutral.
 
-Adaptive: after each EvidenceResult, choose the next useful evidence kind.
-Budget counts only meaningful probe attempts (EVIDENCE_FOUND / NO_EVIDENCE).
-NO_CAPABILITY / ERROR do not consume the information budget.
+Knows only InformationNeed, EvidenceResult, budgets, and an EvidenceStrategy.
+Domain logic (identity, documents, effects, …) lives in strategy callbacks.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Optional, Protocol
 
-from plugin.agent.brain.identity_hypothesis import IdentityHypothesis, hypotheses_from_ranked
 from plugin.agent.brain.information_need import (
     EVIDENCE_FOUND,
     ERROR,
     NO_CAPABILITY,
     EvidenceAcquisitionEpisode,
+    EvidenceNeedAssessment,
     EvidenceResult,
     InformationNeed,
 )
-from plugin.agent.information import (
-    InformationCapabilityRegistry,
-    default_registry_for_entity_resolution,
-)
+from plugin.agent.information import InformationCapabilityRegistry
 
 
-def _default_kind_priority(need: InformationNeed) -> list[str]:
-    missing = list(need.missing_features())
-    # Prefer cheap local context first; world channel activity last.
-    order = [
-        "working_context",
-        "memory_aggregates",
-        "reference_history",
-        "channel_activity",
-    ]
-    prioritized = [k for k in order if k in missing]
-    for k in missing:
-        if k not in prioritized:
-            prioritized.append(k)
-    return prioritized
+class EvidenceStrategy(Protocol):
+    """Domain-supplied reassessment + coverage for one InformationNeed type."""
 
-
-def choose_next_evidence_kind(
-    need: InformationNeed,
-    *,
-    attempted_kinds: set[str],
-    last_result: Optional[EvidenceResult],
-    hypotheses: list[Any],
-) -> Optional[str]:
-    """Adaptive next kind — not a blind fixed pipeline.
-
-    Early stop suggestion: if working context uniquely prefers one hypothesis,
-    still allow caller to resolve; we stop proposing further kinds when
-    discrimination is already established at the chooser level.
-    """
-    if isinstance(hypotheses, list) and hypotheses:
-        l1 = [
-            h
-            for h in hypotheses
-            if isinstance(h, IdentityHypothesis)
-            and (h.context.l1_preferred or h.context.working_context_hit)
-        ]
-        if len(l1) == 1 and last_result and last_result.evidence_kind == "working_context":
-            # Working context already discriminates — no further probes needed.
-            return None
-
-        refs = [
-            h
-            for h in hypotheses
-            if isinstance(h, IdentityHypothesis) and h.context.reference_support >= 1.0
-        ]
-        if len(refs) == 1 and last_result and last_result.evidence_kind == "reference_history":
-            return None
-
-    for kind in _default_kind_priority(need):
-        if kind not in attempted_kinds:
-            return kind
-    return None
+    def assess(
+        self,
+        need: InformationNeed,
+        hypotheses: list[Any],
+        *,
+        last_result: Optional[EvidenceResult] = None,
+        attempted_kinds: Optional[set[str]] = None,
+    ) -> EvidenceNeedAssessment: ...
 
 
 def run_evidence_acquisition(
     need: InformationNeed,
     *,
     registry: InformationCapabilityRegistry,
+    strategy: EvidenceStrategy,
     hypotheses: Optional[list[Any]] = None,
-    choose_next: Optional[Callable[..., Optional[str]]] = None,
 ) -> EvidenceAcquisitionEpisode:
-    """Run bounded adaptive gathering until resolved signal or budget exhausts.
+    """Bounded adaptive gathering driven by strategy reassessment.
 
-    Does **not** commit bindings or apply ActionRiskPolicy.
+    Loop:
+      assess remaining uncertainty → preferred evidence kinds → provider
+      → EvidenceResult → update hypotheses → reassess
+
+    Budgets:
+      - information budget: EVIDENCE_FOUND / NO_EVIDENCE only
+      - attempt budget: every registry/provider interaction (incl. skips/errors)
     """
     hyps = list(hypotheses if hypotheses is not None else need.competing_hypotheses)
     episode = EvidenceAcquisitionEpisode(
         information_need=need,
         hypotheses=hyps,
         budget_remaining=max(0, int(need.budget)),
+        attempt_budget_remaining=max(0, int(need.attempt_budget)),
     )
-    chooser = choose_next or choose_next_evidence_kind
     attempted_kinds: set[str] = set()
     last: Optional[EvidenceResult] = None
     blacklisted: set[str] = set()
 
-    while episode.budget_remaining > 0:
-        kind = chooser(
+    while episode.budget_remaining > 0 and episode.attempt_budget_remaining > 0:
+        assessment = strategy.assess(
             need,
-            attempted_kinds=attempted_kinds,
+            hyps,
             last_result=last,
-            hypotheses=hyps,
+            attempted_kinds=attempted_kinds,
         )
-        if not kind:
+        episode.assessments.append(assessment)
+        if assessment.resolved:
+            episode.resolved = True
+            episode.resolution_ref = assessment.resolution_ref
+            episode.resolution_reason = assessment.resolution_reason
             break
+
+        kind = assessment.next_kind(attempted_kinds)
+        if not kind:
+            episode.uncertainty_notes.extend(assessment.remaining_ambiguities)
+            break
+
         attempted_kinds.add(kind)
         providers = [
             p
@@ -116,7 +87,6 @@ def run_evidence_acquisition(
             if getattr(p, "provider_id", "") not in blacklisted
         ]
         if not providers:
-            # No capable provider — do not spend budget.
             skip = EvidenceResult(
                 status=NO_CAPABILITY,
                 provider_id="registry",
@@ -125,11 +95,15 @@ def run_evidence_acquisition(
             )
             episode.probes_attempted.append(skip)
             last = skip
+            episode.attempt_budget_remaining -= 1
             continue
 
+        # V1: first capable provider. Later: rank by latency/cost/gain.
         result = providers[0].probe(need, evidence_kind=kind, hypotheses=hyps)
         episode.probes_attempted.append(result)
         last = result
+        episode.attempt_budget_remaining -= 1
+
         if result.status == EVIDENCE_FOUND:
             episode.evidence_found.append(result)
             need.evidence_already_known.append(
@@ -137,48 +111,23 @@ def run_evidence_acquisition(
             )
         if result.status in {NO_CAPABILITY, ERROR}:
             blacklisted.add(result.provider_id)
-            # Unavailable / error: do not consume information budget.
             continue
-        # Meaningful attempt
         episode.budget_remaining -= 1
+
+    # Final assessment after budget/exhaustion
+    final = strategy.assess(
+        need,
+        hyps,
+        last_result=last,
+        attempted_kinds=attempted_kinds,
+    )
+    episode.assessments.append(final)
+    if final.resolved:
+        episode.resolved = True
+        episode.resolution_ref = final.resolution_ref
+        episode.resolution_reason = final.resolution_reason
+    else:
+        episode.uncertainty_notes.extend(final.remaining_ambiguities)
 
     episode.hypotheses = hyps
     return episode
-
-
-def acquire_for_entity_resolution(
-    memory: Any,
-    ranked: list[Any],
-    *,
-    surface: str,
-    channel: str = "whatsapp",
-    working_context: Optional[dict[str, Any]] = None,
-    budget: int = 4,
-    world_probes: bool = True,
-    registry: Optional[InformationCapabilityRegistry] = None,
-) -> EvidenceAcquisitionEpisode:
-    """Identity use-case entry: build need + hypotheses, run generic episode."""
-    hyps = hypotheses_from_ranked(
-        ranked,
-        surface=surface,
-        memory=memory,
-        channel=channel,
-        working_context=working_context,
-    )
-    need = InformationNeed(
-        need_type="entity_resolution",
-        subject=surface,
-        competing_hypotheses=hyps,
-        desired_discrimination=(
-            "working_context,memory_aggregates,reference_history,channel_activity"
-        ),
-        budget=budget,
-        context={
-            "channel": channel,
-            "working_context": dict(working_context or {}),
-        },
-    )
-    reg = registry or default_registry_for_entity_resolution(
-        memory, world_probes=world_probes
-    )
-    return run_evidence_acquisition(need, registry=reg, hypotheses=hyps)

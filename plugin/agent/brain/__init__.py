@@ -11,12 +11,10 @@ from plugin.agent.brain.context_activation import (
     build_activation_signature,
     consultation_context_from_workspace,
 )
-from plugin.agent.brain.evidence_acquisition import (
-    acquire_for_entity_resolution,
-    run_evidence_acquisition,
-)
+from plugin.agent.brain.evidence_acquisition import run_evidence_acquisition
 from plugin.agent.brain.information_need import (
     EvidenceAcquisitionEpisode,
+    EvidenceNeedAssessment,
     EvidenceResult,
     InformationNeed,
 )
@@ -27,10 +25,10 @@ __all__ = [
     "ActivationSignature",
     "BrainWorkspace",
     "EvidenceAcquisitionEpisode",
+    "EvidenceNeedAssessment",
     "EvidenceResult",
     "InformationNeed",
     "TurnRepresentation",
-    "acquire_for_entity_resolution",
     "activate_context",
     "build_activation_signature",
     "consultation_context_from_workspace",

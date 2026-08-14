@@ -109,36 +109,6 @@ def _working_context_disputes_top(
     return False
 
 
-def _uncertainty_for_entity(
-    proposal: Any,
-    *,
-    entity_id: str,
-    reason: str,
-) -> BindingUncertainty:
-    """Build uncertainty for ActionRiskPolicy after epistemic resolution."""
-    ranked = list(getattr(proposal, "ranked", None) or [])
-    top = next((r for r in ranked if str(r.ref) == entity_id), None)
-    if top is None and ranked:
-        top = ranked[0]
-    conf = float(getattr(top, "final_score", 0.55) or 0.55) if top else 0.55
-    # Established binding after consultation — clear margin for policy.
-    return BindingUncertainty(
-        top_candidate=entity_id,
-        alternatives=[
-            str(r.ref)
-            for r in ranked
-            if str(r.ref) != entity_id
-        ][:4],
-        confidence=max(conf, 0.5),
-        margin=0.25,
-        ambiguity_reasons=[],
-        evidence_quality=0.6,
-        feature_scores=dict(getattr(top, "feature_scores", None) or {})
-        if top
-        else {},
-    )
-
-
 def _commit_goal(
     goal: Any,
     *,
@@ -286,8 +256,10 @@ def resolve_recipient_before_methods(
     )
 
     if needs_gather:
-        from plugin.agent.brain.evidence_acquisition import acquire_for_entity_resolution
-        from plugin.agent.brain.identity_consultant import consult_after_episode
+        from plugin.agent.brain.identity_consultant import (
+            acquire_for_entity_resolution,
+            consult_after_episode,
+        )
 
         episode = acquire_for_entity_resolution(
             memory,
@@ -305,9 +277,7 @@ def resolve_recipient_before_methods(
         if consultation.action == "proceed" and consultation.entity_id:
             entity_id = consultation.entity_id
             epistemic_reason = consultation.reason
-            uncertainty = _uncertainty_for_entity(
-                proposal, entity_id=entity_id, reason=epistemic_reason
-            )
+            uncertainty = consultation.to_binding_uncertainty()
         else:
             # Epistemic ASK — still run risk policy only for refuse-class effects
             # after failed discrimination; ASK is the epistemic outcome.

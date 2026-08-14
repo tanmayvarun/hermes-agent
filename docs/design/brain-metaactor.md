@@ -433,34 +433,39 @@ first response to a narrow numeric margin.
 This is **generic MetaActor behavior**, not an identity-specific mini-agent.
 
 ```text
-BrainWorkspace / EntityResolver → competing hypotheses + BindingUncertainty
-  → InformationNeed (what would discriminate?)
-  → EvidenceAcquisitionEpisode (adaptive SEARCH via InformationCapabilityRegistry)
-  → workspace / hypotheses updated
-  → consultant reinterpretation (LLM target; deterministic fallback for goldens)
-  → RoleBinder-ready BindingProposal
-  → ActionRiskPolicy (proceed | ASK approval | refuse)
+InformationNeed
+  → EvidenceAcquisitionEpisode (domain-neutral)
+       assess remaining uncertainty (EvidenceStrategy)
+       → preferred evidence kinds
+       → InformationCapabilityRegistry → provider
+       → EvidenceResult → update hypotheses → reassess
+  → domain consultant / BindingAssessment (evidence-backed)
+  → ActionRiskPolicy (proceed | ASK | refuse)
 ```
 
 Hard rules:
 
-- Brain code must **not** call WhatsApp HTTP / localhost endpoints. Channel
-  enrichment lives behind information capability providers
-  (`plugin/agent/information/`).
+- Generic episode knows only `InformationNeed`, hypotheses:`Any`,
+  `EvidenceStrategy`, budgets — not `IdentityHypothesis`.
+- Domain strategies (`EntityResolutionEvidenceStrategy`,
+  `DocumentResolutionEvidenceStrategy`, …) reassess after each result and
+  propose discriminating evidence kinds.
+- Brain code must **not** call WhatsApp HTTP. Channel enrichment lives under
+  `plugin/agent/information/`.
 - Evidence gathering resolves **epistemic** insufficiency only. It must **never**
   override `ActionRiskPolicy.REFUSE`.
-- Probe budget counts meaningful attempts (`EVIDENCE_FOUND` / `NO_EVIDENCE`).
-  `NO_CAPABILITY` / `ERROR` do not exhaust the budget.
-- Structured `IdentityHypothesis` (name / salience / context / channel) is the
-  identity-domain evidence representation. Orchestration stays generic
-  (`InformationNeed` / `EvidenceAcquisitionEpisode`).
+- Dual budgets: `budget` (meaningful `EVIDENCE_FOUND`/`NO_EVIDENCE`) and
+  `attempt_budget` (operational ceiling including skips/errors).
+- `BindingAssessment` → `BindingUncertainty` must be derived from evidence class
+  / opaque scores — never fabricate fixed margin/quality to satisfy risk policy.
 - Exact-name evidence is a **prior**, not resolution authority.
 
 Code:
 
 - [`plugin/agent/brain/information_need.py`](../../plugin/agent/brain/information_need.py)
 - [`plugin/agent/brain/evidence_acquisition.py`](../../plugin/agent/brain/evidence_acquisition.py)
-- [`plugin/agent/brain/identity_hypothesis.py`](../../plugin/agent/brain/identity_hypothesis.py)
+- [`plugin/agent/brain/identity_consultant.py`](../../plugin/agent/brain/identity_consultant.py) (strategy + BindingAssessment)
+- [`plugin/agent/brain/document_resolution.py`](../../plugin/agent/brain/document_resolution.py) (non-identity golden path)
 - [`plugin/agent/information/`](../../plugin/agent/information/)
 
 ### Slice 1 acceptance

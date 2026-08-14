@@ -21,39 +21,41 @@ ERROR = "ERROR"
 class InformationNeed:
     """What the Brain still needs before a semantic commitment."""
 
-    need_type: str  # entity_resolution | referent | effect_check | ...
+    need_type: str  # entity_resolution | document_resolution | effect_check | ...
     subject: str
     competing_hypotheses: list[Any] = field(default_factory=list)
     desired_discrimination: str = ""
     evidence_already_known: list[dict[str, Any]] = field(default_factory=list)
     required_confidence: float = 0.0
-    budget: int = 4  # meaningful probe attempts remaining at start
+    budget: int = 4  # meaningful information probes
+    attempt_budget: int = 8  # operational ceiling (includes NO_CAPABILITY/ERROR)
     context: dict[str, Any] = field(default_factory=dict)
 
-    def missing_features(self) -> set[str]:
-        """Features that would help discriminate competing hypotheses."""
-        known = {
-            str(e.get("kind") or e.get("evidence_kind") or "")
-            for e in self.evidence_already_known
-            if e
-        }
-        # Domain-agnostic defaults; callers may pass desired_discrimination
-        # as comma-separated feature tags.
-        wanted: set[str] = set()
-        if self.desired_discrimination:
-            wanted |= {
-                p.strip()
-                for p in self.desired_discrimination.split(",")
-                if p.strip()
-            }
-        if self.need_type == "entity_resolution":
-            wanted |= {
-                "working_context",
-                "memory_aggregates",
-                "reference_history",
-                "channel_activity",
-            }
-        return {w for w in wanted if w and w not in known}
+    def __post_init__(self) -> None:
+        if not isinstance(self.evidence_already_known, list):
+            self.evidence_already_known = list(self.evidence_already_known or [])
+
+
+@dataclass
+class EvidenceNeedAssessment:
+    """Reassessment of remaining uncertainty after (or before) a probe.
+
+    Domain strategies produce this; the generic episode only consumes it.
+    """
+
+    remaining_ambiguities: list[str] = field(default_factory=list)
+    discriminating_features: list[str] = field(default_factory=list)
+    preferred_evidence_kinds: list[str] = field(default_factory=list)
+    resolved: bool = False
+    resolution_ref: str = ""
+    resolution_reason: str = ""
+    notes: str = ""
+
+    def next_kind(self, attempted_kinds: set[str]) -> Optional[str]:
+        for kind in self.preferred_evidence_kinds:
+            if kind and kind not in attempted_kinds:
+                return kind
+        return None
 
 
 @dataclass
@@ -89,10 +91,12 @@ class EvidenceAcquisitionEpisode:
     probes_attempted: list[EvidenceResult] = field(default_factory=list)
     evidence_found: list[EvidenceResult] = field(default_factory=list)
     hypotheses: list[Any] = field(default_factory=list)
+    assessments: list[EvidenceNeedAssessment] = field(default_factory=list)
     uncertainty_notes: list[str] = field(default_factory=list)
     budget_remaining: int = 0
+    attempt_budget_remaining: int = 0
     resolved: bool = False
-    resolution_entity_id: str = ""
+    resolution_ref: str = ""
     resolution_reason: str = ""
 
     def probe_labels(self) -> list[str]:
